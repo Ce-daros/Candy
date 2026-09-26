@@ -3,7 +3,7 @@ import { Container, getKeybindings, isViewportTUI, ScrollView, setKeybindings, T
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
-import type { FullscreenExitOutput, TuiMode } from "../src/core/settings-manager.ts";
+import type { FullscreenExitOutput } from "../src/core/settings-manager.ts";
 import {
 	BranchSummaryStatusIndicator,
 	CompactionStatusIndicator,
@@ -12,12 +12,10 @@ import {
 	type StatusIndicatorKind,
 	WorkingStatusIndicator,
 } from "../src/modes/interactive/components/status-indicator.ts";
-import {
-	createInteractiveTui,
-	createInteractiveTuiReference,
-	InteractiveMode,
-} from "../src/modes/interactive/interactive-mode.ts";
+import { createInteractiveTui, InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+
+const EXIT_ALT_SCREEN = "\x1b[?1049l";
 
 const clipboardMocks = vi.hoisted(() => ({
 	copyToClipboard: vi.fn<(text: string) => Promise<void>>(),
@@ -48,34 +46,19 @@ class RecordingTerminal extends VirtualTerminal implements Terminal {
 }
 
 describe("createInteractiveTui", () => {
-	it("selects the alternate-screen renderer only when requested", async () => {
-		const mainTerminal = new RecordingTerminal();
-		const mainTui = createInteractiveTui({
-			tuiMode: "regular",
+	it("always uses the alternate-screen fullscreen renderer", async () => {
+		const terminal = new RecordingTerminal();
+		const tui = createInteractiveTui({
 			showHardwareCursor: false,
 			logDirectory: "/tmp",
-			terminal: mainTerminal,
+			terminal,
 		});
-		expect(mainTui.mode).toBe("regular");
-		expect(isViewportTUI(mainTui)).toBe(false);
-		mainTui.start();
-		await mainTerminal.waitForRender();
-		expect(mainTerminal.writes.some((write) => write.includes("\x1b[?1049h"))).toBe(false);
-		mainTui.stop();
-
-		const altTerminal = new RecordingTerminal();
-		const altTui = createInteractiveTui({
-			tuiMode: "fullscreen",
-			showHardwareCursor: false,
-			logDirectory: "/tmp",
-			terminal: altTerminal,
-		});
-		expect(altTui.mode).toBe("fullscreen");
-		expect(isViewportTUI(altTui)).toBe(true);
-		altTui.start();
-		await altTerminal.waitForRender();
-		expect(altTerminal.writes.some((write) => write.includes("\x1b[?1049h"))).toBe(true);
-		altTui.stop();
+		expect(tui.mode).toBe("fullscreen");
+		expect(isViewportTUI(tui)).toBe(true);
+		tui.start();
+		await terminal.waitForRender();
+		expect(terminal.writes.some((write) => write.includes("\x1b[?1049h"))).toBe(true);
+		tui.stop();
 	});
 
 	it("shows the configured jump-to-bottom shortcut while scrolled up", async () => {
@@ -84,7 +67,6 @@ describe("createInteractiveTui", () => {
 		setKeybindings(new KeybindingsManager({ "tui.altScreen.bottom": "ctrl+j" }));
 		const terminal = new RecordingTerminal(50, 4);
 		const ui = createInteractiveTui({
-			tuiMode: "fullscreen",
 			showHardwareCursor: false,
 			logDirectory: "/tmp",
 			terminal,
@@ -107,65 +89,58 @@ describe("createInteractiveTui", () => {
 		}
 	});
 
-	it("replaces the renderer and restores the previous screen for resume-hint exits", async () => {
+	it("prints the transcript document on exit for transcript output", async () => {
 		const terminal = new RecordingTerminal(40, 8);
 		const renderer = createInteractiveTui({
-			tuiMode: "regular",
 			showHardwareCursor: false,
 			logDirectory: "/tmp",
 			terminal,
 		});
-		let stableUi: TUI;
-		const invalidatedModes: TuiMode[] = [];
-		const component: Component & { focused: boolean } = {
-			focused: false,
-			render: () => ["content"],
-			invalidate: () => invalidatedModes.push(stableUi.mode),
-		};
+		const component: Component = { render: () => ["transcript line"], invalidate: () => {} };
 		renderer.addChild(component);
-		renderer.setFocus(component);
+		const layoutRoot: Component = { render: () => ["viewport line"], invalidate: () => {} };
+		renderer.setLayoutRoot(layoutRoot);
 
-		type SwitchContext = {
-			runtimeHost: { session: { settingsManager: { getFullscreenCopyOnSelect: () => boolean } } };
-			renderer: ReturnType<typeof createInteractiveTui>;
-			ui: TUI;
-			fullscreenLayoutRoot: Component;
-			options: { tuiMode?: TuiMode };
-			themeController: { rebindTui: () => void };
-			extensionTerminalInputSubscriptions: Set<never>;
-		};
-		const context = Object.assign(Object.create(InteractiveMode.prototype), {
-			runtimeHost: { session: { settingsManager: { getFullscreenCopyOnSelect: () => true } } },
-			renderer,
-			ui: undefined as unknown as TUI,
-			fullscreenLayoutRoot: component,
-			options: { tuiMode: "regular" as TuiMode },
-			themeController: { rebindTui: () => {} },
-			extensionTerminalInputSubscriptions: new Set<never>(),
-		}) as SwitchContext;
-		stableUi = createInteractiveTuiReference(() => context.renderer);
-		context.ui = stableUi;
-		const { stopInteractiveTui, switchTuiMode } = InteractiveMode.prototype as unknown as {
-			stopInteractiveTui(this: SwitchContext, fullscreenExitOutput: FullscreenExitOutput): void;
-			switchTuiMode(this: SwitchContext, mode: TuiMode, restoreProgress?: boolean): boolean;
+		type StopContext = { renderer: ReturnType<typeof createInteractiveTui>; ui: TUI };
+		const context = { renderer, ui: renderer } as unknown as StopContext;
+		const { stopInteractiveTui } = InteractiveMode.prototype as unknown as {
+			stopInteractiveTui(this: StopContext, fullscreenExitOutput: FullscreenExitOutput): void;
 		};
 
 		renderer.start();
 		await terminal.waitForRender();
-		expect(switchTuiMode.call(context, "fullscreen", false)).toBe(true);
+		const writesBeforeStop = terminal.writes.length;
+		stopInteractiveTui.call(context, "transcript");
+
+		const exitOutput = terminal.writes.slice(writesBeforeStop).join("");
+		expect(exitOutput).toContain("transcript line");
+		expect(exitOutput).not.toContain("viewport line");
+	});
+
+	it("preserves the alt screen on exit for resume-hint output", async () => {
+		const terminal = new RecordingTerminal(40, 8);
+		const renderer = createInteractiveTui({
+			showHardwareCursor: false,
+			logDirectory: "/tmp",
+			terminal,
+		});
+		const component: Component = { render: () => ["transcript line"], invalidate: () => {} };
+		renderer.addChild(component);
+
+		type StopContext = { renderer: ReturnType<typeof createInteractiveTui>; ui: TUI };
+		const context = { renderer, ui: renderer } as unknown as StopContext;
+		const { stopInteractiveTui } = InteractiveMode.prototype as unknown as {
+			stopInteractiveTui(this: StopContext, fullscreenExitOutput: FullscreenExitOutput): void;
+		};
+
+		renderer.start();
 		await terminal.waitForRender();
-
-		expect(stableUi.mode).toBe("fullscreen");
-		expect(context.renderer.children).toEqual([component]);
-		expect(context.renderer.getFocusedComponent()).toBe(component);
-		expect(component.focused).toBe(true);
-		expect(invalidatedModes).toEqual(["fullscreen"]);
-		expect([terminal.startCount, terminal.stopCount]).toEqual([2, 1]);
-
+		const writesBeforeStop = terminal.writes.length;
 		stopInteractiveTui.call(context, "resume-hint");
 
-		expect(stableUi.mode).toBe("fullscreen");
-		expect([terminal.startCount, terminal.stopCount]).toEqual([2, 2]);
+		const exitOutput = terminal.writes.slice(writesBeforeStop).join("");
+		expect(exitOutput).toContain(EXIT_ALT_SCREEN);
+		expect(exitOutput).not.toContain("transcript line");
 	});
 });
 
@@ -214,7 +189,6 @@ describe("InteractiveMode copy confirmation", () => {
 	it("copies an active fullscreen selection when copy-on-select is disabled", async () => {
 		const terminal = new RecordingTerminal(40, 4);
 		const ui = createInteractiveTui({
-			tuiMode: "fullscreen",
 			showHardwareCursor: false,
 			logDirectory: "/tmp",
 			terminal,
@@ -257,7 +231,6 @@ describe("InteractiveMode copy confirmation", () => {
 	it("copies the last assistant message with an active fullscreen selection when copy-on-select is enabled", async () => {
 		const terminal = new RecordingTerminal(40, 4);
 		const ui = createInteractiveTui({
-			tuiMode: "fullscreen",
 			showHardwareCursor: false,
 			logDirectory: "/tmp",
 			terminal,
@@ -299,7 +272,6 @@ describe("InteractiveMode copy confirmation", () => {
 	it("flashes Copied! for the copy shortcut in fullscreen mode", async () => {
 		const terminal = new RecordingTerminal(40, 4);
 		const ui = createInteractiveTui({
-			tuiMode: "fullscreen",
 			showHardwareCursor: false,
 			logDirectory: "/tmp",
 			terminal,
@@ -327,28 +299,6 @@ describe("InteractiveMode copy confirmation", () => {
 			ui.stop();
 		}
 	});
-
-	it("keeps the status-line confirmation for the copy shortcut in regular mode", async () => {
-		const ui = createInteractiveTui({
-			tuiMode: "regular",
-			showHardwareCursor: false,
-			logDirectory: "/tmp",
-			terminal: new RecordingTerminal(),
-		});
-		const showStatus = vi.fn();
-		const showError = vi.fn();
-		const context: CopyCommandContext = {
-			session: { getLastAssistantText: () => "assistant response" },
-			ui,
-			showStatus,
-			showError,
-		};
-
-		await copyCommandPrototype.handleCopyCommand.call(context, { flashConfirmation: true, preferSelection: true });
-
-		expect(showStatus).toHaveBeenCalledWith("Copied last agent message to clipboard");
-		expect(showError).not.toHaveBeenCalled();
-	});
 });
 
 type StatusEditor = {
@@ -362,9 +312,6 @@ type ClearStatusContext = {
 	statusContainer: Container;
 	defaultEditor: StatusEditor;
 	editor: Partial<StatusEditor>;
-	options: { tuiMode?: TuiMode };
-	ui: { getClearOnShrink: () => boolean };
-	idleStatus: Component;
 	setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean;
 };
 
@@ -387,9 +334,6 @@ describe("clear-on-shrink status spacing", () => {
 			statusContainer: new Container(),
 			defaultEditor: { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() },
 			editor,
-			options: { tuiMode: "regular" },
-			ui: { getClearOnShrink: () => true },
-			idleStatus: new Text("", 0, 0),
 			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
 		};
 		const indicators = [
@@ -428,9 +372,6 @@ describe("clear-on-shrink status spacing", () => {
 				statusContainer: new Container(),
 				defaultEditor: editor,
 				editor,
-				options: { tuiMode: "regular" },
-				ui: { getClearOnShrink: () => true },
-				idleStatus: new Text("", 0, 0),
 				setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
 			};
 
@@ -443,29 +384,21 @@ describe("clear-on-shrink status spacing", () => {
 	);
 
 	it("uses the standalone row for a custom editor that has not opted in", () => {
-		for (const [tuiMode, expectedChildren] of [
-			["regular", 1],
-			["fullscreen", 0],
-		] as const) {
-			const defaultEditor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
-			const customEditor = { embedWorkingStatus: false, setWorkingStatusIndicator: vi.fn() };
-			const context: ClearStatusContext = {
-				activeStatusIndicator: { kind: "working", dispose: vi.fn() },
-				activeWorkingIndicatorEmbedded: false,
-				statusContainer: new Container(),
-				defaultEditor,
-				editor: customEditor,
-				options: { tuiMode },
-				ui: { getClearOnShrink: () => true },
-				idleStatus: new Text("", 0, 0),
-				setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
-			};
+		const defaultEditor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
+		const customEditor = { embedWorkingStatus: false, setWorkingStatusIndicator: vi.fn() };
+		const context: ClearStatusContext = {
+			activeStatusIndicator: { kind: "working", dispose: vi.fn() },
+			activeWorkingIndicatorEmbedded: false,
+			statusContainer: new Container(),
+			defaultEditor,
+			editor: customEditor,
+			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
+		};
 
-			interactiveModePrototype.clearStatusIndicator.call(context);
+		interactiveModePrototype.clearStatusIndicator.call(context);
 
-			expect(defaultEditor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
-			expect(customEditor.setWorkingStatusIndicator).not.toHaveBeenCalled();
-			expect(context.statusContainer.children).toHaveLength(expectedChildren);
-		}
+		expect(defaultEditor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
+		expect(customEditor.setWorkingStatusIndicator).not.toHaveBeenCalled();
+		expect(context.statusContainer.children).toHaveLength(0);
 	});
 });

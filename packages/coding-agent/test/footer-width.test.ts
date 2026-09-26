@@ -1,252 +1,240 @@
 import { visibleWidth } from "@candy/tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
-import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
-import { FooterComponent, formatCwdForFooter } from "../src/modes/interactive/components/footer.ts";
+import { FooterComponent } from "../src/modes/interactive/components/footer.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
-type AssistantUsage = {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: { total: number };
-};
-
 function createSession(options: {
-	sessionName: string;
 	modelId?: string;
+	modelName?: string;
 	provider?: string;
 	reasoning?: boolean;
 	thinkingLevel?: string;
-	usage?: AssistantUsage;
-	branchUsage?: AssistantUsage;
-	compactionUsage?: AssistantUsage;
-	toolUsage?: AssistantUsage;
-	usingSubscription?: boolean;
+	contextPercent?: number | null;
+	contextWindow?: number;
 }): AgentSession {
-	const usage = options.usage;
-	const entries: Array<Record<string, unknown>> = [];
-
-	if (usage !== undefined) {
-		entries.push({
-			type: "message",
-			message: {
-				role: "assistant",
-				usage,
-			},
-		});
-	}
-
-	if (options.branchUsage !== undefined) {
-		entries.push({
-			type: "branch_summary",
-			usage: options.branchUsage,
-		});
-	}
-
-	if (options.compactionUsage !== undefined) {
-		entries.push({
-			type: "compaction",
-			usage: options.compactionUsage,
-		});
-	}
-
-	if (options.toolUsage !== undefined) {
-		entries.push({
-			type: "message",
-			message: {
-				role: "toolResult",
-				usage: options.toolUsage,
-			},
-		});
-	}
-
 	const session = {
 		state: {
 			model: {
 				id: options.modelId ?? "test-model",
+				name: options.modelName,
 				provider: options.provider ?? "test",
-				contextWindow: 200_000,
+				contextWindow: options.contextWindow ?? 200_000,
 				reasoning: options.reasoning ?? false,
 			},
 			thinkingLevel: options.thinkingLevel ?? "off",
 		},
-		sessionManager: {
-			getEntries: () => entries,
-			getSessionName: () => options.sessionName,
-			getCwd: () => "/tmp/project",
-		},
-		getContextUsage: () => ({ contextWindow: 200_000, percent: 12.3 }),
-		modelRuntime: {
-			isUsingSubscription: () => options.usingSubscription ?? false,
-		},
+		getContextUsage: () => ({
+			contextWindow: options.contextWindow ?? 200_000,
+			percent: options.contextPercent === undefined ? 12.3 : options.contextPercent,
+		}),
 	};
 
 	return session as unknown as AgentSession;
 }
 
-function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
-	const provider = {
-		getGitBranch: () => "main",
-		getExtensionStatuses: () => new Map<string, string>(),
-		getAvailableProviderCount: () => providerCount,
-		onBranchChange: (callback: () => void) => {
-			void callback;
-			return () => {};
-		},
-	};
-
-	return provider;
+/** Render the merged bottom border with an uncolored frame so assertions stay readable. */
+function renderStatus(
+	session: AgentSession,
+	options: { width?: number; hiddenLineCount?: number; pendingTokens?: number } = {},
+): string {
+	const footer = new FooterComponent(session);
+	if (options.pendingTokens !== undefined) footer.setPendingTokens(options.pendingTokens);
+	const width = options.width ?? 120;
+	return stripAnsi(footer.renderBottomBorder(width, options.hiddenLineCount ?? 0, (text) => text));
 }
 
-describe("formatCwdForFooter", () => {
-	it("does not abbreviate sibling paths that share the home prefix", () => {
-		expect(formatCwdForFooter("/home/user2", "/home/user")).toBe("/home/user2");
-	});
-
-	it("abbreviates the home directory and descendants", () => {
-		expect(formatCwdForFooter("/home/user", "/home/user")).toBe("~");
-		expect(formatCwdForFooter("/home/user/project", "/home/user")).toBe("~/project");
-	});
-});
-
-describe("FooterComponent width handling", () => {
+describe("FooterComponent bottom border", () => {
 	beforeAll(() => {
 		initTheme(undefined, false);
 	});
 
-	it("keeps all lines within width for wide session names", () => {
-		const width = 93;
-		const session = createSession({ sessionName: "한글".repeat(30) });
-		const footer = new FooterComponent(session, createFooterData(1));
+	it("fills exactly the requested width for every terminal size", () => {
+		const session = createSession({ modelId: "kimi-k2.6", modelName: "Kimi K2.6", reasoning: true });
 
-		const lines = footer.render(width);
-		for (const line of lines) {
-			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		for (const width of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 20, 40, 60, 93, 200]) {
+			const line = renderStatus(session, { width, pendingTokens: 38000 });
+			expect(visibleWidth(line), `width ${width}`).toBe(width);
 		}
 	});
 
-	it("keeps stats line within width for wide model and provider names", () => {
+	it("keeps the frame within width for wide model names", () => {
 		const width = 60;
-		const session = createSession({
-			sessionName: "",
-			modelId: "模".repeat(30),
-			provider: "공급자",
-			reasoning: true,
-			thinkingLevel: "high",
-			usage: {
-				input: 12_345,
-				output: 6_789,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 1.234 },
-			},
-		});
-		const footer = new FooterComponent(session, createFooterData(2));
+		const session = createSession({ modelId: "模".repeat(30), reasoning: true, thinkingLevel: "high" });
 
-		const lines = footer.render(width);
-		for (const line of lines) {
-			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		expect(visibleWidth(renderStatus(session, { width }))).toBe(width);
+	});
+
+	it("shows the model name without the vendor prefix", () => {
+		const prefixed = createSession({ modelId: "moonshotai/kimi-k2.6", modelName: "MoonshotAI: Kimi K2.6" });
+		const line = renderStatus(prefixed);
+
+		expect(line).toContain("Kimi K2.6");
+		expect(line).not.toContain("MoonshotAI");
+		expect(line).not.toContain("moonshotai");
+	});
+
+	it("keeps a model name that has no vendor prefix unchanged", () => {
+		const session = createSession({ modelId: "moonshotai/Kimi-K2-Instruct", modelName: "Kimi-K2-Instruct" });
+
+		expect(renderStatus(session)).toContain("Kimi-K2-Instruct");
+	});
+
+	it("falls back to the id when the model has no name", () => {
+		const session = createSession({ modelId: "moonshotai/kimi-k2.6" });
+
+		const line = renderStatus(session);
+		expect(line).toContain("kimi-k2.6");
+		expect(line).not.toContain("moonshotai/");
+	});
+
+	it("shows the thinking level only for reasoning models", () => {
+		expect(renderStatus(createSession({ reasoning: true, thinkingLevel: "medium" }))).toContain("Medium ▾");
+		expect(renderStatus(createSession({ reasoning: false, thinkingLevel: "medium" }))).not.toContain("medium");
+	});
+
+	it("always shows the percentage with the meter mapped to the context ratio", () => {
+		const session = createSession({
+			modelId: "kimi-k2.6",
+			modelName: "Kimi K2.6",
+			reasoning: true,
+			thinkingLevel: "medium",
+			contextPercent: 42,
+		});
+		const line = renderStatus(session, { width: 80 });
+
+		// labels 22 + corner 4 + separator 2 + right border 1 => meter 51.
+		// one frontier + " 42% " (5) leaves 45 track cells, 19 filled.
+		expect(line).toBe(`╰── Kimi K2.6 ▾   Medium ▾ ─${"━".repeat(19)} 42% ╾${"─".repeat(26)}╯`);
+	});
+
+	it("scales the meter to the remaining border width regardless of label length", () => {
+		for (const modelName of ["Kimi K2.6", "An exceptionally long model name with many words"]) {
+			const session = createSession({ modelId: "model", modelName, contextPercent: 42 });
+			const line = renderStatus(session, { width: 100 });
+			const meter = line.slice(line.indexOf(" ▾ ─") + " ▾ ─".length, -1);
+			const trackWidth = meter.length - 1 - " 42% ".length;
+			const filled = Math.round(trackWidth * 0.42);
+			expect(meter).toBe(`${"━".repeat(filled)} 42% ╾${"─".repeat(trackWidth - filled)}`);
 		}
 	});
 
-	it("includes summary and tool result usage in the total cost", () => {
-		const session = createSession({
-			sessionName: "",
-			usage: {
-				input: 100,
-				output: 10,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 0.5 },
-			},
-			branchUsage: {
-				input: 20,
-				output: 5,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 0.25 },
-			},
-			compactionUsage: {
-				input: 5,
-				output: 2,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 0.125 },
-			},
-			toolUsage: {
-				input: 15,
-				output: 3,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 0.375 },
-			},
-		});
-		const footer = new FooterComponent(session, createFooterData(1));
+	it("keeps both percentages visible while the composer has pending text", () => {
+		const session = createSession({ modelId: "model", modelName: "Kimi K2.6", contextPercent: 42 });
+		const footer = new FooterComponent(session);
+		footer.setPendingTokens(38000);
+		const line = stripAnsi(footer.renderBottomBorder(80, 0, (text) => text));
 
-		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("$1.250");
+		expect(line).toContain(" 42% ╾");
+		expect(line).toContain(" 61% ╾");
 	});
 
-	it("shows the latest cache hit rate when cache usage is present", () => {
-		const session = createSession({
-			sessionName: "",
-			usage: {
-				input: 100,
-				output: 10,
-				cacheRead: 50,
-				cacheWrite: 50,
-				cost: { total: 0.001 },
-			},
-		});
-		const footer = new FooterComponent(session, createFooterData(1));
+	it("suppresses the projected segment when it cannot advance the displayed percentage", () => {
+		const session = createSession({ modelId: "model", modelName: "Kimi K2.6", contextPercent: 42 });
+		const line = renderStatus(session, { width: 80, pendingTokens: 1 });
 
-		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("CH25.0%");
+		expect(line).not.toContain("┄");
+		expect(line).toContain(" 42% ╾");
 	});
 
-	it("marks Kimi Coding costs as subscription estimates", () => {
-		const session = createSession({
-			sessionName: "",
-			provider: "kimi-coding",
-			usage: {
-				input: 100,
-				output: 10,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 1.234 },
-			},
-		});
-		const footer = new FooterComponent(session, createFooterData(1));
-
-		expect(stripAnsi(footer.render(120)[1])).toContain("$1.234 (sub)");
+	it("keeps the pending frontier when the rounded projection is 100 but space remains", () => {
+		const session = createSession({ modelId: "model", modelName: "Kimi K2.6", contextPercent: 42 });
+		const line = renderStatus(session, { width: 120, pendingTokens: 115000 });
+		expect(line).toContain(" 100% ╾");
 	});
 
-	it("marks explicitly identified subscription auth", () => {
-		const session = createSession({ sessionName: "", provider: "anthropic", usingSubscription: true });
-		const footer = new FooterComponent(session, createFooterData(1));
-
-		expect(stripAnsi(footer.render(120)[1])).toContain("$0.000 (sub)");
+	it("keeps the frame color around colored selector labels", () => {
+		const session = createSession({ modelId: "model", modelName: "Kimi K2.6", contextPercent: 42 });
+		const footer = new FooterComponent(session);
+		const line = footer.renderBottomBorder(80, 0, (text) => `<border>${text}</border>`);
+		expect(line).toContain("<border>╰── </border>Kimi K2.6");
+		expect(line).toContain("<border> ─</border>");
+		expect(line).toContain("<border>╯</border>");
 	});
 
-	it("does not mark generic OAuth sign-in as a subscription", () => {
+	it("keeps the percentage inside the meter at high usage", () => {
 		const session = createSession({
-			sessionName: "",
-			provider: "openrouter",
-			usage: {
-				input: 100,
-				output: 10,
-				cacheRead: 0,
-				cacheWrite: 0,
-				cost: { total: 1.234 },
-			},
+			modelId: "kimi-k2.6",
+			modelName: "Kimi K2.6",
+			reasoning: true,
+			thinkingLevel: "medium",
+			contextPercent: 91,
 		});
-		const footer = new FooterComponent(session, createFooterData(1));
-		const stats = stripAnsi(footer.render(120)[1]);
+		const line = renderStatus(session, { width: 80 });
 
-		expect(stats).toContain("$1.234");
-		expect(stats).not.toContain("(sub)");
+		expect(line).toBe(`╰── Kimi K2.6 ▾   Medium ▾ ─${"━".repeat(41)} 91% ╾${"─".repeat(4)}╯`);
+	});
+
+	it("renders pending context as a dashed segment with both frontiers", () => {
+		const session = createSession({
+			modelId: "kimi-k2.6",
+			modelName: "Kimi K2.6",
+			reasoning: true,
+			thinkingLevel: "medium",
+			contextPercent: 42,
+		});
+		// 38000 / 200000 => +19 points, projecting 61%.
+		const line = renderStatus(session, { width: 80, pendingTokens: 38000 });
+
+		expect(line).toBe(`╰── Kimi K2.6 ▾   Medium ▾ ─${"━".repeat(16)} 42% ╾${"┄".repeat(8)} 61% ╾${"─".repeat(15)}╯`);
+	});
+
+	it("omits the pending frontier when the projection reaches the right border", () => {
+		const session = createSession({
+			modelId: "kimi-k2.6",
+			modelName: "Kimi K2.6",
+			reasoning: true,
+			thinkingLevel: "medium",
+			contextPercent: 42,
+		});
+		// 116000 / 200000 => +58 points, projecting 100%.
+		const line = renderStatus(session, { width: 80, pendingTokens: 116000 });
+
+		expect(line).toBe(`╰── Kimi K2.6 ▾   Medium ▾ ─${"━".repeat(16)} 42% ╾${"┄".repeat(23)} 100% ╯`);
+	});
+
+	it("shows an unfilled meter when context usage is unknown", () => {
+		const session = createSession({ modelId: "kimi-k2.6", modelName: "Kimi K2.6", contextPercent: null });
+		const line = renderStatus(session, { width: 80, pendingTokens: 38000 });
+
+		expect(line).toContain("╰── Kimi K2.6 ▾ ─");
+		expect(line).not.toContain("╾");
+		expect(line).not.toContain("━");
+		expect(line).not.toContain("┄");
+	});
+
+	it("drops the meter instead of breaking the frame when the terminal is narrow", () => {
+		const session = createSession({
+			modelId: "kimi-k2.6",
+			modelName: "Kimi K2.6",
+			reasoning: true,
+			thinkingLevel: "medium",
+			contextPercent: 42,
+		});
+		const line = renderStatus(session, { width: 30 });
+
+		expect(line).toBe("╰── Kimi K2.6 ▾   Medium ▾ ──╯");
+		expect(visibleWidth(line)).toBe(30);
+	});
+
+	it("drops the effort selector before truncating the model", () => {
+		const session = createSession({
+			modelId: "kimi-k2.6",
+			modelName: "Kimi K2.6",
+			reasoning: true,
+			thinkingLevel: "medium",
+			contextPercent: 42,
+		});
+		const line = renderStatus(session, { width: 20 });
+
+		expect(line).toBe("╰── Kimi K2.6 ▾ ───╯");
+		expect(visibleWidth(line)).toBe(20);
+	});
+
+	it("includes the hidden-line count when the editor scrolled", () => {
+		const line = renderStatus(createSession({}), { hiddenLineCount: 3 });
+
+		expect(line).toContain("↓ 3 more");
 	});
 });

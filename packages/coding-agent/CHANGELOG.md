@@ -10,6 +10,7 @@
 - Added `types=chat,image,classifier` to pi.dev model catalog requests so remote refreshes overlay every supported model type; entries of unknown model types are ignored.
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
+- Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, a dash fill, and the session name.
 
 ### Breaking Changes
 
@@ -17,6 +18,7 @@
 
 ### Changed
 
+- Merged the footer into the editor's bottom border: `╰─ <model> ▾ ─ <thinking> ▾ ────── Context x.xx% · Auto`, with a `│` left gutter on input lines. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
 - Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).
 
 ### Fixed

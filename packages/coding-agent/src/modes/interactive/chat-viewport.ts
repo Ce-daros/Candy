@@ -1,6 +1,8 @@
-import { type Component, ScrollView, type ScrollViewScrollbar, VStack } from "@candy/tui";
+import { type Component, ScrollView, type ScrollViewScrollbar, type StackChild, VStack } from "@candy/tui";
 
 export interface ChatViewportOptions {
+	/** Fixed bar rendered above the transcript; it does not scroll with the document. */
+	readonly header?: Component;
 	readonly document: Component;
 	readonly pendingMessages: Component;
 	readonly status: Component;
@@ -36,11 +38,16 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
 		...(options.widgetsBelow === undefined ? [] : [{ component: options.widgetsBelow, shrink: 1, minSize: 0 }]),
 		{ component: options.footer, shrink: 1, minSize: 0 },
 	]);
+	const children: StackChild[] = [];
+	if (options.header !== undefined) {
+		children.push({ component: options.header, basis: "auto", grow: 0, shrink: 0, minSize: 1 });
+	}
+	children.push(
+		{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+	);
 	return {
 		transcript,
-		root: new VStack([
-			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-			{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
-		]),
+		root: new VStack(children),
 	};
 }

@@ -8,11 +8,23 @@ export type CustomEditorOptions = EditorOptions & {
 };
 
 /**
+ * Status line merged into the editor's bottom border.
+ * The implementation owns the segment layout; the editor owns the frame width and border color.
+ */
+export interface EditorBottomStatus {
+	renderBottomBorder(width: number, hiddenLineCount: number, borderColor: (text: string) => string): string;
+}
+
+/** Default left gutter so the input area reads as one frame with the bottom border. */
+const DEFAULT_LEFT_GUTTER = "│ ";
+
+/**
  * Custom editor that handles app-level keybindings for coding-agent.
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
 	private workingStatusIndicator: StatusIndicator | undefined;
+	private bottomStatus: EditorBottomStatus | undefined;
 	public readonly embedWorkingStatus: boolean;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
@@ -24,7 +36,7 @@ export class CustomEditor extends Editor {
 	public onExtensionShortcut?: (data: string) => boolean;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: CustomEditorOptions) {
-		super(tui, theme, options);
+		super(tui, theme, { leftGutter: DEFAULT_LEFT_GUTTER, rightGutter: "│", minContentLines: 2, ...options });
 		this.keybindings = keybindings;
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 	}
@@ -33,49 +45,65 @@ export class CustomEditor extends Editor {
 		this.workingStatusIndicator = indicator;
 	}
 
+	setBottomStatus(status: EditorBottomStatus | undefined): void {
+		this.bottomStatus = status;
+	}
+
+	protected override renderBottomBorder(width: number, hiddenLineCount: number): string {
+		if (!this.bottomStatus || width <= 0) {
+			if (width < 2) return super.renderBottomBorder(width, hiddenLineCount);
+			return this.borderColor("╰") + super.renderBottomBorder(width - 2, hiddenLineCount) + this.borderColor("╯");
+		}
+		return this.bottomStatus.renderBottomBorder(width, hiddenLineCount, this.borderColor);
+	}
+
 	protected override renderTopBorder(width: number, hiddenLineCount: number): string {
-		if (!this.embedWorkingStatus || !this.workingStatusIndicator || width <= 0) {
-			return super.renderTopBorder(width, hiddenLineCount);
+		if (width < 2) return this.borderColor("─".repeat(Math.max(0, width)));
+		const innerWidth = width - 2;
+		if (!this.embedWorkingStatus || !this.workingStatusIndicator) {
+			return this.borderColor("╭") + super.renderTopBorder(innerWidth, hiddenLineCount) + this.borderColor("╮");
 		}
 
-		let status = this.workingStatusIndicator.renderInBorder(Math.max(1, width - 5));
+		let status = this.workingStatusIndicator.renderInBorder(Math.max(1, innerWidth - 5));
 		let statusWidth = visibleWidth(status);
-		if (statusWidth === 0) return super.renderTopBorder(width, hiddenLineCount);
+		if (statusWidth === 0) {
+			return this.borderColor("╭") + super.renderTopBorder(innerWidth, hiddenLineCount) + this.borderColor("╮");
+		}
 
 		const overflowLabel = hiddenLineCount > 0 ? ` ↑ ${hiddenLineCount} more ` : undefined;
 		const overflowLabelWidth = overflowLabel ? visibleWidth(overflowLabel) : 0;
-		const overflowStart = Math.floor((width - overflowLabelWidth) / 2);
+		const overflowStart = Math.floor((innerWidth - overflowLabelWidth) / 2);
 		const canFitOverflow = () =>
-			overflowLabel !== undefined && overflowLabelWidth + 2 <= width && overflowStart - (3 + statusWidth + 1) >= 1;
+			overflowLabel !== undefined &&
+			overflowLabelWidth + 2 <= innerWidth &&
+			overflowStart - (3 + statusWidth + 1) >= 1;
 
 		if (overflowLabel && !canFitOverflow()) {
-			status = this.workingStatusIndicator.renderSpinnerInBorder(width);
+			status = this.workingStatusIndicator.renderSpinnerInBorder(innerWidth);
 			statusWidth = visibleWidth(status);
 		}
 
+		let inner: string;
 		if (canFitOverflow()) {
 			const leftBlockWidth = 3 + statusWidth + 1;
-			return (
+			inner =
 				this.borderColor("── ") +
 				status +
 				this.borderColor(
-					` ${"─".repeat(overflowStart - leftBlockWidth)}${overflowLabel}${"─".repeat(width - overflowStart - overflowLabelWidth)}`,
-				)
-			);
+					` ${"─".repeat(overflowStart - leftBlockWidth)}${overflowLabel}${"─".repeat(innerWidth - overflowStart - overflowLabelWidth)}`,
+				);
+		} else if (innerWidth >= statusWidth + 5) {
+			inner = this.borderColor("── ") + status + this.borderColor(` ${"─".repeat(innerWidth - statusWidth - 4)}`);
+		} else {
+			status = this.workingStatusIndicator.renderSpinnerInBorder(innerWidth);
+			statusWidth = visibleWidth(status);
+			const prefixWidth = Math.min(3, Math.max(0, innerWidth - statusWidth));
+			inner =
+				this.borderColor("─".repeat(prefixWidth)) +
+				status +
+				this.borderColor("─".repeat(Math.max(0, innerWidth - prefixWidth - statusWidth)));
 		}
-
-		if (width >= statusWidth + 5) {
-			return this.borderColor("── ") + status + this.borderColor(` ${"─".repeat(width - statusWidth - 4)}`);
-		}
-
-		status = this.workingStatusIndicator.renderSpinnerInBorder(width);
-		statusWidth = visibleWidth(status);
-		const prefixWidth = Math.min(3, Math.max(0, width - statusWidth));
-		return (
-			this.borderColor("─".repeat(prefixWidth)) +
-			status +
-			this.borderColor("─".repeat(Math.max(0, width - prefixWidth - statusWidth)))
-		);
+		return this.borderColor("╭") + inner + this.borderColor("╮");
 	}
 
 	/**
