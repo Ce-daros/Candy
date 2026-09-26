@@ -1,7 +1,7 @@
 /**
  * Overlay QA Tests - comprehensive overlay positioning and edge case tests
  *
- * Usage: pi --extension ./examples/extensions/overlay-qa-tests.ts
+ * Usage: candy --extension ./examples/extensions/overlay-qa-tests.ts
  *
  * Commands:
  *   /overlay-animation  - Real-time animation demo (~30 FPS, proves DOOM-like rendering works)
@@ -19,17 +19,17 @@
  *   /overlay-streaming  - Multiple input panels with simulated streaming (Tab to cycle focus)
  */
 
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, OverlayAnchor, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
-import { Input, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@candy/coding-agent";
+import type { Component, OverlayAnchor, OverlayHandle, OverlayOptions, TUI } from "@candy/tui";
+import { Input, matchesKey, truncateToWidth, visibleWidth } from "@candy/tui";
 import { spawn } from "child_process";
 
 // Global handle for toggle demo (in real code, use a more elegant pattern)
 let globalToggleHandle: OverlayHandle | null = null;
 
-export default function (pi: ExtensionAPI) {
+export default function (candy: ExtensionAPI) {
 	// Animation demo - proves overlays can handle real-time updates (like pi-doom would need)
-	pi.registerCommand("overlay-animation", {
+	candy.registerCommand("overlay-animation", {
 		description: "Test real-time animation in overlay (~30 FPS)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.ui.custom<void>((tui, theme, _kb, done) => new AnimationDemoComponent(tui, theme, done), {
@@ -40,7 +40,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test all 9 anchor positions
-	pi.registerCommand("overlay-anchors", {
+	candy.registerCommand("overlay-anchors", {
 		description: "Cycle through all anchor positions",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const anchors: OverlayAnchor[] = [
@@ -78,7 +78,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test margins and offsets
-	pi.registerCommand("overlay-margins", {
+	candy.registerCommand("overlay-margins", {
 		description: "Test margin and offset options",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const configs: { name: string; options: OverlayOptions }[] = [
@@ -112,7 +112,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test stacked overlays
-	pi.registerCommand("overlay-stack", {
+	candy.registerCommand("overlay-stack", {
 		description: "Test stacked overlays",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			// Three large overlays that overlap in the center area
@@ -156,7 +156,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test width overflow scenarios (original crash case) - streams real process output
-	pi.registerCommand("overlay-overflow", {
+	candy.registerCommand("overlay-overflow", {
 		description: "Test width overflow with streaming process output",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.ui.custom<void>((tui, theme, _kb, done) => new StreamingOverflowComponent(tui, theme, done), {
@@ -167,7 +167,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test overlay at terminal edge
-	pi.registerCommand("overlay-edge", {
+	candy.registerCommand("overlay-edge", {
 		description: "Test overlay positioned at terminal edge",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.ui.custom<void>((_tui, theme, _kb, done) => new EdgeTestComponent(theme, done), {
@@ -178,7 +178,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test percentage-based positioning
-	pi.registerCommand("overlay-percent", {
+	candy.registerCommand("overlay-percent", {
 		description: "Test percentage-based positioning",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const configs = [
@@ -214,7 +214,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test maxHeight
-	pi.registerCommand("overlay-maxheight", {
+	candy.registerCommand("overlay-maxheight", {
 		description: "Test maxHeight truncation",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.ui.custom<void>((_tui, theme, _kb, done) => new MaxHeightTestComponent(theme, done), {
@@ -225,7 +225,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test responsive sidepanel - only shows when terminal is wide enough
-	pi.registerCommand("overlay-sidepanel", {
+	candy.registerCommand("overlay-sidepanel", {
 		description: "Test responsive sidepanel (hides when terminal < 100 cols)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.ui.custom<void>((tui, theme, _kb, done) => new SidepanelComponent(tui, theme, done), {
@@ -243,7 +243,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test toggle overlay - demonstrates OverlayHandle.setHidden() via onHandle callback
-	pi.registerCommand("overlay-toggle", {
+	candy.registerCommand("overlay-toggle", {
 		description: "Test overlay toggle (press 't' to toggle visibility)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			await ctx.ui.custom<void>((tui, theme, _kb, done) => new ToggleDemoComponent(tui, theme, done), {
@@ -261,7 +261,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Non-capturing overlay demo - passive info panel that doesn't steal focus
-	pi.registerCommand("overlay-passive", {
+	candy.registerCommand("overlay-passive", {
 		description: "Test non-capturing overlay (passive info panel alongside active overlay)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			ctx.ui.setEditorText("");
@@ -273,7 +273,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Focus cycling demo - demonstrates focus(), input routing, per-panel dismissal, and rendering order
-	pi.registerCommand("overlay-focus", {
+	candy.registerCommand("overlay-focus", {
 		description: "Test focus cycling, input routing, dismissal, and rendering order with overlays",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			ctx.ui.setEditorText("");
@@ -285,7 +285,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Test multiple input panels with simulated streaming
-	pi.registerCommand("overlay-streaming", {
+	candy.registerCommand("overlay-streaming", {
 		description: "Multiple input panels with simulated streaming (Tab to cycle focus)",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			ctx.ui.setEditorText("");

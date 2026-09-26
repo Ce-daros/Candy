@@ -1,8 +1,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall, type Model } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@candy/agent-core";
+import { fauxAssistantMessage, fauxToolCall, type Model } from "@candy/ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, InputEvent } from "../../src/core/extensions/index.ts";
@@ -165,10 +165,10 @@ describe("AgentSession prompt characterization", () => {
 		const harness = await createHarness({
 			models: [{ id: "wide" }, { id: "strict" }],
 			extensionFactories: [
-				(pi) => {
-					pi.on("before_agent_start", async () => {
+				(candy) => {
+					candy.on("before_agent_start", async () => {
 						if (!strictModel) throw new Error("Expected strict model");
-						await pi.setModel(strictModel);
+						await candy.setModel(strictModel);
 					});
 				},
 			],
@@ -314,8 +314,8 @@ describe("AgentSession prompt characterization", () => {
 		const commandRuns: string[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.registerCommand("testcmd", {
+				(candy) => {
+					candy.registerCommand("testcmd", {
 						description: "Test command",
 						handler: async (args) => {
 							commandRuns.push(args);
@@ -342,9 +342,9 @@ describe("AgentSession prompt characterization", () => {
 		});
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					extensionApi = pi;
-					pi.registerCommand("testcmd", {
+				(candy) => {
+					extensionApi = candy;
+					candy.registerCommand("testcmd", {
 						description: "Test command",
 						handler: async (args) => {
 							resolveCommandRun(args);
@@ -379,8 +379,8 @@ describe("AgentSession prompt characterization", () => {
 		const inputEvents: InputEvent[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.on("input", (event) => {
+				(candy) => {
+					candy.on("input", (event) => {
 						inputEvents.push(event);
 					});
 				},
@@ -417,8 +417,8 @@ describe("AgentSession prompt characterization", () => {
 		const harness = await createHarness({
 			tools: [waitTool],
 			extensionFactories: [
-				(pi) => {
-					pi.on("input", (event) => {
+				(candy) => {
+					candy.on("input", (event) => {
 						inputEvents.push(event);
 					});
 				},
@@ -506,8 +506,8 @@ describe("AgentSession prompt characterization", () => {
 		const harness = await createHarness({
 			settings: { compaction: { keepRecentTokens: 1 } },
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => {
+				(candy) => {
+					candy.on("session_before_compact", async (event) => {
 						markCompactionStarted();
 						await compactionReleased;
 						return {

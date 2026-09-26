@@ -1,4 +1,4 @@
-import type { RgbColor, TUI } from "@earendil-works/pi-tui";
+import type { RgbColor, TUI } from "@candy/tui";
 import type { SettingsManager } from "../../../core/settings-manager.ts";
 import {
 	detectTerminalBackgroundFromEnv,

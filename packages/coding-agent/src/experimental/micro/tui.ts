@@ -1,4 +1,4 @@
-import type { AssistantMessage, AuthEvent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AuthEvent, ToolResultMessage, UserMessage } from "@candy/ai";
 import {
 	type Component,
 	Container,
@@ -17,7 +17,7 @@ import {
 	TruncatedText,
 	TuiAltScreen,
 	VStack,
-} from "@earendil-works/pi-tui";
+} from "@candy/tui";
 import { getAgentDir } from "../../config.ts";
 import { KeybindingsManager } from "../../core/keybindings.ts";
 import { createAllToolRenderers } from "../../core/tools/renderers/index.ts";

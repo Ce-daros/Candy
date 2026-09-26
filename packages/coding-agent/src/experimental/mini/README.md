@@ -19,7 +19,7 @@ two presentations to the same session; both see the same transcript, live.
 ```text
 tui        tui        tui          presentations: render, no agent state
   \         |         /
-   \        |        /             unix socket, ~/.pi/agent/experimental/mini.sock
+   \        |        /             unix socket, ~/.candy/agent/experimental/mini.sock
     \       |       /
         server                     routes calls, fans out events, spawns workers
        /        \

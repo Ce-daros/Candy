@@ -27,7 +27,7 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 		mkdirSync(skillDir, { recursive: true });
 		writeFileSync(
 			join(pkgDir, "package.json"),
-			JSON.stringify({ name: `fake-pkg-${name}`, version: "1.0.0", pi: { skills: [`skills/${name}`] } }, null, 2),
+			JSON.stringify({ name: `fake-pkg-${name}`, version: "1.0.0", candy: { skills: [`skills/${name}`] } }, null, 2),
 		);
 		writeFileSync(
 			join(skillDir, "SKILL.md"),
@@ -45,7 +45,7 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 	}
 
 	function createProjectSkill(name: string, description: string): string {
-		const skillDir = join(cwd, ".pi", "skills", name);
+		const skillDir = join(cwd, ".candy", "skills", name);
 		mkdirSync(skillDir, { recursive: true });
 		const skillPath = join(skillDir, "SKILL.md");
 		writeFileSync(skillPath, `---\nname: ${name}\ndescription: ${description}\n---\nProject skill content`);
@@ -53,7 +53,7 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 	}
 
 	function createSettingsWithPackage(pkgDir: string, scope: "user" | "project"): void {
-		const settingsDir = scope === "user" ? agentDir : join(cwd, ".pi");
+		const settingsDir = scope === "user" ? agentDir : join(cwd, ".candy");
 		mkdirSync(settingsDir, { recursive: true });
 		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify({ packages: [pkgDir] }, null, 2));
 	}

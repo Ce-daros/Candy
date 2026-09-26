@@ -8,7 +8,7 @@ import {
 	type Model,
 	normalizeContext,
 	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
+} from "@candy/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { ExtensionFactory } from "../src/core/extensions/types.ts";
@@ -277,8 +277,8 @@ describe("createAgentSession stream options", () => {
 			"openai-completions",
 			{},
 			{},
-			(pi) => {
-				pi.on("provider_stream_event", (event) => {
+			(candy) => {
+				candy.on("provider_stream_event", (event) => {
 					extensionEvents.push(event);
 				});
 			},
@@ -302,8 +302,8 @@ describe("createAgentSession stream options", () => {
 			"openai-completions",
 			{},
 			{ headers: { "x-explicit": "explicit" } },
-			(pi) => {
-				pi.on("before_provider_headers", (event) => {
+			(candy) => {
+				candy.on("before_provider_headers", (event) => {
 					event.headers["x-hook"] = [
 						event.headers["x-provider"],
 						event.headers["x-model"],

@@ -1,32 +1,32 @@
-# Pi
+# candy
 
-Pi is an extensible AI agent that works from your terminal. Give it a goal and a working folder, and it can inspect files, run commands, edit content, and work through multi-step tasks.
+candy is an extensible AI agent that works from your terminal. Give it a goal and a working folder, and it can inspect files, run commands, edit content, and work through multi-step tasks.
 
-Use Pi for software development, research notes, writing projects, data files, or hobby work. You can use Pi as is, prompt it to adapt itself to your workflow, or build other applications powered by Pi using the SDK.
+Use candy for software development, research notes, writing projects, data files, or hobby work. You can use candy as is, prompt it to adapt itself to your workflow, or build other applications powered by candy using the SDK.
 
-## Start using Pi
+## Start using candy
 
-New to Pi? Follow the [Quickstart](quickstart.md) to install Pi, connect a model, and complete your first task.
+New to candy? Follow the [Quickstart](quickstart.md) to install candy, connect a model, and complete your first task.
 
-If Pi is already installed, choose what you want to do:
+If candy is already installed, choose what you want to do:
 
-- [Use Pi interactively](usage.md) to add files, run commands, direct ongoing work, and export results.
+- [Use candy interactively](usage.md) to add files, run commands, direct ongoing work, and export results.
 - [Choose a model](models.md) or connect a subscription, API key, local model, or compatible endpoint.
 - [Continue or branch a session](sessions.md) to resume work or explore another approach without losing history.
-- [Configure Pi](configuration.md) for your preferences, working folders, instructions, and reusable resources.
-- [Understand how Pi works](how-pi-works.md), including tools, context, sessions, and the agent loop.
+- [Configure candy](configuration.md) for your preferences, working folders, instructions, and reusable resources.
+- [Understand how candy works](how-candy-works.md), including tools, context, sessions, and the agent loop.
 
-## Customize Pi
+## Customize candy
 
-Pi can reuse prompts, load specialized instructions, add executable integrations, change its terminal interface, connect model services, and distribute these resources as packages.
+candy can reuse prompts, load specialized instructions, add executable integrations, change its terminal interface, connect model services, and distribute these resources as packages.
 Use the [Quickstart customization chooser](quickstart.md#choose-how-to-customize-pi) to select the smallest mechanism that meets your need.
 
-## Automate or embed Pi
+## Automate or embed candy
 
 - Use [print mode](cli.md#invocation-and-output) for one-off and scripted tasks.
 - Use [JSON event stream mode](json.md) to consume structured events from one run.
-- Use [RPC mode](rpc.md) to control a separate Pi process.
-- Use the [TypeScript SDK](sdk.md) to run Pi inside an application.
+- Use [RPC mode](rpc.md) to control a separate candy process.
+- Use the [TypeScript SDK](sdk.md) to run candy inside an application.
 
 ## Find reference and setup information
 
@@ -36,4 +36,4 @@ For platform-specific help, see [Terminal Setup](terminal-setup.md), [Windows](w
 
 ## Work safely
 
-Pi's tools and extensions run with the permissions of the Pi process. Project trust controls which project resources Pi loads, but it does not sandbox tool calls. Review [Security](security.md) before using untrusted files, repositories, extensions, or unattended automation.
+candy's tools and extensions run with the permissions of the candy process. Project trust controls which project resources candy loads, but it does not sandbox tool calls. Review [Security](security.md) before using untrusted files, repositories, extensions, or unattended automation.

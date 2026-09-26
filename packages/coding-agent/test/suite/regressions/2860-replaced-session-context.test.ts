@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { fauxAssistantMessage, registerFauxProvider } from "@candy/ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../../../src/core/agent-session.ts";
 import {
@@ -59,8 +59,8 @@ describe("regression #2860: replaced session callbacks", () => {
 				modelRuntime,
 				resourceLoaderOptions: {
 					extensionFactories: [
-						(pi: ExtensionAPI) => {
-							pi.registerProvider(faux.getModel().provider, {
+						(candy: ExtensionAPI) => {
+							candy.registerProvider(faux.getModel().provider, {
 								baseUrl: faux.getModel().baseUrl,
 								apiKey: "faux-key",
 								api: faux.api,
@@ -75,7 +75,7 @@ describe("regression #2860: replaced session callbacks", () => {
 									maxTokens: registeredModel.maxTokens,
 								})),
 							});
-							extensionFactory(pi);
+							extensionFactory(candy);
 						},
 					],
 					noSkills: true,
@@ -150,23 +150,23 @@ describe("regression #2860: replaced session callbacks", () => {
 		let oldPi: ExtensionAPI | undefined;
 		let oldSessionFile: string | undefined;
 		let staleCtxThrows = false;
-		let stalePiThrows = false;
+		let staleCandyThrows = false;
 		let replacementSessionFile: string | undefined;
 		let instanceId = 0;
 		const { runtime } = await createRuntimeForTest(
-			(pi) => {
+			(candy) => {
 				const currentInstance = ++instanceId;
-				pi.on("session_start", () => {
+				candy.on("session_start", () => {
 					events.push(`start:${currentInstance}`);
 				});
-				pi.on("session_shutdown", () => {
+				candy.on("session_shutdown", () => {
 					events.push(`shutdown:${currentInstance}`);
 				});
-				pi.registerCommand("repro", {
+				candy.registerCommand("repro", {
 					description: "repro",
 					handler: async (_args, ctx) => {
 						oldCtx = ctx;
-						oldPi = pi;
+						oldPi = candy;
 						oldSessionFile = ctx.sessionManager.getSessionFile();
 						await ctx.newSession({
 							parentSession: oldSessionFile,
@@ -181,7 +181,7 @@ describe("regression #2860: replaced session callbacks", () => {
 								try {
 									oldPi?.sendUserMessage("stale message");
 								} catch {
-									stalePiThrows = true;
+									staleCandyThrows = true;
 								}
 								await replacedCtx.sendUserMessage("Hello from the new session!");
 							},
@@ -200,7 +200,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		expect(replacementSessionFile).toBeDefined();
 		expect(replacementSessionFile).not.toBe(oldSessionFile);
 		expect(staleCtxThrows).toBe(true);
-		expect(stalePiThrows).toBe(true);
+		expect(staleCandyThrows).toBe(true);
 		expect(
 			runtime.session.messages
 				.filter((message) => message.role !== "system")
@@ -210,8 +210,8 @@ describe("regression #2860: replaced session callbacks", () => {
 
 	it("supports withSession for fork", async () => {
 		const { runtime } = await createRuntimeForTest(
-			(pi) => {
-				pi.registerCommand("fork-it", {
+			(candy) => {
+				candy.registerCommand("fork-it", {
 					description: "fork-it",
 					handler: async (_args, ctx) => {
 						const leafId = ctx.sessionManager.getLeafId();
@@ -243,8 +243,8 @@ describe("regression #2860: replaced session callbacks", () => {
 	it("supports withSession for switchSession", async () => {
 		let targetSessionPath = "";
 		const { runtime } = await createRuntimeForTest(
-			(pi) => {
-				pi.registerCommand("switch-it", {
+			(candy) => {
+				candy.registerCommand("switch-it", {
 					description: "switch-it",
 					handler: async (_args, ctx) => {
 						await ctx.switchSession(targetSessionPath, {

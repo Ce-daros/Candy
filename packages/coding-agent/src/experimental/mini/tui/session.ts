@@ -12,9 +12,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { HarnessEvent } from "@earendil-works/pi-agent-core";
+import type { HarnessEvent } from "@candy/agent-core";
 // Narrow entry: the fold is one file, so a presentation never evaluates the harness barrel.
-import { reduceLaneSnapshot } from "@earendil-works/pi-agent-core/harness/runtime/reducer";
+import { reduceLaneSnapshot } from "@candy/agent-core/harness/runtime/reducer";
 import {
 	type AuthEventPayload,
 	Lane,

@@ -12,10 +12,10 @@
  * The generated prompt appears as a draft in the editor for review/editing.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { type Message, uuidv7 } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { BorderedLoader, convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@candy/agent-core";
+import { type Message, uuidv7 } from "@candy/ai";
+import type { ExtensionAPI, SessionEntry } from "@candy/coding-agent";
+import { BorderedLoader, convertToLlm, serializeConversation } from "@candy/coding-agent";
 
 const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
@@ -77,8 +77,8 @@ function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
 	return compactedBranch.map(entryToMessage).filter((message) => message !== undefined);
 }
 
-export default function (pi: ExtensionAPI) {
-	pi.registerCommand("handoff", {
+export default function (candy: ExtensionAPI) {
+	candy.registerCommand("handoff", {
 		description: "Transfer context to a new focused session",
 		handler: async (args, ctx) => {
 			if (ctx.mode !== "tui") {

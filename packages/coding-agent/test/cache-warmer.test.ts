@@ -6,8 +6,8 @@ import {
 	type ModelsSimpleStreamOptions,
 	normalizeContext,
 	type Usage,
-} from "@earendil-works/pi-ai";
-import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
+} from "@candy/ai";
+import { getBuiltinModel } from "@candy/ai/providers/all";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import {
@@ -129,7 +129,7 @@ describe("cache warming", () => {
 			getPromptCacheTtlMs(adaptiveModel, undefined),
 			getPromptCacheTtlMs(adaptiveModel, { cacheRetention: "long" }),
 			getPromptCacheTtlMs(adaptiveModel, { cacheRetention: "none" }),
-			getPromptCacheTtlMs(adaptiveModel, { env: { PI_CACHE_RETENTION: "long" } }),
+			getPromptCacheTtlMs(adaptiveModel, { env: { CANDY_CACHE_RETENTION: "long" } }),
 			getPromptCacheTtlMs(openaiModel, { cacheRetention: "long" }),
 			getPromptCacheTtlMs(unknownModel, undefined),
 		]).toEqual([300_000, 3_600_000, undefined, 3_600_000, 86_400_000, undefined]);
@@ -340,11 +340,11 @@ describe("ExtensionRunner.emitCacheWarmingDecision", () => {
 		const runtime = createExtensionRuntime();
 		const eventBus = createEventBus();
 		const factories: ExtensionFactory[] = [
-			(pi) => {
-				pi.on("cache_warming_decision", () => ({ action: "warm" }));
+			(candy) => {
+				candy.on("cache_warming_decision", () => ({ action: "warm" }));
 			},
-			(pi) => {
-				pi.on("cache_warming_decision", () => ({ action: "stop" }));
+			(candy) => {
+				candy.on("cache_warming_decision", () => ({ action: "stop" }));
 			},
 		];
 		const extensions = [];

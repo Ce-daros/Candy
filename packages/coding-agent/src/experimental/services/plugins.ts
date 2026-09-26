@@ -1,4 +1,4 @@
-import { type Context, defineService, type JsonValue } from "@earendil-works/chord";
+import { type Context, defineService, type JsonValue } from "@candy/chord";
 
 /** Server-built plugin generations available to presentations. */
 export interface PresentationPlugins {

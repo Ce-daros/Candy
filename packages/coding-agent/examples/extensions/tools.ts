@@ -5,39 +5,39 @@
  * Tool selection persists across session reloads and respects branch navigation.
  *
  * Usage:
- * 1. Copy this file to ~/.pi/agent/extensions/ or your project's .pi/extensions/
+ * 1. Copy this file to ~/.candy/agent/extensions/ or your project's .candy/extensions/
  * 2. Use /tools to open the tool selector
  */
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
-import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Container, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@candy/coding-agent";
+import { getSettingsListTheme } from "@candy/coding-agent";
+import { Container, type SettingItem, SettingsList } from "@candy/tui";
 
 // State persisted to session
 interface ToolsState {
 	enabledTools: string[];
 }
 
-export default function toolsExtension(pi: ExtensionAPI) {
+export default function toolsExtension(candy: ExtensionAPI) {
 	// Track enabled tools
 	let enabledTools: Set<string> = new Set();
 	let allTools: ToolInfo[] = [];
 
 	// Persist current state
 	function persistState() {
-		pi.appendEntry<ToolsState>("tools-config", {
+		candy.appendEntry<ToolsState>("tools-config", {
 			enabledTools: Array.from(enabledTools),
 		});
 	}
 
 	// Apply current tool selection
 	function applyTools() {
-		pi.setActiveTools(Array.from(enabledTools));
+		candy.setActiveTools(Array.from(enabledTools));
 	}
 
 	// Find the last tools-config entry in the current branch
 	function restoreFromBranch(ctx: ExtensionContext) {
-		allTools = pi.getAllTools();
+		allTools = candy.getAllTools();
 
 		// Get entries in current branch only
 		const branchEntries = ctx.sessionManager.getBranch();
@@ -59,12 +59,12 @@ export default function toolsExtension(pi: ExtensionAPI) {
 			applyTools();
 		} else {
 			// No saved state - sync with currently active tools
-			enabledTools = new Set(pi.getActiveTools());
+			enabledTools = new Set(candy.getActiveTools());
 		}
 	}
 
 	// Register /tools command
-	pi.registerCommand("tools", {
+	candy.registerCommand("tools", {
 		description: "Enable/disable tools",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
@@ -73,7 +73,7 @@ export default function toolsExtension(pi: ExtensionAPI) {
 			}
 
 			// Refresh tool list
-			allTools = pi.getAllTools();
+			allTools = candy.getAllTools();
 
 			await ctx.ui.custom((tui, theme, _kb, done) => {
 				// Build settings items for each tool
@@ -135,12 +135,12 @@ export default function toolsExtension(pi: ExtensionAPI) {
 	});
 
 	// Restore state on session start
-	pi.on("session_start", async (_event, ctx) => {
+	candy.on("session_start", async (_event, ctx) => {
 		restoreFromBranch(ctx);
 	});
 
 	// Restore state when navigating the session tree
-	pi.on("session_tree", async (_event, ctx) => {
+	candy.on("session_tree", async (_event, ctx) => {
 		restoreFromBranch(ctx);
 	});
 }

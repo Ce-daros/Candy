@@ -1,4 +1,4 @@
-import { type Context, defineService, type ReplicatedState } from "@earendil-works/chord";
+import { type Context, defineService, type ReplicatedState } from "@candy/chord";
 
 export interface KeyedProbe {
 	readonly state: ReplicatedState<{ value: string }>;

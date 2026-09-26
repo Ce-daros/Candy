@@ -1,6 +1,6 @@
-# Customize Pi with themes
+# Customize candy with themes
 
-Themes control the colors Pi uses in interactive mode and HTML exports. Pi includes `dark` and `light` themes. You can select one theme, follow your terminal's light or dark appearance, or create your own palette.
+Themes control the colors candy uses in interactive mode and HTML exports. candy includes `dark` and `light` themes. You can select one theme, follow your terminal's light or dark appearance, or create your own palette.
 
 <a id="selecting-a-theme"></a>
 
@@ -24,13 +24,13 @@ Automatic mode stores the light theme first and the dark theme second:
 }
 ```
 
-When automatic mode is active, Pi changes themes when the terminal reports an appearance change. Theme names cannot contain `/` because Pi reserves it for this setting format.
+When automatic mode is active, candy changes themes when the terminal reports an appearance change. Theme names cannot contain `/` because candy reserves it for this setting format.
 
 Use `--use-theme` to choose the initial theme for one invocation without changing the saved setting:
 
 ```bash
-pi --use-theme light
-pi --use-theme light/dark
+candy --use-theme light
+candy --use-theme light/dark
 ```
 
 See [CLI resources](cli.md#resources) for the command-line option.
@@ -39,20 +39,20 @@ See [CLI resources](cli.md#resources) for the command-line option.
 
 Copy one of the [built-in themes](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/src/modes/interactive/theme) or create a new JSON file conforming to the [schema](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json).
 
-1. Save the file as `<agent-dir>/themes/my-theme.json`. The agent directory defaults to `~/.pi/agent`.
+1. Save the file as `<agent-dir>/themes/my-theme.json`. The agent directory defaults to `~/.candy/agent`.
 2. Set its `name` to `my-theme`.
 3. Change values in `vars` and `colors`.
 4. Select `my-theme` through `/settings`.
 
-Use the theme name as the filename. Pi hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Run `/reload` after adding or changing a theme from any other source.
+Use the theme name as the filename. candy hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Run `/reload` after adding or changing a theme from any other source.
 
 ## Understand the theme file
 
 | Property | Required | Responsibility |
 |---|---|---|
-| `$schema` | No | Enables editor validation and completion against Pi's published schema. |
+| `$schema` | No | Enables editor validation and completion against candy's published schema. |
 | `name` | Yes | Identifies the theme in selectors and settings. It must be unique and cannot contain `/`. |
-| `appearance` | No | `"dark"` or `"light"`: the background the theme is designed for. Pi detects it from the theme colors when omitted. |
+| `appearance` | No | `"dark"` or `"light"`: the background the theme is designed for. candy detects it from the theme colors when omitted. |
 | `vars` | No | Defines reusable color values. Variables can reference other variables. |
 | `colors` | Yes | Assigns colors to terminal UI roles. The schema identifies required and optional roles. |
 | `export` | No | Overrides page and panel backgrounds in HTML exports. |
@@ -67,13 +67,13 @@ A color can be written in five forms:
 | Variable reference | `"primary"` | The value of an entry in `vars`. |
 | Terminal default | `""` | The terminal's default foreground or background color. |
 
-Terminal default colors render as the terminal's own colors. Where Pi needs a concrete value, such as HTML export or extension color math, it uses the default colors the terminal reports, or a black or white guess based on the theme's appearance.
+Terminal default colors render as the terminal's own colors. Where candy needs a concrete value, such as HTML export or extension color math, it uses the default colors the terminal reports, or a black or white guess based on the theme's appearance.
 
-Pi resolves chained variable references. A missing variable or circular reference makes the theme invalid. Pi uses truecolor when available, gamut-maps OKLCH to sRGB, and approximates colors for 256-color terminals. If colors differ from their source values, check your terminal's truecolor detection and contrast settings. See [Configure Your Terminal](terminal-setup.md#override-detected-capabilities).
+candy resolves chained variable references. A missing variable or circular reference makes the theme invalid. candy uses truecolor when available, gamut-maps OKLCH to sRGB, and approximates colors for 256-color terminals. If colors differ from their source values, check your terminal's truecolor detection and contrast settings. See [Configure Your Terminal](terminal-setup.md#override-detected-capabilities).
 
 Use the [theme JSON schema](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json) for the exact properties, required colors, and accepted value types.
 
-Pi reports invalid theme files during startup and `/reload`.
+candy reports invalid theme files during startup and `/reload`.
 
 ## Find the color to change
 
@@ -103,12 +103,12 @@ Five colors are optional and inherit another color when omitted:
 | `searchMatchText` | `text` |
 | `thinkingMax` | `thinkingXhigh` |
 
-If `export` colors are omitted, Pi derives HTML page and panel backgrounds from `userMessageBg`.
+If `export` colors are omitted, candy derives HTML page and panel backgrounds from `userMessageBg`.
 
 ## Load a theme from a project or package
 
-Place a project theme in `.pi/themes/`. Project themes load only after [project trust](security.md#understand-project-trust) is granted.
+Place a project theme in `.candy/themes/`. Project themes load only after [project trust](security.md#understand-project-trust) is granted.
 
-You can also load theme files and directories through the `themes` setting or distribute them in a Pi package. See [Configuration](configuration.md), [Settings](settings.md#resources), and [Pi Packages](packages.md).
+You can also load theme files and directories through the `themes` setting or distribute them in a candy package. See [Configuration](configuration.md), [Settings](settings.md#resources), and [candy Packages](packages.md).
 
-Each loaded theme must have a unique name. Pi reports duplicate names as resource collisions.
+Each loaded theme must have a unique name. candy reports duplicate names as resource collisions.

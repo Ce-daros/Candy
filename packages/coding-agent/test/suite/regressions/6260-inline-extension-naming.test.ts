@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import type { ExtensionAPI } from "../../../src/index.ts";
 
-const noop: (pi: ExtensionAPI) => void = () => {};
+const noop: (candy: ExtensionAPI) => void = () => {};
 
 describe("inline extension naming", () => {
 	const roots: string[] = [];

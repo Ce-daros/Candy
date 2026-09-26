@@ -1,5 +1,3 @@
-import { type Context, defineFacet, type Facet, type MutableReplicatedState } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
 	type AgentLane,
 	type HarnessEvent,
@@ -8,7 +6,9 @@ import {
 	type LaneWatchEvent,
 	reduceLaneSnapshot,
 	type WatchHandle,
-} from "@earendil-works/pi-agent-core";
+} from "@candy/agent-core";
+import { type Context, defineFacet, type Facet, type MutableReplicatedState } from "@candy/chord";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
 import { Transcript, type Transcript as TranscriptService, type TranscriptState } from "./transcript.ts";
 
 interface TranscriptRuntime {

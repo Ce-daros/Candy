@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@candy/agent-core";
 import {
 	type AssistantMessage,
 	createAssistantMessageEventStream,
@@ -9,7 +9,7 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 	type TranscriptContext,
-} from "@earendil-works/pi-ai";
+} from "@candy/ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateTokens } from "../../src/core/compaction/index.ts";
@@ -108,8 +108,8 @@ async function createAbortableCompactionHarness(): Promise<{
 	const harness = await createHarness({
 		settings: { compaction: { keepRecentTokens: 1 } },
 		extensionFactories: [
-			(pi) => {
-				pi.on("session_before_compact", async (event) => {
+			(candy) => {
+				candy.on("session_before_compact", async (event) => {
 					return await new Promise<{ cancel: true }>((resolve) => {
 						event.signal.addEventListener("abort", () => resolve({ cancel: true }), { once: true });
 						markCompactionStarted();
@@ -145,8 +145,8 @@ describe("AgentSession compaction characterization", () => {
 		const harness = await createHarness({
 			settings: { compaction: { keepRecentTokens: 1 } },
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", async (event) => ({
 						compaction: {
 							summary: "summary from extension",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -239,8 +239,8 @@ describe("AgentSession compaction characterization", () => {
 		const harness = await createHarness({
 			settings: { compaction: { keepRecentTokens: 1 } },
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", async (event) => ({
 						compaction: {
 							summary: "manual compacted",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -403,8 +403,8 @@ describe("AgentSession compaction characterization", () => {
 		}> = [];
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_compact_failed", async (event) => {
+				(candy) => {
+					candy.on("session_compact_failed", async (event) => {
 						failedEvents.push(event);
 					});
 				},
@@ -442,8 +442,8 @@ describe("AgentSession compaction characterization", () => {
 			models: [{ id: "faux-1", contextWindow: 1000, maxTokens: 100 }],
 			settings: { compaction: { keepRecentTokens: 1, reserveTokens: 0 } },
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", async (event) => ({
 						compaction: {
 							summary: "overflow compacted",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -500,8 +500,8 @@ describe("AgentSession compaction characterization", () => {
 				},
 				tools: [largeTool],
 				extensionFactories: [
-					(pi) => {
-						pi.on("session_before_compact", (event) => {
+					(candy) => {
+						candy.on("session_before_compact", (event) => {
 							order.push("compaction");
 							observedSettings.push(event.preparation.settings);
 							return {
@@ -571,8 +571,8 @@ describe("AgentSession compaction characterization", () => {
 			settings: { compaction: { enabled: true, reserveTokens: 400, keepRecentTokens: 1750 } },
 			tools: [largeTool],
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => {
+				(candy) => {
+					candy.on("session_before_compact", async (event) => {
 						markCompactionStarted();
 						await compactionReleased;
 						return {
@@ -629,8 +629,8 @@ describe("AgentSession compaction characterization", () => {
 			settings: { compaction: { enabled: true, reserveTokens: 400, keepRecentTokens: 1750 } },
 			tools: [terminatingTool],
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", (event) => ({
 						compaction: {
 							summary: "unexpected compaction",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -675,8 +675,8 @@ describe("AgentSession compaction characterization", () => {
 			models: [{ id: "faux-1", contextWindow: 1_000_000, maxTokens: 100 }],
 			settings: { compaction: { keepRecentTokens: 1, reserveTokens: 0 } },
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", async (event) => ({
 						compaction: {
 							summary: "overflow compacted",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -770,8 +770,8 @@ describe("AgentSession compaction characterization", () => {
 		const harness = await createHarness({
 			settings: { compaction: { keepRecentTokens: 1 } },
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", async (event) => ({
 						compaction: {
 							summary: "auto compacted",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -831,8 +831,8 @@ describe("AgentSession compaction characterization", () => {
 			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
 			models: [{ id: "faux-1", contextWindow: 1, maxTokens: 100 }],
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_before_compact", async (event) => ({
+				(candy) => {
+					candy.on("session_before_compact", async (event) => ({
 						compaction: {
 							summary: "successful overflow compacted",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,

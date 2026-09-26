@@ -6,8 +6,8 @@ import type {
 	Provider,
 	ProviderStreamOptions,
 	RefreshModelsContext,
-} from "@earendil-works/pi-ai";
-import { stream, streamSimple } from "@earendil-works/pi-ai/compat";
+} from "@candy/ai";
+import { stream, streamSimple } from "@candy/ai/compat";
 import {
 	LlamaClient,
 	type LlamaModelInfo,
@@ -52,7 +52,7 @@ async function routerAutoloadEnabled(
 	}
 }
 
-function toPiModel(model: LlamaModelInfo, serverUrl: string, props?: LlamaServerProps): Model<"openai-completions"> {
+function toCandyModel(model: LlamaModelInfo, serverUrl: string, props?: LlamaServerProps): Model<"openai-completions"> {
 	const reportedContextWindow = model.meta?.n_ctx ?? model.meta?.n_ctx_train;
 	const contextWindow = reportedContextWindow && reportedContextWindow > 0 ? reportedContextWindow : 128000;
 	const reasoning = props?.chat_template?.includes("enable_thinking") === true;
@@ -97,7 +97,7 @@ export function createLlamaProvider(): LlamaProviderController {
 	): void => {
 		models = catalog
 			.filter((model) => modelIsSelectable(model, options.routerAutoload === true))
-			.map((model) => toPiModel(model, serverUrl));
+			.map((model) => toCandyModel(model, serverUrl));
 	};
 
 	const provider: Provider<"openai-completions"> = {
@@ -180,9 +180,9 @@ export function createLlamaProvider(): LlamaProviderController {
 						// Only loaded models expose their template without side effects. Unloaded autoload presets
 						// would need to be loaded, while querying sleeping models may wake them. Those models remain
 						// unclassified until they are loaded or woken and a later catalog refresh discovers them.
-						if (model.status.value !== "loaded") return toPiModel(model, serverUrl);
+						if (model.status.value !== "loaded") return toCandyModel(model, serverUrl);
 						const props = await client.props({ model: model.id, signal: context.signal });
-						return toPiModel(model, serverUrl, props);
+						return toCandyModel(model, serverUrl, props);
 					}),
 			);
 			if (context.signal.aborted) return;

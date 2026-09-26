@@ -16,7 +16,7 @@ node --import ./packages/coding-agent/src/experimental/source-resolver.ts packag
 
 New sessions default to `openai-codex/gpt-5.6-sol`. `--continue` keeps the session's stored model and
 opens the newest session for the current working directory. Sessions live under
-`~/.pi/agent/experimental/micro-sessions/<cwd-hash>/`. Each session is a Pico3 `JsonlStorage`
+`~/.candy/agent/experimental/micro-sessions/<cwd-hash>/`. Each session is a Pico3 `JsonlStorage`
 directory containing `main.jsonl` and its sticky/task sidecars. A filesystem lock prevents two
 processes from owning one session concurrently.
 

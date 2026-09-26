@@ -1,14 +1,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@earendil-works/pi-agent-core";
-import {
-	type AssistantMessage,
-	type AssistantMessageEvent,
-	EventStream,
-	getModel,
-	type Model,
-} from "@earendil-works/pi-ai/compat";
+import { Agent } from "@candy/agent-core";
+import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel, type Model } from "@candy/ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
@@ -261,9 +255,9 @@ describe("RPC prompt response semantics", () => {
 			withAuth: false,
 			responseDelayMs: 0,
 			extensionsResult: await createTestExtensionsResult([
-				(pi) => {
-					pi.registerCommand("handled", { handler: async () => {} });
-					pi.on("input", (event) => {
+				(candy) => {
+					candy.registerCommand("handled", { handler: async () => {} });
+					candy.on("input", (event) => {
 						if (event.text === "handled input") return { action: "handled" };
 					});
 				},
@@ -333,10 +327,10 @@ describe("RPC prompt response semantics", () => {
 				withAuth: true,
 				responseDelayMs: 500,
 				extensionsResult: await createTestExtensionsResult([
-					(pi) => {
-						pi.on("input", (event) => {
+					(candy) => {
+						candy.on("input", (event) => {
 							if (event.text === "A" && event.source === "rpc") {
-								pi.sendUserMessage("B", { deliverAs: type === "steer" ? "steer" : "followUp" });
+								candy.sendUserMessage("B", { deliverAs: type === "steer" ? "steer" : "followUp" });
 								return { action: "handled" };
 							}
 						});
@@ -379,8 +373,8 @@ describe("RPC prompt response semantics", () => {
 			withAuth: false,
 			responseDelayMs: 0,
 			extensionsResult: await createTestExtensionsResult([
-				(pi) => {
-					pi.on("input", (event) => {
+				(candy) => {
+					candy.on("input", (event) => {
 						if (event.text === "A") return { action: "transform", text: "B" };
 					});
 				},

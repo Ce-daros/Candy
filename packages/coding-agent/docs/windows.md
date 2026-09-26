@@ -1,6 +1,6 @@
-# Run Pi on Windows
+# Run candy on Windows
 
-Run Pi either as a native Windows process or inside Windows Subsystem for Linux (WSL). Native Windows uses Git Bash by default for Bash commands and can optionally expose PowerShell to the model. Pi inside WSL uses the Linux environment and its Bash installation.
+Run candy either as a native Windows process or inside Windows Subsystem for Linux (WSL). Native Windows uses Git Bash by default for Bash commands and can optionally expose PowerShell to the model. candy inside WSL uses the Linux environment and its Bash installation.
 
 Follow the main [Quickstart](quickstart.md) to install and authenticate Pi. Use this page to choose and configure its command environment.
 
@@ -16,25 +16,25 @@ Follow the main [Quickstart](quickstart.md) to install and authenticate Pi. Use 
 
 For most native Windows users, installing [Git for Windows](https://git-scm.com/download/win) is sufficient.
 
-Pi resolves Bash in this order:
+candy resolves Bash in this order:
 
-1. `shellPath` from `~/.pi/agent/settings.json`
+1. `shellPath` from `~/.candy/agent/settings.json`
 2. Git Bash under `Program Files` or `Program Files (x86)`
 3. `bash.exe` on `PATH`, including Cygwin, MSYS2, or legacy WSL Bash
 
-Start Pi and enter this command to verify the shell:
+Start candy and enter this command to verify the shell:
 
 ```text
 !printf 'Bash is working\n'
 ```
 
-If Pi cannot find Bash, it reports the locations it checked. Install Git for Windows, put another Bash executable on `PATH`, or configure `shellPath`.
+If candy cannot find Bash, it reports the locations it checked. Install Git for Windows, put another Bash executable on `PATH`, or configure `shellPath`.
 
 ## Let the model use PowerShell
 
 The optional `powershell` tool runs commands through `pwsh.exe` when available, then falls back to Windows PowerShell. It starts PowerShell with `-NoProfile -NonInteractive -ExecutionPolicy Bypass`. Administrator-enforced execution policies can still take precedence.
 
-To replace the model-facing `bash` tool with `powershell`, add this to `~/.pi/agent/settings.json`:
+To replace the model-facing `bash` tool with `powershell`, add this to `~/.candy/agent/settings.json`:
 
 ```json
 {
@@ -42,13 +42,13 @@ To replace the model-facing `bash` tool with `powershell`, add this to `~/.pi/ag
 }
 ```
 
-Restart Pi, then ask it to run a harmless PowerShell command. The `!` and `!!` editor commands continue to use Bash. The `powershell` tool is available only when Pi runs as a native Windows process.
+Restart candy, then ask it to run a harmless PowerShell command. The `!` and `!!` editor commands continue to use Bash. The `powershell` tool is available only when candy runs as a native Windows process.
 
 See [Settings](settings.md#tools) for other tool combinations.
 
 ## Use a custom Bash executable
 
-Set `shellPath` when Bash is installed somewhere Pi does not discover automatically:
+Set `shellPath` when Bash is installed somewhere candy does not discover automatically:
 
 ```json
 {
@@ -62,4 +62,4 @@ See [Configure shell commands](shell-aliases.md) for command prefixes, aliases, 
 
 ## Configure Windows Terminal
 
-Windows Terminal reserves or rewrites some modified keys. See [Windows Terminal](terminal-setup.md#windows-terminal) to configure `Shift+Enter` and `Alt+Enter`, and [Keybindings](keybindings.md) for Pi's Windows and WSL shortcut defaults.
+Windows Terminal reserves or rewrites some modified keys. See [Windows Terminal](terminal-setup.md#windows-terminal) to configure `Shift+Enter` and `Alt+Enter`, and [Keybindings](keybindings.md) for candy's Windows and WSL shortcut defaults.

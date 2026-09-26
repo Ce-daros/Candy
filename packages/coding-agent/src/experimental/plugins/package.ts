@@ -1,13 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { bundleFacetPackage } from "@earendil-works/chord/bundler";
-import {
-	FACET_BUNDLE_MANIFEST_FILE,
-	type FacetBundleArtifact,
-	readFacetBundleArtifact,
-} from "@earendil-works/chord/node";
-import type { ServerId } from "@earendil-works/pi-protocol";
+import { bundleFacetPackage } from "@candy/chord/bundler";
+import { FACET_BUNDLE_MANIFEST_FILE, type FacetBundleArtifact, readFacetBundleArtifact } from "@candy/chord/node";
+import type { ServerId } from "@candy/protocol";
 
 const PLUGIN_PACKAGE_PROFILE_VERSION = 1;
 const DEFAULT_PLUGIN_FACETS = Object.freeze({ session: "src/session.ts", tui: "src/tui.ts" });

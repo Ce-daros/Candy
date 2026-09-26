@@ -79,12 +79,12 @@ describe("formatResumeCommand", () => {
 		const sessionManager = createSessionManager({
 			sessionFile,
 			sessionId: "test-session",
-			sessionDir: "/tmp/custom pi sessions",
+			sessionDir: "/tmp/custom candy sessions",
 			usesDefaultSessionDir: false,
 		});
 
 		expect(formatResumeCommand(sessionManager)).toBe(
-			`${APP_NAME} --session-dir '/tmp/custom pi sessions' --session test-session`,
+			`${APP_NAME} --session-dir '/tmp/custom candy sessions' --session test-session`,
 		);
 	});
 
@@ -94,12 +94,12 @@ describe("formatResumeCommand", () => {
 		const sessionManager = createSessionManager({
 			sessionFile,
 			sessionId: "test-session",
-			sessionDir: "/tmp/custom pi's sessions",
+			sessionDir: "/tmp/custom candy's sessions",
 			usesDefaultSessionDir: false,
 		});
 
 		expect(formatResumeCommand(sessionManager)).toBe(
-			`${APP_NAME} --session-dir '/tmp/custom pi'\\''s sessions' --session test-session`,
+			`${APP_NAME} --session-dir '/tmp/custom candy'\\''s sessions' --session test-session`,
 		);
 	});
 

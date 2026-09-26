@@ -3,9 +3,9 @@ import type {
 	AgentHarnessToolInvocation,
 	ExecutionEnv,
 	ExecutionToolContext,
-} from "@earendil-works/pi-agent-core";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
-import type { JsonValue, ToolDeclaration, ToolResult } from "@earendil-works/pi-agent-core/experimental/pico3";
+} from "@candy/agent-core";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@candy/agent-core";
+import type { JsonValue, ToolDeclaration, ToolResult } from "@candy/agent-core/experimental/pico3";
 import type { Static, TSchema } from "typebox";
 import type { ModelToolMetadata } from "./models.ts";
 

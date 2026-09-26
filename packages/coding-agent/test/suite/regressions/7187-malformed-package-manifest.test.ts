@@ -24,7 +24,7 @@ describe("issue #7187 malformed package manifest", () => {
 				JSON.stringify({
 					name: "bad-package",
 					version: "1.0.0",
-					pi: {
+					candy: {
 						skills: "./skills",
 						prompts: ["./prompts"],
 					},

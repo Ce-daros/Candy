@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@candy/agent-core";
 import {
 	fauxAssistantMessage,
 	fauxToolCall,
@@ -9,8 +9,8 @@ import {
 	getCurrentSystemPrompt,
 	getSystemMessageText,
 	type TranscriptContext,
-} from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
+} from "@candy/ai";
+import { getModel } from "@candy/ai/compat";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
@@ -111,8 +111,8 @@ describe("system prompt updates", () => {
 
 	test("a forced prompt is sent as the leading prompt for the run and never recorded", async () => {
 		let turn = 0;
-		const extension: ExtensionFactory = (pi) => {
-			pi.on("before_agent_start", (event) => {
+		const extension: ExtensionFactory = (candy) => {
+			candy.on("before_agent_start", (event) => {
 				if (++turn === 3) event.systemPromptOptions.sections.plan_mode = "Plan only.";
 				return turn === 2 || turn === 3 ? { systemPrompt: "Exact prompt." } : undefined;
 			});
@@ -168,9 +168,9 @@ describe("system prompt updates", () => {
 	});
 
 	test("setActiveTools emits prompt sections and tool changes before the next request", async () => {
-		const extension: ExtensionFactory = (pi) => {
+		const extension: ExtensionFactory = (candy) => {
 			for (const name of ["first", "second"]) {
-				pi.registerTool({
+				candy.registerTool({
 					name,
 					label: name,
 					description: `${name} description`,
@@ -233,9 +233,9 @@ describe("system prompt updates", () => {
 	});
 
 	test("setActiveTools in before_agent_start controls the same request", async () => {
-		const extension: ExtensionFactory = (pi) => {
+		const extension: ExtensionFactory = (candy) => {
 			for (const name of ["first", "second"]) {
-				pi.registerTool({
+				candy.registerTool({
 					name,
 					label: name,
 					description: `${name} description`,
@@ -244,8 +244,8 @@ describe("system prompt updates", () => {
 				});
 			}
 			let turn = 0;
-			pi.on("before_agent_start", () => {
-				if (turn++ === 1) pi.setActiveTools(["second"]);
+			candy.on("before_agent_start", () => {
+				if (turn++ === 1) candy.setActiveTools(["second"]);
 			});
 		};
 		const harness = await createHarness({ extensionFactories: [extension], initialActiveToolNames: ["first"] });

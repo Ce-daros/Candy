@@ -1,22 +1,22 @@
 # Configure your terminal
 
-Most modern terminals work with Pi without additional setup. Use this page when modified keys, scrolling, links, images, colors, or input-method editor (IME) positioning do not behave as expected.
+Most modern terminals work with candy without additional setup. Use this page when modified keys, scrolling, links, images, colors, or input-method editor (IME) positioning do not behave as expected.
 
-Pi uses extended-key protocols so terminals can distinguish combinations such as `Shift+Enter` and `Alt+Enter` from plain `Enter`. Terminal proxies, multiplexers, and built-in IDE terminals can change or discard that information.
+candy uses extended-key protocols so terminals can distinguish combinations such as `Shift+Enter` and `Alt+Enter` from plain `Enter`. Terminal proxies, multiplexers, and built-in IDE terminals can change or discard that information.
 
 ## Troubleshooting
 
 | Symptom | Start here |
 |---|---|
-| `Shift+Enter` submits instead of inserting a line | Your terminal's section below; for tmux, see [Run Pi in tmux](tmux.md) |
+| `Shift+Enter` submits instead of inserting a line | Your terminal's section below; for tmux, see [Run candy in tmux](tmux.md) |
 | `Alt+Enter` does not queue a follow-up | [WezTerm](#wezterm), [Alacritty](#alacritty), or [Windows Terminal](#windows-terminal) |
 | Fullscreen scrolling is unusually slow | [iTerm2](#iterm2) |
 | Links work but show no hover preview | [Ghostty](#ghostty) |
 | Inline images or colors are not detected | [Override detected capabilities](#override-detected-capabilities) |
 | An IME candidate window appears in the wrong place | [WezTerm](#wezterm) or [IntelliJ IDEA](#intellij-idea-integrated-terminal) |
-| Modified keys fail only inside tmux | [Run Pi in tmux](tmux.md) |
+| Modified keys fail only inside tmux | [Run candy in tmux](tmux.md) |
 
-Use `/hotkeys` to inspect Pi's active shortcuts. See [Keybindings](keybindings.md) to change them.
+Use `/hotkeys` to inspect candy's active shortcuts. See [Keybindings](keybindings.md) to change them.
 
 ## Kitty
 
@@ -28,7 +28,7 @@ Regular terminal mode works without additional configuration.
 
 ### Fix slow fullscreen scrolling
 
-In fullscreen mode, Pi owns the viewport, so iTerm2 sends mouse-wheel reports instead of scrolling native terminal history. Fast trackpad gestures can then move only about one line at a time.
+In fullscreen mode, candy owns the viewport, so iTerm2 sends mouse-wheel reports instead of scrolling native terminal history. Fast trackpad gestures can then move only about one line at a time.
 
 To change this behavior:
 
@@ -40,9 +40,9 @@ This is an iTerm2-wide setting and can also change native trackpad scrolling. Th
 
 ## Apple Terminal
 
-Pi enables enhanced key reporting when available. If Terminal.app still sends plain Return for `Shift+Enter`, Pi uses a local macOS modifier fallback and treats it as `Shift+Enter`.
+candy enables enhanced key reporting when available. If Terminal.app still sends plain Return for `Shift+Enter`, candy uses a local macOS modifier fallback and treats it as `Shift+Enter`.
 
-The fallback works only when Pi runs on the same Mac as Terminal.app. It cannot inspect the local modifier state when Pi runs on another machine over SSH.
+The fallback works only when candy runs on the same Mac as Terminal.app. It cannot inspect the local modifier state when candy runs on another machine over SSH.
 
 ## Ghostty
 
@@ -60,11 +60,11 @@ Older Claude Code configurations may contain:
 keybind = shift+enter=text:\n
 ```
 
-This sends a raw linefeed, which Pi cannot distinguish from `Ctrl+J`. Remove the mapping if an older Claude Code installation is the only reason you added it. Pi already binds `Ctrl+J` as a newline alternative, so the mapping may appear to work while still preventing Pi and tmux from receiving a real `Shift+Enter` event.
+This sends a raw linefeed, which candy cannot distinguish from `Ctrl+J`. Remove the mapping if an older Claude Code installation is the only reason you added it. candy already binds `Ctrl+J` as a newline alternative, so the mapping may appear to work while still preventing candy and tmux from receiving a real `Shift+Enter` event.
 
 ### Open links in fullscreen mode
 
-Links remain clickable in fullscreen mode, but Ghostty does not show its normal hover underline or URL preview while Pi captures mouse input. Hold `Shift+Command` on macOS or `Shift+Ctrl` on Linux to use Ghostty's native link handling.
+Links remain clickable in fullscreen mode, but Ghostty does not show its normal hover underline or URL preview while candy captures mouse input. Hold `Shift+Command` on macOS or `Shift+Ctrl` on Linux to use Ghostty's native link handling.
 
 ## WezTerm
 
@@ -79,7 +79,7 @@ return config
 
 ### Forward Alt+Enter on macOS
 
-WezTerm binds `Option+Enter` to fullscreen by default on macOS. To use it for Pi's follow-up queue, add this entry to your `config.keys` table:
+WezTerm binds `Option+Enter` to fullscreen by default on macOS. To use it for candy's follow-up queue, add this entry to your `config.keys` table:
 
 ```lua
 {
@@ -106,18 +106,18 @@ return config
 
 ### Position an IME candidate window in WSL
 
-If CJK IME candidates do not follow Pi's text cursor in WSL, show the hardware cursor:
+If CJK IME candidates do not follow candy's text cursor in WSL, show the hardware cursor:
 
 ```bash
-export PI_HARDWARE_CURSOR=1
-pi
+export CANDY_HARDWARE_CURSOR=1
+candy
 ```
 
-You can instead set `showHardwareCursor` to `true` in Pi settings.
+You can instead set `showHardwareCursor` to `true` in candy settings.
 
 ## Alacritty
 
-Alacritty normally reports `Shift+Enter`. On macOS, `Option+Enter` can arrive as plain `Enter`. Add this to `~/.config/alacritty/alacritty.toml` to forward it to Pi:
+Alacritty normally reports `Shift+Enter`. On macOS, `Option+Enter` can arrive as plain `Enter`. Add this to `~/.config/alacritty/alacritty.toml` to forward it to candy:
 
 ```toml
 [[keyboard.bindings]]
@@ -166,7 +166,7 @@ Add these bindings to Zed's `keymap.json`:
 
 ## Windows Terminal
 
-Windows Terminal uses Pi's Windows and WSL shortcut defaults. See [Keybindings](keybindings.md) for the complete list.
+Windows Terminal uses candy's Windows and WSL shortcut defaults. See [Keybindings](keybindings.md) for the complete list.
 
 ### Forward Shift+Enter
 
@@ -183,9 +183,9 @@ Fully close and reopen Windows Terminal, then verify that `Shift+Enter` inserts 
 
 ### Use Alt+Enter for follow-ups
 
-Windows Terminal binds `Alt+Enter` to fullscreen by default. Pi therefore uses `Ctrl+Q` for follow-ups on Windows and WSL.
+Windows Terminal binds `Alt+Enter` to fullscreen by default. candy therefore uses `Ctrl+Q` for follow-ups on Windows and WSL.
 
-To use `Alt+Enter` instead, configure Windows Terminal to forward the key and bind `app.message.followUp` to `alt+enter` in Pi's `keybindings.json`. See [Keybindings](keybindings.md#assign-keybindings).
+To use `Alt+Enter` instead, configure Windows Terminal to forward the key and bind `app.message.followUp` to `alt+enter` in candy's `keybindings.json`. See [Keybindings](keybindings.md#assign-keybindings).
 
 ## xfce4-terminal and Terminator
 
@@ -195,24 +195,24 @@ Use a terminal with modern extended-key support when you need those shortcuts, s
 
 ## IntelliJ IDEA integrated terminal
 
-IntelliJ IDEA's built-in terminal cannot reliably distinguish `Shift+Enter` from plain `Enter`. Use `Ctrl+J` for a newline or run Pi in a terminal with modern extended-key support.
+IntelliJ IDEA's built-in terminal cannot reliably distinguish `Shift+Enter` from plain `Enter`. Use `Ctrl+J` for a newline or run candy in a terminal with modern extended-key support.
 
 If an IME candidate window does not follow the text cursor, show the hardware cursor:
 
 ```bash
-export PI_HARDWARE_CURSOR=1
-pi
+export CANDY_HARDWARE_CURSOR=1
+candy
 ```
 
 ## Override detected capabilities
 
-Pi automatically detects OSC 8 hyperlinks, inline image protocols, and truecolor support. A terminal proxy or multiplexer can make that detection inaccurate.
+candy automatically detects OSC 8 hyperlinks, inline image protocols, and truecolor support. A terminal proxy or multiplexer can make that detection inaccurate.
 
 | Capability | Environment variable | Setting |
 |---|---|---|
-| Hyperlinks | `PI_HYPERLINKS=1\|0\|auto` | `terminal.hyperlinks: true\|false\|"auto"` |
-| Inline images | `PI_IMAGE_PROTOCOL=kitty\|iterm2\|none\|auto` | `terminal.images: "kitty"\|"iterm2"\|false\|"auto"` |
-| Truecolor | `PI_TRUE_COLOR=1\|0\|auto` | `terminal.trueColor: true\|false\|"auto"` |
+| Hyperlinks | `CANDY_HYPERLINKS=1\|0\|auto` | `terminal.hyperlinks: true\|false\|"auto"` |
+| Inline images | `CANDY_IMAGE_PROTOCOL=kitty\|iterm2\|none\|auto` | `terminal.images: "kitty"\|"iterm2"\|false\|"auto"` |
+| Truecolor | `CANDY_TRUE_COLOR=1\|0\|auto` | `terminal.trueColor: true\|false\|"auto"` |
 
 Settings take precedence over environment variables. An unset value or `auto` preserves automatic detection.
 
