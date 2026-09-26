@@ -19,6 +19,7 @@ import {
 	getWordSegmenter,
 	isWhitespaceChar,
 	sliceByColumn,
+	truncateToWidth,
 	visibleWidth,
 } from "../utils.ts";
 import { findWordBackward, findWordForward } from "../word-navigation.ts";
@@ -240,8 +241,15 @@ export interface EditorTheme {
 }
 
 export interface EditorOptions {
+	minContentLines?: number;
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
+	/**
+	 * Prefix drawn on content lines (never on the horizontal borders), e.g. "│ ".
+	 * Clipped when the terminal is too narrow to hold it plus a content column and the cursor.
+	 */
+	leftGutter?: string;
+	rightGutter?: string;
 }
 
 const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -306,6 +314,9 @@ export class Editor implements Component, Focusable {
 	protected tui: TUI;
 	private theme: EditorTheme;
 	private paddingX: number = 0;
+	private leftGutter: string = "";
+	private rightGutter: string = "";
+	private minContentLines: number = 1;
 
 	// Store last render geometry for cursor navigation and mouse hit-testing.
 	private lastWidth: number = 80;
@@ -378,6 +389,9 @@ export class Editor implements Component, Focusable {
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
 		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
+		this.leftGutter = options.leftGutter ?? "";
+		this.rightGutter = options.rightGutter ?? "";
+		this.minContentLines = Math.max(1, Math.floor(options.minContentLines ?? 1));
 	}
 
 	/** Set of currently valid paste IDs, for marker-aware segmentation. */
@@ -388,6 +402,14 @@ export class Editor implements Component, Focusable {
 	/** Segment text with paste-marker awareness, only merging markers with valid IDs. */
 	private segment(text: string, mode: "word" | "grapheme"): Iterable<Intl.SegmentData> {
 		return segmentWithMarkers(text, mode === "word" ? wordSegmenter : graphemeSegmenter, this.validPasteIds());
+	}
+
+	/** Left gutter clipped so it always leaves room for one content column plus the cursor. */
+	private gutterFor(width: number): string {
+		if (!this.leftGutter) return "";
+		const gutterWidth = Math.min(visibleWidth(this.leftGutter), Math.max(0, width - 2));
+		if (gutterWidth === visibleWidth(this.leftGutter)) return this.leftGutter;
+		return truncateToWidth(this.leftGutter, gutterWidth, "");
 	}
 
 	getPaddingX(): number {
@@ -518,9 +540,16 @@ export class Editor implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
-		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+		const gutter = this.gutterFor(width);
+		const gutterWidth = visibleWidth(gutter);
+		const rightGutter = width - gutterWidth >= 3 ? this.rightGutter : "";
+		const rightWidth = visibleWidth(rightGutter);
+		// The vertical gutters are part of the frame, so they share its color.
+		const coloredGutter = gutter ? this.borderColor(gutter) : "";
+		const coloredRightGutter = rightGutter ? this.borderColor(rightGutter) : "";
+		const maxPadding = Math.max(0, Math.floor((width - gutterWidth - rightWidth - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
-		const contentWidth = Math.max(1, width - paddingX * 2);
+		const contentWidth = Math.max(1, width - gutterWidth - rightWidth - paddingX * 2);
 
 		// Layout width: with padding the cursor can overflow into it,
 		// without padding we reserve 1 column for the cursor.
@@ -553,7 +582,7 @@ export class Editor implements Component, Focusable {
 
 		// Get visible lines slice
 		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
-		this.renderedVisibleLineCount = visibleLines.length;
+		this.renderedVisibleLineCount = Math.max(visibleLines.length, this.minContentLines);
 
 		const result: string[] = [];
 		const leftPadding = " ".repeat(paddingX);
@@ -607,7 +636,10 @@ export class Editor implements Component, Focusable {
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+			result.push(`${coloredGutter}${leftPadding}${displayText}${padding}${lineRightPadding}${coloredRightGutter}`);
+		}
+		for (let i = visibleLines.length; i < this.minContentLines; i++) {
+			result.push(`${coloredGutter}${" ".repeat(width - gutterWidth - rightWidth)}${coloredRightGutter}`);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)
@@ -622,7 +654,7 @@ export class Editor implements Component, Focusable {
 			for (const line of autocompleteResult) {
 				const lineWidth = visibleWidth(line);
 				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
-				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+				result.push(`${coloredGutter}${leftPadding}${line}${linePadding}${rightPadding}${coloredRightGutter}`);
 			}
 		}
 
@@ -630,6 +662,8 @@ export class Editor implements Component, Focusable {
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		const gutterWidth = visibleWidth(this.gutterFor(event.width));
+		const rightWidth = event.width - gutterWidth >= 3 ? visibleWidth(this.rightGutter) : 0;
 		const autocompleteStartRow = this.renderedVisibleLineCount + 2;
 		if (
 			this.autocompleteState &&
@@ -637,12 +671,12 @@ export class Editor implements Component, Focusable {
 			event.y >= autocompleteStartRow &&
 			event.y < autocompleteStartRow + this.renderedAutocompleteHeight
 		) {
-			const maxPadding = Math.max(0, Math.floor((event.width - 1) / 2));
+			const maxPadding = Math.max(0, Math.floor((event.width - gutterWidth - rightWidth - 1) / 2));
 			const paddingX = Math.min(this.paddingX, maxPadding);
-			const contentWidth = Math.max(1, event.width - paddingX * 2);
+			const contentWidth = Math.max(1, event.width - gutterWidth - rightWidth - paddingX * 2);
 			const result = this.autocompleteList.handleMouse?.({
 				...event,
-				x: event.x - paddingX,
+				x: event.x - gutterWidth - paddingX,
 				y: event.y - autocompleteStartRow,
 				width: contentWidth,
 				height: this.renderedAutocompleteHeight,
@@ -664,9 +698,9 @@ export class Editor implements Component, Focusable {
 		const logicalLine = this.state.lines[visualLine.logicalLine] ?? "";
 		const chunkEnd = visualLine.startCol + visualLine.length;
 		const chunk = logicalLine.slice(visualLine.startCol, chunkEnd);
-		const maxPadding = Math.max(0, Math.floor((event.width - 1) / 2));
+		const maxPadding = Math.max(0, Math.floor((event.width - gutterWidth - rightWidth - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
-		const targetColumn = Math.max(0, event.x - paddingX);
+		const targetColumn = Math.max(0, event.x - gutterWidth - paddingX);
 		let visibleColumn = 0;
 		let targetIndex = chunk.length;
 		let lastGraphemeIndex = 0;

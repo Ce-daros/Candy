@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { type AutocompleteProvider, CombinedAutocompleteProvider } from "../src/autocomplete.ts";
 import { Editor, wordWrapLine } from "../src/components/editor.ts";
-import type { TUI } from "../src/tui.ts";
+import type { TUI, TuiMouseEvent } from "../src/tui.ts";
 import { TuiMainScreen } from "../src/tui-main-screen.ts";
 import { visibleWidth } from "../src/utils.ts";
 import { defaultEditorTheme } from "./test-themes.ts";
@@ -871,6 +871,66 @@ describe("Editor component", () => {
 				contentLines = lines.slice(1, -1);
 				assert.strictEqual(contentLines.length, 2, "Should wrap to 2 content lines");
 			}
+		});
+	});
+
+	describe("Left gutter", () => {
+		function mouseClick(x: number, width: number): TuiMouseEvent {
+			return {
+				type: "click",
+				button: "left",
+				x,
+				y: 1,
+				screenX: x,
+				screenY: 1,
+				width,
+				height: 24,
+				shift: false,
+				alt: false,
+				ctrl: false,
+				clickCount: 1,
+			};
+		}
+
+		it("draws the gutter on content lines but not on the borders", () => {
+			const width = 20;
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { leftGutter: "│ " });
+			editor.setText("hello");
+			const lines = editor.render(width);
+
+			for (const line of lines) {
+				assert.strictEqual(visibleWidth(line), width);
+			}
+			assert.ok(!stripVTControlCharacters(lines[0]!).startsWith("│"));
+			assert.ok(stripVTControlCharacters(lines[1]!).startsWith("│ hello"));
+			assert.ok(!stripVTControlCharacters(lines.at(-1)!).startsWith("│"));
+		});
+
+		it("clips the gutter instead of overflowing narrow terminals", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { leftGutter: "│ " });
+			editor.setText("hello");
+
+			for (const width of [2, 3, 5]) {
+				for (const line of editor.render(width)) {
+					assert.ok(visibleWidth(line) <= width, `width ${width} produced line width ${visibleWidth(line)}`);
+				}
+			}
+
+			// Width 3 leaves two columns for content and the cursor, so the trailing
+			// gutter space is dropped but the vertical bar stays.
+			assert.strictEqual(stripVTControlCharacters(editor.render(3)[1]!).startsWith("│"), true);
+			assert.strictEqual(stripVTControlCharacters(editor.render(3)[1]!).startsWith("│ "), false);
+		});
+
+		it("offsets mouse clicks by the gutter width", () => {
+			const width = 20;
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { leftGutter: "│ " });
+			editor.setText("abcdef");
+			editor.render(width);
+
+			assert.strictEqual(editor.handleMouse(mouseClick(4, width))?.handled, true);
+			editor.handleInput("X");
+			assert.strictEqual(editor.getText(), "abXcdef");
 		});
 	});
 
