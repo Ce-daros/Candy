@@ -595,9 +595,9 @@ Copy (under `packages/agent/src/harness/` unless noted):
 
 Depend on, as packages (they are not the old harness):
 
-- `@earendil-works/chord` Context types and `@earendil-works/chord/context` helpers (1, 6, 8, 19)
-- `@earendil-works/chord/delta` (15, 16: preview/watch only; not storage)
-- `@earendil-works/pi-ai`: `faux` provider for tests, `utils/estimate` for thresholds; SystemMessage and
+- `@candy/chord` Context types and `@candy/chord/context` helpers (1, 6, 8, 19)
+- `@candy/chord/delta` (15, 16: preview/watch only; not storage)
+- `@candy/ai`: `faux` provider for tests, `utils/estimate` for thresholds; SystemMessage and
   messages-only adapter behavior depend on the verified PR #9116/#9117 target above (4, 9, 12, 20)
 
 Read before writing the equivalent, then close the file:

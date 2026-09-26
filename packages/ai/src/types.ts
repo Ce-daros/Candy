@@ -1,4 +1,4 @@
-import type { TelemetryContext } from "@earendil-works/pi-telemetry";
+import type { TelemetryContext } from "@candy/telemetry";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
 import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
 import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
@@ -8,7 +8,7 @@ import type { MistralOptions } from "./api/mistral-conversations.ts";
 import type { OpenAICodexResponsesOptions } from "./api/openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./api/openai-responses.ts";
-import type { PiMessagesOptions } from "./api/pi-messages.ts";
+import type { CandyMessagesOptions } from "./api/pi-messages.ts";
 import type { AssistantMessageDiagnostic } from "./utils/diagnostics.ts";
 import type { AssistantMessageEventStream } from "./utils/event-stream.ts";
 
@@ -111,7 +111,7 @@ export type CacheRetention = "none" | "short" | "long";
 
 /**
  * Best-effort prompt cache lifetime in seconds for each retention tier a request can ask for.
- * A missing tier means the lifetime is unknown; pi does not warm such caches.
+ * A missing tier means the lifetime is unknown; candy does not warm such caches.
  */
 export type ModelPromptCache = Partial<Record<Exclude<CacheRetention, "none">, number>>;
 
@@ -191,7 +191,7 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	 */
 	onResponse?: (response: ProviderResponse, model: Model<Api>) => void | Promise<void>;
 	/**
-	 * Optional observer for each parsed provider stream event before Pi normalization.
+	 * Optional observer for each parsed provider stream event before candy normalization.
 	 * Event data is adapter-owned and must be treated as read-only.
 	 * Adapter support is explicit; unsupported adapters do not invoke it.
 	 */
@@ -200,7 +200,7 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	/**
 	 * Arbitrary sampling parameters merged into the request body as-is, after the named request
 	 * fields, so keys here override them. Lets custom OpenAI-compatible servers (llama.cpp, vLLM,
-	 * SGLang, ...) receive parameters pi does not model, e.g. `top_p`, `top_k`, `min_p`,
+	 * SGLang, ...) receive parameters candy does not model, e.g. `top_p`, `top_k`, `min_p`,
 	 * `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
 	 * OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
 	 */
@@ -264,7 +264,7 @@ export interface ApiOptionsMap {
 	"google-vertex": GoogleVertexOptions;
 	"mistral-conversations": MistralOptions;
 	"bedrock-converse-stream": BedrockOptions;
-	"pi-messages": PiMessagesOptions;
+	"pi-messages": CandyMessagesOptions;
 }
 
 /**
@@ -760,7 +760,7 @@ export interface OpenAICompletionsCompat {
 	supportsReasoningEffort?: boolean;
 	/** Whether the provider supports `stream_options: { include_usage: true }` for token usage in streaming responses. Default: true. */
 	supportsUsageInStreaming?: boolean;
-	/** Whether streamed responses include `finish_reason`. When false, pi infers `stop` or `toolUse` when the stream ends. Default: true. */
+	/** Whether streamed responses include `finish_reason`. When false, candy infers `stop` or `toolUse` when the stream ends. Default: true. */
 	supportsFinishReason?: boolean;
 	/** Which field to use for max tokens. Default: auto-detected from URL. */
 	maxTokensField?: "max_completion_tokens" | "max_tokens";
@@ -1082,7 +1082,7 @@ export interface Model<TApi extends Api> extends BaseModel<TApi> {
 	type?: "chat";
 	reasoning: boolean;
 	/**
-	 * Maps pi thinking levels to provider/model-specific values.
+	 * Maps candy thinking levels to provider/model-specific values.
 	 * Missing keys use provider defaults. null marks a level as unsupported.
 	 */
 	thinkingLevelMap?: ThinkingLevelMap;

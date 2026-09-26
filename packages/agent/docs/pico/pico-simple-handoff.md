@@ -79,7 +79,7 @@ them to Pico. External wire/plugin boundaries validate before entering this laye
 Use Chord's `Context` directly:
 
 ```ts
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@candy/chord";
 ```
 
 Every asynchronous public, runtime, storage-adapter, provider, environment, hook and wait operation takes

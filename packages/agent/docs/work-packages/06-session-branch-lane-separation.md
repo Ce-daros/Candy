@@ -594,7 +594,7 @@ Update every current supporting document whose public names or ordering statemen
 - `docs/values.md` — Session-global value/list surface, Branch tip addresses, and no `SessionTree`;
 - `docs/telemetry.md` — receiver inventory and Session mutation spans;
 - `docs/plugins.md` — remove `sessionTree`; the plugin's AgentLane directly supplies Branch methods, while a scoped Session-data facet supplies global value/list/name/label/query methods and excludes raw `mutate`, `idGenerator`, close, and backend authority;
-- `docs/extensions/pi-extensions-v2.md` and `docs/extensions/pi-server-artifact/index.md` where examples/types use the changed surfaces;
+- `docs/extensions/pi-extensions-v2.md` and `docs/extensions/server-artifact/index.md` where examples/types use the changed surfaces;
 - completed WP00–WP04 only where a forward-looking/current-state statement would otherwise claim the removed API still exists.
 
 Retain the current remote Session mutation contract and update it from a named lane line to the sole Session line: worker `RemoteSession.mutate()` performs keyless begin RPC → local callback with remote reads/one remote commit → local post-commit publication → end RPC. The server holds the Session line through commit and publication until end acknowledgment. Disconnect/timeout terminates the scope under the existing hosting policy. Update the current remote protocol/vertical-slice documentation and every implementation/test present on dev; do not delete or defer this behavior.

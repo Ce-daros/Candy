@@ -1,6 +1,6 @@
 # pico
 
-Durable agent harness for pi: one session file, any number of conversations, every piece of work
+Durable agent harness for candy: one session file, any number of conversations, every piece of work
 recorded as a task that survives a crash, and a view any UI can render.
 
 **Note**: this guide is about using the harness. `pico-simple-handoff.md` is the sole normative
@@ -110,8 +110,8 @@ code, a private typed invocation identity. It is not model context. No casts or 
 are needed. Pure accessors, synchronous registrations and methods inside a transaction take no Call.
 
 ```typescript
-import type { Call } from '@earendil-works/pi-agent';
-import { BACKGROUND_CONTEXT, withCancel } from '@earendil-works/chord/context';
+import type { Call } from '@candy/agent';
+import { BACKGROUND_CONTEXT, withCancel } from '@candy/chord/context';
 
 const call: Call = BACKGROUND_CONTEXT; // host call, without cancellation
 const { context: waitingCall, cancel } = withCancel(call);
@@ -135,17 +135,17 @@ something a facade or type can prevent.
 ## Installation
 
 ```bash
-npm install @earendil-works/pi-agent
+npm install @candy/agent
 ```
 
 ## Quick Start
 
 ```typescript
-import { Harness, JsonlStorage, systemSections, type Call } from '@earendil-works/pi-agent';
-import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import { readTool, writeTool, bashTool } from '@earendil-works/pi-agent/tools';
-import { generationKind } from '@earendil-works/pi-agent/kinds';
-import { builtinModels } from '@earendil-works/pi-ai/providers/all';
+import { Harness, JsonlStorage, systemSections, type Call } from '@candy/agent';
+import { BACKGROUND_CONTEXT } from '@candy/chord/context';
+import { readTool, writeTool, bashTool } from '@candy/agent/tools';
+import { generationKind } from '@candy/agent/kinds';
+import { builtinModels } from '@candy/ai/providers/all';
 
 const call: Call = BACKGROUND_CONTEXT;
 
@@ -1182,7 +1182,7 @@ to the UI as it happens, is bounded once in one place, and settles into a `ToolO
 the transcript, the model and every renderer share. Failure is a throw; the harness sets `isError`.
 
 ```typescript
-import { Type, type Tool } from '@earendil-works/pi-agent';
+import { Type, type Tool } from '@candy/agent';
 
 export const countLinesTool: Tool<{ i: string; path: string; pattern?: string }, { lines: number; matching: number }> = {
   name: 'count_lines',

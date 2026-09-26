@@ -1,7 +1,7 @@
 # Facet Service RPC
 
 Chord owns the application-neutral service semantics and pluggable strict-JSON connection
-boundary. Pi owns the concrete wire envelope, routing, attachment state, and error adapters
+boundary. candy owns the concrete wire envelope, routing, attachment state, and error adapters
 described here. The current implementation treats `JsonValue` as a static contract and defers
 runtime rejection of unsupported values to the concrete serializer.
 

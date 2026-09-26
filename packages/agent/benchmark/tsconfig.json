@@ -3,8 +3,8 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"paths": {
-			"@earendil-works/pi-ai": ["../../ai/src/index.ts"],
-			"@earendil-works/pi-ai/*": ["../../ai/src/*"]
+			"@candy/ai": ["../../ai/src/index.ts"],
+			"@candy/ai/*": ["../../ai/src/*"]
 		}
 	},
 	"include": ["./**/*.ts", "../src/**/*.ts"]

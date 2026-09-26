@@ -2,7 +2,7 @@
 
 ## Goal
 
-Harden the implementation in `harness-v3.zip` without reverting its core design. Return a new standalone zip for review. Do not integrate it into the pi repository yet; the accepted implementation will later be incorporated under `packages/agent/src/harness/pico3/`.
+Harden the implementation in `harness-v3.zip` without reverting its core design. Return a new standalone zip for review. Do not integrate it into the candy repository yet; the accepted implementation will later be incorporated under `packages/agent/src/harness/pico3/`.
 
 Baseline archive:
 

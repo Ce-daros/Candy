@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyImmutable } from "@earendil-works/chord/delta";
+import { applyImmutable } from "@candy/chord/delta";
 import { test } from "vitest";
 import { track } from "../../../src/harness/pico3/legacy-tracker.ts";
 

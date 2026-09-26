@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { ToolCall } from "@earendil-works/pi-ai";
+import type { ToolCall } from "@candy/ai";
 import { Type } from "typebox";
 import { onTestFinished, test } from "vitest";
 import { applyEnvelope, kinds } from "../../../src/harness/pico3/harness.ts";

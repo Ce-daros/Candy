@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { withAbortSignal } from "@earendil-works/chord/context";
+import { withAbortSignal } from "@candy/chord/context";
 import { onTestFinished, test } from "vitest";
 import { Harness, kinds } from "../../../src/harness/pico3/harness.ts";
 import { MemoryStorage } from "../../../src/harness/pico3/memory.ts";

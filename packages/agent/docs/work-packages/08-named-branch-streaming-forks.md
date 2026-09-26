@@ -42,7 +42,7 @@ This deliberately makes branch forks of data-only Branches — including legacy 
 
 **Both scopes**: copy `pi.session.name`; copy `pi.entry.label` values only for copied entries; exclude the usage ledger, `pi.result`, all `pi.op.*`, all `pi.pending.*` (entries, tool checkpoints, assistant frames), and every trace of open-operation state. Destination usage totals start at zero; destination `messageCount` equals the number of copied message entries, exactly as current conformance already proves. Destination metadata records `parentSessionId = source.id`. Sequence preservation is not part of the fork contract: backends may allocate destination-local sequences for copied and transformed writes, provided destination sequence and list-cursor semantics remain internally valid.
 
-**Application values/lists (outside the reserved `pi`/`pi.*` namespaces)**: tree scope copies every current scalar value and every surviving list element; branch scope copies none. A `seq <= tipSeq` cutoff is forbidden as "historical reconstruction" — it is provably not one:
+**Application values/lists (outside the reserved `candy`/`pi.*` namespaces)**: tree scope copies every current scalar value and every surviving list element; branch scope copies none. A `seq <= tipSeq` cutoff is forbidden as "historical reconstruction" — it is provably not one:
 
 ```text
 Scalar: TX[seq 10: set my-app.state = v1] · TX[seq 12: insert e1] ·
@@ -67,8 +67,8 @@ All namespace fork knowledge lives in one core module beside `session/values.ts`
 - `pi.session.name` → copy.
 - `pi.entry.label` → copy iff the keyed entry is copied.
 - `pi.branch.tip`, `pi.lane.config`, `pi.lane.state` → structured lane actions; the scope-specific rules (branch keeps only the named lane and rewrites its tip; lane state is always replaced with fresh idle state; tree keeps all) live in one shared driver consumed by all backends.
-- The exact namespace `pi` and any other `pi.*` namespace → the fork **fails**, but only when current surviving state exists at fork time (a current scalar row or a surviving list element). Historical writes later replaced or deleted are absent from current state on every backend and must not alone fail a JSONL fork — behavior is backend-equivalent. Introducing a new built-in namespace without declaring its fork semantics must break fork tests, not silently copy or drop state.
-- Neither `pi` nor `pi.*` → application: copy on tree, exclude on branch. The only built-in list namespace (`pi.pending.assistant_frame`) excludes; application lists follow the application rule.
+- The exact namespace `candy` and any other `pi.*` namespace → the fork **fails**, but only when current surviving state exists at fork time (a current scalar row or a surviving list element). Historical writes later replaced or deleted are absent from current state on every backend and must not alone fail a JSONL fork — behavior is backend-equivalent. Introducing a new built-in namespace without declaring its fork semantics must break fork tests, not silently copy or drop state.
+- Neither `candy` nor `pi.*` → application: copy on tree, exclude on branch. The only built-in list namespace (`pi.pending.assistant_frame`) excludes; application lists follow the application rule.
 
 The driver exposes a streaming shape — accept one committed value/list write (or current row), emit zero or more destination writes, `finish()` emits fresh idle lane states and the rewritten branch tip. Entry-copy membership is a backend-supplied predicate so each backend uses its own index. `createForkSnapshot`, `forkSnapshotWrites`, `ForkSourceSnapshot`, `ForkDestinationSnapshot`, and the `entriesComplete` escape hatch are deleted.
 
@@ -91,7 +91,7 @@ Forks must stream source writes rather than materializing full source snapshot a
 
 - *External/closed/live-worker source:* WP07 path — `openReadOnly` on the exact canonical path, one deferred read transaction, session row and storage version validated inside it.
 - *Same-repository open source:* open the independent read-only connection **first**, then enqueue a short boundary callback on the source Storage `commitQueue` whose only job is to `BEGIN` and establish the independent reader's snapshot (issue a trivial read) before releasing the queue. Do not begin a read transaction on the source writer connection and then release its queue, and do not hold the queue for the copy duration.
-- *Stage:* while the source reader remains open, stream selected entries `ORDER BY seq` and classifier-selected current scalar/list rows (SQL-level namespace prefilters matching the classifier — enumerated built-in namespaces plus the application predicate excluding exact `pi` and `pi.%` — with each row still passing the classifier) into the temporary staging database in bounded batches. Branch scope enumerates the ancestry through the `branch_entries` segment chain up to the selected entry and answers `entryId` and label membership through that index, not an in-RAM id set. Later source commits use the original writer connection and may complete while staging streams, in **both** layouts, because stage writes target another file.
+- *Stage:* while the source reader remains open, stream selected entries `ORDER BY seq` and classifier-selected current scalar/list rows (SQL-level namespace prefilters matching the classifier — enumerated built-in namespaces plus the application predicate excluding exact `candy` and `pi.%` — with each row still passing the classifier) into the temporary staging database in bounded batches. Branch scope enumerates the ancestry through the `branch_entries` segment chain up to the selected entry and answers `entryId` and label membership through that index, not an in-RAM id set. Later source commits use the original writer connection and may complete while staging streams, in **both** layouts, because stage writes target another file.
 - *Publish:* close/commit the source read transaction, then stream the stage into one destination `BEGIN IMMEDIATE` transaction — entries in source order maintaining the destination branch index and `message_count` incrementally, then values/list elements — and delete the staging database in `finally` on success and failure. The destination allocates its own valid sequence range. Shared-container destinations write only the new session's rows.
 
 ### 1.4 Preserved WP07 behavior
@@ -116,7 +116,7 @@ Destination id reservation across create/open/fork/delete, no-create opens, fore
 ## 3. Required result
 
 1. `ForkOptions` and validation exactly as §1.1; all rejection paths create no destination file, database rows, or reserved-but-leaked ids.
-2. The closed classifier/driver of §1.2, exported from core and consumed by all three backends; unknown reserved namespaces (exact `pi` or undeclared `pi.*`) fail the fork only when current surviving state exists, identically on every backend.
+2. The closed classifier/driver of §1.2, exported from core and consumed by all three backends; unknown reserved namespaces (exact `candy` or undeclared `pi.*`) fail the fork only when current surviving state exists, identically on every backend.
 3. Streaming procedures of §1.3 on all three backends; `createForkSnapshot`/`captureForkSource`/`snapshot()` fork plumbing and their exports removed from `session/index.ts` and the sqlite-node import surface.
 4. Valid destination-local sequence allocation on every backend; identical logical destination state across backends for identical sources (conformance).
 5. JSONL source non-mutation, including torn-tail sources and legacy v3 sources.
@@ -169,7 +169,7 @@ Update fork option literals, add large-source fork benchmarks (tree and branch),
 
 - tree fork copies every non-`pi.*` scalar and every surviving list element; a list deleted-then-reappended in the source reproduces only survivors.
 - branch fork copies no application values/lists (pin the §1.1 scalar and list traces as regression cases: post-fork-point overwrite and delete-destroyed elements must not resurface under any implementation).
-- current surviving state in an unknown reserved namespace (exact `pi` or an undeclared `pi.*` scalar or surviving list element) fails the fork on every backend; the same namespace **set then deleted** before the fork fails no backend — including JSONL, where the dead history remains as physical lines and the disk fold must classify it as absent. Construct both cases via raw committed writes.
+- current surviving state in an unknown reserved namespace (exact `candy` or an undeclared `pi.*` scalar or surviving list element) fails the fork on every backend; the same namespace **set then deleted** before the fork fails no backend — including JSONL, where the dead history remains as physical lines and the disk fold must classify it as absent. Construct both cases via raw committed writes.
 
 ### Sequence allocation
 
@@ -230,7 +230,7 @@ WP08 is complete when:
 - `ForkOptions` is exactly the §1.1 union with the stated validation, on all three backends;
 - branch forks require a complete configured source AgentLane and enforce ancestry membership; tree forks copy the complete immutable tree, every tip, configured and data-only Branches;
 - tree forks carry all current application values and surviving list elements; branch forks carry none;
-- one closed core classifier owns every namespace disposition; unknown reserved namespaces (exact `pi` or undeclared `pi.*`) fail forks exactly when current surviving state exists, equivalently on all backends;
+- one closed core classifier owns every namespace disposition; unknown reserved namespaces (exact `candy` or undeclared `pi.*`) fail forks exactly when current surviving state exists, equivalently on all backends;
 - all supported fork paths — including closed legacy v3 sources — stream source writes without materializing full source snapshot arrays, proven by instrumented-reader tests over large fixtures; JSONL may retain structural indexes and legacy compaction context in memory; forking an open legacy-v3 source is explicitly unsupported (clear rejection) until an ordinary commit upgrades it, not handled by an in-memory exception;
 - JSONL forks never mutate their source, including torn-tail and legacy v3 sources, and JSONL destinations contain only current selected rows;
 - SQLite forks stage through a temporary on-disk database (source reader → stage while open, stage → one destination `BEGIN IMMEDIATE` after reader close, stage deleted in `finally`), with the independent-reader boundary design and concurrent later writer commits proven in both layouts, preserving all WP07 behavior;

@@ -1109,7 +1109,7 @@ await harness.setValue(entryLabel(42), "before migration");
 ```
 
 Namespace must be non-empty; namespace/key cannot contain NUL; the empty key is legal. Equal
-(scope, kind, namespace, key) tuples name the same address within the receiver's scope. `pi` and
+(scope, kind, namespace, key) tuples name the same address within the receiver's scope. `candy` and
 `pi.*` are reserved for core. Constructing the same address with incompatible value types is a
 programming defect, not a reason for a runtime registry. Value types are determined by the address
 (`NoInfer<T>` on writes); wrong scope, wrong kind and wrong value type are compile-time errors.
@@ -2372,7 +2372,7 @@ An interrupted request with no provider report has unknown cost; no exactly-once
 Reject stale/repeated outcomes instead of appending duplicate usage. Usage is an ordinary main
 session list; no separate ledger authority/file or redundant full usage payload in task patches.
 
-**Telemetry** uses pi's callback `TelemetryContext` (typed schemas, no second contract). Spans and
+**Telemetry** uses candy's callback `TelemetryContext` (typed schemas, no second contract). Spans and
 their parents follow the procedure nesting:
 ```
 harness.open · harness.drive (per pass)

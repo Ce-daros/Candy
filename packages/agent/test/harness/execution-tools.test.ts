@@ -1,4 +1,4 @@
-import type { JsonObject } from "@earendil-works/pi-ai";
+import type { JsonObject } from "@candy/ai";
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { BACKGROUND_CONTEXT } from "../../src/harness/context.ts";

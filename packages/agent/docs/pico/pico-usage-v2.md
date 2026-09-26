@@ -40,9 +40,9 @@ wait removes the waiter; it never cancels durable work.
 ## Quick start
 
 ```typescript
-import { Harness, JsonlStorage, systemSections } from '@earendil-works/pi-agent/pico';
-import { builtinModels } from '@earendil-works/pi-ai/providers/all';
-import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
+import { Harness, JsonlStorage, systemSections } from '@candy/agent/pico';
+import { builtinModels } from '@candy/ai/providers/all';
+import { BACKGROUND_CONTEXT as ctx } from '@candy/chord/context';
 
 const storage = await JsonlStorage.open('./session.jsonl', ctx);
 const h = await Harness.open(storage, {
@@ -246,8 +246,8 @@ exactly what its source saw.
 Sections are typed tokens with a renderer. A `systemInstructions` hook edits a draft before each request:
 
 ```typescript
-import { defineSystemSection, systemSections } from '@earendil-works/pi-agent/pico';
-import { generationKind } from '@earendil-works/pi-agent/pico/kinds';
+import { defineSystemSection, systemSections } from '@candy/agent/pico';
+import { generationKind } from '@candy/agent/pico/kinds';
 
 const rules = defineSystemSection<string[]>({
   key: 'myplugin.rules',
@@ -390,7 +390,7 @@ export interface PlanService {
 export const PlanService = defineService<PlanService>('myplugin.plan');
 
 // session.ts: runs beside the Harness; Pico is the durable truth, the replicated state is a projection
-import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
+import { BACKGROUND_CONTEXT } from '@candy/chord/context';
 export default defineFacet({
   id: 'myplugin/session',
   setup(env) {
@@ -455,7 +455,7 @@ when it lands.
 ## Plugin state
 
 ```typescript
-import { conversationValue, conversationList, sessionValue } from '@earendil-works/pi-agent/pico';
+import { conversationValue, conversationList, sessionValue } from '@candy/agent/pico';
 
 type Move = { readonly x: number; readonly y: number };
 const planMode = conversationValue<boolean>('plan.mode', { rewind: true });
@@ -553,7 +553,7 @@ registers harness-wide. Plugin kinds use the generic form with their own point t
 failure behaviour come from the point:
 
 ```typescript
-import { toolKind } from '@earendil-works/pi-agent/pico/kinds';   // only for the generic form
+import { toolKind } from '@candy/agent/pico/kinds';   // only for the generic form
 
 // conversation-scoped, named
 c.hook.beforeTool(async ({ call }, { conversationId }, ctx) => {   // a `block` from an earlier handler already stopped the chain
@@ -600,7 +600,7 @@ type-checks against your declaration.
 ## Writing entry kinds
 
 ```typescript
-import { defineEntry, type EntryBase, type EntryData, type ModelProjection } from '@earendil-works/pi-agent/pico';
+import { defineEntry, type EntryBase, type EntryData, type ModelProjection } from '@candy/agent/pico';
 
 type NoteEntry = EntryBase & EntryData<{ text: string }>;
 export const noteKind = defineEntry<NoteEntry>('myplugin.note');
@@ -630,7 +630,7 @@ plugin loses typed access, not context behaviour: facets are stored.
 ## Writing task kinds
 
 ```typescript
-import { defineTask } from '@earendil-works/pi-agent/pico';
+import { defineTask } from '@candy/agent/pico';
 
 type Input = { readonly about: Id; readonly at: number };
 type Checkpoint = { readonly phase: 'firing'; readonly key: string };
@@ -686,7 +686,7 @@ A kind may declare hook points. It decides when to run them; handlers registered
 this kind and point are invoked outside the line:
 
 ```typescript
-import { defineHookPoint } from '@earendil-works/pi-agent/pico';
+import { defineHookPoint } from '@candy/agent/pico';
 
 export const deployKind = defineTask<DeployInput, DeployCheckpoint, DeployResult, DeployFailure, null>()({
   kind: 'myplugin.deploy',

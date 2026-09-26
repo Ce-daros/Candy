@@ -13,9 +13,9 @@ import {
 	writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { isBase, type Op } from "@earendil-works/chord/delta";
+import type { Context } from "@candy/chord";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
+import { isBase, type Op } from "@candy/chord/delta";
 import { MemoryStorage } from "./memory.ts";
 import type { DocRef, Id, Seq, Storage, Write } from "./types.ts";
 

@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { AssistantMessage, AssistantMessageEvent, ToolCall } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent, ToolCall } from "@candy/ai";
+import type { Context } from "@candy/chord";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
 import { Type } from "typebox";
 import {
 	kinds as builtin,

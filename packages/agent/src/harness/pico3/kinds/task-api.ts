@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@candy/chord";
 import type { AnyKind, Id, JsonValue, Runtime, Task, TaskRef, ToolApi } from "../types.ts";
 
 export function taskApi(task: Task, runtime: Runtime): ToolApi {

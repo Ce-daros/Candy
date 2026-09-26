@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@candy/chord";
 import type { Completion, Kind, KindConfig, ProcessSpec, ProcessStatus, Runtime, Step, Task } from "../types.ts";
 
 export type JobInput = { [K in keyof ProcessSpec]: ProcessSpec[K] } & {

@@ -11,7 +11,7 @@ The invocation context must solve two related problems without `AsyncLocalStorag
 1. preserve correct telemetry parentage through concurrent asynchronous work;
 2. carry an `AbortSignal`, when one exists, that an RPC adapter can map to request cancellation.
 
-This work must reuse `@earendil-works/pi-telemetry`. It must not introduce another span abstraction.
+This work must reuse `@candy/telemetry`. It must not introduce another span abstraction.
 
 ## Context model
 
@@ -216,7 +216,7 @@ RPC cancellation and telemetry propagation are independent control-plane channel
 
 Receiver methods now use a required trailing `Context`. Concrete implementations, calls, callback adapters, and object-literal façades have been migrated rather than relying only on interface assignability.
 
-`TODO_CONTEXT` remains a temporary migration marker, not a semantic root. Current uses cluster at unresolved transport and worker boundaries that cannot yet reconstruct a caller context, notably Pi protocol request ingress and worker RPC ingress. `BACKGROUND_CONTEXT` means intentionally start without a caller.
+`TODO_CONTEXT` remains a temporary migration marker, not a semantic root. Current uses cluster at unresolved transport and worker boundaries that cannot yet reconstruct a caller context, notably candy protocol request ingress and worker RPC ingress. `BACKGROUND_CONTEXT` means intentionally start without a caller.
 
 Continue to inventory `TODO_CONTEXT` separately. Replace each transport-boundary use only when the boundary can construct a request-local cancellation context and telemetry parent; substituting `BACKGROUND_CONTEXT` would hide unfinished propagation. Compilation still does not prove telemetry or cancellation correctness.
 

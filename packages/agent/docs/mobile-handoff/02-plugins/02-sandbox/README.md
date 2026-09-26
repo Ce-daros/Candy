@@ -1,6 +1,6 @@
 # Facet sandbox — isolated-vm
 
-**Unmodified pi facet code running in a V8 isolate with no ambient authority.**
+**Unmodified candy facet code running in a V8 isolate with no ambient authority.**
 Full JIT, so ~1.8× native rather than the 8–17× a WASM interpreter costs.
 
 ```bash
@@ -159,4 +159,4 @@ enforced above, but not the same category of claim.
   directions, identity across crossings, callables, error propagation, reference
   release under GC, prototype pollution both ways, budgets, async, disposal.
 - `src/bench.ts` — the numbers above.
-- `src/markdown-bundle.js` — the real pi `Markdown` component, esbuild-bundled.
+- `src/markdown-bundle.js` — the real candy `Markdown` component, esbuild-bundled.

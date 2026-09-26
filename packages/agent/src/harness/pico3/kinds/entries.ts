@@ -1,4 +1,4 @@
-import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolResultMessage, UserMessage } from "@candy/ai";
 import type { Entry, EntryKind, Id, JsonValue, SystemMessage, ToolControl } from "../types.ts";
 
 export type UserEntry = Entry & { kind: "pi.user"; model: [UserMessage]; data?: { continuation: true; from: Id } };

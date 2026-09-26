@@ -60,7 +60,7 @@ export function projectForkCurrentStateWrite(
 			return undefined;
 	}
 	if (write.namespace.startsWith("pi.op.") || write.namespace.startsWith("pi.pending.")) return undefined;
-	if (write.namespace === "pi" || write.namespace.startsWith("pi.")) {
+	if (write.namespace === "candy" || write.namespace.startsWith("pi.")) {
 		throw new Error(`Unknown reserved fork namespace: ${write.namespace}`);
 	}
 	return plan.scope === "tree" ? write : undefined;

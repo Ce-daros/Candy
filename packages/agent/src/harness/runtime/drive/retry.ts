@@ -1,4 +1,4 @@
-import { type RetryPolicy, retryDelayMs } from "@earendil-works/pi-ai";
+import { type RetryPolicy, retryDelayMs } from "@candy/ai";
 
 export function retryNotBefore(
 	policy: Pick<RetryPolicy, "baseDelayMs" | "maxAgentDelayMs">,

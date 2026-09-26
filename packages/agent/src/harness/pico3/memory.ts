@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import { applyImmutable, isBase, type Op } from "@earendil-works/chord/delta";
+import type { Context } from "@candy/chord";
+import { applyImmutable, isBase, type Op } from "@candy/chord/delta";
 import type {
 	Conversation,
 	DocRef,

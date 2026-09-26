@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { withAbortSignal } from "@earendil-works/chord/context";
+import { withAbortSignal } from "@candy/chord/context";
 import { Type } from "typebox";
 import { onTestFinished, test } from "vitest";
 import { applyEnvelope, type ConversationView, kinds } from "../../../src/harness/pico3/harness.ts";

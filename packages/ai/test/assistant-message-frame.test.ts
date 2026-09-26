@@ -200,7 +200,7 @@ describe("assistant message frames", () => {
 					id: "fc",
 					call_id: "call",
 					name: "lookup",
-					arguments: '{"query":"pi"}',
+					arguments: '{"query":"candy"}',
 				},
 			} as ResponseStreamEvent,
 			{
@@ -497,16 +497,16 @@ describe("assistant message frames", () => {
 			},
 			{ type: "thinking_start", contentIndex: 2, content: { type: "thinking", thinking: "" } },
 			{ type: "text_delta", contentIndex: 0, delta: "answer" },
-			{ type: "toolcall_delta", contentIndex: 1, delta: '{"query":"pi"}' },
+			{ type: "toolcall_delta", contentIndex: 1, delta: '{"query":"candy"}' },
 			{ type: "thinking_delta", contentIndex: 2, delta: "check" },
-			{ type: "toolcall_end", contentIndex: 1, id: "call", name: "lookup", arguments: { query: "pi" } },
+			{ type: "toolcall_end", contentIndex: 1, id: "call", name: "lookup", arguments: { query: "candy" } },
 			{ type: "text_end", contentIndex: 0, content: "answer" },
 			{ type: "thinking_end", contentIndex: 2, content: "check" },
 		];
 
 		expect(reduceAssistantMessageFrames(frames)?.content).toEqual([
 			{ type: "text", text: "answer" },
-			{ type: "toolCall", id: "call", name: "lookup", arguments: { query: "pi" } },
+			{ type: "toolCall", id: "call", name: "lookup", arguments: { query: "candy" } },
 			{ type: "thinking", thinking: "check" },
 		]);
 	});

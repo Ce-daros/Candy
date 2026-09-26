@@ -21,6 +21,7 @@ import type {
 	Usage,
 } from "../types.ts";
 import { combineAbortSignals } from "../utils/abort-signals.ts";
+import { getCandyUserAgent } from "../utils/candy-user-agent.ts";
 import {
 	appendAssistantMessageDiagnostic,
 	createAssistantMessageDiagnostic,
@@ -30,7 +31,6 @@ import { formatProviderError, normalizeProviderError } from "../utils/error-body
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { getSystemMessageText } from "../utils/text.ts";
 import {
 	getDeclaredTools,
@@ -1653,8 +1653,8 @@ function buildBaseCodexHeaders(
 	}
 	headers.set("Authorization", `Bearer ${token}`);
 	headers.set("chatgpt-account-id", accountId);
-	headers.set("originator", "pi");
-	headers.set("User-Agent", getPiUserAgent());
+	headers.set("originator", "candy");
+	headers.set("User-Agent", getCandyUserAgent());
 	return headers;
 }
 

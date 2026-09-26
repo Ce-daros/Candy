@@ -53,7 +53,7 @@ built, used, and durable. It simply is not what `message_update` carries.
 
 ## 3. Precedent
 
-pi already does wire-is-delta one layer down. `PiMessagesEvent` — the serialized form
+candy already does wire-is-delta one layer down. `CandyMessagesEvent` — the serialized form
 a pi-messages backend sends — has no `partial`:
 
 ```ts

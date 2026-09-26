@@ -60,7 +60,7 @@ interface JsonObject { readonly [key: string]: JsonValue }
 type Id = number;   // stable object identity; positive safe integer
 type Seq = number;  // storage write order; positive safe integer
 
-import type { JsonRepresentation } from "@earendil-works/chord";
+import type { JsonRepresentation } from "@candy/chord";
 type Stored<T> = JsonRepresentation<T>;   // the durable form of any imported pi-ai type, including unions with primitive arms (UserInput)
 ```
 

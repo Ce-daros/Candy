@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@candy/chord";
 import { onTestFinished, test } from "vitest";
 import { kinds as kindsOf } from "../../../src/harness/pico3/harness.ts";
 import type { RequestMessage } from "../../../src/harness/pico3/types.ts";

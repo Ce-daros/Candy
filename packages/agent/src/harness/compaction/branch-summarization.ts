@@ -6,7 +6,7 @@ import {
 	type RetryCallbacks,
 	type RetryPolicy,
 	type Usage,
-} from "@earendil-works/pi-ai";
+} from "@candy/ai";
 
 import type { AgentMessage } from "../../types.ts";
 import type { Context } from "../context.ts";

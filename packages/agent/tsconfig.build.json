@@ -3,10 +3,10 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@earendil-works/chord": ["../chord/dist/index.d.ts"],
-			"@earendil-works/pi-telemetry": ["../telemetry/dist/index.d.ts"],
-			"@earendil-works/pi-ai": ["../ai/dist/index.d.ts"],
-			"@earendil-works/pi-ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]
+			"@candy/chord": ["../chord/dist/index.d.ts"],
+			"@candy/telemetry": ["../telemetry/dist/index.d.ts"],
+			"@candy/ai": ["../ai/dist/index.d.ts"],
+			"@candy/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]
 		},
 		"rootDir": "./src"
 	},

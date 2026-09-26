@@ -19,10 +19,10 @@ import type {
 	ToolCall,
 	TranscriptContext,
 } from "../types.ts";
+import { getCandyUserAgent } from "../utils/candy-user-agent.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { providerHeadersToRecord } from "../utils/headers.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText } from "../utils/text.ts";
 import { collapseSystemMessages, getCurrentTools, getInitialSystemMessage } from "../utils/transcript.ts";
@@ -355,7 +355,7 @@ function createClient(
 		httpOptions.baseUrl = model.baseUrl;
 		httpOptions.apiVersion = ""; // baseUrl already includes version path, don't append
 	}
-	const headers = providerHeadersToRecord({ "User-Agent": getPiUserAgent(), ...model.headers, ...optionsHeaders });
+	const headers = providerHeadersToRecord({ "User-Agent": getCandyUserAgent(), ...model.headers, ...optionsHeaders });
 	if (headers) {
 		httpOptions.headers = headers;
 	}

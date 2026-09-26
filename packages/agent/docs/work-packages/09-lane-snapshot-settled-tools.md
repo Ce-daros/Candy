@@ -478,7 +478,7 @@ Mini/presentation:
 22. `packages/coding-agent/src/experimental/client-tui-chat.ts`
 23. `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`
 
-Before editing, run `git status --short` and inspect current diffs because other Pi sessions may share the worktree.
+Before editing, run `git status --short` and inspect current diffs because other candy sessions may share the worktree.
 
 ## Validation commands
 

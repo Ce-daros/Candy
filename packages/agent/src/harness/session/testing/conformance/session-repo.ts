@@ -1,5 +1,5 @@
 import { deepStrictEqual, rejects, strictEqual } from "node:assert/strict";
-import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
+import type { AssistantMessage, StopReason } from "@candy/ai";
 import { BACKGROUND_CONTEXT } from "../../../context.ts";
 import { insertEntry, insertUsage } from "../../commit.ts";
 import type {
@@ -677,7 +677,7 @@ export function createSessionRepoForkBehaviorConformance<TMetadata extends Sessi
 				BACKGROUND_CONTEXT,
 			);
 
-			for (const namespace of ["pi", "pi.unknown"] as const) {
+			for (const namespace of ["candy", "pi.unknown"] as const) {
 				const address = value<JsonValue>(namespace);
 				await source.setValue(address, true, BACKGROUND_CONTEXT);
 				await rejects(repo.fork(source.metadata, { id: "tree", scope: "tree" }, BACKGROUND_CONTEXT));

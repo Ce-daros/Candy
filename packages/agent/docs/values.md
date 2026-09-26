@@ -32,7 +32,7 @@ When an application genuinely has keyed instances, it constructs the address for
 const workspaceEvents = (workspaceId: string) =>
   list<ApplicationEvent>("my-app.events", workspaceId);
 
-await session.readList(workspaceEvents("pi"), { limit: 100 }, context);
+await session.readList(workspaceEvents("candy"), { limit: 100 }, context);
 ```
 
 Storage may physically index the address as `(kind, namespace, key)`, but that representation does not leak into each read or write call. Storage, Session, harness code, and applications use the same address vocabulary. There is no global value-type map, dynamic registry, token catalog, or separate application-state storage mechanism.
@@ -106,7 +106,7 @@ The phantom function makes `T` invariant: an address for one type cannot silentl
 Rules:
 
 - `namespace` must be non-empty;
-- namespace `pi` and every `pi.*` namespace are reserved for built-ins by contract;
+- namespace `candy` and every `pi.*` namespace are reserved for built-ins by contract;
 - applications that construct a reserved address are defective trusted in-process code; no runtime privilege split, registry, or catalog exists;
 - neither component may contain the Memory backend's internal separator (`\u0000`);
 - an empty key is valid and is the natural address for one application-wide value or list;
@@ -171,7 +171,7 @@ export const applicationState = value<MyApplicationState>("my-app.state");
 export const applicationEvents = list<MyApplicationEvent>("my-app.events");
 ```
 
-Applications should use a stable, collision-resistant namespace prefix. Namespace `pi` and the complete `pi.*` prefix are reserved for built-ins by contract; similar-looking names such as `pi2` remain legal. The same `value()` and `list()` constructors serve core and application code. Tests assert that every built-in address uses its reserved prefix. There is no runtime privilege split, registry, or catalog.
+Applications should use a stable, collision-resistant namespace prefix. Namespace `candy` and the complete `pi.*` prefix are reserved for built-ins by contract; similar-looking names such as `pi2` remain legal. The same `value()` and `list()` constructors serve core and application code. Tests assert that every built-in address uses its reserved prefix. There is no runtime privilege split, registry, or catalog.
 
 ## Built-in addresses
 
@@ -447,7 +447,7 @@ Assistant partial durability is the first built-in list consumer:
 const frames = pendingAssistantFrames(operationId, responseEntryId);
 ```
 
-`AssistantMessageFrame`, `AssistantMessageFrameEncoder`, and `reduceAssistantMessageFrames()` come from `@earendil-works/pi-ai`. Do not define a second frame codec or reducer.
+`AssistantMessageFrame`, `AssistantMessageFrameEncoder`, and `reduceAssistantMessageFrames()` come from `@candy/ai`. Do not define a second frame codec or reducer.
 
 For every convertible non-terminal provider event, the assistant procedure:
 
@@ -625,7 +625,7 @@ Append-path tests prove that no `readList` call occurs before append commit. Fra
 
 1. One bound address has one stable namespace/key/kind and one trusted value type in a storage version.
 2. Address object identity has no durable meaning.
-3. Namespace `pi` and every `pi.*` are reserved by contract; every built-in namespace starts with `pi.`, and application use is a trusted-programming defect.
+3. Namespace `candy` and every `pi.*` are reserved by contract; every built-in namespace starts with `pi.`, and application use is a trusted-programming defect.
 4. Exactly five built-in prefix constructors encapsulate Branch inventory and operation cleanup grammar; their results are consumed only by namespace-scoped `scanValues()`.
 5. Scalar and list addresses must not occupy the same physical location; this is a trusted-programming rule, not a runtime cross-kind collision check.
 6. Typed reads and helper-constructed writes preserve `T`.

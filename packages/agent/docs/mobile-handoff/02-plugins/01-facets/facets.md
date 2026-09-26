@@ -433,9 +433,9 @@ Three routes, converging on one attach:
 
 | invocation | route |
 | --- | --- |
-| `pi` (bare, in a directory) | ask server to create a session for cwd |
-| `pi --resume` | invoke the picker command at startup |
-| `pi --session <id>` | attach directly |
+| `candy` (bare, in a directory) | ask server to create a session for cwd |
+| `candy --resume` | invoke the picker command at startup |
+| `candy --session <id>` | attach directly |
 
 `--resume` needs no special machinery: the picker is an ordinary command registered
 by the server-sourced picker facet, and resume invokes it at startup instead of

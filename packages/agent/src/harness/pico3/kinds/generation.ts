@@ -1,13 +1,13 @@
-import type { Context } from "@earendil-works/chord";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
 	AssistantMessageFrame,
 	DeferredHandle,
 	ToolCall,
-} from "@earendil-works/pi-ai";
-import { AssistantMessageFrameEncoder, isRetryableAssistantError } from "@earendil-works/pi-ai";
-import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
+} from "@candy/ai";
+import { AssistantMessageFrameEncoder, isRetryableAssistantError } from "@candy/ai";
+import { estimateContextTokens } from "@candy/ai/utils/estimate";
+import type { Context } from "@candy/chord";
 import { planManagedEntry, prepareDraft, type SystemInstructionsHooks, sameSnapshot, takeSnapshot } from "../system.ts";
 import {
 	type Closure,

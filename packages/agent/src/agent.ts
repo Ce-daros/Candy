@@ -10,7 +10,7 @@ import {
 	type ThinkingBudgets,
 	type Transport,
 	toToolDeclaration,
-} from "@earendil-works/pi-ai";
+} from "@candy/ai";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import { getDefaultStreamFn } from "./stream-fn.ts";
 import type {

@@ -1,10 +1,4 @@
-import type {
-	AssistantMessage,
-	AssistantMessageFrame,
-	TextContent,
-	ThinkingContent,
-	ToolCall,
-} from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageFrame, TextContent, ThinkingContent, ToolCall } from "@candy/ai";
 
 /**
  * Apply one encoded frame to the tracked output. Same switch as pi-ai's

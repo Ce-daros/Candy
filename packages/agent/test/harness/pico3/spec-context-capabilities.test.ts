@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createContextKey, withContextValue } from "@earendil-works/chord/context";
+import { createContextKey, withContextValue } from "@candy/chord/context";
 import { onTestFinished, test } from "vitest";
 import { NestedLineOperation } from "../../../src/harness/pico3/session.ts";
 import { type CoreTx, defineTask, Forbidden, type Namespace, type Runtime } from "../../../src/harness/pico3/types.ts";
