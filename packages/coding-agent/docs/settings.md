@@ -75,8 +75,7 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 |---|---|---|---|
 | `theme` | string | Detected | Built-in or custom theme name. |
 | `quietStartup` | boolean | `false` | Hide the startup header. |
-| `tuiMode` | `"regular" \| "fullscreen"` | `"regular"` | Interactive terminal UI mode. |
-| `fullscreenExitOutput` | `"transcript" \| "resume-hint"` | `"transcript"` | Output printed when fullscreen mode exits. |
+| `fullscreenExitOutput` | `"transcript" \| "resume-hint"` | `"transcript"` | Output printed when the fullscreen session exits. |
 | `fullscreenScrollbar` | `"auto" \| "always" \| "hidden"` | `"auto"` | Fullscreen transcript scrollbar behavior. |
 | `fullscreenCopyOnSelect` | boolean | `true` | Copy selected text automatically in fullscreen mode. |
 | `editorPaddingX` | number | `0` | Horizontal editor padding from 0 to 3 cells. |

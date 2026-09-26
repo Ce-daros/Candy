@@ -37,7 +37,7 @@ For the persisted tree and entry types, see [Session Format](session-format.md).
 
 The model receives the active branch, not every branch in the session file. candy combines that history with the system prompt, discovered context files, available tools, and loaded skill descriptions. [How candy Works](how-candy-works.md#context) describes how those inputs are assembled.
 
-The footer shows current context usage. When the active context approaches the model's limit, candy normally compacts older history automatically. Compaction adds a summary and keeps recent messages. It does not delete the original session entries.
+The editor's bottom border shows current context usage. When the active context approaches the model's limit, candy normally compacts older history automatically. Compaction adds a summary and keeps recent messages. It does not delete the original session entries.
 
 Run `/compact` to compact manually. You can add instructions when the summary should preserve a particular topic or decision. Configure automatic compaction and retained history through [Settings](settings.md#compaction).
 

@@ -6,7 +6,7 @@ candy may ask whether you trust the working folder before loading its project re
 
 <p align="center"><img src="images/interactive-mode.png" alt="candy interactive mode showing a conversation, editor, and status information" width="750"></p>
 
-The transcript shows your prompts, candy's responses, tool calls, results, and errors. You write prompts and commands in the editor. The footer shows the current folder, session, model, context usage, and accumulated usage and cost.
+The transcript shows your prompts, candy's responses, tool calls, results, and errors. You write prompts and commands in the editor. The editor's bottom border shows the current model, thinking level, and context usage.
 
 ## Enter a prompt
 
@@ -22,7 +22,7 @@ To include files or images:
 
 candy shows each tool call and result while it works. Press `Ctrl+O` to expand or collapse tool output. Press `Ctrl+T` to show or hide thinking blocks.
 
-The startup header lists the instructions and resources candy loaded. The editor border indicates the current thinking level. The footer updates as the model uses context and reports usage.
+The startup header lists the instructions and resources candy loaded. The editor border indicates the current thinking level. The bottom border updates as the model uses context.
 
 candy does not ask before every tool call. Review commands and changed files, and use a sandbox for untrusted or unattended work. See [Security](security.md).
 
@@ -83,7 +83,7 @@ Use `/share` to upload the session and get a viewer link. With Radius authentica
 
 ## Adjust the terminal
 
-Regular mode uses the terminal's normal scrollback. Fullscreen mode keeps the editor and status area fixed while the transcript scrolls within the terminal window. Choose a mode through `/settings` or `--tui-mode`.
+Candy runs fullscreen: the editor and status area stay fixed while the transcript scrolls within the terminal window. A title bar at the top shows the project, git branch, and session name.
 
 Terminal support for mouse input, keyboard shortcuts, and inline images varies. See [Terminal Setup](terminal-setup.md) for platform-specific configuration and [Keybindings](keybindings.md) for every configurable shortcut. Run `/hotkeys` to inspect the shortcuts active in your current session.
 

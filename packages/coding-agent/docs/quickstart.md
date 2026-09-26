@@ -39,7 +39,7 @@ The working folder helps candy discover relevant files, instructions, and config
 
 <p align="center"><img src="images/interactive-mode.png" alt="candy running in a terminal with a conversation, input editor, and status footer" width="750"></p>
 
-The interface shows your conversation, an editor for prompts and commands, and a footer with the current folder, model, and session status. See [Use candy in the terminal](usage.md) to learn how to add files, run commands, direct ongoing work, and manage results.
+The interface shows your conversation, an editor for prompts and commands, and a status line on the editor's bottom border with the current model, thinking level, and context usage. See [Use candy in the terminal](usage.md) to learn how to add files, run commands, direct ongoing work, and manage results.
 
 ## 3. Choose a model
 

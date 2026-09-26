@@ -59,7 +59,7 @@ Fullscreen mode routes normalized mouse events to components. A handler can mark
 
 Unhandled wheel events scroll the nearest `ScrollView`. Unhandled primary-button drags remain available for transcript selection. OSC 8 links take precedence over enclosing click regions.
 
-Regular mode leaves mouse input to the terminal because the terminal owns scrollback. Design every interaction with a keyboard path even when fullscreen mouse input is available.
+Candy always runs fullscreen and owns the viewport, so design every interaction with a keyboard path alongside mouse handling.
 
 ## Use custom screens and overlays
 
@@ -109,7 +109,7 @@ Rendering runs on the interactive path. Cache expensive layout and highlighting 
 
 Keep the default view compact and reveal detail through expansion or a dedicated screen. For custom tool rendering, handle partial results and reuse the previous component when it can be updated safely.
 
-Use `CANDY_TUI_WRITE_LOG` to capture the raw ANSI stream when diagnosing rendering problems. Test narrow widths, wide characters, resize events, theme changes, focus transitions, and both regular and fullscreen modes.
+Use `CANDY_TUI_WRITE_LOG` to capture the raw ANSI stream when diagnosing rendering problems. Test narrow widths, wide characters, resize events, theme changes, and focus transitions.
 
 ## Examples and source
 
