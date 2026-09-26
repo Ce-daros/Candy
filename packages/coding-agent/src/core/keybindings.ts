@@ -18,6 +18,8 @@ export interface AppKeybindings {
 	"app.suspend": true;
 	"app.thinking.cycle": true;
 	"app.thinking.save": true;
+	"app.powerbar.left": true;
+	"app.powerbar.right": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
@@ -104,6 +106,14 @@ export const KEYBINDINGS = {
 	"app.thinking.save": {
 		defaultKeys: "ctrl+s",
 		description: "Save thinking level",
+	},
+	"app.powerbar.left": {
+		defaultKeys: "left",
+		description: "Move powerbar selection left",
+	},
+	"app.powerbar.right": {
+		defaultKeys: "right",
+		description: "Move powerbar selection right",
 	},
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",

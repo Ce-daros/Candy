@@ -5,6 +5,7 @@
 ### Added
 
 - Added an optional `leftGutter` to `EditorOptions` that prefixes editor content lines (never the horizontal borders), clipped on narrow terminals.
+- Added a `bottomBorderClick` hook on `Editor` for subclasses to intercept left clicks on the editor's bottom border row (used by the coding-agent footer powerbar).
 
 ### Fixed
 

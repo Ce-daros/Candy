@@ -344,6 +344,9 @@ export class Editor implements Component, Focusable {
 	private autocompleteStartToken: number = 0;
 	private autocompleteRequestId: number = 0;
 
+	/** Optional hook for subclasses: a left click on the bottom border row. Returns true when handled. */
+	protected bottomBorderClick?: (x: number) => boolean;
+
 	// Paste tracking for large pastes
 	private pastes: Map<number, string> = new Map();
 	private pasteCounter: number = 0;
@@ -689,6 +692,9 @@ export class Editor implements Component, Focusable {
 		// The renderer synthesizes a click when press and release land on the same
 		// cell without movement, which is the gesture that positions the cursor.
 		if (event.type !== "click" || event.button !== "left") return undefined;
+		if (event.y === this.renderedVisibleLineCount + 1 && this.bottomBorderClick?.(event.x)) {
+			return { handled: true, focus: true };
+		}
 		if (event.y <= 0 || event.y > this.renderedVisibleLineCount) return { handled: true, focus: true };
 
 		const visualLines = this.buildVisualLineMap(this.lastWidth);

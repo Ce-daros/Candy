@@ -11,10 +11,12 @@
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
 - Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, a dash fill, and the session name.
+- Added the footer powerbar: the model and thinking labels become anchors for inline selectors rendered in the editor's bottom border. Clicking a label (or `ctrl+l` / `/thinking`) expands a track of options around the current value with ease-out per-frame positioning: pushed items glide to their new columns, entering items are revealed underneath them, and the context meter is squeezed out frame by frame; selecting collapses the track back around the new value. The track is windowed with dim `‹`/`›` edge markers, so moving past the visible edge slides the window and keeps the highlight on screen. While the model track is open, typing morphs it into a fuzzy search; left/right move the highlight, enter confirms, escape collapses, and `ctrl+s` saves the highlighted thinking level as default. New `app.powerbar.left`/`app.powerbar.right` keybindings.
 
 ### Breaking Changes
 
 - Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
+- Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
 
 ### Changed
 

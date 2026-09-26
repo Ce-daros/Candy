@@ -33,6 +33,7 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	decodeKittyPrintable,
 	fuzzyFilter,
 	getCapabilities,
 	hyperlink,
@@ -140,7 +141,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
-import { FooterComponent, formatTokens } from "./components/footer.ts";
+import { FooterComponent, formatTokens, modelDisplayName } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
@@ -150,6 +151,7 @@ import {
 	formatAuthSelectorProviderType,
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.ts";
+import type { PowerbarHost, PowerbarModelEntry } from "./components/powerbar.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -161,7 +163,6 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
-import { ThinkingSelectorComponent } from "./components/thinking-selector.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TopBarComponent } from "./components/top-bar.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
@@ -607,7 +608,7 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
-		this.footer = new FooterComponent(this.session);
+		this.footer = new FooterComponent(this.session, this.buildPowerbarHost());
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.defaultEditor.setBottomStatus(this.footer);
 		this.footerContainer = new Container();
@@ -2938,7 +2939,9 @@ export class InteractiveMode {
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
-		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
+		this.defaultEditor.onAction("app.model.select", () => this.footer.openPowerbarModelBrowse());
+		this.defaultEditor.powerbarHandler = (data) => this.handlePowerbarKey(data);
+		this.defaultEditor.onBottomBorderClick = (x) => this.footer.handleBottomBorderClick(x);
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
@@ -4971,24 +4974,92 @@ export class InteractiveMode {
 	}
 
 	private showThinkingSelector(): void {
-		this.showSelector((done) => {
-			const selectLevel = (level: ThinkingLevel, persist: boolean) => {
-				this.selectThinkingLevel(level, persist);
-				done();
-			};
-			const selector = new ThinkingSelectorComponent(
-				this.session.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
-				this.session.getAvailableThinkingLevels(),
-				(level) => selectLevel(level, false),
-				() => {
-					done();
-					this.ui.requestRender();
-				},
-				(level) => selectLevel(level, true),
-				this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL,
-			);
-			return { component: selector, focus: selector };
-		});
+		this.footer.openPowerbarThinking();
+	}
+
+	/** Powerbar dependencies: selectors read live session state through these callbacks. */
+	private buildPowerbarHost(): PowerbarHost {
+		return {
+			requestRender: () => this.ui.requestRender(),
+			getThinkingLevels: () => this.session.getAvailableThinkingLevels(),
+			getThinkingLevel: () => this.session.thinkingLevel || DEFAULT_THINKING_LEVEL,
+			getModels: () => this.getPowerbarModels(),
+			getCurrentModelIndex: () => {
+				const models = this.getPowerbarModels();
+				const current = this.session.model;
+				const index = models.findIndex(
+					(entry) => entry.model.provider === current?.provider && entry.model.id === current?.id,
+				);
+				return index === -1 ? 0 : index;
+			},
+			applyThinking: (level, persist) => this.selectThinkingLevel(level, persist),
+			applyModel: (model) => void this.applyPowerbarModel(model),
+		};
+	}
+
+	private getPowerbarModels(): PowerbarModelEntry[] {
+		const models =
+			this.session.scopedModels.length > 0
+				? this.session.scopedModels.map((scoped) => scoped.model)
+				: [...this.session.modelRuntime.getAvailableSnapshot()];
+		return models.map((model) => ({ model, label: modelDisplayName(model) }));
+	}
+
+	private async applyPowerbarModel(model: Model<any>): Promise<void> {
+		try {
+			await this.session.setModel(model, { persist: false });
+			this.updateAvailableProviderCount();
+			this.footer.invalidate();
+			this.refreshContextMeter();
+			this.updateEditorBorderColor();
+			void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
+			this.checkDaxnutsEasterEgg(model);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/**
+	 * Route a key to the active Powerbar selector. Returns false when the footer
+	 * is idle or the key should fall through to the editor (exit/suspend/clear).
+	 */
+	private handlePowerbarKey(data: string): boolean {
+		if (this.footer.isPowerbarIdle()) return false;
+		const kb = this.keybindings;
+		if (kb.matches(data, "tui.select.cancel")) {
+			this.footer.cancelPowerbar();
+			return true;
+		}
+		if (kb.matches(data, "tui.select.confirm")) {
+			this.footer.confirmPowerbar(false);
+			return true;
+		}
+		if (kb.matches(data, "app.thinking.save")) {
+			this.footer.confirmPowerbar(true);
+			return true;
+		}
+		if (kb.matches(data, "app.powerbar.left") || kb.matches(data, "tui.select.up")) {
+			this.footer.movePowerbar(-1);
+			return true;
+		}
+		if (kb.matches(data, "app.powerbar.right") || kb.matches(data, "tui.select.down")) {
+			this.footer.movePowerbar(1);
+			return true;
+		}
+		if (kb.matches(data, "tui.editor.deleteCharBackward")) {
+			this.footer.powerbarBackspace();
+			return true;
+		}
+		if (kb.matches(data, "app.clear") || kb.matches(data, "app.exit") || kb.matches(data, "app.suspend")) {
+			return false;
+		}
+		const printable =
+			decodeKittyPrintable(data) ?? (data.length === 1 && data.charCodeAt(0) >= 32 ? data : undefined);
+		if (printable) {
+			this.footer.powerbarInputChar(printable);
+		}
+		// Swallow remaining keys so the selector cannot edit the composer text.
+		return true;
 	}
 
 	private async handleModelCommand(searchTerm?: string): Promise<void> {
@@ -6580,7 +6651,7 @@ export class InteractiveMode {
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
-| \`${selectModel}\` | Open model selector |
+| \`${selectModel}\` | Open inline model selector (powerbar) |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |

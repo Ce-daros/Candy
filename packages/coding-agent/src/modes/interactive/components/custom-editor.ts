@@ -28,6 +28,14 @@ export class CustomEditor extends Editor {
 	public readonly embedWorkingStatus: boolean;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
+	/**
+	 * Input handler for the inline Powerbar selectors in the bottom border.
+	 * Called before all other handling; returns true when the key was consumed.
+	 */
+	public powerbarHandler?: (data: string) => boolean;
+	/** Left click on the bottom border row (Powerbar labels). Returns true when handled. */
+	public onBottomBorderClick?: (x: number) => boolean;
+
 	// Special handlers that can be dynamically replaced
 	public onEscape?: () => void;
 	public onCtrlD?: () => void;
@@ -39,6 +47,7 @@ export class CustomEditor extends Editor {
 		super(tui, theme, { leftGutter: DEFAULT_LEFT_GUTTER, rightGutter: "│", minContentLines: 2, ...options });
 		this.keybindings = keybindings;
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
+		this.bottomBorderClick = (x) => this.onBottomBorderClick?.(x) ?? false;
 	}
 
 	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void {
@@ -116,6 +125,12 @@ export class CustomEditor extends Editor {
 	handleInput(data: string): void {
 		// Check extension-registered shortcuts first
 		if (this.onExtensionShortcut?.(data)) {
+			return;
+		}
+
+		// Inline Powerbar selectors take precedence; escape confirms/cancels there
+		// instead of interrupting the agent.
+		if (this.powerbarHandler?.(data)) {
 			return;
 		}
 

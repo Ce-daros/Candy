@@ -2,6 +2,7 @@ import { truncateToWidth, visibleWidth } from "@candy/tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
 import { theme } from "../theme/theme.ts";
 import type { EditorBottomStatus } from "./custom-editor.ts";
+import { PowerbarController, type PowerbarHost } from "./powerbar.ts";
 
 /** Frame corner that opens the merged bottom border. */
 const BOTTOM_BORDER_CORNER = "╰── ";
@@ -57,19 +58,32 @@ export function modelDisplayName(model: { id: string; name?: string }): string {
 	return separator === -1 ? model.id : model.id.slice(separator + 1);
 }
 
+/** Clickable range relative to the content area (after the frame corner). */
+interface LabelRegion {
+	start: number;
+	width: number;
+}
+
 /**
  * Status line merged into the editor's bottom border:
  * `╰── <model> ▾   <effort> ▾ ─━━━━ 42% ╾────╯`.
  * The remaining border is the context meter: filled cells track current
  * context, dashed cells track the projected context of the pending prompt,
  * and the current percentage is always shown.
+ *
+ * With a PowerbarHost, the model and effort labels become clickable anchors
+ * for the inline Powerbar selectors (see powerbar.ts).
  */
 export class FooterComponent implements EditorBottomStatus {
 	private session: AgentSession;
 	private pendingTokens: number | undefined;
+	private readonly powerbar: PowerbarController | undefined;
+	private lastModelRegion: LabelRegion | undefined;
+	private lastThinkingRegion: LabelRegion | undefined;
 
-	constructor(session: AgentSession) {
+	constructor(session: AgentSession, powerbarHost?: PowerbarHost) {
 		this.session = session;
+		this.powerbar = powerbarHost ? new PowerbarController(powerbarHost) : undefined;
 	}
 
 	setSession(session: AgentSession): void {
@@ -98,7 +112,8 @@ export class FooterComponent implements EditorBottomStatus {
 	 * Kept for compatibility with existing call sites in interactive-mode.
 	 */
 	dispose(): void {
-		// Nothing to release
+		this.powerbar?.dispose();
+		// Nothing else to release
 	}
 
 	renderBottomBorder(width: number, hiddenLineCount: number, borderColor: (text: string) => string): string {
@@ -106,7 +121,9 @@ export class FooterComponent implements EditorBottomStatus {
 		if (width === 1) return borderColor("╰");
 		if (width < 7) return borderColor(`╰${"─".repeat(width - 2)}╯`);
 
-		const labels = this.buildLabels(Math.max(0, width - 5), hiddenLineCount);
+		const maxWidth = Math.max(0, width - 5);
+		const activeTrack = this.powerbar?.render(maxWidth);
+		const labels = activeTrack ? activeTrack.text : this.buildLabels(maxWidth, hiddenLineCount);
 		const labelsWidth = visibleWidth(labels);
 		const meterWidth = width - visibleWidth(BOTTOM_BORDER_CORNER) - labelsWidth - visibleWidth(METER_SEPARATOR) - 1;
 
@@ -130,15 +147,32 @@ export class FooterComponent implements EditorBottomStatus {
 	/**
 	 * Model and effort labels, dropping lower-priority parts when the terminal is
 	 * narrow: scroll hint first, then the effort selector, then a truncated model.
+	 * Also records the clickable regions of the model and effort labels.
 	 */
 	private buildLabels(maxWidth: number, hiddenLineCount: number): string {
 		const model = this.modelLabel();
 		const thinking = this.thinkingLabel();
 		const scroll = hiddenLineCount > 0 ? `↓ ${hiddenLineCount} more` : "";
+		const gapWidth = visibleWidth("   ");
+		const modelWidth = visibleWidth(model);
+		const recordRegions = (modelStart: number): void => {
+			this.lastModelRegion = model ? { start: modelStart, width: modelWidth } : undefined;
+			this.lastThinkingRegion = thinking
+				? { start: modelStart + modelWidth + gapWidth, width: visibleWidth(thinking) }
+				: undefined;
+		};
+
 		const full = `${scroll ? `${scroll}   ` : ""}${model}${thinking ? `   ${thinking}` : ""}`;
-		if (visibleWidth(full) <= maxWidth) return full;
+		if (visibleWidth(full) <= maxWidth) {
+			recordRegions(scroll ? visibleWidth(scroll) + gapWidth : 0);
+			return full;
+		}
 		const withoutScroll = `${model}${thinking ? `   ${thinking}` : ""}`;
-		if (visibleWidth(withoutScroll) <= maxWidth) return withoutScroll;
+		if (visibleWidth(withoutScroll) <= maxWidth) {
+			recordRegions(0);
+			return withoutScroll;
+		}
+		recordRegions(0);
 		if (visibleWidth(model) <= maxWidth) return model;
 		return maxWidth > 0 ? truncateToWidth(model, maxWidth, "…") : "";
 	}
@@ -199,6 +233,88 @@ export class FooterComponent implements EditorBottomStatus {
 		}
 		if (remaining > 0) meter += borderColor(METER_REMAINING.repeat(remaining));
 		return meter;
+	}
+
+	// =========================================================================
+	// Powerbar (inline selectors in this border)
+	// =========================================================================
+
+	/** True when no inline selector is open. */
+	isPowerbarIdle(): boolean {
+		return !this.powerbar || this.powerbar.isIdle();
+	}
+
+	/** Expand the thinking level track out of the effort label. Returns false when the Powerbar is unavailable. */
+	openPowerbarThinking(): boolean {
+		if (!this.powerbar) return false;
+		const model = this.session.state.model;
+		const modelName = model ? modelDisplayName(model) : "no-model";
+		const thinkingLevel = this.session.state.thinkingLevel || "off";
+		const anchorLabel = `${thinkingLevel.charAt(0).toUpperCase() + thinkingLevel.slice(1)} ${SELECTOR_CHEVRON}`;
+		this.powerbar.openThinking({
+			anchorWidth: visibleWidth(anchorLabel),
+			prefix: {
+				text: `${modelName} ${theme.fg("dim", SELECTOR_CHEVRON)}`,
+				width: visibleWidth(`${modelName} ${SELECTOR_CHEVRON}`),
+			},
+		});
+		return true;
+	}
+
+	/** Expand the model track out of the model label. Returns false when the Powerbar is unavailable. */
+	openPowerbarModelBrowse(): boolean {
+		if (!this.powerbar) return false;
+		const model = this.session.state.model;
+		const modelName = model ? modelDisplayName(model) : "no-model";
+		const anchorLabel = `${modelName} ${SELECTOR_CHEVRON}`;
+		this.powerbar.openModelBrowse({ anchorWidth: visibleWidth(anchorLabel) });
+		return true;
+	}
+
+	/** Collapse the active selector back to the normal labels. */
+	cancelPowerbar(): void {
+		this.powerbar?.collapse();
+	}
+
+	/** Confirm the highlighted item; persist=true also saves it as the default. */
+	confirmPowerbar(persist = false): void {
+		this.powerbar?.confirm(persist);
+	}
+
+	movePowerbar(delta: number): void {
+		this.powerbar?.move(delta);
+	}
+
+	powerbarInputChar(char: string): void {
+		this.powerbar?.inputChar(char);
+	}
+
+	powerbarBackspace(): void {
+		this.powerbar?.backspace();
+	}
+
+	/**
+	 * Handle a left click on this border row. `x` is the border-row column.
+	 * Returns false when the Powerbar is unavailable and the click is not on a label.
+	 */
+	handleBottomBorderClick(x: number): boolean {
+		if (!this.powerbar) return false;
+		const contentX = x - visibleWidth(BOTTOM_BORDER_CORNER);
+		if (this.powerbar.isIdle()) {
+			if (this.inRegion(this.lastModelRegion, contentX)) {
+				return this.openPowerbarModelBrowse();
+			}
+			if (this.inRegion(this.lastThinkingRegion, contentX)) {
+				return this.openPowerbarThinking();
+			}
+			return false;
+		}
+		this.powerbar.handleContentClick(contentX);
+		return true;
+	}
+
+	private inRegion(region: LabelRegion | undefined, x: number): boolean {
+		return region !== undefined && x >= region.start && x < region.start + region.width;
 	}
 
 	/** Short model name, without the provider prefix or context window. */

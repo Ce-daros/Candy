@@ -148,13 +148,17 @@ On native Windows, `app.suspend` has no default because Windows terminals do not
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.model.select` | `ctrl+l` | Open model selector |
+| `app.model.select` | `ctrl+l` | Open the inline model selector in the footer powerbar |
 | `app.model.cycleForward` | `ctrl+p` | Cycle to next model |
 | `app.model.cycleBackward` | `shift+ctrl+p` (`alt+p` on Windows and WSL) | Cycle to previous model |
 | `app.models.save` | `ctrl+s` | Save the selected default model or scoped model configuration to settings |
 | `app.thinking.cycle` | `shift+tab` | Cycle thinking level |
 | `app.thinking.save` | `ctrl+s` | Save current thinking level to settings |
 | `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
+| `app.powerbar.left` | `left` | Move the powerbar selection left (while a selector is open) |
+| `app.powerbar.right` | `right` | Move the powerbar selection right (while a selector is open) |
+
+While a powerbar selector is open, `enter` confirms the highlighted item, `escape` collapses it, and typing filters the model track. The model and thinking labels in the footer are also clickable.
 
 ### Display and Message Queue
 
