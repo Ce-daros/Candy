@@ -741,7 +741,6 @@ export async function runClientTui(command: ClientCommand, options: RunClientTui
 	setRegisteredThemes(resourceLoader.getThemes().themes);
 	const runtime = await openClientRuntime(command, options);
 	const tui = createInteractiveTui({
-		tuiMode: "fullscreen",
 		showHardwareCursor: settingsManager.getShowHardwareCursor(),
 		logDirectory: agentDir,
 	});

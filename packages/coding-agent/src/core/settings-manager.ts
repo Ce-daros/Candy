@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@candy/agent-core";
 import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model, type Transport } from "@candy/ai";
-import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@candy/tui";
+import type { ScrollViewScrollbar, TerminalCapabilities } from "@candy/tui";
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -46,7 +46,6 @@ export interface RetrySettings {
 	provider?: ProviderRetrySettings;
 }
 
-export type TuiMode = RendererTuiMode;
 export type FullscreenExitOutput = "transcript" | "resume-hint";
 
 export interface TerminalSettings {
@@ -156,10 +155,9 @@ export interface Settings {
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	cacheWarming?: CacheWarmingMode; // default: "streaming"; global only because each refresh costs money
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
-	tuiMode?: TuiMode; // default: "regular"
-	fullscreenExitOutput?: FullscreenExitOutput; // default: "transcript"; no effect in regular TUI mode
-	fullscreenScrollbar?: ScrollViewScrollbar; // default: "auto"; no effect in regular TUI mode
-	fullscreenCopyOnSelect?: boolean; // default: true; no effect in regular TUI mode
+	fullscreenExitOutput?: FullscreenExitOutput; // default: "transcript"
+	fullscreenScrollbar?: ScrollViewScrollbar; // default: "auto"
+	fullscreenCopyOnSelect?: boolean; // default: true
 }
 
 function isMergeableObject(value: unknown): value is Record<string, unknown> {
@@ -1259,16 +1257,6 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showTerminalProgress = enabled;
 		this.markModified("terminal", "showTerminalProgress");
-		this.save();
-	}
-
-	getTuiMode(): TuiMode {
-		return this.settings.tuiMode === "fullscreen" ? "fullscreen" : "regular";
-	}
-
-	setTuiMode(mode: TuiMode): void {
-		this.globalSettings.tuiMode = mode;
-		this.markModified("tuiMode");
 		this.save();
 	}
 

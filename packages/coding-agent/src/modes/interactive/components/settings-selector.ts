@@ -18,7 +18,6 @@ import {
 	type DefaultProjectTrust,
 	type FullscreenExitOutput,
 	type MermaidRenderingMode,
-	type TuiMode,
 	type WarningSettings,
 } from "../../../core/settings-manager.ts";
 import { getSettingsListTheme, parseAutoThemeSetting, type TerminalTheme, theme } from "../theme/theme.ts";
@@ -84,7 +83,6 @@ export interface SettingsConfig {
 	defaultProjectTrust: DefaultProjectTrust;
 	clearOnShrink: boolean;
 	showTerminalProgress: boolean;
-	tuiMode: TuiMode;
 	fullscreenExitOutput: FullscreenExitOutput;
 	fullscreenScrollbar: ScrollViewScrollbar;
 	fullscreenCopyOnSelect: boolean;
@@ -122,7 +120,6 @@ export interface SettingsCallbacks {
 	onDefaultProjectTrustChange: (defaultProjectTrust: DefaultProjectTrust) => void;
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onShowTerminalProgressChange: (enabled: boolean) => void;
-	onTuiModeChange: (mode: TuiMode) => void;
 	onFullscreenExitOutputChange: (output: FullscreenExitOutput) => void;
 	onFullscreenScrollbarChange: (mode: ScrollViewScrollbar) => void;
 	onFullscreenCopyOnSelectChange: (enabled: boolean) => void;
@@ -687,30 +684,23 @@ export class SettingsSelectorComponent extends Container {
 				},
 			},
 			{
-				id: "tui-mode",
-				label: "TUI mode",
-				description: "Interface layout; fullscreen mode is experimental",
-				currentValue: config.tuiMode,
-				values: ["regular", "fullscreen"],
-			},
-			{
 				id: "fullscreen-exit-output",
 				label: "Fullscreen exit output",
-				description: "Print the transcript or only a session resume hint when exiting fullscreen mode",
+				description: "Print the transcript or only a session resume hint when exiting",
 				currentValue: config.fullscreenExitOutput,
 				values: ["transcript", "resume-hint"],
 			},
 			{
 				id: "fullscreen-scrollbar",
 				label: "Fullscreen scrollbar",
-				description: "Scrollbar behavior in fullscreen mode; has no effect in regular mode",
+				description: "Scrollbar behavior for the transcript view",
 				currentValue: config.fullscreenScrollbar,
 				values: ["auto", "always", "hidden"],
 			},
 			{
 				id: "fullscreen-copy-on-select",
 				label: "Fullscreen copy on select",
-				description: "Automatically copy selected text in fullscreen mode; disable to copy selections with Ctrl+X",
+				description: "Automatically copy selected text; disable to copy selections with Ctrl+X",
 				currentValue: config.fullscreenCopyOnSelect ? "true" : "false",
 				values: ["true", "false"],
 			},
@@ -928,9 +918,6 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "terminal-progress":
 						callbacks.onShowTerminalProgressChange(newValue === "true");
-						break;
-					case "tui-mode":
-						callbacks.onTuiModeChange(newValue as TuiMode);
 						break;
 					case "fullscreen-exit-output":
 						callbacks.onFullscreenExitOutputChange(newValue as FullscreenExitOutput);
