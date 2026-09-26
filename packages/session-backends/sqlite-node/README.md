@@ -1,13 +1,13 @@
-# @earendil-works/pi-session-backend-sqlite-node
+# @candy/session-backend-sqlite-node
 
-Node `node:sqlite` Session backend for `@earendil-works/pi-agent-core`.
+Node `node:sqlite` Session backend for `@candy/agent-core`.
 
 ```ts
-import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@candy/agent-core";
 import {
   createNodeSqliteFactory,
   SqliteSessionRepo,
-} from "@earendil-works/pi-session-backend-sqlite-node";
+} from "@candy/session-backend-sqlite-node";
 
 const repository = new SqliteSessionRepo({
   directory: "/var/lib/pi/sessions",

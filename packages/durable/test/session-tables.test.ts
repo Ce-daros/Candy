@@ -1,4 +1,4 @@
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@candy/chord";
 import {
 	type ConversationId,
 	defineDoc,
@@ -8,7 +8,7 @@ import {
 	type Task,
 	type TaskId,
 	type TaskRecord,
-} from "@earendil-works/pi-durable";
+} from "@candy/durable";
 import { describe, expect, it } from "vitest";
 import { idFromNumber } from "../src/ids.ts";
 import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support.ts";

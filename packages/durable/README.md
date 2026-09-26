@@ -1,33 +1,33 @@
-# @earendil-works/pi-durable
+# @candy/durable
 
 Durable conversation, task, and document runtime for Pi.
 
 This package contains the Pico runtime. Its current public API provides durable record contracts and memory, JSONL, and SQLite storage implementations:
 
 ```ts
-import { MemoryStorage, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import { MemoryStorage, ROOT_CONVERSATION_ID } from "@candy/durable";
 ```
 
 The root export is runtime-neutral. Storage implementations also have explicit subpaths:
 
 ```ts
-import { MemoryStorage } from "@earendil-works/pi-durable/storage/memory";
+import { MemoryStorage } from "@candy/durable/storage/memory";
 ```
 
 Node applications can open file-backed JSONL or SQLite storage through Node-only subpaths:
 
 ```ts
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
+import { openNodeJsonlStorage } from "@candy/durable/storage/jsonl/node";
+import { openNodeSqliteStorage } from "@candy/durable/storage/sqlite/node";
 
 const jsonl = await openNodeJsonlStorage("./session", BACKGROUND_CONTEXT);
 const sqlite = await openNodeSqliteStorage("./session.sqlite");
 ```
 
-The portable JSONL core accepts the `FileSystem` capability exported from `@earendil-works/pi-durable/env`. Its `fsync` option defaults to `false`; enabling it flushes affected sidecars before appending the main commit marker. One `JsonlStorage` owner must serialize writes to a storage directory; cross-process locking and ID allocation are not supported.
+The portable JSONL core accepts the `FileSystem` capability exported from `@candy/durable/env`. Its `fsync` option defaults to `false`; enabling it flushes affected sidecars before appending the main commit marker. One `JsonlStorage` owner must serialize writes to a storage directory; cross-process locking and ID allocation are not supported.
 
-The portable SQLite core, minimal database facade, and ordered schema migrations are exported from `@earendil-works/pi-durable/storage/sqlite`. Adapters for synchronous SQLite environments such as Bun and Cloudflare Durable Objects can implement that facade without importing Node APIs. Remote asynchronous APIs such as Cloudflare D1 cannot implement this synchronous facade; they require a dedicated `Storage` backend.
+The portable SQLite core, minimal database facade, and ordered schema migrations are exported from `@candy/durable/storage/sqlite`. Adapters for synchronous SQLite environments such as Bun and Cloudflare Durable Objects can implement that facade without importing Node APIs. Remote asynchronous APIs such as Cloudflare D1 cannot implement this synchronous facade; they require a dedicated `Storage` backend.
 
 The Node adapter uses WAL mode with `synchronous = NORMAL` and checkpoints the WAL on close. Acknowledged commits survive process crashes, but the newest commits may be lost after a power or host failure. One `SqliteStorage` owner must serialize writes to a database file; cross-process ID allocation is not supported.
 
@@ -36,7 +36,7 @@ The Node adapter uses WAL mode with `synchronous = NORMAL` and checkpoints the W
 Storage adapters can register the runner-independent conformance cases through the testing entry. The convenience adapter accepts Vitest/Jest-compatible runner functions without importing either package:
 
 ```ts
-import { registerStorageConformance } from "@earendil-works/pi-durable/testing";
+import { registerStorageConformance } from "@candy/durable/testing";
 import { describe, expect, it } from "vitest";
 
 registerStorageConformance({ describe, expect, it }, "Some Custom Storage", async (use) => {
@@ -60,7 +60,7 @@ npm run bench:storage
 npm run bench:storage:memory
 ```
 
-The timing suite runs shared deterministic workloads against the built-in memory, JSONL, and SQLite adapters. Third-party adapters can import the same seeds and workload definitions from `@earendil-works/pi-durable/testing` and use their platform's timing runner:
+The timing suite runs shared deterministic workloads against the built-in memory, JSONL, and SQLite adapters. Third-party adapters can import the same seeds and workload definitions from `@candy/durable/testing` and use their platform's timing runner:
 
 ```ts
 import {
@@ -68,7 +68,7 @@ import {
 	seedStorageWriteBenchmark,
 	STORAGE_READ_BENCHMARKS,
 	STORAGE_WRITE_BENCHMARKS,
-} from "@earendil-works/pi-durable/testing";
+} from "@candy/durable/testing";
 
 const dataset = await seedStorageBenchmark(readStorage);
 await STORAGE_READ_BENCHMARKS[0].run(readStorage, dataset);

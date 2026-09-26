@@ -1,7 +1,7 @@
 import { lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ServerMessageDecoder } from "@earendil-works/pi-protocol";
+import { ServerMessageDecoder } from "@candy/protocol";
 import { afterEach, expect, test } from "vitest";
 import type { ByteConnection } from "../src/connection.ts";
 import { Server } from "../src/index.ts";
@@ -79,7 +79,7 @@ test("handshake timeout closes with a final hello_error frame", async () => {
 });
 
 test("rejects timeout values above Node's maximum timer delay", () => {
-	const path = "/tmp/pi-server-timeout-test.sock";
+	const path = "/tmp/server-timeout-test.sock";
 	expect(() =>
 		createUnixServer(host, {
 			path,

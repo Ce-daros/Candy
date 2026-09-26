@@ -1,5 +1,5 @@
-import { copyJson, type JsonValue } from "@earendil-works/chord";
-import type { Op } from "@earendil-works/chord/delta";
+import { copyJson, type JsonValue } from "@candy/chord";
+import type { Op } from "@candy/chord/delta";
 import { idFromNumber } from "./ids.ts";
 import type {
 	CommonDocDefinition,

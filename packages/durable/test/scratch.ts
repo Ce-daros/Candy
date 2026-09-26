@@ -1,7 +1,7 @@
 // A tour of the durable Session API in four small examples.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/scratch.ts
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
 import { type ConversationId, createSession, defineDoc, MemoryStorage, type Task } from "../src/index.ts";
 
 // A Session stores conversations, transcript entries, tasks, and documents.

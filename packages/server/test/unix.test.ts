@@ -39,7 +39,7 @@ afterEach(async () => {
 });
 
 test("creates an in-memory server ID and derives its explicit Unix socket path", async () => {
-	const directory = await mkdtemp(join("/tmp", "pi-server-"));
+	const directory = await mkdtemp(join("/tmp", "server-"));
 	tempDirectories.add(directory);
 	const serverId = "00000000-0000-4000-8000-000000000001";
 	const path = getUnixSocketPath(serverId, directory);

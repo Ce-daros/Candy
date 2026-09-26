@@ -1,7 +1,7 @@
 {
-	"name": "@earendil-works/pi-server",
+	"name": "@candy/server",
 	"version": "0.87.1",
-	"description": "experimental server package for pi",
+	"description": "experimental server package for candy",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -33,7 +33,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"keywords": [
-		"pi",
+		"candy",
 		"server"
 	],
 	"author": "Earendil Works",
@@ -47,9 +47,9 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/chord": "^0.87.1",
-		"@earendil-works/pi-agent-core": "^0.87.1",
-		"@earendil-works/pi-protocol": "^0.87.1"
+		"@candy/chord": "^0.87.1",
+		"@candy/agent-core": "^0.87.1",
+		"@candy/protocol": "^0.87.1"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",

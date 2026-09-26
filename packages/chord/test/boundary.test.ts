@@ -8,7 +8,7 @@ const sourceDirectory = resolve(packageDirectory, "src");
 const IMPORT_SPECIFIER = /(?:import|export)\s+(?:type\s+)?(?:[^;]*?\sfrom\s*)?["']([^"']+)["']/gu;
 
 describe("package boundary", () => {
-	test("does not depend on Pi packages or files outside Chord", async () => {
+	test("does not depend on candy packages or files outside Chord", async () => {
 		const manifest = JSON.parse(await readFile(resolve(packageDirectory, "package.json"), "utf8")) as {
 			dependencies?: Record<string, string>;
 		};

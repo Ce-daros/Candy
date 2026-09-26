@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Context } from "@candy/chord";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
 import {
 	type ConversationId,
 	type DocumentAddress,
@@ -10,7 +10,7 @@ import {
 	MemoryStorage,
 	type Seq,
 	type StorageWrite,
-} from "@earendil-works/pi-durable";
+} from "@candy/durable";
 import type { CommitPublication } from "../src/session/publications.ts";
 import { SessionKernel } from "../src/session/session.ts";
 import type { DocumentCommitChange } from "../src/session/transaction.ts";

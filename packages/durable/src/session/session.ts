@@ -1,6 +1,6 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
-import { awaitWithContext, withoutAbortSignal } from "@earendil-works/chord/context";
-import { track } from "@earendil-works/chord/delta";
+import type { Context, JsonValue } from "@candy/chord";
+import { awaitWithContext, withoutAbortSignal } from "@candy/chord/context";
+import { track } from "@candy/chord/delta";
 import {
 	type AnyDocToken,
 	checkRecordScope,

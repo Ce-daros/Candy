@@ -1,7 +1,7 @@
 {
-	"name": "@earendil-works/pi-client",
+	"name": "@candy/client",
 	"version": "0.87.1",
-	"description": "Transport-neutral client for remote pi sessions over framed CBOR bytes",
+	"description": "Transport-neutral client for remote candy sessions over framed CBOR bytes",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -30,7 +30,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"keywords": [
-		"pi",
+		"candy",
 		"client",
 		"protocol",
 		"cbor",
@@ -47,8 +47,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/chord": "^0.87.1",
-		"@earendil-works/pi-protocol": "^0.87.1"
+		"@candy/chord": "^0.87.1",
+		"@candy/protocol": "^0.87.1"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",

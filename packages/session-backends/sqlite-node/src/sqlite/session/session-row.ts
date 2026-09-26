@@ -1,5 +1,5 @@
-import type { SessionMetadata } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
+import type { SessionMetadata } from "@candy/agent-core";
+import type { Usage } from "@candy/ai";
 import { sql } from "../sql.ts";
 import type { SqliteDatabase } from "../types.ts";
 

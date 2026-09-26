@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@candy/chord";
 import type { ShellOutputCaptureOptions, ShellOutputMetadata, ShellOutputUpdate, ShellOutputView } from "../index.ts";
 import { AdaptivePublisher } from "./adaptive-publisher.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateHead, truncateTail, utf8ByteLength } from "./truncate.ts";

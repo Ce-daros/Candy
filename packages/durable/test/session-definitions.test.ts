@@ -1,4 +1,4 @@
-import type { Draft } from "@earendil-works/chord";
+import type { Draft } from "@candy/chord";
 import {
 	type ConversationId,
 	createSession,
@@ -9,7 +9,7 @@ import {
 	type Session,
 	type TaskId,
 	type Tx,
-} from "@earendil-works/pi-durable";
+} from "@candy/durable";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { idFromNumber } from "../src/ids.ts";
 import { context } from "./session-support.ts";

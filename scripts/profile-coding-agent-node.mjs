@@ -13,8 +13,8 @@ const bundledDistCliPath = join(packageDir, "dist", "bundle", "cli.js");
 const srcCliPath = join(packageDir, "src", "cli.ts");
 const defaultNodeProfileDir = join(repoRoot, "profiles-node");
 const defaultBunProfileDir = join(repoRoot, "profiles-bun");
-const agentDirEnvName = "PI_CODING_AGENT_DIR";
-const startupBenchmarkEnvName = "PI_STARTUP_BENCHMARK";
+const agentDirEnvName = "CANDY_CODING_AGENT_DIR";
+const startupBenchmarkEnvName = "CANDY_STARTUP_BENCHMARK";
 
 function printHelp() {
 	console.log(`Usage:
@@ -34,10 +34,10 @@ Options:
                          Default: profiles-node for Node, profiles-bun for Bun
   --label <name>         Profile name prefix (default: <mode>-startup)
   --runtime <name>       node, bun, or auto (default: auto)
-  --agent-dir <dir>      Use a specific PI_CODING_AGENT_DIR for the benchmark run
+  --agent-dir <dir>      Use a specific CANDY_CODING_AGENT_DIR for the benchmark run
   --isolated-agent-dir   Use a fresh temporary agent dir instead of the normal one
   --bundle               Build and profile the bundled Node entrypoint instead of dist/cli.js
-  --no-offline           Do not force PI_OFFLINE=1 / PI_SKIP_VERSION_CHECK=1
+  --no-offline           Do not force CANDY_OFFLINE=1 / CANDY_SKIP_VERSION_CHECK=1
   --skip-build           Reuse the selected build output without rebuilding first (Node only)
   --cpu-profile          Write CPU profiles for benchmark runs
   --help                 Show this help
@@ -381,7 +381,7 @@ function getRuntimeCommand(runtime, mode, profileDir, profileName, cpuProfile, n
 }
 
 function createBenchmarkEnv(options, isolatedAgentDir) {
-	const env = { ...process.env, PI_TIMING: "1" };
+	const env = { ...process.env, CANDY_TIMING: "1" };
 	if (options.agentDir) {
 		env[agentDirEnvName] = options.agentDir;
 	} else if (isolatedAgentDir) {
@@ -391,8 +391,8 @@ function createBenchmarkEnv(options, isolatedAgentDir) {
 		env[startupBenchmarkEnvName] = "1";
 	}
 	if (options.offline) {
-		env.PI_OFFLINE = "1";
-		env.PI_SKIP_VERSION_CHECK = "1";
+		env.CANDY_OFFLINE = "1";
+		env.CANDY_SKIP_VERSION_CHECK = "1";
 	}
 	return env;
 }

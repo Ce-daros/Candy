@@ -11,26 +11,26 @@ Chord will be the application-neutral foundation for:
 3. transporting service calls and subscriptions over symmetric RPC plumbing; and
 4. replicating authoritative latest-value state to local and remote consumers.
 
-The current Pi experiments prove many required behaviors, but Chord will be implemented from scratch. Existing source may be used as test and design evidence, not copied into this package. Compatibility with experimental APIs or wire messages is not a requirement.
+The current candy experiments prove many required behaviors, but Chord will be implemented from scratch. Existing source may be used as test and design evidence, not copied into this package. Compatibility with experimental APIs or wire messages is not a requirement.
 
 ## 2. Dependency boundary
 
 The dependency direction is strict:
 
 ```text
-@earendil-works/chord
+@candy/chord
         ↑
-Pi agent, protocol, server, coding agent, TUI, and future applications
+candy agent, protocol, server, coding agent, TUI, and future applications
 ```
 
 Chord must:
 
-- have no dependency on another Pi workspace package;
+- have no dependency on another candy workspace package;
 - contain no imports from `@earendil-works/pi-*` or relative paths outside `packages/chord`;
 - use application-neutral vocabulary in source, errors, tests, and examples;
 - own any generic runtime types required by its public API, including strict JSON values and invocation cancellation context;
 - keep Node-specific loading and bundling separate from the platform-neutral runtime; and
-- be buildable, testable, packable, and usable without resolving another Pi package.
+- be buildable, testable, packable, and usable without resolving another candy package.
 
 A generic third-party dependency is not prohibited, but each dependency must be justified. The runtime should initially prefer standard JavaScript APIs. The bundler may use one pinned implementation behind a Chord-owned adapter.
 
@@ -76,7 +76,7 @@ The local service path must not require RPC serialization. The remote path must 
 
 ## 4. Invocation context and strict JSON
 
-Current experiments depend on Pi's Harness `Context`, which Chord cannot import. Chord therefore needs a small neutral invocation context.
+Current experiments depend on candy's Harness `Context`, which Chord cannot import. Chord therefore needs a small neutral invocation context.
 
 The initial context should provide:
 
@@ -86,7 +86,7 @@ The initial context should provide:
 - child derivation, cancellation, and cancellation-aware waiting helpers; and
 - no built-in telemetry, identity, authentication, or application values.
 
-Applications may define their own context keys. A Pi adapter can carry telemetry and authenticated identity through such keys without Chord knowing their types.
+Applications may define their own context keys. A candy adapter can carry telemetry and authenticated identity through such keys without Chord knowing their types.
 
 A context object never crosses RPC as a business value. The calling peer sends cancellation control and, if configured, an opaque strict-JSON metadata carrier. The receiving adapter constructs a fresh local context. The adapter, not remote business arguments, installs authenticated local identity.
 
@@ -450,7 +450,7 @@ The service layer adds transport-neutral operations for:
 - singleton unavailable/replaced events; and
 - keyed instance spawned/closed events.
 
-The wire protocol contains no server ID, session ID, attachment ID, route, user identity, or host kind. A Pi router may wrap or forward Chord envelopes using its own control fields without parsing service business payloads.
+The wire protocol contains no server ID, session ID, attachment ID, route, user identity, or host kind. A candy router may wrap or forward Chord envelopes using its own control fields without parsing service business payloads.
 
 Provider catalogue and subscription state must come from actual service provisions, not a handwritten application inventory.
 
@@ -510,11 +510,11 @@ Writes should use a temporary output directory followed by an atomic rename so a
 
 ### 10.3 Bundle rules
 
-- `@earendil-works/chord` must be externalized so a plugin uses the host's one runtime and branding symbols.
+- `@candy/chord` must be externalized so a plugin uses the host's one runtime and branding symbols.
 - Other dependencies are bundled by default. The explicit bundler API uses an application external allowlist; the package-level API also externalizes peer dependencies because the host provides them.
 - Built-in module use may be allowed for Node entries but is not a trust or sandbox policy.
 - Dynamic imports must be lowered through the loader's restricted `require`, and unresolved externals must be reported deterministically.
-- Bundle output must not depend on Pi's repository path aliases.
+- Bundle output must not depend on candy's repository path aliases.
 - Rebuilding unchanged inputs should produce stable content except for documented metadata.
 - Diagnostics must identify the entry and original source location.
 
@@ -534,7 +534,7 @@ The bundle loader must:
 
 Plugin discovery, installation, version resolution, download, signature trust, and update policy remain application responsibilities.
 
-## 11. Pi migration boundary
+## 11. candy migration boundary
 
 The following existing files describe behavior that should become Chord responsibility through a rewrite:
 
@@ -552,21 +552,21 @@ The following must remain outside Chord:
 
 | Existing area | Downstream responsibility |
 |---|---|
-| `packages/coding-agent/src/experimental/services/connection.ts` | Pi connection state, selected-session attachment, route rebinding, Pi client adapter |
+| `packages/coding-agent/src/experimental/services/connection.ts` | candy connection state, selected-session attachment, route rebinding, candy client adapter |
 | `packages/coding-agent/src/experimental/services/server.ts` | server-wide session directory and management implementations |
-| `packages/coding-agent/src/experimental/services/worker.ts` | Session worker host construction and Pi protocol publication adapter |
+| `packages/coding-agent/src/experimental/services/worker.ts` | Session worker host construction and candy protocol publication adapter |
 | `packages/server`, `packages/client`, and process managers | framing, routing, authentication, attachment, process lifecycle, reconnect policy |
 | slash-command, model, account, transcript, TUI, and agent-controller services | application contracts and plugin implementations |
-| `source-resolver.ts` and Pi internal process entrypoints | Pi source execution and process policy |
+| `source-resolver.ts` and candy internal process entrypoints | candy source execution and process policy |
 
-The Pico5 Chord usage guide, experimental service tests, and remote plugin fixture are behavioral input. They are not normative Chord APIs. Once migration finishes, generic semantics should be documented in Chord and Pi documents should cover only their host-specific contracts and adapters.
+The Pico5 Chord usage guide, experimental service tests, and remote plugin fixture are behavioral input. They are not normative Chord APIs. Once migration finishes, generic semantics should be documented in Chord and candy documents should cover only their host-specific contracts and adapters.
 
 Migration should happen only after Chord passes its standalone conformance suite:
 
-1. implement Chord without changing Pi callers;
-2. add thin Pi adapters and migrate generic service imports;
+1. implement Chord without changing candy callers;
+2. add thin candy adapters and migrate generic service imports;
 3. migrate the experimental plugin host and loaders;
-4. adapt Pi's routed protocol to carry Chord envelopes;
+4. adapt candy's routed protocol to carry Chord envelopes;
 5. run local, loopback, framed, keyed-generation, reload, and TUI integration tests; and
 6. delete duplicate experimental generic implementations only after all consumers use Chord.
 
@@ -614,7 +614,7 @@ packages/chord/
   PLANNING.md
 ```
 
-If Node-only APIs are exported, they should use a separate package export such as `@earendil-works/chord/node` or `@earendil-works/chord/bundler`; importing the main runtime must not load Node-only modules.
+If Node-only APIs are exported, they should use a separate package export such as `@candy/chord/node` or `@candy/chord/bundler`; importing the main runtime must not load Node-only modules.
 
 ## 13. Work packages
 
@@ -627,7 +627,7 @@ Deliver:
 - settle protocol version negotiation;
 - choose whether remote context position is fixed and trailing;
 - create deterministic in-memory duplex and controllable race test helpers;
-- add package-boundary checks preventing Pi imports; and
+- add package-boundary checks preventing candy imports; and
 - add compile-only fixtures for valid and invalid remote contracts.
 
 Exit condition: every later work package can target explicit behavior without importing experimental implementations.
@@ -733,21 +733,21 @@ Deliver:
 - manifest/integrity validation; and
 - fresh VM-compiled generation loading outside Node's module caches.
 
-Tests bundle an application-neutral fixture with two opaque entries and a third-party dependency, load each independently, activate it, reload changed source, prove unchanged source hashes are stable, reject corrupt manifests/integrity, and prove output resolves no Pi packages.
+Tests bundle an application-neutral fixture with two opaque entries and a third-party dependency, load each independently, activate it, reload changed source, prove unchanged source hashes are stable, reject corrupt manifests/integrity, and prove output resolves no candy packages.
 
-### WP8 — Pi adoption
+### WP8 — candy adoption
 
 This work is downstream of Chord rather than an implementation dependency.
 
 Deliver:
 
-- Pi adapters for context metadata and routed RPC transport;
+- candy adapters for context metadata and routed RPC transport;
 - migration of experimental service and plugin host consumers;
 - preservation of selected-session and TUI behavior outside Chord;
 - framed integration and reload coverage; and
 - removal of superseded generic experimental code.
 
-Exit condition: Pi depends on Chord, while Chord remains independently packable and contains no Pi imports.
+Exit condition: candy depends on Chord, while Chord remains independently packable and contains no candy imports.
 
 ## 14. Required conformance matrix
 
@@ -814,7 +814,7 @@ Race tests should control exact points rather than use timing: subscription capt
 
 ## 15. Non-goals for the initial implementation
 
-- Pi host APIs or built-in Pi services;
+- candy host APIs or built-in candy services;
 - plugin discovery, installation, download, registry, or package resolution;
 - trust policy, code signing, sandboxing, or capability security;
 - network listeners, socket framing, reconnect loops, routing, or authentication;
@@ -825,7 +825,7 @@ Race tests should control exact points rather than use timing: subscription capt
 - serialized UI trees, remote tools, or remote hooks;
 - generic contribution registries; applications can expose these as process-local services;
 - automatic retries of mutating calls after uncertain disconnects; and
-- backward compatibility with experimental Pi APIs or wire formats.
+- backward compatibility with experimental candy APIs or wire formats.
 
 ## 16. Decisions required before implementation
 
@@ -841,13 +841,13 @@ The following decisions should be recorded in this document or small ADRs before
 8. Manifest schema, integrity algorithm, and external-module resolution contract.
 9. Whether browser-compatible core behavior is an immediate tested requirement or only an architectural constraint.
 
-None of these decisions should introduce Pi concepts into Chord.
+None of these decisions should introduce candy concepts into Chord.
 
 ## 17. Definition of done
 
 Chord's initial scope is complete when:
 
-- a standalone application unrelated to Pi can define local and remote singleton/keyed services;
+- a standalone application unrelated to candy can define local and remote singleton/keyed services;
 - two symmetric peers can call each other, cancel calls, subscribe, disconnect, and rehydrate;
 - replicated state satisfies the snapshot/update and replacement semantics above;
 - plugins activate from a validated graph and own all registered resources;
@@ -855,5 +855,5 @@ Chord's initial scope is complete when:
 - stable service facades survive provider replacement as specified;
 - the Node bundler emits and reloads independent content-addressed plugin entries;
 - all race and lifecycle conformance tests pass;
-- the packed package works outside the Pi monorepo; and
+- the packed package works outside the candy monorepo; and
 - an automated boundary check proves that Chord has no imports or dependencies on the rest of Pi.

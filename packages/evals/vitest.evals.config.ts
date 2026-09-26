@@ -38,9 +38,9 @@ const localConfig = mergeConfig(
 	baseConfig,
 	defineConfig({
 		resolve: {
-			alias: [{ find: /^@earendil-works\/pi-coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex }],
+			alias: [{ find: /^@earendil-works\/coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex }],
 		},
 	}),
 );
 
-export default process.env.PI_EVAL_CONTAINER === "1" ? evalConfig : mergeConfig(localConfig, evalConfig);
+export default process.env.CANDY_EVAL_CONTAINER === "1" ? evalConfig : mergeConfig(localConfig, evalConfig);

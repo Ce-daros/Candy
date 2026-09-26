@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT } from "@candy/chord/context";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ShellOutputUpdate, ShellOutputView } from "../src/env/index.ts";
 import { applyShellOutputUpdate, OutputCapture, sanitizeShellOutput } from "../src/env/utils/output-capture.ts";

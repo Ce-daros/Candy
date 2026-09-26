@@ -106,7 +106,7 @@ never reclaimed and default no-fsync behavior matches the specification.
 
 ## 6–7. Tracker transaction core, definitions, and typed access
 
-**Prerequisite:** `@earendil-works/chord/delta` exports the canonical
+**Prerequisite:** `@candy/chord/delta` exports the canonical
 Astra-immutable-optimized `track`, `Tracker`, `Change`, and `Prepared`, and its
 draft placements reject values that are not strict JSON.
 Experimental variants under other Delta directories are not Pico APIs.

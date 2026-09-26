@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
-import { parseServiceCall } from "@earendil-works/chord";
-import { ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION } from "@earendil-works/pi-protocol";
+import { parseServiceCall } from "@candy/chord";
+import { ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION } from "@candy/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { Client } from "../src/index.ts";
 import { createUnixTransportFactory } from "../src/unix.ts";
@@ -13,7 +13,7 @@ const servers = new Set<Server>();
 const sockets = new Set<Socket>();
 
 async function makeSocketPath(): Promise<string> {
-	const directory = await mkdtemp(join("/tmp", "pi-client-transport-"));
+	const directory = await mkdtemp(join("/tmp", "client-transport-"));
 	tempDirectories.add(directory);
 	return join(directory, "pi.sock");
 }

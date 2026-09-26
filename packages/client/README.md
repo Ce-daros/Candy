@@ -1,9 +1,9 @@
-# @earendil-works/pi-client
+# @candy/client
 
-Transport-neutral client for the experimental Pi service protocol.
+Transport-neutral client for the experimental candy service protocol.
 
 ```ts
-import { Client, type ByteTransportFactory } from "@earendil-works/pi-client";
+import { Client, type ByteTransportFactory } from "@candy/client";
 
 const transportFactory: ByteTransportFactory = async (handlers) => {
   // Connect using WebSocket, Unix socket, or another ordered byte transport.
@@ -27,7 +27,7 @@ const result = await client.request(
 
 The client verifies that the physical endpoint reports the expected logical `serverId`. Server-wide requests carry that ID, and every Session request carries the full live target `{ serverId, sessionId, attachmentId }`. The combined durable address prevents cross-server or cross-session misrouting; the server-generated attachment ID rejects delayed frames after switching or reattaching.
 
-Typed server and Session APIs are provided by Chord service bindings owned by the application. `createClientServiceTransport()` adapts a lazily resolved server or Session route to a Chord transport; `request()` and `subscribeService()` remain its low-level primitives. The client uses Chord's service-control parsers and per-subscription state decoder; `pi-protocol` only validates the routed envelope and strict-JSON boundary. A service subscription returns a complete provider snapshot; the binding installs it and then calls `start()` to release updates buffered during hydration. `Client` applies ordered out-of-band attachment changes but deliberately does not construct typed service proxies or interpret application contracts.
+Typed server and Session APIs are provided by Chord service bindings owned by the application. `createClientServiceTransport()` adapts a lazily resolved server or Session route to a Chord transport; `request()` and `subscribeService()` remain its low-level primitives. The client uses Chord's service-control parsers and per-subscription state decoder; `protocol` only validates the routed envelope and strict-JSON boundary. A service subscription returns a complete provider snapshot; the binding installs it and then calls `start()` to release updates buffered during hydration. `Client` applies ordered out-of-band attachment changes but deliberately does not construct typed service proxies or interpret application contracts.
 
 Application observation APIs such as the coding agent's `Transcript` are ordinary Chord services. The client does not interpret their snapshots or updates.
 
@@ -48,8 +48,8 @@ A transport factory creates a fresh authenticated connection for each attempt. R
 Node.js and Bun consumers can use the separate Unix transport:
 
 ```ts
-import { Client } from "@earendil-works/pi-client";
-import { createUnixTransportFactory } from "@earendil-works/pi-client/unix";
+import { Client } from "@candy/client";
+import { createUnixTransportFactory } from "@candy/client/unix";
 
 const client = new Client({
   serverId: "01234567-89ab-4def-8123-456789abcdef",
@@ -61,7 +61,7 @@ await client.connect();
 Unix discovery scans an explicit physical-route directory, derives each expected server ID from its filename, and verifies it through the existing handshake:
 
 ```ts
-import { discoverUnixServers } from "@earendil-works/pi-client/unix";
+import { discoverUnixServers } from "@candy/client/unix";
 
 const routes = await discoverUnixServers({ directory: "/run/user/1000/pi" });
 // [{ serverId: "...", path: "/run/user/1000/pi/<serverId>.sock" }]
