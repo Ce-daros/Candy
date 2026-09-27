@@ -4,8 +4,10 @@
 
 ### Added
 
+- Added Sixel image protocol support (Windows Terminal 1.22+), auto-detected for `WT_SESSION` and forceable via `CANDY_IMAGE_PROTOCOL=sixel`. Includes a `SixelImage` component for pre-encoded sequences and a `calculateSixelCellSize` helper.
 - Added an optional `leftGutter` to `EditorOptions` that prefixes editor content lines (never the horizontal borders), clipped on narrow terminals.
 - Added a `bottomBorderClick` hook on `Editor` for subclasses to intercept left clicks on the editor's bottom border row (used by the coding-agent footer powerbar).
+- Added editor history scopes and a side-border styling hook for mode-specific composer history and frame animation.
 
 ### Fixed
 
@@ -13,6 +15,7 @@
 - Fixed path and `@` autocomplete not working after opening wrappers such as `(`, `[`, `{`, `<`, or a backtick, e.g. `(~/Dev<Tab>`.
 - Reduced image stretching in terminals that use the Kitty graphics protocol ([#8938](https://github.com/earendil-works/pi/issues/8938)).
 - Fixed the shell cursor staying hidden after exit when an extension closed an overlay during shutdown ([#10026](https://github.com/earendil-works/pi/issues/10026)).
+- Fixed image fallback paths showing Windows backslash separators (now normalized to `~/...`).
 
 ## [0.87.1] - 2026-09-22
 

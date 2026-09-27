@@ -357,6 +357,8 @@ export class Editor implements Component, Focusable {
 
 	// Prompt history for up/down navigation
 	private history: string[] = [];
+	private readonly historyByScope = new Map<string, string[]>();
+	private historyScope = "default";
 	private historyIndex: number = -1; // -1 = not browsing, 0 = most recent, 1 = older, etc.
 	private historyDraft: EditorState | null = null;
 
@@ -461,6 +463,14 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	setHistoryScope(scope: string): void {
+		if (scope === this.historyScope) return;
+		this.exitHistoryBrowsing();
+		this.historyByScope.set(this.historyScope, this.history);
+		this.history = this.historyByScope.get(scope) ?? [];
+		this.historyScope = scope;
+	}
+
 	private isEditorEmpty(): boolean {
 		return this.state.lines.length === 1 && this.state.lines[0] === "";
 	}
@@ -542,12 +552,19 @@ export class Editor implements Component, Focusable {
 		return this.borderColor(border);
 	}
 
+	protected colorSideBorder(text: string, _side: "left" | "right", _row: number, _totalRows: number): string {
+		return this.borderColor(text);
+	}
+
+	protected getFrameRowCount(): number {
+		return this.renderedVisibleLineCount + 2;
+	}
+
 	render(width: number): string[] {
 		const gutter = this.gutterFor(width);
 		const gutterWidth = visibleWidth(gutter);
 		const rightGutter = width - gutterWidth >= 3 ? this.rightGutter : "";
 		const rightWidth = visibleWidth(rightGutter);
-		// The vertical gutters are part of the frame, so they share its color.
 		const coloredGutter = gutter ? this.borderColor(gutter) : "";
 		const coloredRightGutter = rightGutter ? this.borderColor(rightGutter) : "";
 		const maxPadding = Math.max(0, Math.floor((width - gutterWidth - rightWidth - 1) / 2));
@@ -600,7 +617,8 @@ export class Editor implements Component, Focusable {
 		// autocomplete (e.g. slash-command menu) is visible.
 		const emitCursorMarker = this.focused;
 
-		for (const layoutLine of visibleLines) {
+		const totalFrameRows = this.renderedVisibleLineCount + 2;
+		for (const [index, layoutLine] of visibleLines.entries()) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 			let cursorInPadding = false;
@@ -639,10 +657,16 @@ export class Editor implements Component, Focusable {
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${coloredGutter}${leftPadding}${displayText}${padding}${lineRightPadding}${coloredRightGutter}`);
+			const row = index + 1;
+			const left = gutter ? this.colorSideBorder(gutter, "left", row, totalFrameRows) : "";
+			const right = rightGutter ? this.colorSideBorder(rightGutter, "right", row, totalFrameRows) : "";
+			result.push(`${left}${leftPadding}${displayText}${padding}${lineRightPadding}${right}`);
 		}
 		for (let i = visibleLines.length; i < this.minContentLines; i++) {
-			result.push(`${coloredGutter}${" ".repeat(width - gutterWidth - rightWidth)}${coloredRightGutter}`);
+			const row = i + 1;
+			const left = gutter ? this.colorSideBorder(gutter, "left", row, totalFrameRows) : "";
+			const right = rightGutter ? this.colorSideBorder(rightGutter, "right", row, totalFrameRows) : "";
+			result.push(`${left}${" ".repeat(width - gutterWidth - rightWidth)}${right}`);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)

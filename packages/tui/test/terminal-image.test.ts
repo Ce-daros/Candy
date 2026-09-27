@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { Image } from "../src/components/image.ts";
 import {
+	calculateSixelCellSize,
 	cropKittyImageLine,
 	deleteAllKittyImages,
 	deleteAllKittyPlacements,
@@ -410,12 +411,12 @@ describe("detectCapabilities", () => {
 		});
 	});
 
-	it("enables truecolor and hyperlinks for Windows Terminal outside multiplexers", () => {
+	it("enables sixel, truecolor and hyperlinks for Windows Terminal outside multiplexers", () => {
 		withEnv({ WT_SESSION: "session", TERM: "xterm-256color" }, () => {
 			const caps = detectCapabilities();
 			assert.strictEqual(caps.trueColor, true);
 			assert.strictEqual(caps.hyperlinks, true);
-			assert.strictEqual(caps.images, null);
+			assert.strictEqual(caps.images, "sixel");
 		});
 	});
 
@@ -843,5 +844,71 @@ describe("hyperlink", () => {
 		const result = hyperlink("README.md", "file:///home/user/README.md");
 		assert.ok(result.includes("file:///home/user/README.md"));
 		assert.ok(result.includes("README.md"));
+	});
+});
+
+describe("Sixel image protocol", () => {
+	describe("isImageLine", () => {
+		it("should detect a sixel sequence at line start", () => {
+			assert.strictEqual(isImageLine('\x1bPq"1;1;10;10#0;2;100;0;0!5@\x1b\\'), true);
+		});
+
+		it("should detect a sixel sequence with DCS parameters", () => {
+			assert.strictEqual(isImageLine("\x1bP0;1;0q#0;2;100;0;0!5@\x1b\\"), true);
+		});
+
+		it("should detect a sixel sequence after a cursor-forward prefix", () => {
+			assert.strictEqual(isImageLine("\x1b[10C\x1bPq!5@\x1b\\"), true);
+		});
+
+		it("should not flag non-sixel DCS sequences", () => {
+			// DECRQSS and other DCS sequences use different finals
+			assert.strictEqual(isImageLine("\x1bP$qqm\x1b\\"), false);
+			assert.strictEqual(isImageLine("\x1bP1;2|text\x1b\\"), false);
+		});
+	});
+
+	describe("detectCapabilities", () => {
+		it("should report sixel for Windows Terminal", () => {
+			withEnv({ WT_SESSION: "test-session" }, () => {
+				const caps = detectCapabilities(() => false);
+				assert.strictEqual(caps.images, "sixel");
+				assert.strictEqual(caps.trueColor, true);
+			});
+		});
+
+		it("should allow CANDY_IMAGE_PROTOCOL=none to disable sixel on Windows Terminal", () => {
+			withEnv({ WT_SESSION: "test-session", CANDY_IMAGE_PROTOCOL: "none" }, () => {
+				const caps = detectCapabilities(() => false);
+				assert.strictEqual(caps.images, null);
+			});
+		});
+
+		it("should allow forcing sixel via CANDY_IMAGE_PROTOCOL", () => {
+			withEnv({ CANDY_IMAGE_PROTOCOL: "sixel" }, () => {
+				const caps = detectCapabilities(() => false);
+				assert.strictEqual(caps.images, "sixel");
+			});
+		});
+	});
+
+	describe("calculateSixelCellSize", () => {
+		it("should convert pixel dimensions to cells at the given cell size", () => {
+			try {
+				setCellDimensions({ widthPx: 9, heightPx: 18 });
+				assert.deepStrictEqual(calculateSixelCellSize(378, 234), { columns: 42, rows: 13 });
+			} finally {
+				setCellDimensions({ widthPx: 9, heightPx: 18 });
+			}
+		});
+
+		it("should round up partial cells", () => {
+			try {
+				setCellDimensions({ widthPx: 10, heightPx: 20 });
+				assert.deepStrictEqual(calculateSixelCellSize(21, 41), { columns: 3, rows: 3 });
+			} finally {
+				setCellDimensions({ widthPx: 9, heightPx: 18 });
+			}
+		});
 	});
 });

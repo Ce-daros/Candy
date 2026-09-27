@@ -1703,7 +1703,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					: this.deleteKittyImages();
 			buffer += `${clearImages}\x1b[2J`;
 		} else if (imagesNeedRedraw) {
-			if (this.imageProtocol === "iterm2") buffer += "\x1b[2J";
+			// Sixel images cannot be repositioned or deleted in place (no placement
+			// protocol), so a full clear guarantees no stale pixels remain.
+			if (this.imageProtocol === "iterm2" || this.imageProtocol === "sixel") buffer += "\x1b[2J";
 			else if (this.imageProtocol === "kitty") buffer += deleteAllKittyPlacements();
 		}
 		buffer += preparedKittyScreen.evictedImageDeletion;
@@ -1723,9 +1725,23 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			}
 		}
 
+		// Windows Terminal erases Sixel pixels overlapping any row later cleared
+		// with EL. Image rows must therefore be written after every other row has
+		// been cleared and drawn, so no subsequent EL touches the plotted pixels.
+		const deferSixelImages = this.imageProtocol === "sixel";
+		const deferredSixelRows: string[] = [];
 		for (let row = 0; row < height; row++) {
 			if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row]) continue;
-			buffer += `\x1b[${row + 1};1H${clearRowsBeforeKittyImages ? "" : "\x1b[2K"}${preparedKittyScreen.lines[row] ?? ""}`;
+			const line = preparedKittyScreen.lines[row] ?? "";
+			if (deferSixelImages && isImageLine(line)) {
+				deferredSixelRows.push(`\x1b[${row + 1};1H${line}`);
+				buffer += `\x1b[${row + 1};1H\x1b[2K`;
+				continue;
+			}
+			buffer += `\x1b[${row + 1};1H${clearRowsBeforeKittyImages ? "" : "\x1b[2K"}${line}`;
+		}
+		for (const deferred of deferredSixelRows) {
+			buffer += deferred;
 		}
 
 		if (cursorPos) {

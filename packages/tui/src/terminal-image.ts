@@ -4,7 +4,7 @@ import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { TerminalColorMode } from "./colors.ts";
 
-export type ImageProtocol = "kitty" | "iterm2" | null;
+export type ImageProtocol = "kitty" | "iterm2" | "sixel" | null;
 
 export interface TerminalCapabilities {
 	images: ImageProtocol;
@@ -107,8 +107,9 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink: () => boolean)
 		return { images: "iterm2", trueColor: true, hyperlinks: true };
 	}
 
+	// Windows Terminal 1.22+ supports the Sixel graphics protocol.
 	if (process.env.WT_SESSION) {
-		return { images: null, trueColor: true, hyperlinks: true };
+		return { images: "sixel", trueColor: true, hyperlinks: true };
 	}
 
 	if (termProgram === "alacritty" || termProgram === "vscode" || termProgram === "zed") {
@@ -144,7 +145,7 @@ export function detectCapabilities(tmuxForwardsHyperlink: () => boolean = probeT
 	);
 	const imageProtocol = process.env.CANDY_IMAGE_PROTOCOL?.toLowerCase();
 	const images =
-		imageProtocol === "kitty" || imageProtocol === "iterm2"
+		imageProtocol === "kitty" || imageProtocol === "iterm2" || imageProtocol === "sixel"
 			? imageProtocol
 			: imageProtocol === "none" || imageProtocol === "0"
 				? null
@@ -197,14 +198,16 @@ export function setCapabilities(caps: TerminalCapabilities): void {
 
 const KITTY_PREFIX = "\x1b_G";
 const ITERM2_PREFIX = "\x1b]1337;File=";
+// Sixel: DCS introducer followed only by optional numeric params, then the 'q' final.
+const SIXEL_PATTERN = /\x1bP[0-9;]*q/;
 
 export function isImageLine(line: string): boolean {
 	// Fast path: sequence at line start (single-row images)
-	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
+	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX) || SIXEL_PATTERN.test(line)) {
 		return true;
 	}
 	// Slow path: sequence elsewhere (multi-row images have cursor-up prefix)
-	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
+	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX) || SIXEL_PATTERN.test(line);
 }
 
 /**
@@ -635,6 +638,21 @@ export function getImageDimensions(base64Data: string, mimeType: string): ImageD
 	return null;
 }
 
+/**
+ * Cell footprint of a fixed-pixel-size image (Sixel): the terminal scales Sixel
+ * output to the image's pixel size, so occupied cells depend on the cell dimensions.
+ */
+export function calculateSixelCellSize(
+	widthPx: number,
+	heightPx: number,
+	cellDimensions: CellDimensions = getCellDimensions(),
+): ImageCellSize {
+	return {
+		columns: Math.max(1, Math.ceil(widthPx / Math.max(1, cellDimensions.widthPx))),
+		rows: Math.max(1, Math.ceil(heightPx / Math.max(1, cellDimensions.heightPx))),
+	};
+}
+
 export function renderImage(
 	base64Data: string,
 	imageDimensions: ImageDimensions,
@@ -705,7 +723,8 @@ export function hyperlink(text: string, url: string): string {
 function shortenImagePath(filename: string): string {
 	const home = homedir();
 	if (home && (filename === home || filename.startsWith(`${home}/`) || filename.startsWith(`${home}\\`))) {
-		return `~${filename.slice(home.length)}`;
+		// Normalize Windows separators so the display form is ~/... everywhere.
+		return `~${filename.slice(home.length).replaceAll("\\", "/")}`;
 	}
 	return filename;
 }
