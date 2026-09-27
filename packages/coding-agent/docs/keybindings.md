@@ -160,7 +160,7 @@ In Shell mode, an empty-editor Backspace or Esc steps back one mode; Esc preserv
 | `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
 | `app.powerbar.left` | `left` | Move the powerbar selection left (while a selector is open) |
 | `app.powerbar.right` | `right` | Move the powerbar selection right (while a selector is open) |
-| `app.powerbar.next` | `tab` | Move from the model selector to thinking level |
+| `app.powerbar.next` | `tab` | Move between the model and thinking level selectors (wraps) |
 | `app.powerbar.previous` | `shift+tab` | Move from thinking level to the model selector |
 
 While a powerbar selector is open, `enter` confirms the highlighted item, `escape` collapses it, and typing filters the model track. The model and thinking labels in the footer are also clickable.

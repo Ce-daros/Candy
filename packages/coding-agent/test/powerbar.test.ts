@@ -518,6 +518,17 @@ describe("FooterComponent powerbar integration", () => {
 		footer.dispose();
 	});
 
+	it("wraps back to the model selector when Tab is pressed on the thinking track", () => {
+		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
+		footer.setAnimationOptions(false, "moderate");
+		footer.openPowerbarModelBrowse();
+		footer.switchPowerbar(1);
+		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Medium ›");
+		footer.switchPowerbar(1);
+		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Kimi K2.6 ›");
+		footer.dispose();
+	});
+
 	it("keeps the model selector open when reasoning is unavailable", () => {
 		const session = createFooterSession();
 		session.state.model!.reasoning = false;

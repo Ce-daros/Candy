@@ -119,7 +119,10 @@ export const KEYBINDINGS = {
 		defaultKeys: "right",
 		description: "Move powerbar selection right",
 	},
-	"app.powerbar.next": { defaultKeys: "tab", description: "Focus next powerbar selector" },
+	"app.powerbar.next": {
+		defaultKeys: "tab",
+		description: "Focus next powerbar selector, wrapping back to the model selector",
+	},
 	"app.powerbar.previous": { defaultKeys: "shift+tab", description: "Focus previous powerbar selector" },
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",

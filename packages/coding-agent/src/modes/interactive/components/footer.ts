@@ -201,10 +201,13 @@ export class FooterComponent implements EditorBottomStatus {
 
 	switchPowerbar(direction: 1 | -1): boolean {
 		if (!this.powerbar || this.powerbar.isIdle()) return false;
-		if (direction === -1 && this.powerbar.mode === "thinking") return this.openPowerbarModelBrowse();
-		if (direction === 1 && this.powerbar.mode !== "thinking" && this.session.state.model?.reasoning) {
-			return this.openPowerbarThinking();
+		if (direction === 1) {
+			// Tab wraps between the two selectors: model → thinking → model.
+			if (this.powerbar.mode === "thinking") return this.openPowerbarModelBrowse();
+			if (this.session.state.model?.reasoning) return this.openPowerbarThinking();
+			return true;
 		}
+		if (this.powerbar.mode === "thinking") return this.openPowerbarModelBrowse();
 		return true;
 	}
 
