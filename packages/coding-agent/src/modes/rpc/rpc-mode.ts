@@ -17,7 +17,6 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
-	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import {
 	flushRawStdout,
@@ -176,16 +175,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			} as RpcExtensionUIRequest);
 		},
 
-		setWorkingMessage(_message?: string): void {
-			// Working message not supported in RPC mode - requires TUI loader access
-		},
-
 		setWorkingVisible(_visible: boolean): void {
 			// Working visibility not supported in RPC mode - requires TUI loader access
-		},
-
-		setWorkingIndicator(_options?: WorkingIndicatorOptions): void {
-			// Working indicator customization not supported in RPC mode - requires TUI loader access
 		},
 
 		setHiddenThinkingLabel(_label?: string): void {

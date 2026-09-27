@@ -13,6 +13,7 @@ import {
 } from "@candy/tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.ts";
 import {
+	type AnimationIntensity,
 	CACHE_WARMING_MODES,
 	type CacheWarmingMode,
 	type DefaultProjectTrust,
@@ -66,6 +67,8 @@ export interface SettingsConfig {
 	availableThinkingLevels: ThinkingLevel[];
 	modelThinkingLevels: Record<string, ThinkingLevel>;
 	currentTheme: string;
+	uiAnimations: boolean;
+	animationIntensity: AnimationIntensity;
 	terminalTheme: TerminalTheme;
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
@@ -104,6 +107,8 @@ export interface SettingsCallbacks {
 	onModelThinkingLevelChange: (provider: string, modelId: string, level: ThinkingLevel) => void;
 	onModelThinkingLevelRemove: (provider: string, modelId: string) => void;
 	onThemeChange: (theme: string) => void;
+	onUiAnimationsChange: (enabled: boolean) => void;
+	onAnimationIntensityChange: (intensity: AnimationIntensity) => void;
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onMermaidRenderingModeChange: (mode: MermaidRenderingMode) => void;
@@ -712,6 +717,20 @@ export class SettingsSelectorComponent extends Container {
 				submenu: (currentValue, done) =>
 					new ThemeSubmenu(currentValue, config.terminalTheme, config.availableThemes, callbacks, done),
 			},
+			{
+				id: "ui-animations",
+				label: "UI animations",
+				description: "Animate interface transitions and the input border",
+				currentValue: config.uiAnimations ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "animation-intensity",
+				label: "Animation intensity",
+				description: "Motion speed and update frequency",
+				currentValue: config.animationIntensity,
+				values: ["conservative", "moderate", "aggressive"],
+			},
 		];
 
 		// Only show image toggle if terminal supports it
@@ -930,6 +949,12 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "theme":
 						callbacks.onThemeChange(newValue);
+						break;
+					case "ui-animations":
+						callbacks.onUiAnimationsChange(newValue === "true");
+						break;
+					case "animation-intensity":
+						callbacks.onAnimationIntensityChange(newValue as AnimationIntensity);
 						break;
 				}
 			},

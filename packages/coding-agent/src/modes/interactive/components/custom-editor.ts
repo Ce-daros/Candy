@@ -1,5 +1,8 @@
+import type { ThinkingLevel } from "@candy/agent-core";
 import { Editor, type EditorOptions, type EditorTheme, type TUI, visibleWidth } from "@candy/tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
+import type { AnimationIntensity } from "../../../core/settings-manager.ts";
+import { FrameMotion, type ShellMode } from "./frame-motion.ts";
 import type { StatusIndicator } from "./status-indicator.ts";
 
 export type CustomEditorOptions = EditorOptions & {
@@ -13,6 +16,8 @@ export type CustomEditorOptions = EditorOptions & {
  */
 export interface EditorBottomStatus {
 	renderBottomBorder(width: number, hiddenLineCount: number, borderColor: (text: string) => string): string;
+	setFrameMotion?(motion: FrameMotion): void;
+	getBorderAnchors?(width: number): { left: number; right: number };
 }
 
 /** Default left gutter so the input area reads as one frame with the bottom border. */
@@ -23,8 +28,8 @@ const DEFAULT_LEFT_GUTTER = "│ ";
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
-	private workingStatusIndicator: StatusIndicator | undefined;
 	private bottomStatus: EditorBottomStatus | undefined;
+	private readonly frameMotion: FrameMotion;
 	public readonly embedWorkingStatus: boolean;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
@@ -33,6 +38,7 @@ export class CustomEditor extends Editor {
 	 * Called before all other handling; returns true when the key was consumed.
 	 */
 	public powerbarHandler?: (data: string) => boolean;
+	public shellInputHandler?: (data: string) => boolean;
 	/** Left click on the bottom border row (Powerbar labels). Returns true when handled. */
 	public onBottomBorderClick?: (x: number) => boolean;
 
@@ -47,72 +53,102 @@ export class CustomEditor extends Editor {
 		super(tui, theme, { leftGutter: DEFAULT_LEFT_GUTTER, rightGutter: "│", minContentLines: 2, ...options });
 		this.keybindings = keybindings;
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
+		this.frameMotion = new FrameMotion(tui);
 		this.bottomBorderClick = (x) => this.onBottomBorderClick?.(x) ?? false;
 	}
 
 	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void {
-		this.workingStatusIndicator = indicator;
+		indicator?.stop();
+		this.frameMotion.setStatus(indicator?.kind);
 	}
 
 	setBottomStatus(status: EditorBottomStatus | undefined): void {
 		this.bottomStatus = status;
+		status?.setFrameMotion?.(this.frameMotion);
 	}
 
+	setShellMode(mode: ShellMode): void {
+		this.frameMotion.setMode(mode);
+	}
+
+	setThinkingLevel(level: ThinkingLevel): void {
+		this.frameMotion.setThinking(level);
+	}
+
+	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
+		this.frameMotion.setOptions(enabled, intensity);
+	}
+
+	restartEntranceAnimation(): void {
+		this.frameMotion.restartEntrance();
+	}
+
+	dispose(): void {
+		this.frameMotion.dispose();
+	}
+
+	override render(width: number): string[] {
+		const anchors = this.bottomStatus?.getBorderAnchors?.(width) ?? { left: 4, right: Math.max(4, width - 5) };
+		this.frameMotion.setGeometry(width, this.getFrameRowCount(), anchors.left, anchors.right);
+		return super.render(width);
+	}
+
+	protected override colorSideBorder(text: string, side: "left" | "right", row: number, _totalRows: number): string {
+		return this.frameMotion.paintBorder(text, side === "left" ? 0 : this.frameWidth - 1, row);
+	}
+
+	private frameWidth = 80;
+
 	protected override renderBottomBorder(width: number, hiddenLineCount: number): string {
+		this.frameWidth = width;
 		if (!this.bottomStatus || width <= 0) {
 			if (width < 2) return super.renderBottomBorder(width, hiddenLineCount);
-			return this.borderColor("╰") + super.renderBottomBorder(width - 2, hiddenLineCount) + this.borderColor("╯");
+			return this.frameMotion.paintBorder(`╰${"─".repeat(width - 2)}╯`, 0, this.getFrameRowCount() - 1);
 		}
 		return this.bottomStatus.renderBottomBorder(width, hiddenLineCount, this.borderColor);
 	}
 
 	protected override renderTopBorder(width: number, hiddenLineCount: number): string {
-		if (width < 2) return this.borderColor("─".repeat(Math.max(0, width)));
-		const innerWidth = width - 2;
-		if (!this.embedWorkingStatus || !this.workingStatusIndicator) {
-			return this.borderColor("╭") + super.renderTopBorder(innerWidth, hiddenLineCount) + this.borderColor("╮");
+		this.frameWidth = width;
+		const anchors = this.bottomStatus?.getBorderAnchors?.(width) ?? { left: 4, right: Math.max(4, width - 5) };
+		this.frameMotion.setGeometry(width, this.getFrameRowCount(), anchors.left, anchors.right);
+		this.frameMotion.beginFrame();
+		if (width < 2) return this.frameMotion.paintBorder("─".repeat(Math.max(0, width)), 0, 0);
+		const line = `╭${"─".repeat(width - 2)}╮`;
+		const status =
+			!this.frameMotion.isEnabled() && this.embedWorkingStatus ? this.frameMotion.getStatus() : undefined;
+		const statusWord =
+			status === "working"
+				? "Working"
+				: status === "retry"
+					? "Retrying"
+					: status === "compaction"
+						? "Compacting"
+						: status === "branchSummary"
+							? "Summarizing"
+							: "";
+		const shellTitle = this.frameMotion.getShellTitle();
+		const title = [shellTitle, statusWord].filter(Boolean).join(" · ");
+		const titleStart = 7;
+		const titleWidth = Math.min(visibleWidth(title), Math.max(0, width - titleStart - 2));
+		const displayedTitle = title.slice(0, titleWidth);
+		const overflow = hiddenLineCount > 0 ? ` ↑ ${hiddenLineCount} more ` : "";
+		const overflowStart = Math.floor((width - visibleWidth(overflow)) / 2);
+		const showOverflow =
+			overflow && overflowStart > titleStart + titleWidth + 1 && overflowStart + visibleWidth(overflow) < width - 1;
+		let output = "";
+		let column = 0;
+		for (const [start, content] of [
+			[titleStart, displayedTitle],
+			[overflowStart, showOverflow ? overflow : ""],
+		] as const) {
+			if (!content || start < column) continue;
+			output += this.frameMotion.paintBorder(line.slice(column, start), column, 0);
+			output += start === titleStart ? this.frameMotion.paintTitle(content) : content;
+			column = start + visibleWidth(content);
 		}
-
-		let status = this.workingStatusIndicator.renderInBorder(Math.max(1, innerWidth - 5));
-		let statusWidth = visibleWidth(status);
-		if (statusWidth === 0) {
-			return this.borderColor("╭") + super.renderTopBorder(innerWidth, hiddenLineCount) + this.borderColor("╮");
-		}
-
-		const overflowLabel = hiddenLineCount > 0 ? ` ↑ ${hiddenLineCount} more ` : undefined;
-		const overflowLabelWidth = overflowLabel ? visibleWidth(overflowLabel) : 0;
-		const overflowStart = Math.floor((innerWidth - overflowLabelWidth) / 2);
-		const canFitOverflow = () =>
-			overflowLabel !== undefined &&
-			overflowLabelWidth + 2 <= innerWidth &&
-			overflowStart - (3 + statusWidth + 1) >= 1;
-
-		if (overflowLabel && !canFitOverflow()) {
-			status = this.workingStatusIndicator.renderSpinnerInBorder(innerWidth);
-			statusWidth = visibleWidth(status);
-		}
-
-		let inner: string;
-		if (canFitOverflow()) {
-			const leftBlockWidth = 3 + statusWidth + 1;
-			inner =
-				this.borderColor("── ") +
-				status +
-				this.borderColor(
-					` ${"─".repeat(overflowStart - leftBlockWidth)}${overflowLabel}${"─".repeat(innerWidth - overflowStart - overflowLabelWidth)}`,
-				);
-		} else if (innerWidth >= statusWidth + 5) {
-			inner = this.borderColor("── ") + status + this.borderColor(` ${"─".repeat(innerWidth - statusWidth - 4)}`);
-		} else {
-			status = this.workingStatusIndicator.renderSpinnerInBorder(innerWidth);
-			statusWidth = visibleWidth(status);
-			const prefixWidth = Math.min(3, Math.max(0, innerWidth - statusWidth));
-			inner =
-				this.borderColor("─".repeat(prefixWidth)) +
-				status +
-				this.borderColor("─".repeat(Math.max(0, innerWidth - prefixWidth - statusWidth)));
-		}
-		return this.borderColor("╭") + inner + this.borderColor("╮");
+		output += this.frameMotion.paintBorder(line.slice(column), column, 0);
+		return output;
 	}
 
 	/**
@@ -131,6 +167,9 @@ export class CustomEditor extends Editor {
 		// Inline Powerbar selectors take precedence; escape confirms/cancels there
 		// instead of interrupting the agent.
 		if (this.powerbarHandler?.(data)) {
+			return;
+		}
+		if (this.shellInputHandler?.(data)) {
 			return;
 		}
 

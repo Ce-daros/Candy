@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@candy/agent-core";
 import type { Model } from "@candy/ai/compat";
 import { fuzzyFilter, sliceByColumn, visibleWidth } from "@candy/tui";
+import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";
 import { theme } from "../theme/theme.ts";
 
@@ -11,6 +12,14 @@ import { theme } from "../theme/theme.ts";
  */
 const SLOT_SEPARATOR = "    ";
 const SEP = visibleWidth(SLOT_SEPARATOR);
+
+/**
+ * Slot width bounds. Labels longer than `SLOT_MAX_WIDTH - 4` columns are
+ * middle-truncated so one long model name cannot squeeze out its neighbors;
+ * very short labels pad up to `SLOT_MIN_WIDTH` so the track keeps a rhythm.
+ */
+const SLOT_MIN_WIDTH = 10;
+const SLOT_MAX_WIDTH = 28;
 
 /** Cursor shown after the search query. */
 const SEARCH_CURSOR = "▌";
@@ -138,13 +147,28 @@ function clampIndex(value: number, size: number): number {
 }
 
 /**
+ * Shorten `label` to at most `maxCols` columns with an ellipsis in the middle,
+ * keeping the head (provider/family name) and the tail (variants like
+ * "(batch)"). Returns `label` unchanged when it already fits.
+ */
+function middleTruncate(label: string, maxCols: number): string {
+	const total = visibleWidth(label);
+	if (total <= maxCols) return label;
+	if (maxCols <= 1) return "…";
+	const keep = maxCols - 1;
+	const head = Math.ceil(keep * 0.6);
+	const tail = keep - head;
+	return `${sliceByColumn(label, 0, head)}…${sliceByColumn(label, total - tail, tail)}`;
+}
+
+/**
  * Inline selector living in the editor's bottom border ("Powerbar").
  *
  * The track is a row of fixed-size slots laid out cumulatively from the left.
  * Opening, collapsing, and filtering animate each slot's width over discrete
  * frames with ease-out: pushed items glide to their new columns while entering
- * items are revealed underneath them, and the context meter is squeezed out
- * frame by frame. Selecting collapses the track back around the new value.
+ * items are revealed underneath them. Selecting collapses the track back
+ * around the new value.
  * The track is windowed: moving past the visible edge slides the window by one
  * item (animated) so the highlight is always on screen, with dim `‹`/`›`
  * markers when more items exist on either side. A new interaction snaps the
@@ -175,6 +199,8 @@ export class PowerbarController {
 	private timer: NodeJS.Timeout | undefined;
 	private lastMaxWidth = 80;
 	private lastRegions: PowerbarRegion[] = [];
+	private animationsEnabled = true;
+	private animationIntensity: AnimationIntensity = "moderate";
 
 	constructor(host: PowerbarHost) {
 		this.host = host;
@@ -182,6 +208,14 @@ export class PowerbarController {
 
 	isIdle(): boolean {
 		return this.mode === "normal";
+	}
+
+	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
+		this.animationsEnabled = enabled;
+		this.animationIntensity = intensity;
+		if (!enabled) this.snapTransition();
+		else if (this.transition) this.startTimer();
+		this.host.requestRender();
 	}
 
 	dispose(): void {
@@ -547,12 +581,13 @@ export class PowerbarController {
 		}
 		this.transition = {
 			kind: "slide",
-			intervalMs: SLIDE_INTERVAL_MS,
+			intervalMs: this.interval(SLIDE_INTERVAL_MS),
 			frames: SLIDE_FRAMES + 1,
 			tick: 0,
 			entries,
 		};
-		this.startTimer();
+		if (this.animationsEnabled) this.startTimer();
+		else this.snapTransition();
 	}
 
 	/** Column of `index` when the window starts at `start` (slots packed from `left`). */
@@ -568,17 +603,19 @@ export class PowerbarController {
 	// =========================================================================
 
 	private slotWidth(index: number): number {
-		return (this.items[index]?.width ?? 0) + 4;
+		const width = (this.items[index]?.width ?? 0) + 4;
+		return Math.min(Math.max(width, SLOT_MIN_WIDTH), SLOT_MAX_WIDTH);
 	}
 
 	/** Rendered text for an item's slot: label centered, or `‹ label ›` when highlighted. */
 	private slotText(index: number): string {
 		const item = this.items[index];
 		if (!item) return "";
+		const content = middleTruncate(item.label, this.slotWidth(index) - 4);
 		if (index === this.selectedIndex) {
-			return theme.bold(theme.fg("accent", `‹ ${item.label} ›`));
+			return theme.bold(theme.fg("accent", `‹ ${content} ›`));
 		}
-		return `  ${theme.fg("muted", item.label)}`;
+		return `  ${theme.fg("muted", content)}`;
 	}
 
 	private trackLeft(): number {
@@ -798,8 +835,22 @@ export class PowerbarController {
 
 	private startWipe(entries: WipeEntry[], intervalMs: number, onComplete?: () => void): void {
 		const last = entries.reduce((max, entry) => Math.max(max, entry.start + ITEM_FRAMES), 0);
-		this.transition = { kind: "wipe", intervalMs, frames: last + 1, tick: 0, entries, onComplete };
-		this.startTimer();
+		this.transition = {
+			kind: "wipe",
+			intervalMs: this.interval(intervalMs),
+			frames: last + 1,
+			tick: 0,
+			entries,
+			onComplete,
+		};
+		if (this.animationsEnabled) this.startTimer();
+		else this.snapTransition();
+	}
+
+	private interval(base: number): number {
+		const factor =
+			this.animationIntensity === "conservative" ? 1.8 : this.animationIntensity === "aggressive" ? 0.7 : 1;
+		return Math.max(20, Math.round(base * factor));
 	}
 
 	private startTimer(): void {

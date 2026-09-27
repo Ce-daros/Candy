@@ -17,9 +17,7 @@ function createUiContext(
 		notify: onNotify,
 		onTerminalInput: () => () => {},
 		setStatus: () => {},
-		setWorkingMessage: () => {},
 		setWorkingVisible: () => {},
-		setWorkingIndicator: () => {},
 		setHiddenThinkingLabel: () => {},
 		setWidget: () => {},
 		setFooter: () => {},
@@ -76,6 +74,14 @@ type LoadedResourcesContext = {
 };
 
 type RebindContext = {
+	session: object;
+	shellMode: "normal" | "shell" | "shell-no-context";
+	setShellMode(this: RebindContext, mode: RebindContext["shellMode"]): void;
+	defaultEditor: {
+		setHistoryScope: (scope: string) => void;
+		setShellMode: (mode: RebindContext["shellMode"]) => void;
+		restartEntranceAnimation: () => void;
+	};
 	unsubscribe?: () => void;
 	applyRuntimeSettings: () => void;
 	renderCurrentSessionState: () => void;
@@ -134,6 +140,7 @@ type InteractiveModePrototype = {
 		this: LoadedResourcesContext,
 		options?: { extensions?: Array<{ path: string }>; force?: boolean; showDiagnosticsWhenQuiet?: boolean },
 	): void;
+	setShellMode(this: RebindContext, mode: RebindContext["shellMode"]): void;
 	rebindCurrentSession(this: RebindContext, options?: { renderBeforeBind?: boolean }): Promise<void>;
 	handleReloadCommand(this: ReloadCommandContext): Promise<void>;
 };
@@ -286,7 +293,16 @@ describe("regression #5943: session_start transient UI", () => {
 		});
 
 		try {
+			const session = {};
 			const context: RebindContext = {
+				session,
+				shellMode: "shell-no-context",
+				setShellMode: interactiveModePrototype.setShellMode,
+				defaultEditor: {
+					setHistoryScope: (scope) => events.push(`history:${scope}`),
+					setShellMode: (mode) => events.push(`shell:${mode}`),
+					restartEntranceAnimation: () => events.push("editor-entrance"),
+				},
 				applyRuntimeSettings: () => events.push("apply"),
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
@@ -297,14 +313,29 @@ describe("regression #5943: session_start transient UI", () => {
 					});
 				},
 				subscribeToAgent: () => events.push("subscribe"),
-				updateAvailableProviderCount: async () => {},
-				updateEditorBorderColor: () => {},
-				updateTerminalTitle: () => {},
+				updateAvailableProviderCount: async () => {
+					events.push("provider-count");
+				},
+				updateEditorBorderColor: () => events.push("border-color"),
+				updateTerminalTitle: () => events.push("terminal-title"),
 			};
 
 			await interactiveModePrototype.rebindCurrentSession.call(context, { renderBeforeBind: true });
 
-			expect(events).toEqual(["apply", "render", "subscribe", "bind", "notify:Hello Error"]);
+			expect(events).toEqual([
+				"history:default",
+				"shell:normal",
+				"border-color",
+				"apply",
+				"render",
+				"subscribe",
+				"bind",
+				"notify:Hello Error",
+				"provider-count",
+				"border-color",
+				"terminal-title",
+				"editor-entrance",
+			]);
 		} finally {
 			harness.cleanup();
 		}
@@ -327,7 +358,16 @@ describe("regression #5943: session_start transient UI", () => {
 		});
 
 		try {
+			const session = {};
 			const context: RebindContext = {
+				session,
+				shellMode: "shell-no-context",
+				setShellMode: interactiveModePrototype.setShellMode,
+				defaultEditor: {
+					setHistoryScope: () => {},
+					setShellMode: () => {},
+					restartEntranceAnimation: () => {},
+				},
 				applyRuntimeSettings: () => {},
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
@@ -379,7 +419,16 @@ describe("regression #5943: session_start transient UI", () => {
 		harness.setResponses([fauxAssistantMessage("assistant from start")]);
 
 		try {
+			const session = {};
 			const context: RebindContext = {
+				session,
+				shellMode: "shell-no-context",
+				setShellMode: interactiveModePrototype.setShellMode,
+				defaultEditor: {
+					setHistoryScope: () => {},
+					setShellMode: () => {},
+					restartEntranceAnimation: () => {},
+				},
 				applyRuntimeSettings: () => {},
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {

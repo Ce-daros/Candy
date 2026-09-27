@@ -7,44 +7,24 @@ import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("InteractiveMode compaction events", () => {
-	test("repaints the meter only when the displayed percentage changes", () => {
+	test("repaints the context line when its rounded length changes", () => {
 		let percent = 41.2;
-		const footer = { setPendingTokens: vi.fn() };
 		const context = {
 			session: { getContextUsage: () => ({ percent }) },
-			editor: { getText: () => "" },
-			estimatePendingTokens: (_text: string) => undefined,
-			footer,
 			ui: { requestRender: vi.fn() },
 			lastContextPercent: undefined as number | null | undefined,
 		};
-		const refresh = Reflect.get(InteractiveMode.prototype, "refreshContextMeter") as (this: typeof context) => void;
+		const refresh = Reflect.get(InteractiveMode.prototype, "refreshContextLine") as (this: typeof context) => void;
 
 		refresh.call(context);
 		expect(context.ui.requestRender).toHaveBeenCalledTimes(1);
 		percent = 41.4;
-		refresh.call(context); // Sub-percent changes do not alter the readout.
+		refresh.call(context);
 		expect(context.ui.requestRender).toHaveBeenCalledTimes(1);
 
 		percent = 42;
 		refresh.call(context);
 		expect(context.ui.requestRender).toHaveBeenCalledTimes(2);
-		expect(footer.setPendingTokens).toHaveBeenCalledWith(undefined);
-	});
-
-	test("estimates only ordinary nonblank composer text", () => {
-		const estimate = Reflect.get(InteractiveMode.prototype, "estimatePendingTokens") as (
-			this: object,
-			text: string,
-		) => number | undefined;
-		for (const [text, expected] of [
-			["review this", 3],
-			["   ", undefined],
-			["/model kimi", undefined],
-			["!echo hello", undefined],
-		] as const) {
-			expect(estimate.call({}, text)).toBe(expected);
-		}
 	});
 
 	test("uses the cache miss notice setting for compaction and branch summary costs", () => {
@@ -178,7 +158,7 @@ describe("InteractiveMode compaction events", () => {
 		const fakeThis = {
 			isInitialized: true,
 			footer: { invalidate: vi.fn() },
-			refreshContextMeter: vi.fn(),
+			refreshContextLine: vi.fn(),
 			autoCompactionEscapeHandler: undefined as (() => void) | undefined,
 			autoCompactionLoader: undefined,
 			defaultEditor: {},
@@ -242,7 +222,7 @@ describe("InteractiveMode compaction events", () => {
 		const fakeThis = {
 			isInitialized: true,
 			footer: { invalidate: vi.fn() },
-			refreshContextMeter: vi.fn(),
+			refreshContextLine: vi.fn(),
 			activeStatusIndicator: undefined,
 			workingVisible: true,
 			showWorkingStatusIndicator: vi.fn(),

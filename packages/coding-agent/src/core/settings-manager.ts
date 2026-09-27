@@ -72,6 +72,9 @@ export interface ThinkingBudgetsSettings {
 
 export type MermaidRenderingMode = "off" | "final" | "streaming";
 
+export const ANIMATION_INTENSITIES = ["conservative", "moderate", "aggressive"] as const;
+export type AnimationIntensity = (typeof ANIMATION_INTENSITIES)[number];
+
 /** Cache-warming profile. "idle" also warms between agent runs. */
 export const CACHE_WARMING_MODES = ["off", "streaming", "idle"] as const;
 export type CacheWarmingMode = (typeof CACHE_WARMING_MODES)[number];
@@ -158,6 +161,8 @@ export interface Settings {
 	fullscreenExitOutput?: FullscreenExitOutput; // default: "transcript"
 	fullscreenScrollbar?: ScrollViewScrollbar; // default: "auto"
 	fullscreenCopyOnSelect?: boolean; // default: true
+	uiAnimations?: boolean; // default: true
+	animationIntensity?: AnimationIntensity; // default: "moderate"
 }
 
 function isMergeableObject(value: unknown): value is Record<string, unknown> {
@@ -979,6 +984,26 @@ export class SettingsManager {
 
 	getShowCacheMissNotices(): boolean {
 		return this.settings.showCacheMissNotices ?? false;
+	}
+
+	getUiAnimations(): boolean {
+		return this.settings.uiAnimations ?? true;
+	}
+
+	setUiAnimations(enabled: boolean): void {
+		this.globalSettings.uiAnimations = enabled;
+		this.markModified("uiAnimations");
+		this.save();
+	}
+
+	getAnimationIntensity(): AnimationIntensity {
+		return this.settings.animationIntensity ?? "moderate";
+	}
+
+	setAnimationIntensity(intensity: AnimationIntensity): void {
+		this.globalSettings.animationIntensity = intensity;
+		this.markModified("animationIntensity");
+		this.save();
 	}
 
 	getExternalEditorCommand(): string {

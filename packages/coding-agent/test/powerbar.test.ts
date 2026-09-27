@@ -185,6 +185,17 @@ describe("PowerbarController thinking track", () => {
 		expect(controller.isIdle()).toBe(true);
 	});
 
+	it("shows the final track immediately when animations are disabled", () => {
+		const { controller } = createFixture();
+		controller.setAnimationOptions(false, "conservative");
+		open(controller);
+		const text = stripAnsi(controller.render(200)!.text);
+		expect(text).toContain("Off");
+		expect(text).toContain("Max");
+		controller.confirm();
+		expect(controller.isIdle()).toBe(true);
+	});
+
 	it("keeps the anchor visible in every expansion frame", () => {
 		const { controller } = createFixture();
 		open(controller);
@@ -227,6 +238,39 @@ describe("PowerbarController model track", () => {
 		expect(items).toContain("Sonnet 4.5");
 		expect(items).toContain("Gemini 3.1 Pro");
 		expect(items).toContain("GPT-5.6 Sol");
+	});
+
+	it("middle-truncates overlong model labels so neighbors stay visible", () => {
+		const longLabel = "Mistral Medium 3.1 (batch)";
+		const { controller, setModels } = createFixture();
+		setModels([
+			{ model: createModel("long", longLabel), label: longLabel },
+			{ model: createModel("b", "B"), label: "B" },
+			{ model: createModel("c", "C"), label: "C" },
+		]);
+		controller.render(200);
+		controller.openModelBrowse({ anchorWidth: 11 });
+		settle(controller);
+
+		const text = stripAnsi(controller.render(200)!.text);
+		expect(text).toContain("…");
+		expect(text).not.toContain(longLabel);
+		// Neighbors are not squeezed out by the long slot.
+		expect(text).toContain("B");
+		expect(text).toContain("C");
+	});
+
+	it("middle truncation keeps the head and tail of the label", () => {
+		const longLabel = "Mistral Medium 3.1 (batch)";
+		const { controller, setModels } = createFixture();
+		setModels([{ model: createModel("long", longLabel), label: longLabel }]);
+		controller.render(200);
+		controller.openModelBrowse({ anchorWidth: 11 });
+		settle(controller);
+
+		const text = stripAnsi(controller.render(200)!.text);
+		expect(text).toContain("Mistral");
+		expect(text).toContain("(batch)");
 	});
 
 	it("morphs into search on the first keystroke and filters", () => {
@@ -443,7 +487,7 @@ describe("FooterComponent powerbar integration", () => {
 		vi.advanceTimersByTime(300);
 		const line = footer.renderBottomBorder(120, 0, (text) => text);
 		expect(stripAnsi(line)).toContain("‹ Kimi K2.6 ›");
-		// The track squeezes the meter out; the line still fills the width.
+		// The line still fills the width while the track is open.
 		expect(visibleWidth(stripAnsi(line))).toBe(120);
 		settle(fixture.controller);
 	});
@@ -460,6 +504,29 @@ describe("FooterComponent powerbar integration", () => {
 		expect(stripAnsi(line)).toContain("Kimi K2.6");
 		expect(stripAnsi(line)).toContain("‹ Medium ›");
 		settle(fixture.controller);
+	});
+
+	it("discards an unconfirmed model selection when Tab changes selector", () => {
+		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
+		footer.setAnimationOptions(false, "moderate");
+		footer.openPowerbarModelBrowse();
+		footer.movePowerbar(1);
+		footer.switchPowerbar(1);
+		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Medium ›");
+		footer.switchPowerbar(-1);
+		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Kimi K2.6 ›");
+		footer.dispose();
+	});
+
+	it("keeps the model selector open when reasoning is unavailable", () => {
+		const session = createFooterSession();
+		session.state.model!.reasoning = false;
+		const footer = new FooterComponent(session, createPowerbarHost());
+		footer.setAnimationOptions(false, "moderate");
+		footer.openPowerbarModelBrowse();
+		footer.switchPowerbar(1);
+		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Kimi K2.6 ›");
+		footer.dispose();
 	});
 
 	it("keeps exact border width while tracks animate", () => {

@@ -124,14 +124,6 @@ export interface ExtensionWidgetOptions {
 /** Raw terminal input listener for extensions. */
 export type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
 
-/** Working indicator configuration for the interactive streaming loader. */
-export interface WorkingIndicatorOptions {
-	/** Animation frames. Use an empty array to hide the indicator entirely. Custom frames are rendered verbatim. */
-	frames?: string[];
-	/** Frame interval in milliseconds for animated indicators. */
-	intervalMs?: number;
-}
-
 /** Wrap the current autocomplete provider with additional behavior. */
 export type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
@@ -159,21 +151,8 @@ export interface ExtensionUIContext {
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
-	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
-	setWorkingMessage(message?: string): void;
-
 	/** Show or hide the built-in interactive working loader row during streaming. */
 	setWorkingVisible(visible: boolean): void;
-
-	/**
-	 * Configure the interactive working indicator shown during streaming.
-	 *
-	 * - Omit the argument to restore the default animated spinner.
-	 * - Use `frames: ["●"]` for a static indicator.
-	 * - Use `frames: []` to hide the indicator entirely.
-	 * - Custom frames are rendered as provided, so extensions must add their own colors.
-	 */
-	setWorkingIndicator(options?: WorkingIndicatorOptions): void;
 
 	/** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
 	setHiddenThinkingLabel(label?: string): void;

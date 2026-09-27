@@ -1,5 +1,4 @@
 import { type Component, Loader, type TUI, truncateToWidth } from "@candy/tui";
-import type { WorkingIndicatorOptions } from "../../../core/extensions/index.ts";
 import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { keyText } from "./keybinding-hints.ts";
@@ -15,9 +14,8 @@ export class StatusIndicator extends Loader {
 		spinnerColorFn: (str: string) => string,
 		messageColorFn: (str: string) => string,
 		message: string,
-		indicator?: WorkingIndicatorOptions,
 	) {
-		super(ui, spinnerColorFn, messageColorFn, message, indicator);
+		super(ui, spinnerColorFn, messageColorFn, message);
 		this.kind = kind;
 	}
 
@@ -36,14 +34,13 @@ export class StatusIndicator extends Loader {
 }
 
 export class WorkingStatusIndicator extends StatusIndicator {
-	constructor(ui: TUI, message: string, indicator?: WorkingIndicatorOptions, colorFn?: (text: string) => string) {
+	constructor(ui: TUI, message: string, colorFn?: (text: string) => string) {
 		super(
 			"working",
 			ui,
 			colorFn ?? ((text) => theme.fg("accent", text)),
 			colorFn ?? ((text) => theme.fg("muted", text)),
 			message,
-			indicator,
 		);
 	}
 }

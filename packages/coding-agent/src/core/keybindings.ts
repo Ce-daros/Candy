@@ -18,8 +18,11 @@ export interface AppKeybindings {
 	"app.suspend": true;
 	"app.thinking.cycle": true;
 	"app.thinking.save": true;
+	"app.shell.enter": true;
 	"app.powerbar.left": true;
 	"app.powerbar.right": true;
+	"app.powerbar.next": true;
+	"app.powerbar.previous": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
@@ -107,6 +110,7 @@ export const KEYBINDINGS = {
 		defaultKeys: "ctrl+s",
 		description: "Save thinking level",
 	},
+	"app.shell.enter": { defaultKeys: "!", description: "Enter Shell mode when the editor is empty" },
 	"app.powerbar.left": {
 		defaultKeys: "left",
 		description: "Move powerbar selection left",
@@ -115,6 +119,8 @@ export const KEYBINDINGS = {
 		defaultKeys: "right",
 		description: "Move powerbar selection right",
 	},
+	"app.powerbar.next": { defaultKeys: "tab", description: "Focus next powerbar selector" },
+	"app.powerbar.previous": { defaultKeys: "shift+tab", description: "Focus previous powerbar selector" },
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",
 		description: "Cycle to next model",

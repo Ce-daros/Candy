@@ -123,7 +123,7 @@ type InteractiveBashContext = {
 	chatContainer: { addChild(component: unknown): void };
 	pendingMessagesContainer: { addChild(component: unknown): void };
 	pendingBashComponents: unknown[];
-	isBashMode: boolean;
+	shellMode: "shell" | "shell-no-context";
 	handleBashCommand(command: string, excludeFromContext?: boolean): Promise<void>;
 	showError(message: string): void;
 	updateEditorBorderColor(): void;
@@ -221,9 +221,9 @@ describe("RPC user_bash failure handling (#9068)", () => {
 
 describe("Interactive user_bash failure handling (#9068)", () => {
 	test.each([
-		["!pwd", false],
-		["!!pwd", true],
-	])("fails closed for %s when a handler returns an empty result", async (input, excludeFromContext) => {
+		["shell", false],
+		["shell-no-context", true],
+	] as const)("fails closed in %s when a handler returns an empty result", async (shellMode, excludeFromContext) => {
 		const events: UserBashEvent[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
@@ -245,7 +245,7 @@ describe("Interactive user_bash failure handling (#9068)", () => {
 			chatContainer: { addChild: vi.fn() },
 			pendingMessagesContainer: { addChild: vi.fn() },
 			pendingBashComponents: [],
-			isBashMode: true,
+			shellMode,
 			handleBashCommand: interactiveModePrototype.handleBashCommand,
 			showError: vi.fn(),
 			updateEditorBorderColor: vi.fn(),
@@ -253,7 +253,7 @@ describe("Interactive user_bash failure handling (#9068)", () => {
 		interactiveModePrototype.setupEditorSubmitHandler.call(context);
 
 		try {
-			await context.defaultEditor.onSubmit?.(input);
+			await context.defaultEditor.onSubmit?.("pwd");
 
 			expect(events).toEqual([
 				{

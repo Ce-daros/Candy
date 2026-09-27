@@ -182,7 +182,6 @@ export type {
 	UserBashEvent,
 	UserBashEventResult,
 	WidgetPlacement,
-	WorkingIndicatorOptions,
 	WriteToolCallEvent,
 } from "./core/extensions/index.ts";
 export {
@@ -293,6 +292,7 @@ export {
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.ts";
 export {
+	type AnimationIntensity,
 	type CacheWarmingMode,
 	type CompactionModelOverride,
 	type CompactionSettings,

@@ -32,6 +32,7 @@ describe("status indicators", () => {
 			terminal: { rows: 10 },
 		} as unknown as TUI;
 		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
+		editor.setAnimationOptions(false, "moderate");
 		const indicator = new WorkingStatusIndicator(tui, "Working");
 		editor.setWorkingStatusIndicator(indicator);
 
@@ -46,12 +47,14 @@ describe("status indicators", () => {
 		expect(standaloneLine).toContain(theme.getFgAnsi("accent"));
 		expect(standaloneLine).toContain(theme.getFgAnsi("muted"));
 		indicator.dispose();
+		editor.dispose();
 	});
 
 	it("keeps wrapped input and narrow frames within terminal width", () => {
 		initTheme("dark");
 		const tui = { requestRender: vi.fn(), terminal: { rows: 20 } } as unknown as TUI;
 		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
+		editor.setAnimationOptions(false, "moderate");
 		editor.setText("a".repeat(50));
 		for (const width of [3, 4, 8, 20]) {
 			const lines = editor.render(width);
@@ -61,6 +64,7 @@ describe("status indicators", () => {
 			).toBe(true);
 			if (width >= 5) expect(stripAnsi(lines[1]!)).toMatch(/│$/);
 		}
+		editor.dispose();
 	});
 
 	it("embeds the working indicator when the editor opts in", () => {
@@ -73,15 +77,90 @@ describe("status indicators", () => {
 			embedWorkingStatus: true,
 		});
 		expect(editor.embedWorkingStatus).toBe(true);
-		editor.borderColor = theme.getThinkingBorderColor("high");
-		const indicator = new WorkingStatusIndicator(tui, "Working", undefined, (text) => editor.borderColor(text));
+		editor.setAnimationOptions(false, "moderate");
+		const indicator = new WorkingStatusIndicator(tui, "Working");
 		editor.setWorkingStatusIndicator(indicator);
 
 		const topBorder = editor.render(20)[0]!;
-		expect(stripAnsi(topBorder)).toBe("╭── ⠋ Working ─────╮");
+		expect(stripAnsi(topBorder)).toBe("╭──────Working─────╮");
 		expect(visibleWidth(topBorder)).toBe(20);
-		expect(topBorder.split(theme.getFgAnsi("thinkingHigh"))).toHaveLength(7);
+		expect(topBorder).toContain(theme.getFgAnsi("border"));
 		indicator.dispose();
+		editor.dispose();
+	});
+
+	it("renders moving true-color thinking trails on the editor frame", () => {
+		initTheme("dark");
+		vi.useFakeTimers();
+		const requestRender = vi.fn();
+		const tui = { requestRender, terminal: { rows: 20 } } as unknown as TUI;
+		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create(), {
+			embedWorkingStatus: true,
+		});
+		const indicator = new WorkingStatusIndicator(tui, "Working");
+		try {
+			editor.render(80);
+			vi.advanceTimersByTime(520);
+			editor.setThinkingLevel("medium");
+			editor.setWorkingStatusIndicator(indicator);
+			const frames = new Set<string>();
+			const colors = new Set<string>();
+			const callsBeforeMotion = requestRender.mock.calls.length;
+			for (let elapsed = 0; elapsed < 900; elapsed += 90) {
+				const lines = editor.render(80);
+				const border = `${lines[0]}${lines.at(-1)}`;
+				frames.add(border);
+				for (const ansi of border.match(/\x1b\[38;2;\d+;\d+;\d+m/g) ?? []) colors.add(ansi);
+				expect(stripAnsi(lines[0])).not.toContain("Working");
+				vi.advanceTimersByTime(90);
+			}
+			expect(frames.size).toBeGreaterThan(6);
+			expect(colors.size).toBeGreaterThanOrEqual(8);
+			expect(requestRender.mock.calls.length - callsBeforeMotion).toBeGreaterThanOrEqual(9);
+			editor.setThinkingLevel("minimal");
+			const minimal = editor.render(80)[0];
+			editor.setThinkingLevel("max");
+			expect(editor.render(80)[0]).not.toBe(minimal);
+
+			editor.setAnimationOptions(false, "moderate");
+			const still = editor.render(80)[0];
+			const callsAfterDisable = requestRender.mock.calls.length;
+			vi.advanceTimersByTime(900);
+			expect(editor.render(80)[0]).toBe(still);
+			expect(requestRender).toHaveBeenCalledTimes(callsAfterDisable);
+		} finally {
+			indicator.dispose();
+			editor.dispose();
+		}
+	});
+
+	it.each(["retry", "compaction", "branchSummary"] as const)("animates the %s frame track", (kind) => {
+		initTheme("dark");
+		vi.useFakeTimers();
+		const tui = { requestRender: vi.fn(), terminal: { rows: 20 } } as unknown as TUI;
+		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create(), {
+			embedWorkingStatus: true,
+		});
+		const indicator =
+			kind === "retry"
+				? new RetryStatusIndicator(tui, 1, 3, 3000)
+				: kind === "compaction"
+					? new CompactionStatusIndicator(tui, "manual")
+					: new BranchSummaryStatusIndicator(tui);
+		try {
+			editor.render(80);
+			vi.advanceTimersByTime(520);
+			editor.setWorkingStatusIndicator(indicator);
+			const frames = new Set<string>();
+			for (let index = 0; index < 6; index++) {
+				frames.add(editor.render(80)[0]);
+				vi.advanceTimersByTime(90);
+			}
+			expect(frames.size).toBeGreaterThan(3);
+		} finally {
+			indicator.dispose();
+			editor.dispose();
+		}
 	});
 
 	it("embeds compaction, summary, and retry labels within the border width", () => {
@@ -101,18 +180,23 @@ describe("status indicators", () => {
 		try {
 			for (const indicator of indicators) {
 				editor.setWorkingStatusIndicator(indicator);
-				const label = stripAnsi(indicator.render(120)[1]!).trim();
-				expect(stripAnsi(editor.render(120)[0]!)).toContain(`╭── ${label} `);
+				const line = stripAnsi(editor.render(120)[0]!);
+				expect(line).not.toContain("Retrying");
+				expect(line).not.toContain("Compacting");
+				expect(line).not.toContain("Summarizing");
 				for (const width of [1, 4, 10, 20, 80, 120]) {
 					expect(visibleWidth(editor.render(width)[0]!)).toBe(width);
 				}
 			}
+			editor.setAnimationOptions(false, "moderate");
+			expect(stripAnsi(editor.render(120)[0]!)).toContain("Retrying");
 			vi.advanceTimersByTime(1000);
-			expect(stripAnsi(editor.render(120)[0]!)).toContain("Retrying (1/3) in 2s");
+			expect(stripAnsi(editor.render(120)[0]!)).not.toContain("(1/3)");
 			editor.setWorkingStatusIndicator(undefined);
 			expect(stripAnsi(editor.render(120)[0]!)).toBe(`╭${"─".repeat(118)}╮`);
 		} finally {
 			for (const indicator of indicators) indicator.dispose();
+			editor.dispose();
 		}
 	});
 

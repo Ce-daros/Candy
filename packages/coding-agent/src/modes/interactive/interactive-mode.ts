@@ -86,7 +86,6 @@ import type {
 	MarkdownTransformer,
 	ProjectTrustContext,
 	UserBashEventResult,
-	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
@@ -156,6 +155,7 @@ import { ScopedModelsSelectorComponent } from "./components/scoped-models-select
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.ts";
+import { SplashComponent } from "./components/splash.ts";
 import {
 	BranchSummaryStatusIndicator,
 	CompactionStatusIndicator,
@@ -239,6 +239,8 @@ type CompactionQueuedMessage = {
 	text: string;
 	mode: "steer" | "followUp";
 };
+
+type ShellInputMode = "normal" | "shell" | "shell-no-context";
 
 type CompactionCostNotice = {
 	type: "compaction_cost";
@@ -415,11 +417,13 @@ export class InteractiveMode {
 		project: path.basename(this.sessionManager.getCwd()),
 		branch: this.footerDataProvider.getGitBranch(),
 		sessionName: this.sessionManager.getSessionName(),
+		contextPercent: this.session.getContextUsage()?.percent ?? null,
 	}));
 	private renderer: TuiAltScreen;
 	private ui: TUI;
 	private loadedResourcesContainer: Container;
 	private chatContainer: Container;
+	private splashComponent: SplashComponent | undefined;
 	private documentContainer: Container;
 	private transcriptScrollView: TuiLayouts.ScrollView | undefined;
 	private fullscreenLayoutRoot: Component | undefined;
@@ -446,9 +450,7 @@ export class InteractiveMode {
 	private pendingUserInputs: string[] = [];
 	private activeStatusIndicator: StatusIndicator | undefined = undefined;
 	private activeWorkingIndicatorEmbedded = false;
-	private workingMessage: string | undefined = undefined;
 	private workingVisible = true;
-	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
@@ -490,8 +492,7 @@ export class InteractiveMode {
 	private unsubscribe?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
 
-	// Track if editor is in bash mode (text starts with !)
-	private isBashMode = false;
+	private shellMode: ShellInputMode = "normal";
 
 	// Track current bash execution component
 	private bashComponent: BashExecutionComponent | undefined = undefined;
@@ -591,6 +592,8 @@ export class InteractiveMode {
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
 		this.documentContainer.addChild(this.chatContainer);
+		this.splashComponent = new SplashComponent();
+		this.chatContainer.addChild(this.splashComponent);
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -609,8 +612,15 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.buildPowerbarHost());
-		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.defaultEditor.setBottomStatus(this.footer);
+		this.defaultEditor.setAnimationOptions(
+			this.settingsManager.getUiAnimations(),
+			this.settingsManager.getAnimationIntensity(),
+		);
+		this.footer.setAnimationOptions(
+			this.settingsManager.getUiAnimations(),
+			this.settingsManager.getAnimationIntensity(),
+		);
 		this.footerContainer = new Container();
 
 		// Load hide thinking block setting
@@ -1945,7 +1955,6 @@ export class InteractiveMode {
 			this.renderer.setCopyOnSelect(this.settingsManager.getFullscreenCopyOnSelect());
 		}
 		this.footer.setSession(this.session);
-		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.outputPad = this.settingsManager.getOutputPad();
@@ -1967,6 +1976,7 @@ export class InteractiveMode {
 
 	private async rebindCurrentSession(options: { renderBeforeBind?: boolean } = {}): Promise<void> {
 		const session = this.session;
+		this.setShellMode("normal");
 
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
@@ -1990,6 +2000,7 @@ export class InteractiveMode {
 		await this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
+		this.defaultEditor.restartEntranceAnimation();
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -2192,14 +2203,7 @@ export class InteractiveMode {
 			? (text: string) =>
 					(this.editor.borderColor ?? theme.getThinkingBorderColor(this.session.thinkingLevel || "off"))(text)
 			: undefined;
-		this.showStatusIndicator(
-			new WorkingStatusIndicator(
-				this.ui,
-				this.workingMessage ?? this.defaultWorkingMessage,
-				this.workingIndicatorOptions,
-				colorFn,
-			),
-		);
+		this.showStatusIndicator(new WorkingStatusIndicator(this.ui, this.defaultWorkingMessage, colorFn));
 	}
 
 	private setWorkingVisible(visible: boolean): void {
@@ -2211,14 +2215,6 @@ export class InteractiveMode {
 		}
 		if (this.session.isStreaming && this.activeStatusIndicator?.kind !== "working") {
 			this.showWorkingStatusIndicator();
-		}
-		this.ui.requestRender();
-	}
-
-	private setWorkingIndicator(options?: WorkingIndicatorOptions): void {
-		this.workingIndicatorOptions = options;
-		if (this.activeStatusIndicator?.kind === "working") {
-			this.activeStatusIndicator.setIndicator(options);
 		}
 		this.ui.requestRender();
 	}
@@ -2315,9 +2311,7 @@ export class InteractiveMode {
 		this.setupAutocompleteProvider();
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.updateTerminalTitle();
-		this.workingMessage = undefined;
 		this.workingVisible = true;
-		this.setWorkingIndicator();
 		if (this.activeStatusIndicator?.kind === "working") {
 			this.activeStatusIndicator.setMessage(
 				`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`,
@@ -2474,14 +2468,7 @@ export class InteractiveMode {
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
-			setWorkingMessage: (message) => {
-				this.workingMessage = message;
-				if (this.activeStatusIndicator?.kind === "working") {
-					this.activeStatusIndicator.setMessage(message ?? this.defaultWorkingMessage);
-				}
-			},
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
-			setWorkingIndicator: (options) => this.setWorkingIndicator(options),
 			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
@@ -2698,6 +2685,7 @@ export class InteractiveMode {
 	 * Pass undefined to restore the default editor.
 	 */
 	private setCustomEditorComponent(factory: EditorFactory | undefined): void {
+		if (factory) this.setShellMode("normal");
 		this.editorComponentFactory = factory;
 
 		// Save text from current editor before switching
@@ -2902,14 +2890,12 @@ export class InteractiveMode {
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
-			if (this.session.isStreaming) {
-				this.restoreQueuedMessagesToEditor({ abort: true });
-			} else if (this.session.isBashRunning) {
+			if (this.session.isBashRunning) {
 				this.session.abortBash();
-			} else if (this.isBashMode) {
-				this.editor.setText("");
-				this.isBashMode = false;
-				this.updateEditorBorderColor();
+			} else if (this.shellMode !== "normal") {
+				this.setShellMode(this.shellMode === "shell-no-context" ? "shell" : "normal");
+			} else if (this.session.isStreaming) {
+				this.restoreQueuedMessagesToEditor({ abort: true });
 			} else if (!this.editor.getText().trim()) {
 				// Double-escape with empty editor triggers /tree, /fork, or nothing based on setting
 				const action = this.settingsManager.getDoubleEscapeAction();
@@ -2941,6 +2927,7 @@ export class InteractiveMode {
 		this.ui.onDebug = () => this.handleDebugCommand();
 		this.defaultEditor.onAction("app.model.select", () => this.footer.openPowerbarModelBrowse());
 		this.defaultEditor.powerbarHandler = (data) => this.handlePowerbarKey(data);
+		this.defaultEditor.shellInputHandler = (data) => this.handleShellInput(data);
 		this.defaultEditor.onBottomBorderClick = (x) => this.footer.handleBottomBorderClick(x);
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
@@ -2956,20 +2943,32 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
 
-		this.defaultEditor.onChange = (text: string) => {
-			const wasBashMode = this.isBashMode;
-			this.isBashMode = text.trimStart().startsWith("!");
-			if (wasBashMode !== this.isBashMode) {
-				this.updateEditorBorderColor();
-			}
-			this.footer.setPendingTokens(this.estimatePendingTokens(text));
-		};
-
 		// Handle clipboard paste (triggered on Ctrl+V). Images are attached by path;
 		// otherwise, paste plain text from the system clipboard.
 		this.defaultEditor.onPasteImage = () => {
 			void this.handleClipboardPaste();
 		};
+	}
+
+	private setShellMode(mode: ShellInputMode): void {
+		if (this.shellMode === mode) return;
+		this.shellMode = mode;
+		this.defaultEditor.setHistoryScope(mode === "normal" ? "default" : mode);
+		this.defaultEditor.setShellMode(mode);
+		this.updateEditorBorderColor();
+	}
+
+	private handleShellInput(data: string): boolean {
+		if (this.editor !== this.defaultEditor || this.editor.getText().length !== 0) return false;
+		if (this.keybindings.matches(data, "app.shell.enter") && this.shellMode !== "shell-no-context") {
+			this.setShellMode(this.shellMode === "normal" ? "shell" : "shell-no-context");
+			return true;
+		}
+		if (this.keybindings.matches(data, "tui.editor.deleteCharBackward") && this.shellMode !== "normal") {
+			this.setShellMode(this.shellMode === "shell-no-context" ? "shell" : "normal");
+			return true;
+		}
+		return false;
 	}
 
 	private async handleRightClickPaste(): Promise<void> {
@@ -3020,6 +3019,17 @@ export class InteractiveMode {
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
+
+			if (this.shellMode === "shell" || this.shellMode === "shell-no-context") {
+				if (this.session.isBashRunning) {
+					this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+					this.editor.setText(text);
+					return;
+				}
+				this.editor.addToHistory?.(text);
+				await this.handleBashCommand(text, this.shellMode === "shell-no-context");
+				return;
+			}
 
 			// Handle commands
 			if (text === "/settings") {
@@ -3163,24 +3173,6 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Handle bash command (! for normal, !! for excluded from context)
-			if (text.startsWith("!")) {
-				const isExcluded = text.startsWith("!!");
-				const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
-				if (command) {
-					if (this.session.isBashRunning) {
-						this.showWarning("A bash command is already running. Press Esc to cancel it first.");
-						this.editor.setText(text);
-						return;
-					}
-					this.editor.addToHistory?.(text);
-					await this.handleBashCommand(command, isExcluded);
-					this.isBashMode = false;
-					this.updateEditorBorderColor();
-					return;
-				}
-			}
-
 			// Queue input during compaction (extension commands execute immediately)
 			if (this.session.isCompacting) {
 				if (this.isExtensionCommand(text)) {
@@ -3224,28 +3216,15 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Refresh the footer's context meter inputs and repaint when the displayed
-	 * context percentage changes.
+	 * Repaint when the context line's rounded percentage changes.
 	 */
-	private refreshContextMeter(): void {
+	private refreshContextLine(): void {
 		const percent = this.session.getContextUsage()?.percent ?? null;
 		const rounded =
 			percent === null || !Number.isFinite(percent) ? null : Math.round(Math.max(0, Math.min(100, percent)));
-		this.footer.setPendingTokens(this.estimatePendingTokens(this.editor.getText()));
-
 		if (rounded === this.lastContextPercent) return;
 		this.lastContextPercent = rounded;
 		this.ui.requestRender();
-	}
-
-	/**
-	 * Estimated tokens the current composer text adds to context. Commands and
-	 * bash input are excluded because they are not sent as context.
-	 */
-	private estimatePendingTokens(text: string): number | undefined {
-		const trimmed = text.trim();
-		if (!trimmed || trimmed.startsWith("/") || trimmed.startsWith("!")) return undefined;
-		return Math.ceil(text.length / 4);
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
@@ -3260,7 +3239,7 @@ export class InteractiveMode {
 			event.type !== "tool_execution_update" &&
 			event.type !== "bash_execution_update"
 		) {
-			this.refreshContextMeter();
+			this.refreshContextLine();
 		}
 
 		switch (event.type) {
@@ -3758,6 +3737,10 @@ export class InteractiveMode {
 			case "user": {
 				const textContent = this.getUserMessageText(message);
 				if (textContent) {
+					if (this.splashComponent) {
+						this.chatContainer.removeChild(this.splashComponent);
+						this.splashComponent = undefined;
+					}
 					if (this.chatContainer.children.length > 0) {
 						this.chatContainer.addChild(new Spacer(1));
 					}
@@ -4089,6 +4072,11 @@ export class InteractiveMode {
 	// =========================================================================
 
 	private handleCtrlC(): void {
+		if (this.shellMode !== "normal") {
+			this.clearEditor();
+			this.lastSigintTime = 0;
+			return;
+		}
 		const now = Date.now();
 		if (now - this.lastSigintTime < 500) {
 			void this.shutdown();
@@ -4288,6 +4276,7 @@ export class InteractiveMode {
 	}
 
 	private async handleFollowUp(): Promise<void> {
+		if (this.shellMode !== "normal") return;
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
@@ -4329,7 +4318,8 @@ export class InteractiveMode {
 	}
 
 	private updateEditorBorderColor(): void {
-		if (this.isBashMode) {
+		this.defaultEditor.setThinkingLevel(this.session.thinkingLevel || "off");
+		if (this.shellMode !== "normal") {
 			this.editor.borderColor = theme.getBashModeBorderColor();
 		} else {
 			const level = this.session.thinkingLevel || "off";
@@ -4358,7 +4348,7 @@ export class InteractiveMode {
 				this.showStatus(msg);
 			} else {
 				this.footer.invalidate();
-				this.refreshContextMeter();
+				this.refreshContextLine();
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
@@ -4742,6 +4732,8 @@ export class InteractiveMode {
 					availableThinkingLevels: [...THINKING_LEVEL_OPTIONS],
 					modelThinkingLevels: this.settingsManager.getAllModelThinkingLevels(),
 					currentTheme: this.themeController.getThemeSelection() || "dark",
+					uiAnimations: this.settingsManager.getUiAnimations(),
+					animationIntensity: this.settingsManager.getAnimationIntensity(),
 					terminalTheme: this.themeController.getTerminalTheme(),
 					availableThemes: getAvailableThemes(),
 					hideThinkingBlock: this.hideThinkingBlock,
@@ -4767,7 +4759,6 @@ export class InteractiveMode {
 				{
 					onAutoCompactChange: (enabled) => {
 						this.session.setAutoCompactionEnabled(enabled);
-						this.footer.setAutoCompactEnabled(enabled);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);
@@ -4840,6 +4831,16 @@ export class InteractiveMode {
 						void this.themeController.setThemeSetting(themeSetting);
 					},
 					onThemePreview: (themeName) => this.themeController.preview(themeName),
+					onUiAnimationsChange: (enabled) => {
+						this.settingsManager.setUiAnimations(enabled);
+						this.defaultEditor.setAnimationOptions(enabled, this.settingsManager.getAnimationIntensity());
+						this.footer.setAnimationOptions(enabled, this.settingsManager.getAnimationIntensity());
+					},
+					onAnimationIntensityChange: (intensity) => {
+						this.settingsManager.setAnimationIntensity(intensity);
+						this.defaultEditor.setAnimationOptions(this.settingsManager.getUiAnimations(), intensity);
+						this.footer.setAnimationOptions(this.settingsManager.getUiAnimations(), intensity);
+					},
 					onHideThinkingBlockChange: (hidden) => {
 						this.hideThinkingBlock = hidden;
 						this.settingsManager.setHideThinkingBlock(hidden);
@@ -5010,7 +5011,7 @@ export class InteractiveMode {
 			await this.session.setModel(model, { persist: false });
 			this.updateAvailableProviderCount();
 			this.footer.invalidate();
-			this.refreshContextMeter();
+			this.refreshContextLine();
 			this.updateEditorBorderColor();
 			void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
 			this.checkDaxnutsEasterEgg(model);
@@ -5026,6 +5027,14 @@ export class InteractiveMode {
 	private handlePowerbarKey(data: string): boolean {
 		if (this.footer.isPowerbarIdle()) return false;
 		const kb = this.keybindings;
+		if (kb.matches(data, "app.powerbar.next")) {
+			this.footer.switchPowerbar(1);
+			return true;
+		}
+		if (kb.matches(data, "app.powerbar.previous")) {
+			this.footer.switchPowerbar(-1);
+			return true;
+		}
 		if (kb.matches(data, "tui.select.cancel")) {
 			this.footer.cancelPowerbar();
 			return true;
@@ -5073,7 +5082,7 @@ export class InteractiveMode {
 			try {
 				await this.session.setModel(model, { persist: false });
 				this.footer.invalidate();
-				this.refreshContextMeter();
+				this.refreshContextLine();
 				this.updateEditorBorderColor();
 				this.showStatus(`Model: ${model.id}`);
 				void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
@@ -5219,7 +5228,7 @@ export class InteractiveMode {
 					await this.session.setModel(model, { persist });
 					this.updateAvailableProviderCount();
 					this.footer.invalidate();
-					this.refreshContextMeter();
+					this.refreshContextLine();
 					this.updateEditorBorderColor();
 					done();
 					this.showStatus(persist ? `Default model: ${model.provider}/${model.id}` : `Model: ${model.id}`);
@@ -5961,7 +5970,7 @@ export class InteractiveMode {
 
 			await this.updateAvailableProviderCount();
 			this.footer.invalidate();
-			this.refreshContextMeter();
+			this.refreshContextLine();
 			this.updateEditorBorderColor();
 			if (selectedModel) {
 				this.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
@@ -6660,8 +6669,8 @@ export class InteractiveMode {
 | \`${dequeue}\` | Restore queued messages |
 | \`${pasteImage}\` | Paste image or text from clipboard |
 | \`/\` | Slash commands |
-| \`!\` | Run bash command |
-| \`!!\` | Run bash command (excluded from context) |
+| \`!\` on empty editor | Enter Shell mode |
+| \`!\` again on empty editor | Exclude Shell result from context |
 `;
 
 		// Add extension-registered shortcuts
@@ -6873,6 +6882,7 @@ export class InteractiveMode {
 		this.themeController.disableAutoSync();
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
+		this.defaultEditor.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
