@@ -74,6 +74,8 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `theme` | string | Detected | Built-in or custom theme name. |
+| `uiAnimations` | boolean | `true` | Animate the editor frame, working-state trails, and inline selectors. |
+| `animationIntensity` | `"conservative" \| "moderate" \| "aggressive"` | `"moderate"` | Set transition speed and frame update frequency. |
 | `quietStartup` | boolean | `false` | Hide the startup header. |
 | `fullscreenExitOutput` | `"transcript" \| "resume-hint"` | `"transcript"` | Output printed when the fullscreen session exits. |
 | `fullscreenScrollbar` | `"auto" \| "always" \| "hidden"` | `"auto"` | Fullscreen transcript scrollbar behavior. |
@@ -95,6 +97,17 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 | `markdown.mermaid` | `"off" \| "final" \| "streaming"` | `"streaming"` | Mermaid rendering mode. |
 
 See [Themes](themes.md) and [Terminal Setup](terminal-setup.md) for format and platform details.
+
+Set both values in `/settings` or in `settings.json`:
+
+```json
+{
+  "uiAnimations": true,
+  "animationIntensity": "moderate"
+}
+```
+
+`conservative` updates less often and moves more slowly; `aggressive` updates more often and finishes transitions sooner. The selected thinking level changes the length and peak brightness of the moving border trails while candy works. Setting `uiAnimations` to `false` immediately finishes active transitions, stops the trails, and shows a short status word in the editor's top border instead. Custom editors that replace the default editor control their own status rendering.
 
 ## Network and retries
 

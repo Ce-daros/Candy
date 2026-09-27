@@ -9,7 +9,7 @@ Use `shellPath` to choose the Bash executable and `shellCommandPrefix` to run se
 | Command source | Shell |
 |---|---|
 | Model calls the built-in `bash` tool | candy's resolved Bash executable |
-| You enter `!command` or `!!command` | The same resolved Bash executable |
+| You run a command in Shell or Shell · No Context mode | The same resolved Bash executable |
 | Model calls the optional `powershell` tool | PowerShell 7 (`pwsh.exe`) or Windows PowerShell |
 | An extension provides or replaces a shell tool | The operations implemented by that extension |
 
@@ -37,7 +37,7 @@ Run `/reload` after changing the setting. See [Run candy on Windows](windows.md)
 
 ## Run setup before every Bash command
 
-Set `shellCommandPrefix` to prepend shell setup to both the built-in `bash` tool and user-entered `!` or `!!` commands:
+Set `shellCommandPrefix` to prepend shell setup to both the built-in `bash` tool and commands entered in either Shell mode:
 
 ```json
 {
@@ -69,8 +69,10 @@ Then configure candy to enable alias expansion and load the file:
 Run `/reload`, then verify the alias through candy:
 
 ```text
-!ll
+ll
 ```
+
+Press `!` with an empty editor before entering this command.
 
 The command should produce the same listing as `ls -la`.
 

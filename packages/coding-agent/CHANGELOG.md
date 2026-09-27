@@ -10,21 +10,27 @@
 - Added `types=chat,image,classifier` to pi.dev model catalog requests so remote refreshes overlay every supported model type; entries of unknown model types are ignored.
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
-- Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, a dash fill, and the session name.
-- Added the footer powerbar: the model and thinking labels become anchors for inline selectors rendered in the editor's bottom border. Clicking a label (or `ctrl+l` / `/thinking`) expands a track of options around the current value with ease-out per-frame positioning: pushed items glide to their new columns, entering items are revealed underneath them, and the context meter is squeezed out frame by frame; selecting collapses the track back around the new value. The track is windowed with dim `‹`/`›` edge markers, so moving past the visible edge slides the window and keeps the highlight on screen. While the model track is open, typing morphs it into a fuzzy search; left/right move the highlight, enter confirms, escape collapses, and `ctrl+s` saves the highlighted thinking level as default. New `app.powerbar.left`/`app.powerbar.right` keybindings.
+- Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, a context line whose length follows usage, and the session name.
+- Added a startup splash screen: the Candy logo rendered as a Sixel image on terminals that support it (Windows Terminal) or a Unicode half-block sprite otherwise, with a tagline below. It is dismissed when the first user message is submitted.
+- Added the footer powerbar: the model and thinking labels become anchors for inline selectors rendered in the editor's bottom border. Clicking a label (or `ctrl+l` / `/thinking`) expands a track of options around the current value with ease-out per-frame positioning: pushed items glide to their new columns and entering items are revealed underneath them; selecting collapses the track back around the new value. The track is windowed with dim `‹`/`›` edge markers, so moving past the visible edge slides the window and keeps the highlight on screen. While the model track is open, typing morphs it into a fuzzy search; left/right move the highlight, enter confirms, escape collapses, and `ctrl+s` saves the highlighted thinking level as default. New `app.powerbar.left`/`app.powerbar.right` keybindings.
+- Added explicit Shell and Shell · No Context input modes, scoped input histories, keyboard switching between footer selectors, and configurable editor animations.
 
 ### Breaking Changes
 
 - Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
 - Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
+- Removed the extension `setWorkingMessage` and `setWorkingIndicator` APIs; `setWorkingVisible` remains available.
 
 ### Changed
 
-- Merged the footer into the editor's bottom border: `╰─ <model> ▾ ─ <thinking> ▾ ────── Context x.xx% · Auto`, with a `│` left gutter on input lines. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
+- Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage is shown only by the length of the top bar line. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
+- Connected the model and thinking labels with a border line, added frame and activity animations, and applied the selected theme to CLI output and HTML exports.
+- Consolidated the built-in themes into 16 palette variables while retaining semantic color roles for custom themes.
 - Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).
 
 ### Fixed
 
+- Fixed working-state border trails being nearly invisible in terminals that do not visibly render bold box-drawing characters; the trails now use moving color-lightness steps and stop when work ends or animations are disabled.
 - Fixed X11 clipboard text being misidentified as an image when the clipboard owner accepts unadvertised image targets ([#9786](https://github.com/earendil-works/pi/issues/9786)).
 - Prevented managed git packages from automatically installing Pi peer dependencies and added warnings for extension packages that list host-provided modules in `dependencies` ([#9863](https://github.com/earendil-works/pi/issues/9863)).
 - Fixed pinned git extensions loaded with `-e` continuing to use the first downloaded commit after the ref changes ([#9982](https://github.com/earendil-works/pi/issues/9982)).

@@ -6,7 +6,7 @@ candy may ask whether you trust the working folder before loading its project re
 
 <p align="center"><img src="images/interactive-mode.png" alt="candy interactive mode showing a conversation, editor, and status information" width="750"></p>
 
-The transcript shows your prompts, candy's responses, tool calls, results, and errors. You write prompts and commands in the editor. The editor's bottom border shows the current model, thinking level, and context usage.
+The transcript shows your prompts, candy's responses, tool calls, results, and errors. You write prompts and commands in the editor. The editor's bottom border shows the current model and thinking level.
 
 ## Enter a prompt
 
@@ -22,7 +22,9 @@ To include files or images:
 
 candy shows each tool call and result while it works. Press `Ctrl+O` to expand or collapse tool output. Press `Ctrl+T` to show or hide thinking blocks.
 
-The startup header lists the instructions and resources candy loaded. The editor border indicates the current thinking level. The bottom border updates as the model uses context.
+The startup header lists the instructions and resources candy loaded. The default editor frame draws itself when a session starts. While candy generates a response, two brighter trails move around the frame; retrying, compacting, and branch summarization use their own trail patterns. The current thinking level changes trail length and peak brightness. Trails keep the frame's cyan color, or yellow in Shell mode. The top bar tracks context usage.
+
+Use `/settings` to change **UI animations** or **Animation intensity**. With animations off, the frame appears immediately and a short status word replaces the moving trails. See [Terminal and display settings](settings.md#terminal-and-display).
 
 candy does not ask before every tool call. Review commands and changed files, and use a sandbox for untrusted or unattended work. See [Security](security.md).
 
@@ -45,7 +47,7 @@ Windows Terminal reserves some Alt shortcuts. See [Terminal Setup](terminal-setu
 
 Type `/` to search the available commands. The commands you will use most often are:
 
-- `/model` selects a model. Press `Ctrl+L` to open the same selector.
+- `/model` selects a model. Press `Ctrl+L` to open the inline selector, then `Tab` to move to thinking level or `Shift+Tab` to move back.
 - `/thinking` selects how much reasoning the current model uses. Press `Shift+Tab` to cycle through supported levels.
 - `/login` and `/logout` manage provider access.
 - `/settings` changes common preferences.
@@ -67,13 +69,13 @@ After leaving candy, run `candy --continue` from the same folder to resume its m
 
 ## Run a terminal command
 
-Prefix a command with `!` to run it and include its output in the conversation:
+With an empty editor, press `!` to enter Shell mode, type a command, and press `Enter`. Its output is included in the conversation:
 
 ```text
-!git status
+git status
 ```
 
-Use `!!` when you want to run a command without sending its output to the model.
+Press `!` again while the Shell editor is empty to enter Shell · No Context. Commands in that mode run without sending output to the model. An empty-editor Backspace or Escape steps back one mode.
 
 ## Copy, export, or share results
 

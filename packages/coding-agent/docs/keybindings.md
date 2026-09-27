@@ -122,12 +122,15 @@ In fullscreen mode, these actions control the transcript and take precedence ove
 |--------|---------|-------------|
 | `app.interrupt` | `escape` | Cancel / abort |
 | `app.clear` | `ctrl+c` | Clear editor (first) / exit (second) |
+| `app.shell.enter` | `!` | Enter Shell, then Shell · No Context, when the editor is empty |
 | `app.exit` | `ctrl+d` | Exit (when editor empty) |
 | `app.suspend` | `ctrl+z` (None on Windows) | Suspend to background |
 | `app.editor.external` | `ctrl+g` | Open in external editor (`externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere) |
 | `app.clipboard.pasteImage` | `ctrl+v` (`alt+v` on Windows and WSL) | Paste image or text from clipboard |
 
 On native Windows, `app.suspend` has no default because Windows terminals do not support Unix job control. If you assign it manually, candy shows a status message instead of suspending. WSL uses the normal `ctrl+z` and `fg` behavior.
+
+In Shell mode, an empty-editor Backspace or Esc steps back one mode; Esc preserves a nonempty draft. Enter executes the command, Ctrl+C clears its draft, and the follow-up shortcut is inactive. Each mode has its own input history.
 
 ### Sessions
 
@@ -157,6 +160,8 @@ On native Windows, `app.suspend` has no default because Windows terminals do not
 | `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
 | `app.powerbar.left` | `left` | Move the powerbar selection left (while a selector is open) |
 | `app.powerbar.right` | `right` | Move the powerbar selection right (while a selector is open) |
+| `app.powerbar.next` | `tab` | Move from the model selector to thinking level |
+| `app.powerbar.previous` | `shift+tab` | Move from thinking level to the model selector |
 
 While a powerbar selector is open, `enter` confirms the highlighted item, `escape` collapses it, and typing filters the model track. The model and thinking labels in the footer are also clickable.
 

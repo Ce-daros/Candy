@@ -1,6 +1,6 @@
 # Customize candy with themes
 
-Themes control the colors candy uses in interactive mode and HTML exports. candy includes `dark` and `light` themes. You can select one theme, follow your terminal's light or dark appearance, or create your own palette.
+Themes control the colors candy uses in interactive mode, CLI output, and HTML exports. candy includes `dark` and `light` themes. You can select one theme, follow your terminal's light or dark appearance, or create your own palette.
 
 <a id="selecting-a-theme"></a>
 
@@ -92,6 +92,8 @@ Theme colors describe interface roles rather than individual components. Use the
 | HTML export | `export.pageBg`, `export.cardBg`, `export.infoBg` |
 
 The schema is the format reference. The built-in themes provide complete values that you can copy and adjust.
+
+The built-in themes map semantic colors to a shared 16-color palette. Normal editor borders use cyan, Shell borders use yellow, and selection focus uses purple. Success and added diff lines use lime; errors and removed diff lines use pink-red. The animated status trails derive lighter and darker shades from the active `border` or `bashMode` color; thinking level changes their length and peak brightness rather than their hue. The built-in `thinking*` roles all use cyan. Syntax colors use blue keywords, yellow functions, cyan variables, pink strings, lime numbers, purple types, and dim comments. Light themes use darker values of the same hues. Custom themes can assign different values to each semantic role.
 
 Five colors are optional and inherit another color when omitted:
 

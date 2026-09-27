@@ -8,8 +8,8 @@ Follow the main [Quickstart](quickstart.md) to install and authenticate Pi. Use 
 
 | Environment | Command environment | Use it when |
 |---|---|---|
-| Native Windows with Git Bash | Git Bash for the built-in `bash` tool and `!` commands | Your files and development tools primarily live on Windows |
-| Native Windows with the `powershell` tool | PowerShell for model tool calls; Bash remains available for `!` commands | The task depends on PowerShell modules or Windows-native commands |
+| Native Windows with Git Bash | Git Bash for the built-in `bash` tool and Shell mode commands | Your files and development tools primarily live on Windows |
+| Native Windows with the `powershell` tool | PowerShell for model tool calls; Bash remains available in Shell mode | The task depends on PowerShell modules or Windows-native commands |
 | WSL | Linux Bash and tools inside the selected WSL distribution | Your files and toolchain already live in Linux or WSL |
 
 ## Use Git Bash on native Windows
@@ -22,10 +22,10 @@ candy resolves Bash in this order:
 2. Git Bash under `Program Files` or `Program Files (x86)`
 3. `bash.exe` on `PATH`, including Cygwin, MSYS2, or legacy WSL Bash
 
-Start candy and enter this command to verify the shell:
+Start candy, press `!` with an empty editor, and enter this command to verify the shell:
 
 ```text
-!printf 'Bash is working\n'
+printf 'Bash is working\n'
 ```
 
 If candy cannot find Bash, it reports the locations it checked. Install Git for Windows, put another Bash executable on `PATH`, or configure `shellPath`.
@@ -42,7 +42,7 @@ To replace the model-facing `bash` tool with `powershell`, add this to `~/.candy
 }
 ```
 
-Restart candy, then ask it to run a harmless PowerShell command. The `!` and `!!` editor commands continue to use Bash. The `powershell` tool is available only when candy runs as a native Windows process.
+Restart candy, then ask it to run a harmless PowerShell command. Shell and Shell · No Context modes continue to use Bash. The `powershell` tool is available only when candy runs as a native Windows process.
 
 See [Settings](settings.md#tools) for other tool combinations.
 

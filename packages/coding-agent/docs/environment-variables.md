@@ -46,7 +46,7 @@ if [ -n "$CANDY_SESSION_FILE" ]; then
 fi
 ```
 
-These variables are injected into the LLM-callable `bash` and `powershell` tools. They are not injected into user-entered `!` or `!!` commands.
+These variables are injected into the LLM-callable `bash` and `powershell` tools. They are not injected into commands entered in Shell or Shell · No Context mode.
 
 ### Custom Shell Tools
 

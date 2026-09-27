@@ -53,6 +53,8 @@ Extend candy’s `CustomEditor` when replacing the main editor. It preserves app
 
 Forward keys your editor does not own to the base implementation, and restore the default by clearing the custom editor factory.
 
+The default editor draws the startup frame, Shell color transition, and animated working, retry, compaction, and branch-summary trails. Those trails change the brightness of the current border color; the thinking level controls their length and peak brightness. With `uiAnimations` disabled, the editor shows a short status word in its top border. A replacement editor owns its own frame and status presentation. Extensions can use `ctx.ui.setWorkingVisible()` to hide the built-in working state.
+
 ## Handle mouse input
 
 Fullscreen mode routes normalized mouse events to components. A handler can mark an event handled, capture a drag sequence, request focus, or request a render.
