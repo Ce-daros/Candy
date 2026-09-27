@@ -113,4 +113,23 @@ describe("SelectList", () => {
 		assert.ok(rendered[0].includes("…"));
 		assert.equal(visibleIndexOf(rendered[0], "first"), visibleIndexOf(rendered[1], "second"));
 	});
+
+	it("keeps right-aligned directories stable when selection moves", () => {
+		const list = new SelectList(
+			[
+				{ value: "first.ts", label: "first.ts", description: "src/components/" },
+				{ value: "second.ts", label: "second.ts", description: "src/components/" },
+			],
+			5,
+			testTheme,
+			{ descriptionAlign: "right", selectedDetail: (item) => `src/components/${item.value}` },
+		);
+		const before = list.render(80);
+		list.setSelectedIndex(1);
+		const after = list.render(80);
+		assert.equal(visibleIndexOf(before[0], "src/components/"), visibleIndexOf(after[0], "src/components/"));
+		assert.equal(visibleIndexOf(before[1], "src/components/"), visibleIndexOf(after[1], "src/components/"));
+		assert.equal(after[2], "src/components/second.ts");
+		assert.ok([...before, ...after].every((line) => visibleWidth(line) <= 80));
+	});
 });

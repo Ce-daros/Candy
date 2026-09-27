@@ -570,6 +570,8 @@ export type ToolResultMessage<TDetails = JsonValue> = IsJsonCompatible<TDetails>
 			/** Usage from the tool execution itself, if available. Not part of main LLM context accounting. */
 			usage?: Usage;
 			isError: boolean;
+			/** The agent's abort signal stopped this tool call. Stored for transcript UI; providers use isError and content. */
+			cancelled?: boolean;
 			timestamp: number; // Unix timestamp in milliseconds
 		}
 	: never;

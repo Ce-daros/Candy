@@ -4,26 +4,42 @@
 
 ### Added
 
+- Exposed optional tool cancellation metadata in the `tool_execution_end` extension event so transcript views can distinguish an aborted tool from an ordinary error after reloading a session.
+- Added `toolPreviewLines` (`5`, `10`, or `20`, default `5`) to control the visible row limit for `bash` and tool previews; extension tool renderers receive the limit as `previewLines`.
+- Redesigned the interactive UI around Candy's semantic palette across transcripts, composer, settings, selectors, session navigation, login and trust flows, extension dialogs, resources, notifications, and startup surfaces.
+- Added collapsible transcript previews for long user messages, queued messages, loaded resources, skills, summaries, and tool output, with per-item expansion alongside the global details toggle.
+- Added composer-hosted transcript search, image paste markers, masked API-key input, panel region navigation, and a reading panel for changelog content.
 - Added per-input disposition to successful RPC `prompt`, `steer`, and `follow_up` responses, `AgentSession.steer()`/`followUp()`, and `RpcClient.prompt()`/`steer()`/`followUp()`; `RpcClient.prompt()` also accepts `streamingBehavior` ([#9098](https://github.com/earendil-works/pi/issues/9098), [#9803](https://github.com/earendil-works/pi/issues/9803)).
 - Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat, image, and classifier entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
 - Added classifier support to `ModelRuntime`, including `classify()`, classifier model accessors, runtime-resolved authentication, and the built-in TypeSafe `jev-latest` model.
 - Added `types=chat,image,classifier` to pi.dev model catalog requests so remote refreshes overlay every supported model type; entries of unknown model types are ignored.
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
-- Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, a context line whose length follows usage, and the session name.
-- Added a startup splash screen: the Candy logo rendered as a Sixel image on terminals that support it (Windows Terminal) or a Unicode half-block sprite otherwise, with a tagline below. It is dismissed when the first user message is submitted.
+- Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, the session name, and a context line and percentage that follow usage.
+- Added a startup splash screen: the Candy logo renders as a Sixel image on supported terminals (including Windows Terminal) or a Unicode half-block sprite otherwise. The home view shows `/resume`, `/settings`, `/hotkeys`, and one tip per session; it is dismissed when the first user message is submitted.
 - Added the footer powerbar: the model and thinking labels become anchors for inline selectors rendered in the editor's bottom border. Clicking a label (or `ctrl+l` / `/thinking`) expands a track of options around the current value with ease-out per-frame positioning: pushed items glide to their new columns and entering items are revealed underneath them; selecting collapses the track back around the new value. The track is windowed with dim `‹`/`›` edge markers, so moving past the visible edge slides the window and keeps the highlight on screen. While the model track is open, typing morphs it into a fuzzy search; left/right move the highlight, enter confirms, escape collapses, and `ctrl+s` saves the highlighted thinking level as default. New `app.powerbar.left`/`app.powerbar.right` keybindings.
 - Added explicit Shell and Shell · No Context input modes, scoped input histories, keyboard switching between footer selectors, and configurable editor animations.
 
+### Removed
+
+- Removed the retired author Easter-egg commands, project announcements, and model-specific automatic animation triggers.
+
 ### Breaking Changes
 
+- Removed interactive model cycling and scoped model selection: the top-level `--models` flag, `enabledModels`, `/scoped-models`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use `--model`, the default model setting, `/model`, or the footer selector. `candy update --models` remains the model-catalog refresh command.
 - Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
 - Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
 - Removed the extension `setWorkingMessage` and `setWorkingIndicator` APIs; `setWorkingVisible` remains available.
 
 ### Changed
 
-- Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage is shown only by the length of the top bar line. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
+- Thinking blocks now collapse to a labeled excerpt by default. Mermaid diagrams render after their code block is complete, and changelog entries stay collapsed by default. Explicit saved settings continue to control each behavior.
+- Tool activity now uses connected status nodes and compact results; shell and tool previews share the configured row limit, while errors show up to 12 rows.
+- Composer autocomplete and selectors use Candy selection markers, inline file details, and panel layouts; settings are grouped into five searchable categories with region navigation.
+- Updated image, code, table, and heading presentation; Mermaid code blocks can switch between Diagram and Source, and code blocks expose a copy action.
+- `/session`, `/hotkeys`, and changelog details use a shared reading panel. Ordinary transient notices fade after a short delay, while warnings and errors remain in the transcript.
+- Thinking levels now use progressively stronger Candy colors, a six-step meter, and level-sensitive composer and activity animations.
+- Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage appears in the top bar as an occupied line and a percentage. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
 - Connected the model and thinking labels with a border line, added frame and activity animations, and applied the selected theme to CLI output and HTML exports.
 - Consolidated the built-in themes into 16 palette variables while retaining semantic color roles for custom themes.
 - Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).

@@ -4,6 +4,7 @@ import { fuzzyFilter, sliceByColumn, visibleWidth } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";
 import { theme } from "../theme/theme.ts";
+import { thinkingMeter } from "./frame-motion.ts";
 
 /**
  * Slot separator. Each item owns `labelWidth + SLOT_SEPARATOR` columns and the
@@ -52,7 +53,7 @@ export type PowerbarModelRef = Model<any>;
 /** One selectable entry of the model track. */
 export interface PowerbarModelEntry {
 	readonly model: PowerbarModelRef;
-	/** Display label without provider prefix. */
+	/** Display label from the model catalog. */
 	readonly label: string;
 }
 
@@ -64,7 +65,7 @@ export interface PowerbarHost {
 	getThinkingLevels(): ThinkingLevel[];
 	/** Currently active thinking level. */
 	getThinkingLevel(): ThinkingLevel;
-	/** Models available for switching, in cycle order. */
+	/** Models available for direct selection. */
 	getModels(): readonly PowerbarModelEntry[];
 	/** Index of the current model in `getModels()`. */
 	getCurrentModelIndex(): number;
@@ -177,6 +178,9 @@ function middleTruncate(label: string, maxCols: number): string {
  */
 export class PowerbarController {
 	mode: PowerbarMode = "normal";
+	onThinkingPreview?: (level: ThinkingLevel) => void;
+	onThinkingCommit?: (level: ThinkingLevel) => void;
+	paintThinking?: (text: string) => string;
 
 	private readonly host: PowerbarHost;
 	private items: TrackItem[] = [];
@@ -239,7 +243,7 @@ export class PowerbarController {
 		const levels = this.host.getThinkingLevels();
 		const current = this.host.getThinkingLevel();
 		this.items = levels.map((level) => {
-			const label = level.charAt(0).toUpperCase() + level.slice(1);
+			const label = `${level.charAt(0).toUpperCase() + level.slice(1)} ${thinkingMeter(level)}`;
 			return { kind: "level" as const, level, label, width: visibleWidth(label) };
 		});
 		this.anchorIndex = clampIndex(levels.indexOf(current), this.items.length);
@@ -252,6 +256,7 @@ export class PowerbarController {
 
 	/** Expand the model track out of the model label. */
 	openModelBrowse(options: { anchorWidth: number }): void {
+		if (this.mode === "thinking") this.onThinkingPreview?.(this.host.getThinkingLevel());
 		this.stopTimer();
 		this.collapsing = false;
 		this.mode = "model-browse";
@@ -275,6 +280,7 @@ export class PowerbarController {
 	/** Collapse back to the normal labels around the current selection. */
 	collapse(): void {
 		if (this.mode === "normal" || this.collapsing) return;
+		if (this.mode === "thinking") this.onThinkingPreview?.(this.host.getThinkingLevel());
 		this.snapTransition();
 		this.selectedIndex = clampIndex(this.anchorIndex, this.items.length);
 		this.buildCollapseWipe();
@@ -361,6 +367,8 @@ export class PowerbarController {
 		const next = clampIndex(this.selectedIndex + delta, this.items.length);
 		if (next === this.selectedIndex) return;
 		this.selectedIndex = next;
+		const level = this.items[next]?.level;
+		if (level !== undefined) this.onThinkingPreview?.(level);
 		if (next > this.windowEnd) {
 			this.slideWindow(1);
 		} else if (next < this.windowStart) {
@@ -381,6 +389,7 @@ export class PowerbarController {
 		if (item.kind === "level" && item.level !== undefined) {
 			try {
 				this.host.applyThinking(item.level, persist);
+				this.onThinkingCommit?.(item.level);
 			} catch {
 				// The host reports the failure; still collapse back to a sane state.
 			}
@@ -612,12 +621,16 @@ export class PowerbarController {
 		const item = this.items[index];
 		if (!item) return "";
 		const content = middleTruncate(item.label, this.slotWidth(index) - 4);
+		const label =
+			item.level === undefined
+				? theme.fg("accent", content)
+				: index === this.selectedIndex && this.paintThinking
+					? this.paintThinking(content)
+					: theme.getThinkingBorderColor(item.level)(content);
 		if (index === this.selectedIndex) {
-			return theme.bold(
-				`${theme.fg("borderAccent", "‹ ")}${theme.fg("accent", content)}${theme.fg("borderAccent", " ›")}`,
-			);
+			return theme.bold(`${theme.fg("borderAccent", "‹ ")}${label}${theme.fg("borderAccent", " ›")}`);
 		}
-		return `  ${theme.fg("muted", content)}`;
+		return `  ${item.level === undefined ? theme.fg("muted", content) : label}`;
 	}
 
 	private trackLeft(): number {

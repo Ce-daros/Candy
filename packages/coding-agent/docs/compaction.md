@@ -199,7 +199,7 @@ After navigation with summary:
 
 ### Cumulative File Tracking
 
-Default compaction and branch summarization track files cumulatively. Both extract file operations from tool calls in the messages being summarized. Compaction also carries file lists from the previous Pi-generated compaction. Branch summarization carries file lists from Pi-generated branch summaries in the entries it summarizes.
+Default compaction and branch summarization track files cumulatively. Both extract file operations from tool calls in the messages being summarized. Compaction also carries file lists from the previous candy-generated compaction. Branch summarization carries file lists from candy-generated branch summaries in the entries it summarizes.
 
 File tracking therefore accumulates across default compactions and nested default branch summaries. candy does not automatically carry file lists from extension-generated summaries whose `fromHook` field is `true`; extensions manage their own `details` format.
 

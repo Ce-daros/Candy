@@ -109,7 +109,7 @@ await session.prompt("Hello");
 | `cwd` | `process.cwd()` | Working directory |
 | `agentDir` | `~/.candy/agent` | Config directory |
 | `model` | From settings/first available | Model to use |
-| `thinkingLevel` | From settings/"off" | off, low, medium, high |
+| `thinkingLevel` | From settings/"off" | off, minimal, low, medium, high, xhigh, max (subject to model support) |
 | `tools` | `["read", "bash", "edit", "write"]` built-ins | Allowlist tool names across built-in, extension, and custom tools |
 | `customTools` | `[]` | Additional tool definitions |
 | `resourceLoader` | DefaultResourceLoader | Resource loader for extensions, skills, prompts, themes, and context files |
@@ -130,7 +130,7 @@ session.subscribe((event) => {
       console.log(`Tool: ${event.toolName}`);
       break;
     case "tool_execution_end":
-      console.log(`Result: ${event.result}`);
+      console.log(event.cancelled ? "Tool cancelled" : `Result: ${event.result}`);
       break;
     case "agent_settled":
       console.log("Done");

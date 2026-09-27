@@ -2,9 +2,9 @@
 
 This reference lists user-configurable settings, their types, defaults, and purposes. Project settings override agent-directory settings. Resource lists are combined. See [Configuration](configuration.md) for file locations and trust behavior.
 
-## Model and thinking
+Open `/settings` to browse Appearance, Conversation & Input, Models & Connection, Privacy & Trust, and Terminal. Search from the bottom of the panel. `Tab` and `Shift+Tab` move between regions; arrow keys select an item, `Enter` changes or opens it, and `Escape` returns. Simple values save immediately. The Theme picker previews changes while you move and restores the previous theme if you cancel.
 
-<a id="model-cycling"></a>
+## Model and thinking
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
@@ -13,8 +13,7 @@ This reference lists user-configurable settings, their types, defaults, and purp
 | `defaultThinkingLevel` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"` | `"medium"` | Startup thinking level. |
 | `modelThinkingLevels` | object | None | Per-model startup thinking levels keyed by exact `provider/modelId`. |
 | `thinkingBudgets` | object | Built-in budgets | Token budgets for `minimal`, `low`, `medium`, and `high` thinking levels. |
-| `enabledModels` | `string[]` | All available models | Model patterns used for startup selection and model cycling. Uses the same format as `--models`. |
-| `hideThinkingBlock` | boolean | `false` | Hide thinking blocks in the transcript. |
+| `hideThinkingBlock` | boolean | `true` | Start thinking blocks collapsed in the transcript; expand a block to inspect its text. |
 | `showCacheMissNotices` | boolean | `false` | Show notices for significant cache misses, successful cache warming, compaction usage, and provider recovery. |
 | `cacheWarming` | `"off" \| "streaming" \| "idle"` | `"streaming"` | Keep eligible provider prompt caches warm during active runs or, with `"idle"`, between runs. Global setting only. |
 
@@ -28,6 +27,7 @@ See [Choose a Model](models.md) for model selection and thinking controls.
 |---|---|---|---|
 | `steeringMode` | `"all" \| "one-at-a-time"` | `"one-at-a-time"` | How queued steering messages are delivered. |
 | `followUpMode` | `"all" \| "one-at-a-time"` | `"one-at-a-time"` | How queued follow-up messages are delivered. |
+| `toolPreviewLines` | `5 \| 10 \| 20` | `5` | Terminal rows shown for edit, write, and shell previews before expansion. Errors show up to 12 rows. |
 | `externalEditor` | string | `$VISUAL`, `$EDITOR`, then platform default | Command opened by the external-editor keybinding. |
 | `doubleEscapeAction` | `"tree" \| "fork" \| "none"` | `"tree"` | Action for double Escape with an empty editor. |
 | `treeFilterMode` | `"default" \| "no-tools" \| "user-only" \| "labeled-only" \| "all"` | `"default"` | Initial filter used by `/tree`. |
@@ -74,7 +74,7 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `theme` | string | Detected | Built-in or custom theme name. |
-| `uiAnimations` | boolean | `true` | Animate the editor frame, working-state trails, and inline selectors. |
+| `uiAnimations` | boolean | `true` | Animate the editor frame, working-state trails, and panels. |
 | `animationIntensity` | `"conservative" \| "moderate" \| "aggressive"` | `"moderate"` | Set transition speed and frame update frequency. |
 | `quietStartup` | boolean | `false` | Hide the startup header. |
 | `fullscreenExitOutput` | `"transcript" \| "resume-hint"` | `"transcript"` | Output printed when the fullscreen session exits. |
@@ -94,7 +94,7 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 | `images.autoResize` | boolean | `true` | Resize images to at most 2000 by 2000 pixels before sending them to a model. |
 | `images.blockImages` | boolean | `false` | Prevent images from being sent to models. |
 | `markdown.codeBlockIndent` | string | `"  "` | Prefix used to indent rendered code blocks. |
-| `markdown.mermaid` | `"off" \| "final" \| "streaming"` | `"streaming"` | Mermaid rendering mode. |
+| `markdown.mermaid` | `"off" \| "final" \| "streaming"` | `"final"` | Mermaid rendering mode. |
 
 See [Themes](themes.md) and [Terminal Setup](terminal-setup.md) for format and platform details.
 
@@ -107,14 +107,14 @@ Set both values in `/settings` or in `settings.json`:
 }
 ```
 
-`conservative` updates less often and moves more slowly; `aggressive` updates more often and finishes transitions sooner. The selected thinking level changes the length and peak brightness of the moving border trails while candy works. Setting `uiAnimations` to `false` immediately finishes active transitions, stops the trails, and shows a short status word in the editor's top border instead. Custom editors that replace the default editor control their own status rendering.
+`conservative` updates less often and moves more slowly; `aggressive` updates more often and finishes transitions sooner. The selected thinking level changes the border color, six-step meter, and the number and brightness of moving trails. Setting `uiAnimations` to `false` immediately finishes panel and frame transitions, stops moving trails, and shows a short status word in the editor's top border. Level colors and the meter remain. Custom editors that replace the default editor control their own status rendering.
 
 ## Network and retries
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `transport` | `"auto" \| "sse" \| "websocket" \| "websocket-cached"` | `"auto"` | Preferred transport for AI providers that support multiple transports. |
-| `httpProxy` | string | None | Proxy URL applied as `HTTP_PROXY` and `HTTPS_PROXY` for Pi-managed HTTP clients. **Can only be set in agent-directory settings.** |
+| `httpProxy` | string | None | Proxy URL applied as `HTTP_PROXY` and `HTTPS_PROXY` for candy-managed HTTP clients. **Can only be set in agent-directory settings.** |
 | `httpIdleTimeoutMs` | number | `300000` | HTTP header and body idle timeout in milliseconds. Set to `0` to disable. |
 | `websocketConnectTimeoutMs` | number | `15000` | WebSocket connection timeout in milliseconds. Set to `0` to disable. |
 | `retry.enabled` | boolean | `true` | Enable automatic agent-level retry for transient failures. |
@@ -156,7 +156,7 @@ Resource arrays support glob exclusions with `!pattern`, exact inclusion with `+
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `collapseChangelog` | boolean | `false` | Show a condensed changelog after an update. |
+| `collapseChangelog` | boolean | `true` | Keep update notes as a one-line entry; set to `false` to open the reading panel at startup. |
 | `enableInstallTelemetry` | boolean | `true` | Enable anonymous install/update reporting and selected provider attribution headers. Does not control update checks. |
 | `enableAnalytics` | boolean | `false` | Opt in to analytics data sharing. Currently used only by the experimental first-run setup. |
 | `warnings.anthropicExtraUsage` | boolean | `true` | Warn when Anthropic subscription authentication may use paid extra usage. |

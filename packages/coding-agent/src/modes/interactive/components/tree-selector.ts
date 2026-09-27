@@ -5,16 +5,16 @@ import {
 	getKeybindings,
 	Input,
 	type Keybinding,
-	Spacer,
 	sliceByColumn,
 	Text,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import type { SessionTreeNode } from "../../../core/session-manager.ts";
 import { theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { formatKeyText, keyHint } from "./keybinding-hints.ts";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
@@ -119,6 +119,13 @@ class TreeList implements Component {
 	private visibleChildrenMap: Map<string | null, string[]> = new Map();
 	private lastSelectedId: string | null = null;
 	private foldedNodes: Set<string> = new Set();
+	private detailOffset = 0;
+	private detailLineCount = 0;
+	private detailHeight = 5;
+	private availableHeight = 20;
+	private region: "tree" | "detail" | "search" = "tree";
+	private lastVisibleStart = 0;
+	private lastVisibleCount = 0;
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
@@ -629,6 +636,12 @@ class TreeList implements Component {
 		return this.filteredNodes[this.selectedIndex]?.node;
 	}
 
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(6, height);
+		this.detailHeight = Math.max(3, Math.min(8, Math.floor(this.availableHeight / 4)));
+		this.maxVisibleLines = Math.max(3, this.availableHeight - this.detailHeight - 4);
+	}
+
 	copySelected(): void {
 		const node = this.getSelectedNode();
 		this.onCopy?.(node ? this.getEntryCopyText(node) : undefined);
@@ -671,7 +684,9 @@ class TreeList implements Component {
 
 		if (this.filteredNodes.length === 0) {
 			lines.push(truncateToWidth(theme.fg("muted", "  No entries found"), width));
+			while (lines.length < this.maxVisibleLines) lines.push("");
 			lines.push(truncateToWidth(theme.fg("muted", `  (0/0)${this.getStatusLabels()}`), width));
+			while (lines.length < this.availableHeight) lines.push("");
 			return lines;
 		}
 
@@ -683,6 +698,8 @@ class TreeList implements Component {
 			),
 		);
 		const endIndex = Math.min(startIndex + this.maxVisibleLines, this.filteredNodes.length);
+		this.lastVisibleStart = startIndex;
+		this.lastVisibleCount = endIndex - startIndex;
 
 		const renderedRows: HorizontalViewportRow[] = [];
 		for (let i = startIndex; i < endIndex; i++) {
@@ -691,7 +708,7 @@ class TreeList implements Component {
 			const isSelected = i === this.selectedIndex;
 
 			// Build line: cursor + prefix + path marker + label + content
-			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
+			const cursor = isSelected ? theme.fg("borderAccent", "♦ ") : "  ";
 
 			// If multiple roots, shift display (roots at 0, not 1)
 			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
@@ -750,24 +767,62 @@ class TreeList implements Component {
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 			const prefixPart = theme.fg("dim", prefix) + foldMarker + pathMarker;
 			const anchorCol = visibleWidth(prefixPart);
-			let gutter = cursor;
+			const gutter = cursor;
 			let body = prefixPart + label + labelTimestamp + content;
-			if (isSelected) {
-				gutter = theme.bg("selectedBg", gutter);
-				body = theme.bg("selectedBg", body);
-			}
+			if (isSelected) body = `${theme.bold(theme.fg("accent", body))}${theme.fg("borderAccent", " ♦")}`;
 			renderedRows.push({ gutter, body, anchorCol, bodyWidth: visibleWidth(body), isSelected });
 		}
 
 		lines.push(...renderHorizontalViewport(renderedRows, width));
+		while (lines.length < this.maxVisibleLines) lines.push("");
 		lines.push(
 			truncateToWidth(
 				theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getStatusLabels()}`),
 				width,
 			),
 		);
+		lines.push(theme.fg("borderMuted", "─".repeat(width)));
+		const selected = this.getSelectedNode();
+		if (selected) {
+			const title = selected.label ?? this.getEntryDisplayText(selected, false);
+			lines.push(truncateToWidth(theme.bold(theme.fg("accent", title)), width));
+			const fullText = this.getEntryCopyText(selected) ?? this.getSearchableText(selected);
+			const detailLines = wrapTextWithAnsi(fullText, Math.max(10, width - 2));
+			this.detailLineCount = detailLines.length;
+			for (const line of detailLines.slice(this.detailOffset, this.detailOffset + this.detailHeight)) {
+				lines.push(truncateToWidth(`  ${line}`, width));
+			}
+			while (lines.length < this.maxVisibleLines + 3 + this.detailHeight) lines.push("");
+			lines.push(
+				detailLines.length > this.detailHeight
+					? theme.fg(
+							"muted",
+							`  ${this.detailOffset + 1}–${Math.min(detailLines.length, this.detailOffset + this.detailHeight)} / ${detailLines.length}`,
+						)
+					: "",
+			);
+		}
 
 		return lines;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type === "wheel" && event.wheelDelta) {
+			this.selectedIndex = Math.max(
+				0,
+				Math.min(this.filteredNodes.length - 1, this.selectedIndex + (event.wheelDelta < 0 ? -1 : 1)),
+			);
+			return { handled: true, render: true };
+		}
+		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+		if (event.y >= 0 && event.y < this.lastVisibleCount) {
+			this.selectedIndex = this.lastVisibleStart + event.y;
+			this.detailOffset = 0;
+			this.region = "tree";
+			if (event.type === "click") this.onSelect?.(this.filteredNodes[this.selectedIndex]!.node.entry.id);
+			return { handled: true, focus: true, render: true };
+		}
+		return undefined;
 	}
 
 	private getEntryDisplayText(node: SessionTreeNode, isSelected: boolean): string {
@@ -1003,10 +1058,20 @@ class TreeList implements Component {
 
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
-		if (kb.matches(keyData, "tui.select.up")) {
+		if (kb.matches(keyData, "app.panel.focusNext") || kb.matches(keyData, "app.panel.focusPrevious")) {
+			const regions = ["tree", "detail", "search"] as const;
+			const delta = kb.matches(keyData, "app.panel.focusNext") ? 1 : -1;
+			this.region = regions[(regions.indexOf(this.region) + delta + regions.length) % regions.length];
+		} else if (this.region === "detail" && kb.matches(keyData, "tui.select.up")) {
+			this.detailOffset = Math.max(0, this.detailOffset - 1);
+		} else if (this.region === "detail" && kb.matches(keyData, "tui.select.down")) {
+			this.detailOffset = Math.min(Math.max(0, this.detailLineCount - this.detailHeight), this.detailOffset + 1);
+		} else if (kb.matches(keyData, "tui.select.up")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredNodes.length - 1 : this.selectedIndex - 1;
+			this.detailOffset = 0;
 		} else if (kb.matches(keyData, "tui.select.down")) {
 			this.selectedIndex = this.selectedIndex === this.filteredNodes.length - 1 ? 0 : this.selectedIndex + 1;
+			this.detailOffset = 0;
 		} else if (kb.matches(keyData, "app.tree.foldOrUp")) {
 			const currentId = this.filteredNodes[this.selectedIndex]?.node.entry.id;
 			if (currentId && this.isFoldable(currentId) && !this.foldedNodes.has(currentId)) {
@@ -1193,32 +1258,11 @@ class TreeHelp implements Component {
 			return labelFirst ? `${label} ${text}` : `${text} ${label}`;
 		});
 
-		const availableWidth = Math.max(1, width);
-		const indent = "  ";
-		const separator = " · ";
-		const lines: string[] = [];
-		let currentLine = "";
-
-		for (const item of items) {
-			const candidate = currentLine
-				? `${currentLine}${separator}${item}`
-				: visibleWidth(`${indent}${item}`) <= availableWidth
-					? `${indent}${item}`
-					: item;
-			if (!currentLine || visibleWidth(candidate) <= availableWidth) {
-				currentLine = candidate;
-				continue;
-			}
-
-			lines.push(...wrapTextWithAnsi(currentLine.trimEnd(), availableWidth));
-			currentLine = visibleWidth(`${indent}${item}`) <= availableWidth ? `${indent}${item}` : item;
-		}
-
-		if (currentLine) {
-			lines.push(...wrapTextWithAnsi(currentLine.trimEnd(), availableWidth));
-		}
-
-		return lines.map((line) => theme.fg("muted", line));
+		const primary = `Tab panels · ${keyHint("tui.select.confirm", "navigate")} · ${keyHint("tui.select.cancel", "close")} · ${items.slice(0, 5).join(" · ")}`;
+		const secondary = items.slice(5).join(" · ");
+		return [...wrapTextWithAnsi(primary, Math.max(1, width)), ...wrapTextWithAnsi(secondary, Math.max(1, width))].map(
+			(line) => theme.fg("muted", line),
+		);
 	}
 }
 
@@ -1338,6 +1382,8 @@ export class TreeSelectorComponent extends Container implements Focusable {
 	private labelInput: LabelInput | null = null;
 	private labelInputContainer: Container;
 	private treeContainer: Container;
+	private readonly treeHelp = new TreeHelp();
+	private availableHeight = 20;
 	private onLabelChangeCallback?: (entryId: string, label: string | undefined) => void;
 	public onCopy?: (text: string | undefined) => void;
 
@@ -1380,21 +1426,24 @@ export class TreeSelectorComponent extends Container implements Focusable {
 
 		this.labelInputContainer = new Container();
 
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
-		this.addChild(new TreeHelp());
-		this.addChild(new SearchLine(this.treeList));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
+		this.addChild(new Text(theme.bold(theme.fg("accent", "Session Tree")), 1, 0));
 		this.addChild(this.treeContainer);
 		this.addChild(this.labelInputContainer);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
+		this.addChild(new SearchLine(this.treeList));
+		this.addChild(this.treeHelp);
 
 		if (tree.length === 0) {
 			setTimeout(() => onCancel(), 100);
 		}
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(8, height);
+	}
+
+	override render(width: number): string[] {
+		this.treeList.setAvailableHeight(this.availableHeight - this.treeHelp.render(width).length - 2);
+		return super.render(width);
 	}
 
 	private showLabelInput(entryId: string, currentLabel: string | undefined): void {

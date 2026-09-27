@@ -1,6 +1,5 @@
 import { CancellableLoader, Container, Loader, Spacer, Text, type TUI } from "@candy/tui";
 import type { Theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 /** Loader wrapped with borders for extension UI */
@@ -12,8 +11,6 @@ export class BorderedLoader extends Container {
 	constructor(tui: TUI, theme: Theme, message: string, options?: { cancellable?: boolean }) {
 		super();
 		this.cancellable = options?.cancellable ?? true;
-		const borderColor = (s: string) => theme.fg("border", s);
-		this.addChild(new DynamicBorder(borderColor));
 		if (this.cancellable) {
 			this.loader = new CancellableLoader(
 				tui,
@@ -35,8 +32,6 @@ export class BorderedLoader extends Container {
 			this.addChild(new Spacer(1));
 			this.addChild(new Text(keyHint("tui.select.cancel", "cancel"), 1, 0));
 		}
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder(borderColor));
 	}
 
 	get signal(): AbortSignal {

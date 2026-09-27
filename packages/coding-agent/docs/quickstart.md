@@ -37,9 +37,9 @@ candy
 
 The working folder helps candy discover relevant files, instructions, and configuration. candy also uses it to group saved sessions.
 
-<p align="center"><img src="images/interactive-mode.png" alt="candy running in a terminal with a conversation, input editor, and status footer" width="750"></p>
+<p align="center"><img src="images/interactive-mode.png" alt="candy home screen with logo, shortcuts, prompt editor, and thinking level" width="750"></p>
 
-The interface shows your conversation, an editor for prompts and commands, and a status line on the editor's bottom border with the current model, thinking level, and context usage. See [Use candy in the terminal](usage.md) to learn how to add files, run commands, direct ongoing work, and manage results.
+The home screen shows the Candy logo and shortcuts to resume a session, open settings, or inspect hotkeys. Your conversation appears above the prompt editor. The editor's lower border shows the model and thinking level; the top bar tracks context usage. See [Use candy in the terminal](usage.md) to learn how to add files, run commands, direct ongoing work, and manage results.
 
 ## 3. Choose a model
 

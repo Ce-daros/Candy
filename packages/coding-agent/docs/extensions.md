@@ -1,6 +1,6 @@
 # Extensions
 
-Extensions are TypeScript modules that add executable behavior to Pi. Use one when a workflow needs tools, commands, event handlers, model providers, session state, or terminal UI rather than instructions alone.
+Extensions are TypeScript modules that add executable behavior to candy. Use one when a workflow needs tools, commands, event handlers, model providers, session state, or terminal UI rather than instructions alone.
 
 An extension runs inside the candy process with the same operating-system permissions. It can inspect prompts, tool calls, files, credentials, and session history, so load extensions only from sources you trust.
 
@@ -20,7 +20,7 @@ Create `~/.candy/agent/extensions/hello.ts`:
 import type { ExtensionAPI } from "@candy/coding-agent";
 
 export default function (candy: ExtensionAPI) {
-  pi.registerCommand("hello", {
+  candy.registerCommand("hello", {
     description: "Show a greeting",
     handler: async (name, ctx) => {
       ctx.ui.notify(`Hello, ${name || "world"}!`, "info");
@@ -191,6 +191,8 @@ Register an entry or message renderer when custom stored content should appear i
 `ctx.ui` provides dialogs, notifications, status text, widgets, titles, editor access, and custom components.
 Use `ctx.ui.custom()` only when the interaction needs its own rendering and input.
 See [Terminal UI](tui.md) for component, focus, overlay, theme, and performance guidance.
+
+In interactive mode, built-in select and input dialogs expand above the composer. Long editor dialogs use a larger panel; confirm dialogs place Yes and No side by side. Loader text and countdowns update in place. Extensions remain responsible for their custom widget, footer, and renderer content.
 
 Extensions load in interactive, RPC, JSON, and print modes.
 Interactive mode provides the complete terminal UI.

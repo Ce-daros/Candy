@@ -141,9 +141,9 @@ describe("parseArgs", () => {
 			expect(result.thinking).toBe("high");
 		});
 
-		test("parses --models as comma-separated list", () => {
+		test("does not parse removed model-cycle scope as a built-in option", () => {
 			const result = parseArgs(["--models", "gpt-4o,claude-sonnet,gemini-pro"]);
-			expect(result.models).toEqual(["gpt-4o", "claude-sonnet", "gemini-pro"]);
+			expect(result.unknownFlags.get("models")).toBe("gpt-4o,claude-sonnet,gemini-pro");
 		});
 	});
 

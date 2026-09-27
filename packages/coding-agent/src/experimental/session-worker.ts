@@ -812,8 +812,6 @@ async function createCodingAgentHarness(
 	let resolved: Awaited<ReturnType<typeof findInitialModel>> | ReturnType<typeof resolveCliModel>;
 	if (options.model === undefined) {
 		resolved = await findInitialModel({
-			scopedModels: [],
-			isContinuing: true,
 			defaultProvider: settingsManager.getDefaultProvider(),
 			defaultModelId: settingsManager.getDefaultModel(),
 			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),

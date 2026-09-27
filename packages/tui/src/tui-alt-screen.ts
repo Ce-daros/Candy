@@ -149,12 +149,19 @@ interface ActiveSearch {
 	component: AltScreenSearchComponent;
 	index: AltScreenSearchIndex;
 	overlay?: OverlayHandle;
+	host?: TuiAltScreenSearchHost;
 	query: string;
 	matches: AltScreenSearchMatch[];
 	selectedIndex: number;
 	selectedKey?: string;
 	anchorRow: number;
 	selectionMode: SearchSelectionMode;
+}
+
+export interface TuiAltScreenSearchHost {
+	mount(component: AltScreenSearchComponent): void;
+	unmount(component: AltScreenSearchComponent): void;
+	isFocused(): boolean;
 }
 
 interface SearchHighlightRange {
@@ -223,6 +230,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private scrollbarHover?: ScrollView;
 	private scrollToEndIndicatorRect?: ScrollToEndIndicatorRect;
 	private activeSearch?: ActiveSearch;
+	private searchHost?: TuiAltScreenSearchHost;
 	private pressedUrl?: string;
 	private selectionDragged = false;
 	private mouseCapture?: TuiMouseDispatchTarget;
@@ -308,6 +316,15 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (this.layoutRoot === component) return;
 		this.layoutRoot = component;
 		this.currentLayout = undefined;
+		this.requestRender();
+	}
+
+	setSearchHost(host?: TuiAltScreenSearchHost): void {
+		if (this.searchHost === host) return;
+		const search = this.activeSearch;
+		if (search) this.detachSearch(search);
+		this.searchHost = host;
+		if (search) this.attachSearch(search);
 		this.requestRender();
 	}
 
@@ -503,6 +520,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const component = new AltScreenSearchComponent(
 			(query) => this.updateSearchQuery(query),
 			this.searchNavigationButtonStyle,
+			(direction) => this.navigateSearch(direction),
 		);
 		const search: ActiveSearch = {
 			component,
@@ -514,7 +532,18 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			selectionMode: "query",
 		};
 		this.activeSearch = search;
-		search.overlay = this.showOverlay(component, {
+		this.attachSearch(search);
+	}
+
+	private attachSearch(search: ActiveSearch): void {
+		if (this.searchHost) {
+			search.component.setInline(true);
+			search.host = this.searchHost;
+			search.host.mount(search.component);
+			return;
+		}
+		search.component.setInline(false);
+		search.overlay = this.showOverlay(search.component, {
 			anchor: "top-right",
 			width: "40%",
 			minWidth: 32,
@@ -522,11 +551,23 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		});
 	}
 
-	private closeSearch(): void {
+	private detachSearch(search: ActiveSearch): void {
+		if (search.host) {
+			search.host.unmount(search.component);
+			search.host = undefined;
+		}
+		if (search.overlay) {
+			search.overlay.hide();
+			search.overlay = undefined;
+		}
+	}
+
+	/** Close transcript search and unmount its host. Call before replacing the focused host UI. */
+	closeSearch(): void {
 		const search = this.activeSearch;
 		if (!search) return;
 		this.activeSearch = undefined;
-		search.overlay?.hide();
+		this.detachSearch(search);
 		this.requestRender();
 	}
 
@@ -577,12 +618,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const box = getScrollViewBox(layout, scrollView);
 		const lines = box?.scrollContentLines;
 		if (!lines || !search.query.trim()) {
+			const resultChanged = search.matches.length > 0 || search.selectedIndex !== -1;
 			search.matches = [];
 			search.selectedIndex = -1;
 			search.selectedKey = undefined;
 			search.selectionMode = "retain";
 			search.component.setResult(-1, 0);
-			return false;
+			return search.host !== undefined && resultChanged;
 		}
 
 		const shouldRevealSelection = search.selectionMode !== "retain";
@@ -623,7 +665,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		search.selectedKey = selectedIndex >= 0 ? getAltScreenSearchMatchKey(matches[selectedIndex]!) : undefined;
 		search.selectionMode = "retain";
 		search.component.setResult(selectedIndex, matches.length);
-		if (!shouldRevealSelection) return false;
+		if (!shouldRevealSelection) return search.host !== undefined && result.changed;
 
 		const selected = matches[selectedIndex];
 		const firstSegment = selected?.segments[0];
@@ -636,7 +678,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			target = firstSegment.row - Math.floor(scrollView.viewportHeight / 3);
 		}
 		scrollView.scrollTo(target, { disableFollow: true });
-		return scrollView.scrollTop !== before;
+		return scrollView.scrollTop !== before || (search.host !== undefined && shouldRevealSelection);
 	}
 
 	/** Show a transient message in the alternate-screen flash stack. */
@@ -705,10 +747,17 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const keybindings = getKeybindings();
 		const isRelease = isKeyRelease(data);
 		if (keybindings.matches(data, "tui.altScreen.search")) {
+			const searchFocused = this.activeSearch?.overlay?.isFocused() || this.activeSearch?.host?.isFocused();
+			if (
+				(this.activeSearch && !searchFocused) ||
+				(!this.activeSearch && this.shouldDeferViewportInputToOverlay())
+			) {
+				return undefined;
+			}
 			if (!isRelease) this.toggleSearch();
 			return { consume: true };
 		}
-		if (this.activeSearch?.overlay?.isFocused()) {
+		if (this.activeSearch?.overlay?.isFocused() || this.activeSearch?.host?.isFocused()) {
 			if (keybindings.matches(data, "tui.altScreen.searchNext")) {
 				if (!isRelease) this.navigateSearch(1);
 				return { consume: true };

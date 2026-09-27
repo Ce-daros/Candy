@@ -13,8 +13,8 @@ import {
 import { getSelectListTheme, theme } from "../theme/theme.ts";
 
 const SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
-	minPrimaryColumnWidth: 12,
-	maxPrimaryColumnWidth: 32,
+	minPrimaryColumnWidth: 24,
+	maxPrimaryColumnWidth: 46,
 };
 
 export interface SelectSubmenuOptions {
@@ -22,6 +22,7 @@ export interface SelectSubmenuOptions {
 	searchable?: boolean;
 	/** Override the select list layout (column widths). */
 	layout?: SelectListLayoutOptions;
+	preview?: (value: string, width: number) => string[];
 }
 
 /**
@@ -37,6 +38,8 @@ export class SelectSubmenu extends Container {
 	private onSelectCb: (value: string) => void;
 	private onCancelCb: () => void;
 	private onSelectionChangeCb?: (value: string) => void;
+	private preview?: (value: string, width: number) => string[];
+	private currentSelection: string;
 
 	constructor(
 		title: string,
@@ -55,6 +58,8 @@ export class SelectSubmenu extends Container {
 		this.onSelectCb = onSelect;
 		this.onCancelCb = onCancel;
 		this.onSelectionChangeCb = onSelectionChange;
+		this.preview = submenuOptions?.preview;
+		this.currentSelection = currentValue;
 
 		// Title
 		this.addChild(new Text(theme.bold(theme.fg("accent", title)), 0, 0));
@@ -101,7 +106,14 @@ export class SelectSubmenu extends Container {
 		list.onCancel = this.onCancelCb;
 		if (this.onSelectionChangeCb) {
 			const cb = this.onSelectionChangeCb;
-			list.onSelectionChange = (item) => cb(item.value);
+			list.onSelectionChange = (item) => {
+				this.currentSelection = item.value;
+				cb(item.value);
+			};
+		} else if (this.preview) {
+			list.onSelectionChange = (item) => {
+				this.currentSelection = item.value;
+			};
 		}
 
 		return list;
@@ -115,6 +127,15 @@ export class SelectSubmenu extends Container {
 		const newList = this.buildSelectList(filtered, "");
 		this.children[this.listChildIndex] = newList;
 		this.selectList = newList;
+	}
+
+	render(width: number): string[] {
+		const lines = super.render(width);
+		if (this.preview && this.currentSelection) {
+			lines.push("");
+			lines.push(...this.preview(this.currentSelection, width));
+		}
+		return lines;
 	}
 
 	handleInput(data: string): void {

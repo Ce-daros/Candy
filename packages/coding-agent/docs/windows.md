@@ -2,7 +2,7 @@
 
 Run candy either as a native Windows process or inside Windows Subsystem for Linux (WSL). Native Windows uses Git Bash by default for Bash commands and can optionally expose PowerShell to the model. candy inside WSL uses the Linux environment and its Bash installation.
 
-Follow the main [Quickstart](quickstart.md) to install and authenticate Pi. Use this page to choose and configure its command environment.
+Follow the main [Quickstart](quickstart.md) to install and authenticate candy. Use this page to choose and configure its command environment.
 
 ## Choose native Windows or WSL
 

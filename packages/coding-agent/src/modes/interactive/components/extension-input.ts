@@ -5,7 +5,6 @@
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 export interface ExtensionInputOptions {
@@ -35,7 +34,7 @@ export class ExtensionInputComponent extends Container implements Focusable {
 
 	constructor(
 		title: string,
-		_placeholder: string | undefined,
+		placeholder: string | undefined,
 		onSubmit: (value: string) => void,
 		onCancel: () => void,
 		opts?: ExtensionInputOptions,
@@ -46,10 +45,7 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		this.onCancelCallback = onCancel;
 		this.baseTitle = title;
 
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-
-		this.titleText = new Text(theme.fg("accent", title), 1, 0);
+		this.titleText = new Text(theme.bold(theme.fg("accent", title)), 1, 0);
 		this.addChild(this.titleText);
 		if (opts?.description) {
 			this.addChild(new Spacer(1));
@@ -66,15 +62,13 @@ export class ExtensionInputComponent extends Container implements Focusable {
 			);
 		}
 
-		this.input = new Input();
+		this.input = new Input({ placeholder });
 		if (opts?.initialValue) this.input.setValue(opts.initialValue);
 		this.addChild(this.input);
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(`${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.select.cancel", "cancel")}`, 1, 0),
 		);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
 	}
 
 	handleInput(keyData: string): void {

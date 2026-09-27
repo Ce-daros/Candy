@@ -1,8 +1,9 @@
 import type { TextContent } from "@candy/ai";
 import type { Component } from "@candy/tui";
-import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@candy/tui";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text, type TuiMouseEvent } from "@candy/tui";
 import type { MessageRenderer } from "../../../core/extensions/types.ts";
 import type { CustomMessage } from "../../../core/messages.ts";
+import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
 /**
@@ -12,7 +13,7 @@ import { getMarkdownTheme, theme } from "../theme/theme.ts";
 export class CustomMessageComponent extends Container {
 	private message: CustomMessage<unknown>;
 	private customRenderer?: MessageRenderer;
-	private box: Box;
+	private box: Container;
 	private customComponent?: Component;
 	private markdownTheme: MarkdownTheme;
 	private _expanded = false;
@@ -32,8 +33,7 @@ export class CustomMessageComponent extends Container {
 
 		this.addChild(new Spacer(1));
 
-		// Create box with purple background (used for default rendering)
-		this.box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
+		this.box = new Container();
 
 		this.rebuild();
 	}
@@ -84,14 +84,13 @@ export class CustomMessageComponent extends Container {
 			}
 		}
 
-		// Default rendering uses our box
+		// Default rendering uses a title and a quiet rail; custom renderers own their presentation.
 		this.addChild(this.box);
 		this.box.clear();
 
 		// Default rendering: label + content
-		const label = theme.fg("customMessageLabel", `\x1b[1m[${this.message.customType}]\x1b[22m`);
-		this.box.addChild(new Text(label, 0, 0));
-		this.box.addChild(new Spacer(1));
+		const label = theme.fg("customMessageLabel", theme.bold(this.message.customType));
+		this.box.addChild(new Text(` ${label}`, 0, 0));
 
 		// Extract text content
 		let text: string;
@@ -104,10 +103,32 @@ export class CustomMessageComponent extends Container {
 				.join("\n");
 		}
 
-		this.box.addChild(
-			new Markdown(text, 0, 0, this.markdownTheme, {
+		const markdown = new Markdown(
+			text,
+			0,
+			0,
+			this.markdownTheme,
+			{
 				color: (text: string) => theme.fg("customMessageText", text),
-			}),
+			},
+			{
+				onCopyCode: (code) => {
+					void copyToClipboard(code);
+				},
+			},
 		);
+		this.box.addChild({
+			render: (width: number) =>
+				markdown.render(Math.max(1, width - 4)).map((line) => ` ${theme.fg("customMessageLabel", "│")}  ${line}`),
+			invalidate: () => markdown.invalidate(),
+			handleMouse: (event: TuiMouseEvent) =>
+				event.x < 4
+					? undefined
+					: markdown.handleMouse({
+							...event,
+							x: event.x - 4,
+							width: Math.max(1, event.width - 4),
+						}),
+		});
 	}
 }

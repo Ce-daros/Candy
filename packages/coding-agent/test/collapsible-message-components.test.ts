@@ -45,9 +45,9 @@ describe("collapsible message components", () => {
 		});
 
 		expect(renderText(component)).not.toContain("compaction details");
-		clickRow(component, "[compaction]");
+		clickRow(component, "Compaction");
 		expect(renderText(component)).toContain("compaction details");
-		clickRow(component, "[compaction]");
+		clickRow(component, "Compaction");
 		expect(renderText(component)).not.toContain("compaction details");
 	});
 
@@ -60,9 +60,9 @@ describe("collapsible message components", () => {
 		});
 
 		expect(renderText(component)).not.toContain("branch details");
-		clickRow(component, "[branch]");
+		clickRow(component, "Branch summary");
 		expect(renderText(component)).toContain("branch details");
-		clickRow(component, "[branch]");
+		clickRow(component, "Branch summary");
 		expect(renderText(component)).not.toContain("branch details");
 	});
 
@@ -75,9 +75,10 @@ describe("collapsible message components", () => {
 		});
 
 		expect(renderText(component)).not.toContain("skill details");
-		clickRow(component, "[skill]");
+		clickRow(component, "Skill example-skill");
 		expect(renderText(component)).toContain("skill details");
-		clickRow(component, "[skill]");
+		expect(renderText(component)).toContain("/tmp/example-skill.md");
+		clickRow(component, "Skill example-skill");
 		expect(renderText(component)).not.toContain("skill details");
 	});
 });

@@ -29,10 +29,10 @@ const graphemeSegmenter = getGraphemeSegmenter();
 const wordSegmenter = getWordSegmenter();
 
 /** Regex matching paste markers like `[paste #1 +123 lines]` or `[paste #2 1234 chars]`. */
-const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
+const PASTE_MARKER_REGEX = /\[(?:paste|Image) #(\d+)( (?:\+\d+ lines|\d+ chars|\d+×\d+))?\]/g;
 
 /** Non-global version for single-segment testing. */
-const PASTE_MARKER_SINGLE = /^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$/;
+const PASTE_MARKER_SINGLE = /^\[(?:paste|Image) #(\d+)( (?:\+\d+ lines|\d+ chars|\d+×\d+))?\]$/;
 
 /** Check if a segment is a paste marker (i.e. was merged by segmentWithMarkers). */
 function isPasteMarker(segment: string): boolean {
@@ -52,7 +52,7 @@ function segmentWithMarkers(
 	validIds: Set<number>,
 ): Iterable<Intl.SegmentData> {
 	// Fast path: no paste markers in the text or no valid IDs.
-	if (validIds.size === 0 || !text.includes("[paste #")) {
+	if (validIds.size === 0 || !text.includes("[")) {
 		return baseSegmenter.segment(text);
 	}
 
@@ -231,6 +231,8 @@ interface EditorSnapshot {
 
 interface LayoutLine {
 	text: string;
+	sourceLine: string;
+	sourceStart: number;
 	hasCursor: boolean;
 	cursorPos?: number;
 }
@@ -240,6 +242,8 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 	/** Optional foreground style for the typed text. */
 	textColor?: (str: string) => string;
+	pathColor?: (str: string) => string;
+	markerColor?: (str: string) => string;
 }
 
 export interface EditorOptions {
@@ -272,6 +276,10 @@ const DEFAULT_AUTOCOMPLETE_TRIGGER_CHARACTERS = ["@", "#"];
 const unquotedAutocompleteSuffixRegex = new RegExp(`(?:(?!${autocompleteSeparatorRegex.source}).)*`, "u");
 // Trigger tokens may be wrapped in prose, e.g. "(@src/foo" or "`@src/foo".
 const autocompleteTokenStartSource = `${autocompleteBoundaryRegex.source}[([{<\`]*`;
+const pathHighlightPattern = new RegExp(
+	`${autocompleteTokenStartSource}(@(?:"[^"]*(?:"|$)|${unquotedAutocompleteSuffixRegex.source}))`,
+	"gu",
+);
 
 function escapeCharacterClass(value: string): string {
 	return value.replace(/[\\^$.*+?()[\]{}|-]/g, "\\$&");
@@ -327,6 +335,7 @@ export class Editor implements Component, Focusable {
 	private firstLineGutter: string | undefined;
 	private rightGutter: string = "";
 	private minContentLines: number = 1;
+	private viewportLines: number | undefined;
 
 	// Store last render geometry for cursor navigation and mouse hit-testing.
 	private lastWidth: number = 80;
@@ -394,6 +403,7 @@ export class Editor implements Component, Focusable {
 
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
+	public onImagePath?: (path: string) => void;
 	public disableSubmit: boolean = false;
 
 	constructor(tui: TUI, theme: EditorTheme, options: EditorOptions = {}) {
@@ -444,6 +454,11 @@ export class Editor implements Component, Focusable {
 		if (this.firstLineGutter === gutter) return;
 		this.firstLineGutter = gutter;
 		this.tui.requestRender();
+	}
+
+	setViewportLines(lines: number): void {
+		this.viewportLines = Math.max(1, Math.floor(lines));
+		this.minContentLines = this.viewportLines;
 	}
 
 	setPaddingX(padding: number): void {
@@ -582,7 +597,19 @@ export class Editor implements Component, Focusable {
 	}
 
 	protected getFrameRowCount(): number {
-		return this.renderedVisibleLineCount + 2;
+		return (
+			this.renderedVisibleLineCount +
+			2 +
+			(this.renderedAutocompleteHeight > 0 ? this.renderedAutocompleteHeight + 1 : 0)
+		);
+	}
+
+	protected presentAutocomplete(lines: string[], _width: number): string[] {
+		return lines;
+	}
+
+	protected renderAutocompleteSeparator(width: number, _row: number): string {
+		return this.borderColor("─".repeat(width));
 	}
 
 	render(width: number): string[] {
@@ -590,8 +617,6 @@ export class Editor implements Component, Focusable {
 		const gutterWidth = visibleWidth(gutter);
 		const rightGutter = width - gutterWidth >= 3 ? this.rightGutter : "";
 		const rightWidth = visibleWidth(rightGutter);
-		const coloredGutter = gutter ? this.borderColor(gutter) : "";
-		const coloredRightGutter = rightGutter ? this.borderColor(rightGutter) : "";
 		const maxPadding = Math.max(0, Math.floor((width - gutterWidth - rightWidth - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
 		const contentWidth = Math.max(1, width - gutterWidth - rightWidth - paddingX * 2);
@@ -608,7 +633,7 @@ export class Editor implements Component, Focusable {
 
 		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
 		const terminalRows = this.tui.terminal.rows;
-		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+		const maxVisibleLines = this.viewportLines ?? Math.max(5, Math.floor(terminalRows * 0.3));
 
 		// Find the cursor line index in layoutLines
 		let cursorLineIndex = layoutLines.findIndex((line) => line.hasCursor);
@@ -632,9 +657,26 @@ export class Editor implements Component, Focusable {
 		const result: string[] = [];
 		const leftPadding = " ".repeat(paddingX);
 		const rightPadding = leftPadding;
+		const autocompleteLines = this.presentAutocomplete(
+			this.autocompleteState && this.autocompleteList ? this.autocompleteList.render(contentWidth) : [],
+			contentWidth,
+		);
+		this.renderedAutocompleteHeight = autocompleteLines.length;
+		const autocompleteOffset = autocompleteLines.length > 0 ? autocompleteLines.length + 1 : 0;
 
 		// Render top border (with scroll indicator if scrolled down)
 		result.push(this.renderTopBorder(width, this.scrollOffset));
+		for (const [index, line] of autocompleteLines.entries()) {
+			const clipped = truncateToWidth(line, contentWidth, "");
+			const left = gutter ? this.colorSideBorder(gutter, "left", index + 1, this.getFrameRowCount()) : "";
+			const right = rightGutter
+				? this.colorSideBorder(rightGutter, "right", index + 1, this.getFrameRowCount())
+				: "";
+			result.push(
+				`${left}${leftPadding}${clipped}${" ".repeat(Math.max(0, contentWidth - visibleWidth(clipped)))}${rightPadding}${right}`,
+			);
+		}
+		if (autocompleteLines.length > 0) result.push(this.renderAutocompleteSeparator(width, autocompleteOffset));
 
 		// Render each visible layout line
 		// Emit hardware cursor marker when focused so TUI can position the
@@ -642,9 +684,10 @@ export class Editor implements Component, Focusable {
 		// autocomplete (e.g. slash-command menu) is visible.
 		const emitCursorMarker = this.focused;
 
-		const totalFrameRows = this.renderedVisibleLineCount + 2;
-		const paintText = this.theme.textColor;
+		const totalFrameRows = this.getFrameRowCount();
 		for (const [index, layoutLine] of visibleLines.entries()) {
+			const paintText = (text: string, start = 0) =>
+				this.paintText(text, layoutLine.sourceLine, layoutLine.sourceStart + start);
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 			let cursorInPadding = false;
@@ -666,8 +709,8 @@ export class Editor implements Component, Focusable {
 					const afterGraphemes = [...this.segment(after, "grapheme")];
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
-					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
-					const paintedAfter = restAfter && paintText ? paintText(restAfter) : restAfter;
+					const cursor = `\x1b[7m${paintText(firstGrapheme, layoutLine.cursorPos)}\x1b[0m`;
+					const paintedAfter = paintText(restAfter, layoutLine.cursorPos + firstGrapheme.length);
 					displayText = paintedBefore + marker + cursor + paintedAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
@@ -689,14 +732,14 @@ export class Editor implements Component, Focusable {
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			const row = index + 1;
+			const row = index + 1 + autocompleteOffset;
 			const rowGutter = this.scrollOffset + index === 0 ? this.gutterFor(width, true) : gutter;
 			const left = rowGutter ? this.colorSideBorder(rowGutter, "left", row, totalFrameRows) : "";
 			const right = rightGutter ? this.colorSideBorder(rightGutter, "right", row, totalFrameRows) : "";
 			result.push(`${left}${leftPadding}${displayText}${padding}${lineRightPadding}${right}`);
 		}
 		for (let i = visibleLines.length; i < this.minContentLines; i++) {
-			const row = i + 1;
+			const row = i + 1 + autocompleteOffset;
 			const left = gutter ? this.colorSideBorder(gutter, "left", row, totalFrameRows) : "";
 			const right = rightGutter ? this.colorSideBorder(rightGutter, "right", row, totalFrameRows) : "";
 			result.push(`${left}${" ".repeat(width - gutterWidth - rightWidth)}${right}`);
@@ -706,25 +749,44 @@ export class Editor implements Component, Focusable {
 		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
 		result.push(this.renderBottomBorder(width, linesBelow));
 
-		// Add autocomplete list if active
-		this.renderedAutocompleteHeight = 0;
-		if (this.autocompleteState && this.autocompleteList) {
-			const autocompleteResult = this.autocompleteList.render(contentWidth);
-			this.renderedAutocompleteHeight = autocompleteResult.length;
-			for (const line of autocompleteResult) {
-				const lineWidth = visibleWidth(line);
-				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
-				result.push(`${coloredGutter}${leftPadding}${line}${linePadding}${rightPadding}${coloredRightGutter}`);
+		return result;
+	}
+
+	private paintText(text: string, sourceLine: string, start: number): string {
+		const normal = this.theme.textColor ?? ((value: string) => value);
+		const ranges: { start: number; end: number; color: (value: string) => string }[] = [];
+		if (this.theme.pathColor) {
+			for (const match of sourceLine.matchAll(pathHighlightPattern)) {
+				ranges.push({
+					start: match.index + match[0].length - match[1].length,
+					end: match.index + match[0].length,
+					color: this.theme.pathColor,
+				});
 			}
 		}
-
-		return result;
+		if (this.theme.markerColor) {
+			for (const match of sourceLine.matchAll(PASTE_MARKER_REGEX)) {
+				if (this.pastes.has(Number(match[1])))
+					ranges.push({ start: match.index, end: match.index + match[0].length, color: this.theme.markerColor });
+			}
+		}
+		let result = "";
+		let offset = 0;
+		for (const range of ranges.sort((a, b) => a.start - b.start)) {
+			const from = Math.max(offset, range.start - start);
+			const to = Math.min(text.length, range.end - start);
+			if (to <= from) continue;
+			result += normal(text.slice(offset, from)) + range.color(text.slice(from, to));
+			offset = to;
+		}
+		return result + normal(text.slice(offset));
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		const gutterWidth = visibleWidth(this.gutterFor(event.width));
 		const rightWidth = event.width - gutterWidth >= 3 ? visibleWidth(this.rightGutter) : 0;
-		const autocompleteStartRow = this.renderedVisibleLineCount + 2;
+		const autocompleteStartRow = 1;
+		const autocompleteOffset = this.renderedAutocompleteHeight > 0 ? this.renderedAutocompleteHeight + 1 : 0;
 		if (
 			this.autocompleteState &&
 			this.autocompleteList &&
@@ -749,13 +811,14 @@ export class Editor implements Component, Focusable {
 		// The renderer synthesizes a click when press and release land on the same
 		// cell without movement, which is the gesture that positions the cursor.
 		if (event.type !== "click" || event.button !== "left") return undefined;
-		if (event.y === this.renderedVisibleLineCount + 1 && this.bottomBorderClick?.(event.x)) {
+		if (event.y === this.renderedVisibleLineCount + 1 + autocompleteOffset && this.bottomBorderClick?.(event.x)) {
 			return { handled: true, focus: true };
 		}
-		if (event.y <= 0 || event.y > this.renderedVisibleLineCount) return { handled: true, focus: true };
+		if (event.y <= autocompleteOffset || event.y > this.renderedVisibleLineCount + autocompleteOffset)
+			return { handled: true, focus: true };
 
 		const visualLines = this.buildVisualLineMap(this.lastWidth);
-		const visualLineIndex = this.scrollOffset + event.y - 1;
+		const visualLineIndex = this.scrollOffset + event.y - 1 - autocompleteOffset;
 		const visualLine = visualLines[visualLineIndex];
 		if (!visualLine) return { handled: true, focus: true };
 		const logicalLine = this.state.lines[visualLine.logicalLine] ?? "";
@@ -783,6 +846,16 @@ export class Editor implements Component, Focusable {
 
 		this.state.cursorLine = visualLine.logicalLine;
 		this.setCursorCol(visualLine.startCol + targetIndex);
+		for (const match of logicalLine.matchAll(PASTE_MARKER_REGEX)) {
+			if (
+				match[0].startsWith("[Image #") &&
+				this.state.cursorCol >= match.index &&
+				this.state.cursorCol < match.index + match[0].length
+			) {
+				const path = this.pastes.get(Number(match[1]));
+				if (path !== undefined) this.onImagePath?.(path);
+			}
+		}
 		this.lastAction = null;
 		this.exitHistoryBrowsing();
 		if (this.autocompleteState) this.updateAutocomplete();
@@ -1098,6 +1171,8 @@ export class Editor implements Component, Focusable {
 			// Empty editor
 			layoutLines.push({
 				text: "",
+				sourceLine: "",
+				sourceStart: 0,
 				hasCursor: true,
 				cursorPos: 0,
 			});
@@ -1115,12 +1190,16 @@ export class Editor implements Component, Focusable {
 				if (isCurrentLine) {
 					layoutLines.push({
 						text: line,
+						sourceLine: line,
+						sourceStart: 0,
 						hasCursor: true,
 						cursorPos: this.state.cursorCol,
 					});
 				} else {
 					layoutLines.push({
 						text: line,
+						sourceLine: line,
+						sourceStart: 0,
 						hasCursor: false,
 					});
 				}
@@ -1163,12 +1242,16 @@ export class Editor implements Component, Focusable {
 					if (hasCursorInChunk) {
 						layoutLines.push({
 							text: chunk.text,
+							sourceLine: line,
+							sourceStart: chunk.startIndex,
 							hasCursor: true,
 							cursorPos: adjustedCursorPos,
 						});
 					} else {
 						layoutLines.push({
 							text: chunk.text,
+							sourceLine: line,
+							sourceStart: chunk.startIndex,
 							hasCursor: false,
 						});
 					}
@@ -1184,12 +1267,17 @@ export class Editor implements Component, Focusable {
 	}
 
 	private expandPasteMarkers(text: string): string {
-		let result = text;
-		for (const [pasteId, pasteContent] of this.pastes) {
-			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-			result = result.replace(markerRegex, () => pasteContent);
-		}
-		return result;
+		return text.replace(PASTE_MARKER_REGEX, (marker, id: string) => this.pastes.get(Number(id)) ?? marker);
+	}
+
+	insertImageAtCursor(path: string, dimensions: { width: number; height: number }): void {
+		this.cancelAutocomplete();
+		this.pushUndoSnapshot();
+		this.lastAction = null;
+		this.exitHistoryBrowsing();
+		const id = ++this.pasteCounter;
+		this.pastes.set(id, path);
+		this.insertTextAtCursorInternal(`[Image #${id} ${dimensions.width}×${dimensions.height}]`);
 	}
 
 	/**
@@ -1507,10 +1595,10 @@ export class Editor implements Component, Focusable {
 
 				// Renumber markers with ids greater than the removed one.
 				this.state.lines = this.state.lines.map((line) =>
-					line.replace(PASTE_MARKER_REGEX, (fullMatch, idGroup, suffixGroup) => {
+					line.replace(PASTE_MARKER_REGEX, (fullMatch, idGroup) => {
 						const x = Number(idGroup);
 						if (x <= targetId) return fullMatch;
-						return `[paste #${x - 1}${suffixGroup}]`;
+						return fullMatch.replace(`#${x}`, `#${x - 1}`);
 					}),
 				);
 			}
@@ -2057,7 +2145,7 @@ export class Editor implements Component, Focusable {
 	private pageScroll(direction: -1 | 1): void {
 		this.lastAction = null;
 		const terminalRows = this.tui.terminal.rows;
-		const pageSize = Math.max(5, Math.floor(terminalRows * 0.3));
+		const pageSize = this.viewportLines ?? Math.max(5, Math.floor(terminalRows * 0.3));
 
 		const visualLines = this.buildVisualLineMap(this.lastWidth);
 		const currentVisualLine = this.findCurrentVisualLine(visualLines);
@@ -2333,7 +2421,15 @@ export class Editor implements Component, Focusable {
 		prefix: string,
 		items: Array<{ value: string; label: string; description?: string }>,
 	): SelectList {
-		const layout = prefix.startsWith("/") ? SLASH_COMMAND_SELECT_LIST_LAYOUT : undefined;
+		const layout: SelectListLayoutOptions = prefix.startsWith("/")
+			? SLASH_COMMAND_SELECT_LIST_LAYOUT
+			: {
+					minPrimaryColumnWidth: 16,
+					maxPrimaryColumnWidth: 40,
+					descriptionAlign: "right",
+					selectedDetail: (item) =>
+						item.value.startsWith("@") ? item.value.slice(1).replace(/^"|"$/g, "") : item.description,
+				};
 		const list = new SelectList(items, this.autocompleteMaxVisible, this.theme.selectList, layout);
 		list.onSelect = (selected) => {
 			if (!this.autocompleteProvider) return;

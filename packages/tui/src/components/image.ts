@@ -7,7 +7,7 @@ import {
 	imageFallback,
 	renderImage,
 } from "../terminal-image.ts";
-import type { Component } from "../tui.ts";
+import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth } from "../utils.ts";
 
 export interface ImageTheme {
@@ -20,6 +20,7 @@ export interface ImageOptions {
 	filename?: string;
 	/** Kitty image ID. If provided, reuses this ID (for animations/updates). */
 	imageId?: number;
+	viewportRows?: number;
 }
 
 export class Image implements Component {
@@ -29,6 +30,7 @@ export class Image implements Component {
 	private theme: ImageTheme;
 	private options: ImageOptions;
 	private imageId?: number;
+	private expanded = false;
 
 	private cachedLines?: string[];
 	private cachedWidth?: number;
@@ -53,6 +55,23 @@ export class Image implements Component {
 		return this.imageId;
 	}
 
+	setViewportRows(rows: number): void {
+		if (this.options.viewportRows === rows) return;
+		this.options.viewportRows = rows;
+		this.invalidate();
+	}
+
+	setExpanded(expanded: boolean): void {
+		this.expanded = expanded;
+		this.invalidate();
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
+		this.setExpanded(!this.expanded);
+		return { handled: true };
+	}
+
 	invalidate(): void {
 		this.cachedLines = undefined;
 		this.cachedWidth = undefined;
@@ -66,7 +85,9 @@ export class Image implements Component {
 		const maxWidth = Math.max(1, Math.min(width - 2, this.options.maxWidthCells ?? 60));
 		const cellDimensions = getCellDimensions();
 		const defaultMaxHeight = Math.max(1, Math.ceil((maxWidth * cellDimensions.widthPx) / cellDimensions.heightPx));
-		const maxHeight = this.options.maxHeightCells ?? defaultMaxHeight;
+		const viewportRows = this.options.viewportRows ?? process.stdout.rows ?? 24;
+		const viewportLimit = Math.max(1, Math.floor((viewportRows * (this.expanded ? 2 : 1)) / 3));
+		const maxHeight = Math.min(this.options.maxHeightCells ?? defaultMaxHeight, viewportLimit);
 
 		const caps = getCapabilities();
 		let lines: string[];
@@ -119,6 +140,8 @@ export class Image implements Component {
 			lines = [truncateToWidth(this.theme.fallbackColor(fallback), width)];
 		}
 
+		const title = `${this.options.filename ?? "Image"}  ${this.dimensions.widthPx}×${this.dimensions.heightPx}`;
+		lines.unshift(truncateToWidth(this.theme.fallbackColor(title), width));
 		this.cachedLines = lines;
 		this.cachedWidth = width;
 

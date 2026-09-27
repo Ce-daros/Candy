@@ -225,30 +225,6 @@ Response contains the full [Model](#model-object) object:
 }
 ```
 
-### cycle_model
-
-Cycle to the next available model. Returns `null` data if only one model available.
-
-```json
-{"type": "cycle_model"}
-```
-
-Response:
-```json
-{
-  "type": "response",
-  "command": "cycle_model",
-  "success": true,
-  "data": {
-    "model": {...},
-    "thinkingLevel": "medium",
-    "isScoped": false
-  }
-}
-```
-
-The `model` field is a full [Model](#model-object) object.
-
 ### get_available_models
 
 List all configured models.

@@ -74,7 +74,7 @@ export async function openMicro(options: OpenMicroOptions = {}): Promise<OpenMic
 		const initial = location.created
 			? preferredModel
 				? { model: preferredModel, thinkingLevel: "medium" as const, fallbackMessage: undefined }
-				: await findInitialModel({ scopedModels: [], isContinuing: false, modelRuntime })
+				: await findInitialModel({ modelRuntime })
 			: undefined;
 		const compaction = initial?.model ? settings.getCompactionSettings(initial.model) : undefined;
 		const threshold =

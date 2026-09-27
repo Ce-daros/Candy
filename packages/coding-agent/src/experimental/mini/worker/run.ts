@@ -57,7 +57,7 @@ export async function runSessionWorker(options: {
 	const context = BACKGROUND_CONTEXT;
 	const { cwd } = options;
 	const modelRuntime = await ModelRuntime.create();
-	const { model, thinkingLevel } = await findInitialModel({ scopedModels: [], isContinuing: false, modelRuntime });
+	const { model, thinkingLevel } = await findInitialModel({ modelRuntime });
 	if (!model) throw new Error("No model available. Configure credentials with `candy` first.");
 
 	const executionEnv = new NodeExecutionEnv({ cwd });

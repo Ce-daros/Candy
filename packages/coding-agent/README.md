@@ -5,7 +5,7 @@
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
+  <a href="https://www.npmjs.com/package/@candy/coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@candy/coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
 </p>
 
 > New issues and PRs from new contributors are closed automatically. Maintainers review closed submissions daily. See [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md).
@@ -13,6 +13,8 @@
 # candy
 
 candy is a minimal, extensible AI agent for the terminal. Adapt candy to your workflow, not the other way around.
+
+Its fullscreen interface shows assistant text, thinking, and tool activity in a shared conversation. The editor offers command and file completion; panels handle settings, model and thinking selection, session navigation, and sign-in. Read the [terminal guide](docs/usage.md) for the current controls.
 
 Ask candy to create the prompt templates, skills, extensions, and themes you need, or install a candy package. Use candy directly, automate it in print, JSON, or RPC mode, or build applications with the TypeScript SDK.
 
@@ -51,10 +53,10 @@ Clone the repository, install its dependencies, and run candy from source:
 git clone https://github.com/earendil-works/pi
 cd candy
 npm install --ignore-scripts
-./pi-test.sh
+./candy-test.sh
 ```
 
-`pi-test.sh` can be called from any directory and preserves the caller's working directory.
+`candy-test.sh` can be called from any directory and preserves the caller's working directory.
 
 Before submitting changes, run:
 

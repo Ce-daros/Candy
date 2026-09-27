@@ -1,7 +1,6 @@
 import type { ApiKeyAuth, AuthCheck, OAuthAuth } from "@candy/ai";
 import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, TruncatedText } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -39,6 +38,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 	private onSelectCallback: (providerId: string, authType: AuthSelectorProvider["authType"]) => void;
 	private onCancelCallback: () => void;
 	private showAuthTypeLabels: boolean;
+	private availableHeight = 14;
 
 	constructor(
 		mode: "login" | "logout",
@@ -56,12 +56,8 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
-		// Add top border
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-
 		// Add title
-		const title = mode === "login" ? "Select provider to configure:" : "Select provider to logout:";
+		const title = mode === "login" ? "Choose a provider" : "Choose a provider to sign out";
 		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
 		this.addChild(new Spacer(1));
 
@@ -75,20 +71,20 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 				this.onSelectCallback(selectedProvider.id, selectedProvider.authType);
 			}
 		};
-		this.addChild(this.searchInput);
-		this.addChild(new Spacer(1));
-
 		// Create list container
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
 
 		this.addChild(new Spacer(1));
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
+		this.addChild(this.searchInput);
 
 		// Initial render
 		this.filterProviders(initialSearchInput ?? "");
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(6, height);
+		this.updateList();
 	}
 
 	private filterProviders(query: string): void {
@@ -106,7 +102,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 	private updateList(): void {
 		this.listContainer.clear();
 
-		const maxVisible = 8;
+		const maxVisible = Math.max(3, this.availableHeight - 5);
 		const startIndex = Math.max(
 			0,
 			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filteredProviders.length - maxVisible),
@@ -125,9 +121,8 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 				: "";
 			let line = "";
 			if (isSelected) {
-				const prefix = theme.fg("accent", "→ ");
-				const text = theme.fg("accent", provider.name);
-				line = prefix + text + authTypeLabel + statusIndicator;
+				const text = theme.bold(theme.fg("accent", `♦ ${provider.name} ♦`));
+				line = text + authTypeLabel + statusIndicator;
 			} else {
 				const text = `  ${theme.fg("text", provider.name)}`;
 				line = text + authTypeLabel + statusIndicator;

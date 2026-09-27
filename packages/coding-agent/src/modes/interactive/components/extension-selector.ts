@@ -6,14 +6,15 @@
 import { Container, getKeybindings, Spacer, Text, type TUI } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
+	getAvailableHeight?: () => number;
 	timeout?: number;
 	onToggleToolsExpanded?: () => void;
 	description?: string;
+	horizontal?: boolean;
 }
 
 export class ExtensionSelectorComponent extends Container {
@@ -26,6 +27,9 @@ export class ExtensionSelectorComponent extends Container {
 	private baseTitle: string;
 	private countdown: CountdownTimer | undefined;
 	private onToggleToolsExpanded: (() => void) | undefined;
+	private readonly horizontal: boolean;
+	private availableHeight = 12;
+	private readonly getAvailableHeight: (() => number) | undefined;
 
 	constructor(
 		title: string,
@@ -41,9 +45,9 @@ export class ExtensionSelectorComponent extends Container {
 		this.onCancelCallback = onCancel;
 		this.onToggleToolsExpanded = opts?.onToggleToolsExpanded;
 		this.baseTitle = title;
-
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
+		this.horizontal = opts?.horizontal ?? false;
+		this.getAvailableHeight = opts?.getAvailableHeight;
+		if (this.getAvailableHeight) this.availableHeight = this.getAvailableHeight();
 
 		this.titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
 		this.addChild(this.titleText);
@@ -76,20 +80,54 @@ export class ExtensionSelectorComponent extends Container {
 				0,
 			),
 		);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
+		this.updateList();
+	}
 
+	override render(width: number): string[] {
+		const height = this.getAvailableHeight?.();
+		if (height !== undefined && height !== this.availableHeight) this.setAvailableHeight(height);
+		return super.render(width);
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(5, height);
 		this.updateList();
 	}
 
 	private updateList(): void {
 		this.listContainer.clear();
-		for (let i = 0; i < this.options.length; i++) {
+		if (this.horizontal) {
+			this.listContainer.addChild(
+				new Text(
+					this.options
+						.map((option, index) =>
+							index === this.selectedIndex
+								? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", option))}${theme.fg("borderAccent", " ♦")}`
+								: theme.fg("muted", `  ${option}  `),
+						)
+						.join("   "),
+					1,
+					0,
+				),
+			);
+			return;
+		}
+		const maxVisible = Math.max(3, this.availableHeight - 6);
+		const start = Math.max(
+			0,
+			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.options.length - maxVisible),
+		);
+		for (let i = start; i < Math.min(this.options.length, start + maxVisible); i++) {
 			const isSelected = i === this.selectedIndex;
 			const text = isSelected
-				? theme.fg("accent", "→ ") + theme.fg("accent", this.options[i])
+				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", this.options[i]))}${theme.fg("borderAccent", " ♦")}`
 				: `  ${theme.fg("text", this.options[i])}`;
 			this.listContainer.addChild(new Text(text, 1, 0));
+		}
+		if (start > 0 || start + maxVisible < this.options.length) {
+			this.listContainer.addChild(
+				new Text(theme.fg("muted", `  ${this.selectedIndex + 1}/${this.options.length}`), 1, 0),
+			);
 		}
 	}
 
@@ -97,10 +135,16 @@ export class ExtensionSelectorComponent extends Container {
 		const kb = getKeybindings();
 		if (kb.matches(keyData, "app.tools.expand")) {
 			this.onToggleToolsExpanded?.();
-		} else if (kb.matches(keyData, "tui.select.up") || keyData === "k") {
+		} else if (
+			kb.matches(keyData, "tui.select.up") ||
+			(this.horizontal && kb.matches(keyData, "tui.editor.cursorLeft"))
+		) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.updateList();
-		} else if (kb.matches(keyData, "tui.select.down") || keyData === "j") {
+		} else if (
+			kb.matches(keyData, "tui.select.down") ||
+			(this.horizontal && kb.matches(keyData, "tui.editor.cursorRight"))
+		) {
 			this.selectedIndex = Math.min(this.options.length - 1, this.selectedIndex + 1);
 			this.updateList();
 		} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n") {

@@ -6,7 +6,7 @@
  * definition, so the tool's public shape is unchanged.
  */
 
-import { Box, Container, Spacer, Text } from "@candy/tui";
+import { Box, Container, Text } from "@candy/tui";
 import { renderDiff } from "../../../modes/interactive/components/diff.ts";
 import type { Theme } from "../../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition } from "../../extensions/types.ts";
@@ -36,7 +36,7 @@ type EditCallRenderComponent = Box & {
 	settledError?: boolean;
 };
 function createEditCallRenderComponent(): EditCallRenderComponent {
-	return Object.assign(new Box(1, 1, (text: string) => text), {
+	return Object.assign(new Box(0, 0), {
 		preview: undefined as EditPreview | undefined,
 		previewArgsKey: undefined as string | undefined,
 		previewPending: false,
@@ -112,31 +112,20 @@ function formatEditResult(
 
 	return undefined;
 }
-function getEditHeaderBg(
-	preview: EditPreview | undefined,
-	settledError: boolean | undefined,
-	theme: Theme,
-): (text: string) => string {
-	if (preview) {
-		if ("error" in preview) {
-			return (text: string) => theme.bg("toolErrorBg", text);
-		}
-		return (text: string) => theme.bg("toolSuccessBg", text);
-	}
-	if (settledError) {
-		return (text: string) => theme.bg("toolErrorBg", text);
-	}
-	return (text: string) => theme.bg("toolPendingBg", text);
-}
 function buildEditCallComponent(
 	component: EditCallRenderComponent,
 	args: RenderableEditArgs | undefined,
 	theme: Theme,
 	cwd: string,
 ): EditCallRenderComponent {
-	component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
 	component.clear();
-	component.addChild(new Text(formatEditCall(args, theme, cwd), 0, 0));
+	const diff = component.preview && "diff" in component.preview ? component.preview.diff : undefined;
+	const additions = diff?.split("\n").filter((line) => /^\+\s*\d/.test(line)).length ?? 0;
+	const removals = diff?.split("\n").filter((line) => /^-\s*\d/.test(line)).length ?? 0;
+	const summary = diff
+		? ` ${theme.fg("toolDiffAdded", `+${additions}`)} ${theme.fg("toolDiffRemoved", `−${removals}`)}`
+		: "";
+	component.addChild(new Text(`${formatEditCall(args, theme, cwd)}${summary}`, 0, 0));
 
 	if (!component.preview) {
 		return component;
@@ -144,7 +133,6 @@ function buildEditCallComponent(
 
 	const body =
 		"error" in component.preview ? theme.fg("error", component.preview.error) : renderDiff(component.preview.diff);
-	component.addChild(new Spacer(1));
 	component.addChild(new Text(body, 0, 0));
 	return component;
 }
@@ -231,8 +219,7 @@ export const editRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "rende
 		if (!output) {
 			return component;
 		}
-		component.addChild(new Spacer(1));
-		component.addChild(new Text(output, 1, 0));
+		component.addChild(new Text(output, 0, 0));
 		return component;
 	},
 };

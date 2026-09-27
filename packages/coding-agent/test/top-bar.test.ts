@@ -1,5 +1,5 @@
 import { visibleWidth } from "@candy/tui";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TopBarComponent } from "../src/modes/interactive/components/top-bar.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -24,7 +24,7 @@ function lineLength(bar: string): number {
 }
 
 describe("TopBarComponent", () => {
-	it("grows one plain line with context usage", () => {
+	it("grows the occupied line and keeps percentage at a fixed column", () => {
 		const data = { project: "Candy", branch: "main" };
 		const low = renderBar(60, { ...data, percent: 10 });
 		const middle = renderBar(60, { ...data, percent: 50 });
@@ -32,8 +32,32 @@ describe("TopBarComponent", () => {
 		expect(lineLength(low)).toBeLessThan(lineLength(middle));
 		expect(lineLength(middle)).toBeLessThan(lineLength(high));
 		for (const bar of [low, middle, high]) {
-			expect(bar).not.toMatch(/\d+%|━|┄|╾|Context/);
+			expect(bar).toMatch(/\d+%/);
 			expect(visibleWidth(bar)).toBe(60);
+		}
+		expect(low.indexOf("%")).toBe(high.indexOf("%"));
+	});
+
+	it("fades low usage after two seconds and cleans up its timer", () => {
+		vi.useFakeTimers();
+		try {
+			initTheme("dark");
+			let percent = 20;
+			const bar = new TopBarComponent(
+				() => ({ project: "Candy", branch: null, sessionName: undefined, contextPercent: percent }),
+				() => {},
+			);
+			expect(stripAnsi(bar.render(120)[0])).toContain("20%");
+			vi.advanceTimersByTime(2401);
+			expect(stripAnsi(bar.render(120)[0])).not.toContain("20%");
+			percent = 85;
+			expect(stripAnsi(bar.render(120)[0])).toContain("85%");
+			vi.advanceTimersByTime(4000);
+			expect(stripAnsi(bar.render(120)[0])).toContain("85%");
+			bar.dispose();
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
 		}
 	});
 

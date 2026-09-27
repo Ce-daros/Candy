@@ -10,14 +10,16 @@ import {
 	Input,
 	Spacer,
 	Text,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
+	wrapTextWithAnsi,
 } from "@candy/tui";
 import { KeybindingsManager } from "../../../core/keybindings.ts";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, keyText } from "./keybinding-hints.ts";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
 
@@ -167,7 +169,7 @@ class SessionSelectorHeader implements Component {
 			const pathState = this.showPath ? "(on)" : "(off)";
 			const sep = theme.fg("muted", " · ");
 			const hint1 =
-				keyHint("tui.input.tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
+				keyHint("app.panel.scope", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
 			const hint2Parts = [
 				keyHint("app.session.toggleSort", "sort"),
 				keyHint("app.session.toggleNamedFilter", "named"),
@@ -308,7 +310,14 @@ class SessionList implements Component, Focusable {
 	public onDeleteSession?: (sessionPath: string) => Promise<void>;
 	public onRenameSession?: (sessionPath: string) => void;
 	public onError?: (message: string) => void;
-	private maxVisible: number = 10; // Max sessions visible (one line each)
+	private maxVisible = 10;
+	private availableHeight = 20;
+	private detailOffset = 0;
+	private detailLineCount = 0;
+	private region: "list" | "detail" | "search" = "list";
+	private lastVisibleStart = 0;
+	private lastVisibleCount = 0;
+	private lastSearchRow = 0;
 
 	// Focusable implementation - propagate to searchInput for IME cursor positioning
 	private _focused = false;
@@ -317,7 +326,12 @@ class SessionList implements Component, Focusable {
 	}
 	set focused(value: boolean) {
 		this._focused = value;
-		this.searchInput.focused = value;
+		this.searchInput.focused = value && this.region === "search";
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(10, height);
+		this.maxVisible = Math.max(3, this.availableHeight - 11);
 	}
 
 	constructor(
@@ -422,10 +436,6 @@ class SessionList implements Component, Focusable {
 	render(width: number): string[] {
 		const lines: string[] = [];
 
-		// Render search input
-		lines.push(...this.searchInput.render(width));
-		lines.push(""); // Blank line after search
-
 		if (this.filteredSessions.length === 0) {
 			let emptyMessage: string;
 			if (this.nameFilter === "named") {
@@ -433,16 +443,19 @@ class SessionList implements Component, Focusable {
 				if (this.showCwd) {
 					emptyMessage = `  No named sessions found. Press ${toggleKey} to show all.`;
 				} else {
-					emptyMessage = `  No named sessions in current folder. Press ${toggleKey} to show all, or Tab to view all.`;
+					emptyMessage = `  No named sessions in current folder. Press ${toggleKey} to show all, or Alt+S to view all.`;
 				}
 			} else if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
 				emptyMessage = "  No sessions found";
 			} else {
 				// "Current folder" scope - hint to try "all"
-				emptyMessage = "  No sessions in current folder. Press Tab to view all.";
+				emptyMessage = "  No sessions in current folder. Press Alt+S to view all.";
 			}
 			lines.push(theme.fg("muted", truncateToWidth(emptyMessage, width, "…")));
+			while (lines.length < this.availableHeight - 1) lines.push("");
+			this.lastSearchRow = lines.length;
+			lines.push(...this.searchInput.render(width));
 			return lines;
 		}
 
@@ -452,6 +465,8 @@ class SessionList implements Component, Focusable {
 			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredSessions.length - this.maxVisible),
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredSessions.length);
+		this.lastVisibleStart = startIndex;
+		this.lastVisibleCount = endIndex - startIndex;
 
 		// Render visible sessions (one line each with tree structure)
 		for (let i = startIndex; i < endIndex; i++) {
@@ -466,7 +481,7 @@ class SessionList implements Component, Focusable {
 
 			// Session display text (name or first message)
 			const hasName = !!session.name;
-			const displayText = session.name ?? session.firstMessage;
+			const displayText = session.name ? `${session.name}  ·  ${session.firstMessage}` : session.firstMessage;
 			const normalizedMessage = displayText.replace(/[\x00-\x1f\x7f]/g, " ").trim();
 
 			// Right side: message count and age
@@ -481,7 +496,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Cursor
-			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
+			const cursor = isSelected ? theme.fg("thinkingHigh", "♦ ") : "  ";
 
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);
@@ -510,10 +525,7 @@ class SessionList implements Component, Focusable {
 			const spacing = Math.max(1, width - leftWidth - visibleWidth(rightPart));
 			const styledRight = theme.fg(isConfirmingDelete ? "error" : "dim", rightPart);
 
-			let line = leftPart + " ".repeat(spacing) + styledRight;
-			if (isSelected) {
-				line = theme.bg("selectedBg", line);
-			}
+			const line = leftPart + " ".repeat(spacing) + styledRight;
 			lines.push(truncateToWidth(line, width));
 		}
 
@@ -523,8 +535,57 @@ class SessionList implements Component, Focusable {
 			const scrollInfo = theme.fg("muted", truncateToWidth(scrollText, width, ""));
 			lines.push(scrollInfo);
 		}
+		while (lines.length < this.availableHeight - 9) lines.push("");
 
+		const selected = this.filteredSessions[this.selectedIndex]?.session;
+		lines.push(theme.fg("borderMuted", "─".repeat(width)));
+		if (selected) {
+			const title = selected.name ?? selected.firstMessage;
+			lines.push(truncateToWidth(theme.bold(theme.fg("accent", title)), width));
+			const summary = selected.firstMessage.trim();
+			if (selected.name) {
+				const detailLines = wrapTextWithAnsi(summary, Math.max(10, width - 2));
+				this.detailLineCount = detailLines.length;
+				for (const line of detailLines.slice(this.detailOffset, this.detailOffset + 3)) {
+					lines.push(theme.fg("text", `  ${line}`));
+				}
+			}
+			while (lines.length < this.availableHeight - 4) lines.push("");
+			lines.push(
+				truncateToWidth(
+					theme.fg("muted", `${selected.messageCount} messages · ${selected.modified.toLocaleString()}`),
+					width,
+				),
+			);
+			lines.push(truncateToWidth(theme.fg("muted", selected.cwd), width));
+			lines.push(truncateToWidth(theme.fg("dim", selected.path), width));
+		}
+		this.lastSearchRow = lines.length;
+		lines.push(...this.searchInput.render(width));
 		return lines;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type === "wheel" && event.wheelDelta) {
+			this.selectedIndex = Math.max(
+				0,
+				Math.min(this.filteredSessions.length - 1, this.selectedIndex + (event.wheelDelta < 0 ? -1 : 1)),
+			);
+			this.region = "list";
+			return { handled: true, render: true };
+		}
+		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+		if (event.y === this.lastSearchRow) {
+			this.region = "search";
+			return this.searchInput.handleMouse?.({ ...event, y: 0 });
+		}
+		if (event.y >= 0 && event.y < this.lastVisibleCount) {
+			this.selectedIndex = this.lastVisibleStart + event.y;
+			this.region = "list";
+			if (event.type === "click") this.onSelect?.(this.filteredSessions[this.selectedIndex]!.session.path);
+			return { handled: true, focus: true, render: true };
+		}
+		return undefined;
 	}
 
 	private buildTreePrefix(node: FlatSessionNode): string {
@@ -556,10 +617,17 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		if (kb.matches(keyData, "tui.input.tab")) {
+		if (kb.matches(keyData, "app.panel.scope")) {
 			if (this.onToggleScope) {
 				this.onToggleScope();
 			}
+			return;
+		}
+		if (kb.matches(keyData, "app.panel.focusNext") || kb.matches(keyData, "app.panel.focusPrevious")) {
+			const regions = ["list", "detail", "search"] as const;
+			const delta = kb.matches(keyData, "app.panel.focusNext") ? 1 : -1;
+			this.region = regions[(regions.indexOf(this.region) + delta + regions.length) % regions.length];
+			this.searchInput.focused = this._focused && this.region === "search";
 			return;
 		}
 
@@ -611,11 +679,20 @@ class SessionList implements Component, Focusable {
 		this.selectionTouched = true;
 		// Up arrow
 		if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+			if (this.region === "detail") this.detailOffset = Math.max(0, this.detailOffset - 1);
+			else {
+				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.detailOffset = 0;
+			}
 		}
 		// Down arrow
 		else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
+			if (this.region === "detail")
+				this.detailOffset = Math.min(Math.max(0, this.detailLineCount - 3), this.detailOffset + 1);
+			else {
+				this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
+				this.detailOffset = 0;
+			}
 		}
 		// Page up - jump up by maxVisible items
 		else if (kb.matches(keyData, "tui.select.pageUp")) {
@@ -742,16 +819,15 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 	private buildBaseLayout(content: Component, options?: { showHeader?: boolean }): void {
 		this.clear();
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
-		this.addChild(new Spacer(1));
 		if (options?.showHeader ?? true) {
 			this.addChild(this.header);
 			this.addChild(new Spacer(1));
 		}
 		this.addChild(content);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
+	}
+
+	setAvailableHeight(height: number): void {
+		this.sessionList.setAvailableHeight(height - 4);
 	}
 
 	constructor(

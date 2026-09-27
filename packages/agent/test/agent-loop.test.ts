@@ -467,6 +467,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolEnd).toBeDefined();
 		if (toolEnd?.type === "tool_execution_end") {
 			expect(toolEnd.isError).toBe(true);
+			expect(toolEnd.cancelled).toBeUndefined();
 			const text = toolEnd.result.content.find((c: { type: string }) => c.type === "text");
 			expect(text && "text" in text ? text.text : "").toContain("output token limit");
 		}
@@ -709,6 +710,116 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolExecutionEndIds).toEqual(["tool-2", "tool-1"]);
 		expect(toolResultIds).toEqual(["tool-1", "tool-2"]);
 		expect(turnToolResultIds).toEqual(["tool-1", "tool-2"]);
+	});
+
+	it("marks an interrupted tool in its event and persisted result", async () => {
+		const controller = new AbortController();
+		const schema = Type.Object({});
+		let started!: () => void;
+		const executing = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const tool: AgentTool<typeof schema, undefined> = {
+			name: "wait",
+			label: "Wait",
+			description: "Wait",
+			parameters: schema,
+			async execute(_id, _params, signal) {
+				started();
+				await new Promise<void>((_resolve, reject) => {
+					signal?.addEventListener("abort", () => reject(new Error("stopped")), { once: true });
+				});
+				return { content: [], details: undefined };
+			},
+		};
+		const events: AgentEvent[] = [];
+		const run = runAgentLoop(
+			[createUserMessage("wait")],
+			{ messages: [], tools: [tool] },
+			{ model: createModel(), convertToLlm: identityConverter, finishTurn: () => ({ action: "end" }) },
+			(event) => {
+				events.push(event);
+			},
+			controller.signal,
+			() => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() =>
+					stream.push({
+						type: "done",
+						reason: "toolUse",
+						message: createAssistantMessage(
+							[{ type: "toolCall", id: "wait-1", name: "wait", arguments: {} }],
+							"toolUse",
+						),
+					}),
+				);
+				return stream;
+			},
+		);
+		await executing;
+		controller.abort();
+		const messages = await run;
+		const ended = events.find((event) => event.type === "tool_execution_end");
+		const stored = JSON.parse(JSON.stringify(messages.find((message) => message.role === "toolResult")));
+		expect(ended?.type === "tool_execution_end" && ended.cancelled).toBe(true);
+		expect(stored).toMatchObject({ role: "toolResult", toolCallId: "wait-1", isError: true, cancelled: true });
+	});
+
+	it("keeps a successful tool successful when abort races with completion", async () => {
+		const controller = new AbortController();
+		const schema = Type.Object({});
+		let started!: () => void;
+		let complete!: () => void;
+		const executing = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const completion = new Promise<void>((resolve) => {
+			complete = resolve;
+		});
+		const tool: AgentTool<typeof schema, undefined> = {
+			name: "wait",
+			label: "Wait",
+			description: "Wait",
+			parameters: schema,
+			async execute() {
+				started();
+				await completion;
+				return { content: [{ type: "text", text: "done" }], details: undefined };
+			},
+		};
+		const events: AgentEvent[] = [];
+		const run = runAgentLoop(
+			[createUserMessage("wait")],
+			{ messages: [], tools: [tool] },
+			{ model: createModel(), convertToLlm: identityConverter, finishTurn: () => ({ action: "end" }) },
+			(event) => {
+				events.push(event);
+			},
+			controller.signal,
+			() => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() =>
+					stream.push({
+						type: "done",
+						reason: "toolUse",
+						message: createAssistantMessage(
+							[{ type: "toolCall", id: "wait-2", name: "wait", arguments: {} }],
+							"toolUse",
+						),
+					}),
+				);
+				return stream;
+			},
+		);
+		await executing;
+		controller.abort();
+		complete();
+		const messages = await run;
+		const ended = events.find((event) => event.type === "tool_execution_end");
+		const stored = messages.find((message) => message.role === "toolResult");
+		expect(ended?.type === "tool_execution_end" && ended.isError).toBe(false);
+		expect(ended?.type === "tool_execution_end" ? ended.cancelled : undefined).toBeUndefined();
+		expect(stored?.role === "toolResult" ? stored.cancelled : undefined).toBeUndefined();
 	});
 
 	it("should inject queued messages after all tool calls complete", async () => {

@@ -10,7 +10,7 @@ import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } 
 import type { ImageContent, TextContent } from "@candy/ai";
 import { Text } from "@candy/tui";
 import { getReadmePath } from "../../../config.ts";
-import { keyHint, keyText } from "../../../modes/interactive/components/keybinding-hints.ts";
+import { keyText } from "../../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../../modes/interactive/theme/theme.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../extensions/types.ts";
@@ -118,22 +118,23 @@ function formatReadResult(
 	_cwd: string,
 	isError: boolean,
 ): string {
-	if (!options.expanded && !isError) {
-		return "";
-	}
-
 	const rawPath = str(args?.file_path ?? args?.path);
 	const output = getTextOutput(result, showImages);
+	if (!options.expanded && !isError) {
+		const lineCount = output.trimEnd() ? output.trimEnd().split("\n").length : 0;
+		const imageCount = result.content.filter((content) => content.type === "image").length;
+		const summary = [
+			lineCount ? `${lineCount} ${lineCount === 1 ? "line" : "lines"}` : "",
+			imageCount ? `${imageCount} ${imageCount === 1 ? "image" : "images"}` : "",
+		]
+			.filter(Boolean)
+			.join(" · ");
+		return summary ? theme.fg("dim", summary) : "";
+	}
 	const lang = !isError && rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(renderedLines);
-	const maxLines = options.expanded ? lines.length : 10;
-	const displayLines = lines.slice(0, maxLines);
-	const remaining = lines.length - maxLines;
-	let text = `\n${displayLines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))).join("\n")}`;
-	if (remaining > 0) {
-		text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
-	}
+	let text = lines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))).join("\n");
 
 	const truncation = result.details?.truncation;
 	if (truncation?.truncated) {

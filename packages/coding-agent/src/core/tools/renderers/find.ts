@@ -7,7 +7,6 @@
  */
 
 import { Text } from "@candy/tui";
-import { keyHint } from "../../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../extensions/types.ts";
 import type { FindToolDetails } from "../find.ts";
@@ -38,18 +37,20 @@ function formatFindResult(
 	options: ToolRenderResultOptions,
 	theme: Theme,
 	showImages: boolean,
+	isError: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
+	if (!options.expanded && !isError) {
+		const files =
+			output === "No files found matching pattern"
+				? 0
+				: output.split("\n").filter((line) => line && !line.startsWith("[")).length;
+		return theme.fg("dim", `${files} ${files === 1 ? "file" : "files"}`);
+	}
 	let text = "";
 	if (output) {
 		const lines = output.split("\n");
-		const maxLines = options.expanded ? lines.length : 20;
-		const displayLines = lines.slice(0, maxLines);
-		const remaining = lines.length - maxLines;
-		text += `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
-		if (remaining > 0) {
-			text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
-		}
+		text += lines.map((line) => theme.fg("toolOutput", line)).join("\n");
 	}
 
 	const resultLimit = result.details?.resultLimitReached;
@@ -71,7 +72,7 @@ export const findRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "rende
 	},
 	renderResult(result, options, theme, context) {
 		const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-		text.setText(formatFindResult(result as any, options, theme, context.showImages));
+		text.setText(formatFindResult(result as any, options, theme, context.showImages, context.isError));
 		return text;
 	},
 };

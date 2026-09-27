@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@candy/agent-core";
-import { colorToOklch, foregroundAnsi, mixColors, oklchColor, parseColor, type TUI, visibleWidth } from "@candy/tui";
+import { type Color, colorToOklch, foregroundAnsi, mixColors, oklchColor, type TUI, visibleWidth } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
-import { getResolvedThemeColors, isLightTheme, theme } from "../theme/theme.ts";
+import { type ThemeColor, theme } from "../theme/theme.ts";
 import type { StatusIndicatorKind } from "./status-indicator.ts";
 
 export type ShellMode = "normal" | "shell" | "shell-no-context";
@@ -13,6 +13,22 @@ const TIMING: Record<AnimationIntensity, { entrance: number; transition: number;
 };
 
 const RAMP_STEPS = 8;
+const GRADIENT_STEPS = 48;
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const THINKING_COLORS: Record<ThinkingLevel, ThemeColor> = {
+	off: "thinkingOff",
+	minimal: "thinkingMinimal",
+	low: "thinkingLow",
+	medium: "thinkingMedium",
+	high: "thinkingHigh",
+	xhigh: "thinkingXhigh",
+	max: "thinkingMax",
+};
+
+export function thinkingMeter(level: ThinkingLevel): string {
+	const filled = THINKING_LEVELS.indexOf(level);
+	return "▰".repeat(filled) + "▱".repeat(6 - filled);
+}
 
 function smoothstep(value: number): number {
 	const p = Math.max(0, Math.min(1, value));
@@ -40,6 +56,7 @@ export class FrameMotion {
 	private status: StatusIndicatorKind | undefined;
 	private statusStart = 0;
 	private thinking: ThinkingLevel = "off";
+	private effortPulseStart = -Infinity;
 	private timer: NodeJS.Timeout | undefined;
 	private paletteKey = "";
 	private borderRamp: string[] = [];
@@ -134,9 +151,24 @@ export class FrameMotion {
 		return this.status;
 	}
 
-	setThinking(level: ThinkingLevel): void {
+	setThinking(level: ThinkingLevel, pulse = false): void {
 		this.thinking = level;
+		if (pulse && this.enabled) this.effortPulseStart = performance.now();
+		this.startTimer();
 		this.ui.requestRender();
+	}
+
+	getThinking(): ThinkingLevel {
+		return this.thinking;
+	}
+
+	paintThinking(text: string): string {
+		this.refreshPalette();
+		const now = performance.now();
+		return `${Array.from(text, (char, index) => {
+			const color = this.gradientAt(this.rightAnchor + index, this.rows - 1, now) * (RAMP_STEPS + 1);
+			return `${this.borderRamp[color]}${char}`;
+		}).join("")}\x1b[39m`;
 	}
 
 	isEnabled(): boolean {
@@ -176,7 +208,7 @@ export class FrameMotion {
 		};
 		for (let offset = 0; offset < text.length; offset++) {
 			const column = startColumn + offset;
-			const color = this.colorAt(column, row, now);
+			const color = this.gradientAt(column, row, now) * (RAMP_STEPS + 1) + this.colorAt(column, row, now);
 			const ink = this.inkAt(column, row, now);
 			if (ink !== current || color !== currentColor) {
 				flush();
@@ -217,7 +249,9 @@ export class FrameMotion {
 		this.timer = undefined;
 		if (!this.enabled) return;
 		if (this.entrancePending && !this.transition) return;
-		if (!this.status && !this.transition && this.entranceProgress() >= 1) return;
+		const breathing = THINKING_LEVELS.indexOf(this.thinking) >= 3;
+		const pulsing = performance.now() - this.effortPulseStart < 900;
+		if (!this.status && !this.transition && this.entranceProgress() >= 1 && !breathing && !pulsing) return;
 		const activeTransition = this.transition || this.entranceProgress() < 1;
 		this.timer = setTimeout(
 			() => {
@@ -265,20 +299,30 @@ export class FrameMotion {
 	private inkAt(column: number, row: number, now: number): Ink {
 		const entranceInk = this.enabled ? this.entranceInkAt(column, row) : "base";
 		if (entranceInk !== "base") return entranceInk;
-		if (!this.enabled || !this.status) return "base";
+		if (!this.enabled) return "base";
 		const perimeter = Math.max(1, this.width * 2 + (this.rows - 2) * 2);
 		const index = this.perimeterIndex(column, row);
-		const phase = Math.floor((now - this.statusStart) / TIMING[this.intensity].status);
-		const level = ["off", "minimal", "low", "medium", "high", "xhigh", "max"].indexOf(this.thinking);
-		const trail = 5 + Math.max(0, level) * 2;
-		const peak = Math.min(RAMP_STEPS, 4 + Math.max(0, level));
+		const level = THINKING_LEVELS.indexOf(this.thinking);
+		const pulse = (now - this.effortPulseStart) / 900;
+		if (pulse < 1) {
+			const origin = this.perimeterIndex(this.rightAnchor, this.rows - 1);
+			const distance = Math.min((index - origin + perimeter) % perimeter, (origin - index + perimeter) % perimeter);
+			const wave = Math.abs(distance / (perimeter / 2) - pulse);
+			if (wave < 0.15) return Math.round((1 - wave / 0.15) * RAMP_STEPS);
+		}
+		const breath = level < 3 ? 0 : Math.round((1 + Math.sin(now / (1800 - level * 110))) * (level - 2) * 0.5);
+		if (!this.status) return breath === 0 ? "base" : breath;
+		const phase = (now - this.statusStart) / TIMING[this.intensity].status;
+		const trail = 5 + level * 2;
+		const peak = Math.min(RAMP_STEPS, 4 + level);
 		let distance: number;
 		if (this.status === "working") {
-			const head = (phase * 3) % perimeter;
-			distance = Math.min(
-				(head - index + perimeter) % perimeter,
-				(head + perimeter / 2 - index + perimeter) % perimeter,
-			);
+			const beams = Math.max(1, level);
+			const head = (phase * (2 + level)) % perimeter;
+			distance = perimeter;
+			for (let beam = 0; beam < beams; beam++) {
+				distance = Math.min(distance, (head + (beam * perimeter) / beams - index + perimeter) % perimeter);
+			}
 		} else if (this.status === "retry") {
 			const head = (phase * 7 + (phase % 4 === 0 ? 5 : 0)) % perimeter;
 			distance = (head - index + perimeter) % perimeter;
@@ -287,7 +331,14 @@ export class FrameMotion {
 			const head = (phase * 3) % half;
 			distance = Math.min(Math.abs(index - head), Math.abs(index - (perimeter - head)));
 		}
-		return Math.max(0, Math.round((1 - distance / trail) * peak));
+		return Math.max(breath, Math.round((1 - distance / trail) * peak));
+	}
+
+	private gradientAt(column: number, row: number, now: number): number {
+		if (THINKING_LEVELS.indexOf(this.thinking) < 5) return 0;
+		const perimeter = Math.max(1, this.width * 2 + (this.rows - 2) * 2);
+		const flow = this.enabled ? now / (this.thinking === "max" ? 8000 : 12000) : 0;
+		return Math.floor(((this.perimeterIndex(column, row) / perimeter + flow) % 1) * GRADIENT_STEPS);
 	}
 
 	private entranceInkAt(column: number, row: number): Ink {
@@ -363,32 +414,69 @@ export class FrameMotion {
 
 	private refreshPalette(): void {
 		const key =
-			(["border", "bashMode", "dim", "text", "muted", "accent"] as const)
+			(
+				[
+					"thinkingOff",
+					"thinkingMinimal",
+					"thinkingLow",
+					"thinkingMedium",
+					"thinkingHigh",
+					"thinkingXhigh",
+					"thinkingMax",
+					"bashMode",
+					"dim",
+					"text",
+					"muted",
+					"accent",
+				] as const
+			)
 				.map((name) => theme.getFgAnsi(name))
 				.join("") +
 			theme.getColorMode() +
-			isLightTheme();
+			theme.appearance +
+			this.thinking;
 		if (key === this.paletteKey) return;
-		const colors = getResolvedThemeColors();
+		const colors = theme.colors;
 		const mode = theme.getColorMode();
-		const ramp = (from: string, to: string): string[] =>
+		const ramp = (from: Color, to: Color): string[] =>
 			Array.from({ length: RAMP_STEPS + 1 }, (_, index) =>
-				foregroundAnsi(mixColors(parseColor(from), parseColor(to), index / RAMP_STEPS, "srgb"), mode),
+				foregroundAnsi(mixColors(from, to, index / RAMP_STEPS, "srgb"), mode),
 			);
-		this.borderRamp = ramp(colors.border, colors.bashMode);
-		this.statusRamps = Array.from({ length: RAMP_STEPS + 1 }, (_, colorStep) => {
-			const color = mixColors(
-				parseColor(colors.border),
-				parseColor(colors.bashMode),
-				colorStep / RAMP_STEPS,
-				"srgb",
+		const light = theme.appearance === "light";
+		const level = THINKING_LEVELS.indexOf(this.thinking);
+		const base = colors[THINKING_COLORS[this.thinking]];
+		const stops = [
+			colors.thinkingHigh,
+			colors.thinkingLow,
+			colors.thinkingMedium,
+			colors.accent,
+			colors.thinkingHigh,
+			base,
+		];
+		const gradient = Array.from({ length: level >= 5 ? GRADIENT_STEPS : 1 }, (_, index) => {
+			if (level < 5) return base;
+			const position = (index / GRADIENT_STEPS) * stops.length;
+			const mixed = mixColors(
+				stops[Math.floor(position)],
+				stops[(Math.floor(position) + 1) % stops.length],
+				position % 1,
+				"oklch",
 			);
+			const { l, c, h } = colorToOklch(mixed);
+			const target = colorToOklch(base).l;
+			return oklchColor(light ? Math.min(l, target) : Math.max(l, target), c, h);
+		});
+		const palette = gradient.flatMap((color) =>
+			Array.from({ length: RAMP_STEPS + 1 }, (_, index) =>
+				mixColors(color, colors.bashMode, index / RAMP_STEPS, "srgb"),
+			),
+		);
+		this.borderRamp = palette.map((color) => foregroundAnsi(color, mode));
+		this.statusRamps = palette.map((color) => {
 			const { l, c, h } = colorToOklch(color);
-			const light = isLightTheme();
-			const low = light ? l + (1 - l) * 0.24 : l * 0.72;
-			const high = light ? l * 0.68 : Math.min(0.96, l + 0.12);
+			const high = light ? l * 0.62 : Math.min(0.99, l + 0.2);
 			return Array.from({ length: RAMP_STEPS + 1 }, (_, brightness) =>
-				foregroundAnsi(oklchColor(low + ((high - low) * brightness) / RAMP_STEPS, c, h), mode),
+				foregroundAnsi(oklchColor(l + ((high - l) * brightness) / RAMP_STEPS, c * (1 - brightness / 16), h), mode),
 			);
 		});
 		this.titleRamp = ramp(colors.dim, colors.bashMode);

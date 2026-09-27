@@ -1,8 +1,7 @@
 import { Container, getKeybindings, Spacer, Text } from "@candy/tui";
-import { APP_NAME } from "../../../config.ts";
 import { type TerminalTheme, theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
+import { SplashLogoComponent } from "./splash.ts";
 
 export interface FirstTimeSetupResult {
 	theme: TerminalTheme;
@@ -11,6 +10,7 @@ export interface FirstTimeSetupResult {
 
 export interface FirstTimeSetupOptions {
 	detectedTheme: TerminalTheme;
+	getAvailableHeight?: () => number;
 	onThemePreview: (themeName: TerminalTheme) => void;
 	onSubmit: (result: FirstTimeSetupResult) => void;
 	onCancel: () => void;
@@ -26,18 +26,18 @@ const ANALYTICS_OPTIONS: Array<{ value: boolean; label: string }> = [
 	{ value: false, label: "Don't share" },
 ];
 
-const SETUP_LOGO_LINES = ["██████", "██  ██", "████  ██", "██    ██"];
-
 /** First-time setup dialog: theme choice and analytics opt-in. */
 export class FirstTimeSetupComponent extends Container {
 	private step: "theme" | "analytics" = "theme";
 	private themeIndex: number;
 	private analyticsIndex = 0;
 	private readonly options: FirstTimeSetupOptions;
+	private availableHeight: number;
 
 	constructor(options: FirstTimeSetupOptions) {
 		super();
 		this.options = options;
+		this.availableHeight = options.getAvailableHeight?.() ?? Infinity;
 		this.themeIndex = Math.max(
 			0,
 			THEME_OPTIONS.findIndex((option) => option.value === options.detectedTheme),
@@ -45,20 +45,32 @@ export class FirstTimeSetupComponent extends Container {
 		this.update();
 	}
 
+	override render(width: number): string[] {
+		const height = this.options.getAvailableHeight?.() ?? this.availableHeight;
+		if (height !== this.availableHeight) {
+			this.availableHeight = height;
+			this.update();
+		}
+		return super.render(width);
+	}
+
 	// Rebuild the whole dialog on every change so theme previews recolor all text.
 	private update(): void {
 		this.clear();
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("accent", SETUP_LOGO_LINES.join("\n")), 1, 0));
-		this.addChild(new Spacer(1));
+		const compact = this.availableHeight <= 26;
+		if (!compact) this.addChild(new Spacer(1));
+		this.addChild(new SplashLogoComponent(this.availableHeight <= 18 ? 4 : compact ? 8 : undefined));
+		if (!compact) this.addChild(new Spacer(1));
 		this.addChild(
-			new Text(theme.fg("accent", theme.bold(`Welcome to ${APP_NAME}, the minimal coding agent.`)), 1, 0),
+			new Text(
+				theme.bold(theme.fg("accent", this.step === "theme" ? "Theme · 1 of 2" : "Data sharing · 2 of 2")),
+				1,
+				0,
+			),
 		);
-		this.addChild(new Spacer(1));
 
 		if (this.step === "theme") {
-			this.addChild(new Text(theme.fg("text", "Pick a theme."), 1, 0));
+			this.addChild(new Text(theme.fg("text", "Choose a theme"), 1, 0));
 			this.addChild(new Text(theme.fg("muted", `Detected system appearance: ${this.options.detectedTheme}`), 1, 0));
 			this.addChild(new Spacer(1));
 			this.addOptionList(
@@ -66,13 +78,10 @@ export class FirstTimeSetupComponent extends Container {
 				this.themeIndex,
 			);
 		} else {
-			this.addChild(new Text(theme.fg("text", "Opt-in to anonymous usage data sharing?"), 1, 0));
+			this.addChild(new Text(theme.fg("text", "Share anonymous usage data?"), 1, 0));
 			this.addChild(
 				new Text(
-					theme.fg(
-						"muted",
-						"Opting in stores a tracking identifier in settings.json and enables anonymous\nusage analytics. This helps us to better debug, reproduce, and resolve issues\nand bugs within Pi. You can observe what is shared using /privacy and make\nchanges anytime in settings.json.",
-					),
+					theme.fg("muted", "Your choice is saved in settings. You can change it later with /privacy."),
 					1,
 					0,
 				),
@@ -96,16 +105,15 @@ export class FirstTimeSetupComponent extends Container {
 				0,
 			),
 		);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
 	}
 
 	private addOptionList(labels: string[], selectedIndex: number): void {
 		for (let i = 0; i < labels.length; i++) {
 			const isSelected = i === selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const label = isSelected ? theme.fg("accent", labels[i]) : theme.fg("text", labels[i]);
-			this.addChild(new Text(`${prefix}${label}`, 1, 0));
+			const label = isSelected
+				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", labels[i]))}${theme.fg("borderAccent", " ♦")}`
+				: theme.fg("text", `  ${labels[i]}`);
+			this.addChild(new Text(label, 1, 0));
 		}
 	}
 

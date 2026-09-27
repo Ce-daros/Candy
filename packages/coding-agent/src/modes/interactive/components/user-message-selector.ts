@@ -1,114 +1,150 @@
-import { type Component, Container, getKeybindings, Spacer, Text, truncateToWidth } from "@candy/tui";
+import {
+	type Component,
+	getKeybindings,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	truncateToWidth,
+	wrapTextWithAnsi,
+} from "@candy/tui";
 import { theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 
 interface UserMessageItem {
-	id: string; // Entry ID in the session
-	text: string; // The message text
-	timestamp?: string; // Optional timestamp if available
+	id: string;
+	text: string;
+	timestamp?: string;
 }
 
-/**
- * Custom user message list component with selection
- */
 class UserMessageList implements Component {
-	private messages: UserMessageItem[] = [];
-	private selectedIndex: number = 0;
-	public onSelect?: (entryId: string) => void;
-	public onCancel?: () => void;
-	private maxVisible: number = 10; // Max messages visible
+	private readonly messages: UserMessageItem[];
+	private selectedIndex: number;
+	private availableHeight = 20;
+	private previewOffset = 0;
+	private previewLineCount = 0;
+	private previewHeight = 0;
+	private region: "list" | "preview" = "list";
+	private visibleStart = 0;
+	private visibleCount = 0;
+	private previewStart = 0;
+	onSelect?: (entryId: string) => void;
+	onCancel?: () => void;
 
 	constructor(messages: UserMessageItem[], initialSelectedId?: string) {
-		// Store messages in chronological order (oldest to newest)
 		this.messages = messages;
-		const initialIndex = initialSelectedId ? messages.findIndex((message) => message.id === initialSelectedId) : -1;
-		// Start with selected message if provided, else default to the most recent
-		this.selectedIndex = initialIndex >= 0 ? initialIndex : Math.max(0, messages.length - 1);
+		const index = initialSelectedId ? messages.findIndex((message) => message.id === initialSelectedId) : -1;
+		this.selectedIndex = index >= 0 ? index : Math.max(0, messages.length - 1);
 	}
 
-	invalidate(): void {
-		// No cached state to invalidate currently
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(8, height);
 	}
+
+	invalidate(): void {}
 
 	render(width: number): string[] {
-		const lines: string[] = [];
-
-		if (this.messages.length === 0) {
-			lines.push(theme.fg("muted", "  No user messages found"));
-			return lines;
-		}
-
-		// Calculate visible range with scrolling
-		const startIndex = Math.max(
+		if (this.messages.length === 0) return [theme.fg("muted", "No user messages found")];
+		const previewHeight = Math.max(2, Math.min(8, Math.floor(this.availableHeight / 3)));
+		const listHeight = this.availableHeight - previewHeight - 4;
+		const visibleCount = Math.max(1, Math.floor(listHeight / 2));
+		const start = Math.max(
 			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.messages.length - this.maxVisible),
+			Math.min(this.selectedIndex - Math.floor(visibleCount / 2), this.messages.length - visibleCount),
 		);
-		const endIndex = Math.min(startIndex + this.maxVisible, this.messages.length);
-
-		// Render visible messages (2 lines per message + blank line)
-		for (let i = startIndex; i < endIndex; i++) {
+		this.visibleStart = start;
+		this.visibleCount = visibleCount;
+		const lines: string[] = [];
+		for (let i = start; i < Math.min(start + visibleCount, this.messages.length); i++) {
 			const message = this.messages[i];
-			const isSelected = i === this.selectedIndex;
-
-			// Normalize message to single line
-			const normalizedMessage = message.text.replace(/\n/g, " ").trim();
-
-			// First line: cursor + message
-			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const maxMsgWidth = width - 2; // Account for cursor (2 chars)
-			const truncatedMsg = truncateToWidth(normalizedMessage, maxMsgWidth);
-			const messageLine = cursor + (isSelected ? theme.bold(truncatedMsg) : truncatedMsg);
-
-			lines.push(messageLine);
-
-			// Second line: metadata (position in history)
-			const position = i + 1;
-			const metadata = `  Message ${position} of ${this.messages.length}`;
-			const metadataLine = theme.fg("muted", metadata);
-			lines.push(metadataLine);
-			lines.push(""); // Blank line between messages
+			const selected = i === this.selectedIndex;
+			const summary = wrapTextWithAnsi(message.text.replace(/\s+/g, " ").trim(), Math.max(10, width - 7)).slice(
+				0,
+				2,
+			);
+			const first = selected
+				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", summary[0] ?? ""))}${theme.fg("borderAccent", " ♦")}`
+				: `  ${summary[0] ?? ""}`;
+			lines.push(truncateToWidth(first, width));
+			lines.push(
+				truncateToWidth(
+					theme.fg("muted", `  ${summary[1] ?? `Message ${i + 1} of ${this.messages.length}`}`),
+					width,
+				),
+			);
 		}
-
-		// Add scroll indicator if needed
-		if (startIndex > 0 || endIndex < this.messages.length) {
-			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.messages.length})`);
-			lines.push(scrollInfo);
+		while (lines.length < listHeight) lines.push("");
+		lines.push(theme.fg("borderMuted", "─".repeat(width)));
+		const current = this.messages[this.selectedIndex];
+		lines.push(theme.bold(theme.fg("accent", `Message ${this.selectedIndex + 1} of ${this.messages.length}`)));
+		const preview = wrapTextWithAnsi(current.text, Math.max(10, width - 2));
+		this.previewStart = lines.length;
+		this.previewLineCount = preview.length;
+		this.previewHeight = previewHeight;
+		for (const line of preview.slice(this.previewOffset, this.previewOffset + previewHeight)) {
+			lines.push(`  ${truncateToWidth(line, width - 2)}`);
 		}
-
+		while (lines.length < this.previewStart + previewHeight) lines.push("");
+		lines.push(
+			preview.length > previewHeight
+				? theme.fg(
+						"muted",
+						`  ${this.previewOffset + 1}–${Math.min(preview.length, this.previewOffset + previewHeight)} / ${preview.length}`,
+					)
+				: "",
+		);
+		lines.push(theme.fg("dim", "Tab list / preview · Enter fork · Esc close"));
 		return lines;
 	}
 
-	handleInput(keyData: string): void {
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type === "wheel" && event.wheelDelta) {
+			const delta = event.wheelDelta < 0 ? 1 : -1;
+			if (this.region === "preview")
+				this.previewOffset = Math.max(
+					0,
+					Math.min(this.previewLineCount - this.previewHeight, this.previewOffset + delta),
+				);
+			else this.selectedIndex = Math.max(0, Math.min(this.messages.length - 1, this.selectedIndex + delta));
+			return { handled: true, render: true };
+		}
+		if (event.type === "click" && event.button === "left" && event.y >= 0 && event.y < this.visibleCount * 2) {
+			this.selectedIndex = this.visibleStart + Math.floor(event.y / 2);
+			this.previewOffset = 0;
+			this.region = "list";
+			return { handled: true, render: true };
+		}
+		if (event.type === "click" && event.button === "left" && event.y >= this.previewStart) {
+			this.region = "preview";
+			return { handled: true, render: true };
+		}
+		return undefined;
+	}
+
+	handleInput(data: string): void {
 		const kb = getKeybindings();
-		// Up arrow - go to previous (older) message, wrap to bottom when at top
-		if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = this.selectedIndex === 0 ? this.messages.length - 1 : this.selectedIndex - 1;
-		}
-		// Down arrow - go to next (newer) message, wrap to top when at bottom
-		else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = this.selectedIndex === this.messages.length - 1 ? 0 : this.selectedIndex + 1;
-		}
-		// Enter - select message and branch
-		else if (kb.matches(keyData, "tui.select.confirm")) {
+		if (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious")) {
+			this.region = this.region === "list" ? "preview" : "list";
+		} else if (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down")) {
+			const delta = kb.matches(data, "tui.select.down") ? 1 : -1;
+			if (this.region === "preview")
+				this.previewOffset = Math.max(
+					0,
+					Math.min(Math.max(0, this.previewLineCount - this.previewHeight), this.previewOffset + delta),
+				);
+			else {
+				this.selectedIndex = (this.selectedIndex + delta + this.messages.length) % this.messages.length;
+				this.previewOffset = 0;
+			}
+		} else if (kb.matches(data, "tui.select.confirm")) {
 			const selected = this.messages[this.selectedIndex];
-			if (selected && this.onSelect) {
-				this.onSelect(selected.id);
-			}
-		}
-		// Escape - cancel
-		else if (kb.matches(keyData, "tui.select.cancel")) {
-			if (this.onCancel) {
-				this.onCancel();
-			}
+			if (selected) this.onSelect?.(selected.id);
+		} else if (kb.matches(data, "tui.select.cancel")) {
+			this.onCancel?.();
 		}
 	}
 }
 
-/**
- * Component that renders a user message selector for branching
- */
-export class UserMessageSelectorComponent extends Container {
-	private messageList: UserMessageList;
+export class UserMessageSelectorComponent implements Component {
+	private readonly messageList: UserMessageList;
+	invalidate(): void {}
 
 	constructor(
 		messages: UserMessageItem[],
@@ -116,39 +152,24 @@ export class UserMessageSelectorComponent extends Container {
 		onCancel: () => void,
 		initialSelectedId?: string,
 	) {
-		super();
-
-		// Add header
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.bold("Fork from Message"), 1, 0));
-		this.addChild(
-			new Text(
-				theme.fg("muted", "Select a user message to copy the active path up to that point into a new session"),
-				1,
-				0,
-			),
-		);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-
-		// Create message list
 		this.messageList = new UserMessageList(messages, initialSelectedId);
 		this.messageList.onSelect = onSelect;
 		this.messageList.onCancel = onCancel;
-
-		this.addChild(this.messageList);
-
-		// Add bottom border
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-
-		// Auto-cancel if no messages
-		if (messages.length === 0) {
-			setTimeout(() => onCancel(), 100);
-		}
+		if (messages.length === 0) setTimeout(onCancel, 100);
 	}
 
+	setAvailableHeight(height: number): void {
+		this.messageList.setAvailableHeight(height - 2);
+	}
+	render(width: number): string[] {
+		return [theme.bold(theme.fg("accent", "Fork from Message")), "", ...this.messageList.render(width)];
+	}
+	handleInput(data: string): void {
+		this.messageList.handleInput(data);
+	}
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		return this.messageList.handleMouse({ ...event, y: event.y - 2 });
+	}
 	getMessageList(): UserMessageList {
 		return this.messageList;
 	}

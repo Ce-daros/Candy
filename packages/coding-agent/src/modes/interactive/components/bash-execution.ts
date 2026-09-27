@@ -1,8 +1,4 @@
-/**
- * Component for displaying bash command execution with streaming output.
- */
-
-import { Container, Loader, Spacer, Text, type TUI } from "@candy/tui";
+import { Container, Loader, type TUI, type TuiMouseEvent, truncateToWidth } from "@candy/tui";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -11,88 +7,58 @@ import {
 } from "../../../core/tools/truncate.ts";
 import { stripAnsi } from "../../../utils/ansi.ts";
 import { theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
-import { keyHint, keyText } from "./keybinding-hints.ts";
 import { truncateToVisualLines } from "./visual-truncate.ts";
 
-// Preview line limit when not expanded (matches tool execution behavior)
-const PREVIEW_LINES = 20;
+const GUTTER_WIDTH = 6;
 
 export class BashExecutionComponent extends Container {
-	private command: string;
+	private readonly command: string;
+	private readonly excludeFromContext: boolean;
+	private readonly startedAt = Date.now();
 	private outputLines: string[] = [];
 	private status: "running" | "complete" | "cancelled" | "error" = "running";
-	private exitCode: number | undefined = undefined;
-	private loader: Loader;
+	private exitCode: number | undefined;
+	private readonly loader: Loader;
 	private truncationResult?: TruncationResult;
 	private fullOutputPath?: string;
 	private expanded = false;
-	private contentContainer: Container;
+	private previewLines: 5 | 10 | 20;
+	private elapsed = 0;
 
-	constructor(command: string, ui: TUI, excludeFromContext = false) {
+	constructor(command: string, ui: TUI, excludeFromContext = false, previewLines: 5 | 10 | 20 = 5) {
 		super();
 		this.command = command;
-
-		// Use dim border for excluded-from-context commands (!! prefix)
-		const colorKey = excludeFromContext ? "dim" : "bashMode";
-		const borderColor = (str: string) => theme.fg(colorKey, str);
-
-		// Add spacer
-		this.addChild(new Spacer(1));
-
-		// Top border
-		this.addChild(new DynamicBorder(borderColor));
-
-		// Content container (holds dynamic content between borders)
-		this.contentContainer = new Container();
-		this.addChild(this.contentContainer);
-
-		// Command header
-		const header = new Text(theme.fg(colorKey, theme.bold(`$ ${command}`)), 1, 0);
-		this.contentContainer.addChild(header);
-
-		// Loader
+		this.excludeFromContext = excludeFromContext;
+		this.previewLines = previewLines;
 		this.loader = new Loader(
 			ui,
-			(spinner) => theme.fg(colorKey, spinner),
-			(text) => theme.fg("muted", text),
-			`Running... (${keyText("tui.select.cancel")} to cancel)`, // Plain text for loader
+			(spinner) => theme.fg("bashMode", spinner),
+			(text) => theme.fg("dim", text),
+			"Running…",
 		);
-		this.contentContainer.addChild(this.loader);
-
-		// Bottom border
-		this.addChild(new DynamicBorder(borderColor));
 	}
 
-	/**
-	 * Set whether the output is expanded (shows full output) or collapsed (preview only).
-	 */
 	setExpanded(expanded: boolean): void {
 		this.expanded = expanded;
-		this.updateDisplay();
+	}
+
+	setPreviewLines(lines: 5 | 10 | 20): void {
+		this.previewLines = lines;
 	}
 
 	override invalidate(): void {
-		super.invalidate();
-		this.updateDisplay();
+		this.loader.invalidate();
 	}
 
 	appendOutput(chunk: string): void {
-		// Strip ANSI codes and normalize line endings
-		// Note: binary data is already sanitized in tui-renderer.ts executeBashCommand
 		const clean = stripAnsi(chunk).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-		// Append to output lines
 		const newLines = clean.split("\n");
 		if (this.outputLines.length > 0 && newLines.length > 0) {
-			// Append first chunk to last line (incomplete line continuation)
 			this.outputLines[this.outputLines.length - 1] += newLines[0];
 			this.outputLines.push(...newLines.slice(1));
 		} else {
 			this.outputLines.push(...newLines);
 		}
-
-		this.updateDisplay();
 	}
 
 	setComplete(
@@ -102,118 +68,85 @@ export class BashExecutionComponent extends Container {
 		fullOutputPath?: string,
 	): void {
 		this.exitCode = exitCode;
-		this.status = cancelled
-			? "cancelled"
-			: exitCode !== 0 && exitCode !== undefined && exitCode !== null
-				? "error"
-				: "complete";
+		this.status = cancelled ? "cancelled" : exitCode !== 0 && exitCode !== undefined ? "error" : "complete";
 		this.truncationResult = truncationResult;
 		this.fullOutputPath = fullOutputPath;
-
-		// Stop loader
+		this.elapsed = Date.now() - this.startedAt;
 		this.loader.stop();
-
-		this.updateDisplay();
 	}
 
-	private updateDisplay(): void {
-		// Apply truncation for LLM context limits (same limits as bash tool)
+	override render(width: number): string[] {
+		const contentWidth = Math.max(1, width - GUTTER_WIDTH);
+		const node =
+			this.status === "complete"
+				? theme.fg("success", "✓")
+				: this.status === "error"
+					? theme.fg("error", "×")
+					: this.status === "cancelled"
+						? theme.fg("muted", "⊘")
+						: theme.fg("warning", "◇");
+		const arrow = this.expanded ? "▾" : "▸";
+		const commandLabel = `${this.excludeFromContext ? "!!" : "!"} ${this.command}`;
+		const title = theme.fg("bashMode", theme.bold(commandLabel));
+		const duration = this.status === "running" ? "" : theme.fg("dim", `  ${(this.elapsed / 1000).toFixed(1)}s`);
+		const heading = `${node}${theme.fg("borderMuted", "─")} ${theme.fg("muted", arrow)} ${title}${duration}`;
+		const lines = [truncateToWidth(heading, width, "…")];
+		const rail = `${theme.fg("borderMuted", "│")}     `;
+		if (this.excludeFromContext) lines.push(`${rail}${theme.fg("dim", "Excluded from model context")}`);
+
 		const fullOutput = this.outputLines.join("\n");
-		const contextTruncation = truncateTail(fullOutput, {
-			maxLines: DEFAULT_MAX_LINES,
-			maxBytes: DEFAULT_MAX_BYTES,
-		});
-
-		// Get the lines to potentially display (after context truncation)
-		const availableLines = contextTruncation.content ? contextTruncation.content.split("\n") : [];
-
-		// Apply preview truncation based on expanded state
-		const previewLogicalLines = availableLines.slice(-PREVIEW_LINES);
-		const hiddenLineCount = availableLines.length - previewLogicalLines.length;
-
-		// Rebuild content container
-		this.contentContainer.clear();
-
-		// Command header
-		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${this.command}`)), 1, 0);
-		this.contentContainer.addChild(header);
-
-		// Output
-		if (availableLines.length > 0) {
-			if (this.expanded) {
-				// Show all lines
-				const displayText = availableLines.map((line) => theme.fg("muted", line)).join("\n");
-				this.contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
-			} else {
-				// Use shared visual truncation utility with width-aware caching
-				const styledOutput = previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n");
-				const styledInput = `\n${styledOutput}`;
-				let cachedWidth: number | undefined;
-				let cachedLines: string[] | undefined;
-				this.contentContainer.addChild({
-					render: (width: number) => {
-						if (cachedLines === undefined || cachedWidth !== width) {
-							const result = truncateToVisualLines(styledInput, PREVIEW_LINES, width, 1);
-							cachedLines = result.visualLines;
-							cachedWidth = width;
-						}
-						return cachedLines ?? [];
-					},
-					invalidate: () => {
-						cachedWidth = undefined;
-						cachedLines = undefined;
-					},
-				});
-			}
+		const contextOutput = truncateTail(fullOutput, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
+		if (contextOutput.content) {
+			const styled = contextOutput.content
+				.split("\n")
+				.map((line) => theme.fg("toolOutput", line))
+				.join("\n");
+			const preview = this.expanded
+				? {
+						visualLines: truncateToVisualLines(styled, Number.MAX_SAFE_INTEGER, contentWidth).visualLines,
+						skippedCount: 0,
+					}
+				: truncateToVisualLines(styled, this.status === "error" ? 12 : this.previewLines, contentWidth);
+			if (preview.skippedCount > 0)
+				lines.push(`${rail}${theme.fg("dim", `… ${preview.skippedCount} earlier lines`)}`);
+			lines.push(...preview.visualLines.map((line) => `${rail}${line}`));
 		}
-
-		// Loader or status
 		if (this.status === "running") {
-			this.contentContainer.addChild(this.loader);
-		} else {
-			const statusParts: string[] = [];
-
-			// Show how many lines are hidden (collapsed preview)
-			if (hiddenLineCount > 0) {
-				if (this.expanded) {
-					statusParts.push(
-						`${theme.fg("muted", "(")}${keyHint("app.tools.expand", "to collapse")}${theme.fg("muted", ")")}`,
-					);
-				} else {
-					statusParts.push(
-						`${theme.fg("muted", `... ${hiddenLineCount} more lines (`)}${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`,
-					);
-				}
-			}
-
-			if (this.status === "cancelled") {
-				statusParts.push(theme.fg("warning", "(cancelled)"));
-			} else if (this.status === "error") {
-				statusParts.push(theme.fg("error", `(exit ${this.exitCode})`));
-			}
-
-			// Add truncation warning (context truncation, not preview truncation)
-			const wasTruncated = this.truncationResult?.truncated || contextTruncation.truncated;
-			if (wasTruncated && this.fullOutputPath) {
-				statusParts.push(theme.fg("warning", `Output truncated. Full output: ${this.fullOutputPath}`));
-			}
-
-			if (statusParts.length > 0) {
-				this.contentContainer.addChild(new Text(`\n${statusParts.join("\n")}`, 1, 0));
-			}
+			lines.push(...this.loader.render(contentWidth).map((line) => `${rail}${line}`));
+		} else if (this.status === "cancelled") {
+			lines.push(`${rail}${theme.fg("muted", "Cancelled")}`);
+		} else if (this.status === "error") {
+			lines.push(`${rail}${theme.fg("error", `Exit ${this.exitCode}`)}`);
 		}
+		if ((this.truncationResult?.truncated || contextOutput.truncated) && this.fullOutputPath) {
+			lines.push(
+				`${rail}${truncateToWidth(theme.fg("warning", `Full output: ${this.fullOutputPath}`), contentWidth, "…")}`,
+			);
+		}
+		return lines;
 	}
 
-	/**
-	 * Get the raw output for creating BashExecutionMessage.
-	 */
+	override handleMouse(event: TuiMouseEvent): ReturnType<Container["handleMouse"]> {
+		if (event.type === "click" && event.button === "left" && event.y === 0) {
+			this.expanded = !this.expanded;
+			return {
+				handled: true,
+				target: {
+					component: this,
+					originX: event.screenX - event.x,
+					originY: event.screenY - event.y,
+					width: event.width,
+					height: event.height,
+				},
+			};
+		}
+		return undefined;
+	}
+
 	getOutput(): string {
 		return this.outputLines.join("\n");
 	}
 
-	/**
-	 * Get the command that was executed.
-	 */
 	getCommand(): string {
 		return this.command;
 	}

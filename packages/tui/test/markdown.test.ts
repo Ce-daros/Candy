@@ -4,7 +4,7 @@ import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { Chalk } from "chalk";
 import { Markdown, type MarkdownTheme } from "../src/components/markdown.ts";
 import { resetCapabilitiesCache, setCapabilities } from "../src/terminal-image.ts";
-import type { Component, TUI } from "../src/tui.ts";
+import type { Component, TUI, TuiMouseEvent } from "../src/tui.ts";
 import { TuiMainScreen } from "../src/tui-main-screen.ts";
 import { defaultMarkdownTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -27,6 +27,36 @@ function stripAnsi(line: string): string {
 }
 
 describe("Markdown component", () => {
+	it("keeps code source for Copy and switches Mermaid diagram and source", () => {
+		let copied = "";
+		const markdown = new Markdown("```mermaid\nA --> B\n```", 0, 0, defaultMarkdownTheme, undefined, {
+			codeBlockView: () => ["GRAPH"],
+			onCopyCode: (code) => {
+				copied = code;
+			},
+		});
+		const event = (x: number): TuiMouseEvent => ({
+			type: "click",
+			button: "left",
+			x,
+			y: 0,
+			screenX: x,
+			screenY: 0,
+			width: 80,
+			height: 3,
+			shift: false,
+			alt: false,
+			ctrl: false,
+		});
+		assert.ok(markdown.render(80)[1].includes("GRAPH"));
+		markdown.handleMouse(event(11));
+		assert.ok(markdown.render(80)[1].includes("A --> B"));
+		markdown.handleMouse(event(2));
+		assert.ok(markdown.render(80)[1].includes("GRAPH"));
+		markdown.handleMouse(event(77));
+		assert.strictEqual(copied, "A --> B");
+	});
+
 	describe("Transforms", () => {
 		it("caches transformed Markdown by source and available width", () => {
 			const calls: Array<{ source: string; availableWidth: number }> = [];
@@ -86,10 +116,10 @@ describe("Markdown component", () => {
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
 
 			// Check structure
-			assert.ok(plainLines.some((line) => line.includes("- Item 1")));
-			assert.ok(plainLines.some((line) => line.includes("    - Nested 1.1")));
-			assert.ok(plainLines.some((line) => line.includes("    - Nested 1.2")));
-			assert.ok(plainLines.some((line) => line.includes("- Item 2")));
+			assert.ok(plainLines.some((line) => line.includes("• Item 1")));
+			assert.ok(plainLines.some((line) => line.includes("    • Nested 1.1")));
+			assert.ok(plainLines.some((line) => line.includes("    • Nested 1.2")));
+			assert.ok(plainLines.some((line) => line.includes("• Item 2")));
 		});
 
 		it("should render deeply nested list", () => {
@@ -107,10 +137,10 @@ describe("Markdown component", () => {
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
 
 			// Check proper indentation
-			assert.ok(plainLines.some((line) => line.includes("- Level 1")));
-			assert.ok(plainLines.some((line) => line.includes("    - Level 2")));
-			assert.ok(plainLines.some((line) => line.includes("        - Level 3")));
-			assert.ok(plainLines.some((line) => line.includes("            - Level 4")));
+			assert.ok(plainLines.some((line) => line.includes("• Level 1")));
+			assert.ok(plainLines.some((line) => line.includes("    • Level 2")));
+			assert.ok(plainLines.some((line) => line.includes("        • Level 3")));
+			assert.ok(plainLines.some((line) => line.includes("            • Level 4")));
 		});
 
 		it("should render ordered nested list", () => {
@@ -185,7 +215,7 @@ describe("Markdown component", () => {
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
 
 			assert.ok(plainLines.some((line) => line.includes("1. Ordered item")));
-			assert.ok(plainLines.some((line) => line.includes("    - Unordered nested")));
+			assert.ok(plainLines.some((line) => line.includes("    • Unordered nested")));
 			assert.ok(plainLines.some((line) => line.includes("2. Second ordered")));
 		});
 
@@ -225,7 +255,7 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(80).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["- [ ] beep", "- [x] boop"]);
+			assert.deepStrictEqual(lines, ["• [ ] beep", "• [x] boop"]);
 		});
 
 		it("should maintain numbering when code blocks are not indented (LLM output)", () => {
@@ -270,7 +300,7 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(20).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["- alpha beta gamma", "  delta epsilon"]);
+			assert.deepStrictEqual(lines, ["• alpha beta gamma", "  delta epsilon"]);
 		});
 
 		it("should indent wrapped ordered list lines", () => {
@@ -294,7 +324,7 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(24).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["- parent", "    - alpha beta gamma", "      delta epsilon"]);
+			assert.deepStrictEqual(lines, ["• parent", "    • alpha beta gamma", "      delta epsilon"]);
 		});
 
 		it("should indent wrapped nested list lines under ordered parents", () => {
@@ -302,7 +332,7 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(24).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["1. parent", "    - alpha beta gamma", "      delta epsilon"]);
+			assert.deepStrictEqual(lines, ["1. parent", "    • alpha beta gamma", "      delta epsilon"]);
 		});
 
 		it("should render and wrap blockquotes inside list items", () => {
@@ -310,7 +340,7 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(24).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["- │ alpha beta gamma", "  │ delta epsilon zeta"]);
+			assert.deepStrictEqual(lines, ["• │ alpha beta gamma", "  │ delta epsilon zeta"]);
 		});
 
 		it("should render and wrap code blocks inside list items", () => {
@@ -323,7 +353,9 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(24).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["- ```ts", "    alpha beta gamma", "  delta epsilon zeta", "  ```"]);
+			assert.ok(lines[0].startsWith("• ts"));
+			assert.ok(lines.some((line) => line.includes("alpha beta gamma")));
+			assert.ok(lines.at(-1)?.includes("─"));
 		});
 	});
 
@@ -347,12 +379,11 @@ describe("Markdown component", () => {
 			assert.ok(plainLines.some((line) => line.includes("Age")));
 			assert.ok(plainLines.some((line) => line.includes("Alice")));
 			assert.ok(plainLines.some((line) => line.includes("Bob")));
-			// Check for table borders
-			assert.ok(plainLines.some((line) => line.includes("│")));
-			assert.ok(plainLines.some((line) => line.includes("─")));
+			assert.strictEqual(plainLines.filter((line) => line.trim().startsWith("─")).length, 2);
+			assert.ok(plainLines.every((line) => !line.includes("│")));
 		});
 
-		it("should render row dividers between data rows", () => {
+		it("should separate the header and finish with a bottom rule", () => {
 			const markdown = new Markdown(
 				`| Name | Age |
 | --- | --- |
@@ -365,9 +396,9 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(80);
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
-			const dividerLines = plainLines.filter((line) => line.includes("┼"));
-
-			assert.strictEqual(dividerLines.length, 2, "Expected header + row divider");
+			const dividerLines = plainLines.filter((line) => line.trim().startsWith("─"));
+			assert.strictEqual(dividerLines.length, 2);
+			assert.ok(plainLines.some((line) => line.trim() === ""));
 		});
 
 		it("should keep column width at least the longest word", () => {
@@ -387,15 +418,7 @@ describe("Markdown component", () => {
 			const dataLine = plainLines.find((line) => line.includes(longestWord));
 			assert.ok(dataLine, "Expected data row containing longest word");
 
-			const segments = dataLine.split("│").slice(1, -1);
-			const [firstSegment] = segments;
-			assert.ok(firstSegment, "Expected first column segment");
-			const firstColumnWidth = firstSegment.length - 2;
-
-			assert.ok(
-				firstColumnWidth >= longestWord.length,
-				`Expected first column width >= ${longestWord.length}, got ${firstColumnWidth}`,
-			);
+			assert.ok(dataLine.includes(longestWord), "The longest word should stay on one line");
 		});
 
 		it("should render table with alignment", () => {
@@ -489,8 +512,8 @@ describe("Markdown component", () => {
 						assert.notStrictEqual(row, -1, `Missing wrapped table row: ${JSON.stringify(viewport)}`);
 						const line = viewport[row];
 						const linkCol = line.indexOf("one");
-						const separatorCol = line.indexOf("│", linkCol);
 						const plainCol = line.indexOf("norm");
+						const separatorCol = plainCol - 2;
 						assert.ok(linkCol >= 0 && separatorCol > linkCol && plainCol > separatorCol);
 						assert.strictEqual(getCell(terminal, row, linkCol).isFgDefault(), false);
 						assert.strictEqual(getCell(terminal, row, separatorCol).isFgDefault(), true);
@@ -504,12 +527,8 @@ describe("Markdown component", () => {
 							assert.notStrictEqual(urlRow, -1, `Missing fallback URL row: ${JSON.stringify(viewport)}`);
 							const urlLine = viewport[urlRow];
 							const urlCol = urlLine.indexOf("https");
-							const urlSeparatorCol = urlLine.indexOf("│", urlCol);
-							const urlBorderCol = urlLine.lastIndexOf("│");
-							assert.ok(urlCol >= 0 && urlSeparatorCol > urlCol && urlBorderCol > urlSeparatorCol);
+							assert.ok(urlCol >= 0);
 							assert.notStrictEqual(getCell(terminal, urlRow, urlCol).isDim(), 0);
-							assert.strictEqual(getCell(terminal, urlRow, urlSeparatorCol).isDim(), 0);
-							assert.strictEqual(getCell(terminal, urlRow, urlBorderCol).isDim(), 0);
 						}
 					} finally {
 						tui.stop();
@@ -545,8 +564,8 @@ describe("Markdown component", () => {
 				assert.notStrictEqual(row, -1, `Missing wrapped blockquote table row: ${JSON.stringify(viewport)}`);
 				const line = viewport[row];
 				const linkCol = line.indexOf("one");
-				const separatorCol = line.indexOf("│", linkCol);
 				const plainCol = line.indexOf("normal");
+				const separatorCol = plainCol - 2;
 				assert.ok(linkCol >= 0 && separatorCol > linkCol && plainCol > separatorCol);
 
 				assert.notStrictEqual(getCell(terminal, row, linkCol).getFgColor(), quoteColor);
@@ -557,11 +576,7 @@ describe("Markdown component", () => {
 				assert.notStrictEqual(finalRow, -1, `Missing final wrapped link row: ${JSON.stringify(viewport)}`);
 				const finalLine = viewport[finalRow];
 				const finalLinkCol = finalLine.indexOf("five six");
-				const finalSeparatorCol = finalLine.indexOf("│", finalLinkCol);
-				const finalBorderCol = finalLine.lastIndexOf("│");
-				assert.ok(finalLinkCol >= 0 && finalSeparatorCol > finalLinkCol && finalBorderCol > finalSeparatorCol);
-				assert.strictEqual(getCell(terminal, finalRow, finalSeparatorCol).getFgColor(), quoteColor);
-				assert.strictEqual(getCell(terminal, finalRow, finalBorderCol).getFgColor(), quoteColor);
+				assert.ok(finalLinkCol >= 0);
 			} finally {
 				tui.stop();
 				resetCapabilitiesCache();
@@ -582,8 +597,7 @@ describe("Markdown component", () => {
 			const lines = markdown.render(25);
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
 
-			// Should have multiple data rows due to wrapping
-			const dataRows = plainLines.filter((line) => line.startsWith("│") && !line.includes("─"));
+			const dataRows = plainLines.filter((line) => line.trim() && !line.includes("─"));
 			assert.ok(dataRows.length > 2, `Expected wrapped rows, got ${dataRows.length} rows`);
 
 			// All content should be preserved (may be split across lines)
@@ -615,13 +629,7 @@ describe("Markdown component", () => {
 				assert.ok(line.length <= width, `Line exceeds width ${width}: "${line}" (length: ${line.length})`);
 			}
 
-			// Borders should stay intact (exactly 2 vertical borders for a 1-col table)
-			const tableLines = plainLines.filter((line) => line.startsWith("│"));
-			assert.ok(tableLines.length > 0, "Expected table rows to render");
-			for (const line of tableLines) {
-				const borderCount = line.split("│").length - 1;
-				assert.strictEqual(borderCount, 2, `Expected 2 borders, got ${borderCount}: "${line}"`);
-			}
+			assert.ok(plainLines.every((line) => !line.includes("│")));
 
 			// Strip box drawing characters + whitespace so we can assert the URL is preserved
 			// even if it was split across multiple wrapped lines.
@@ -650,11 +658,7 @@ describe("Markdown component", () => {
 				assert.ok(line.length <= width, `Line exceeds width ${width}: "${line}" (length: ${line.length})`);
 			}
 
-			const tableLines = plainLines.filter((line) => line.startsWith("│"));
-			for (const line of tableLines) {
-				const borderCount = line.split("│").length - 1;
-				assert.strictEqual(borderCount, 2, `Expected 2 borders, got ${borderCount}: "${line}"`);
-			}
+			assert.ok(plainLines.every((line) => !line.includes("│")));
 		});
 
 		it("should handle extremely narrow width gracefully", () => {
@@ -697,9 +701,9 @@ describe("Markdown component", () => {
 			// Should have proper table structure
 			const headerLine = plainLines.find((line) => line.includes("A") && line.includes("B"));
 			assert.ok(headerLine, "Should have header row");
-			assert.ok(headerLine?.includes("│"), "Header should have borders");
+			assert.ok(headerLine?.includes("  "), "Header should separate columns");
 
-			const separatorLine = plainLines.find((line) => line.includes("├") && line.includes("┼"));
+			const separatorLine = plainLines.find((line) => line.trim().startsWith("─"));
 			assert.ok(separatorLine, "Should have separator row");
 
 			const dataLine = plainLines.find((line) => line.includes("1") && line.includes("2"));
@@ -726,7 +730,7 @@ describe("Markdown component", () => {
 			}
 
 			// Table rows should have left padding
-			const tableRow = plainLines.find((line) => line.includes("│"));
+			const tableRow = plainLines.find((line) => line.includes("Column One"));
 			assert.ok(tableRow?.startsWith("  "), "Table should have left padding");
 		});
 
@@ -774,11 +778,11 @@ describe("Markdown component", () => {
 			// Check heading
 			assert.ok(plainLines.some((line) => line.includes("Test Document")));
 			// Check list
-			assert.ok(plainLines.some((line) => line.includes("- Item 1")));
-			assert.ok(plainLines.some((line) => line.includes("    - Nested item")));
+			assert.ok(plainLines.some((line) => line.includes("• Item 1")));
+			assert.ok(plainLines.some((line) => line.includes("    • Nested item")));
 			// Check table
 			assert.ok(plainLines.some((line) => line.includes("Col1")));
-			assert.ok(plainLines.some((line) => line.includes("│")));
+			assert.ok(plainLines.some((line) => line.includes("─")));
 		});
 	});
 
@@ -883,8 +887,8 @@ A=
 			const lines = markdown.render(80).map((line) => stripAnsi(line).trimEnd());
 			const output = lines.join("\n");
 
-			assert.ok(output.includes("- Formula: F₁ = u²"));
-			assert.ok(output.includes("│ ℂ³"));
+			assert.ok(output.includes("• Formula: F₁ = u²"));
+			assert.ok(output.includes("ℂ³"));
 		});
 
 		it("does not treat currency, shell variables, or code spans as math", () => {
@@ -931,7 +935,13 @@ A=
 			const markdown = new Markdown(source, 0, 0, defaultMarkdownTheme);
 			const lines = markdown.render(80).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, ["Escaped $x-y$.", "", "```text", "  $\\mathbb{C}^3$", "```"]);
+			assert.deepStrictEqual(lines, [
+				"Escaped $x-y$.",
+				"",
+				`text  ${"─".repeat(74)}`,
+				"$\\mathbb{C}^3$",
+				"─".repeat(80),
+			]);
 		});
 
 		it("allows LaTeX rendering to be disabled", () => {
@@ -1114,8 +1124,8 @@ again, hello world`,
 			const lines = markdown.render(80);
 			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
 
-			const closingBackticksIndex = plainLines.indexOf("```");
-			assert.ok(closingBackticksIndex !== -1, "Should have closing backticks");
+			const closingBackticksIndex = plainLines.indexOf("─".repeat(80));
+			assert.ok(closingBackticksIndex !== -1, "Should have closing rule");
 
 			const afterBackticks = plainLines.slice(closingBackticksIndex + 1);
 			const emptyLineCount = afterBackticks.findIndex((line) => line !== "");
@@ -1142,7 +1152,15 @@ code block
 
 more text`,
 			];
-			const expectedLines = ["hello this is text", "", "```", "  code block", "```", "", "more text"];
+			const expectedLines = [
+				"hello this is text",
+				"",
+				`Code  ${"─".repeat(74)}`,
+				"code block",
+				"─".repeat(80),
+				"",
+				"more text",
+			];
 
 			for (const text of cases) {
 				const markdown = new Markdown(text, 0, 0, defaultMarkdownTheme);
@@ -1382,7 +1400,7 @@ bar`,
 				`Missing ordered list item: ${JSON.stringify(quotedLines)}`,
 			);
 			assert.ok(
-				quotedLines.some((line) => line.includes("- nested bullet")),
+				quotedLines.some((line) => line.includes("• nested bullet")),
 				`Missing unordered list item: ${JSON.stringify(quotedLines)}`,
 			);
 		});
@@ -1518,7 +1536,7 @@ bar`,
 			// H1 uses heading + bold + underline
 			assert.ok(precedingChunk.includes("\x1b[1m"), `Should re-apply bold for h1: ${precedingChunk}`);
 			assert.ok(precedingChunk.includes("\x1b[36m"), `Should re-apply cyan for h1: ${precedingChunk}`);
-			assert.ok(precedingChunk.includes("\x1b[4m"), `Should re-apply underline for h1: ${precedingChunk}`);
+			assert.ok(!precedingChunk.includes("\x1b[4m"), `H1 should remain unlined: ${precedingChunk}`);
 		});
 
 		it("should not leak h1 underline into padding when inline code is the last token", async () => {
@@ -1734,27 +1752,27 @@ bar`,
 			const cases = [
 				{
 					input: "```ts\nconst x = 1;\n``",
-					expected: ["```ts", "  const x = 1;", "```"],
+					expected: [`ts  ${"─".repeat(76)}`, "const x = 1;", "─".repeat(80)],
 				},
 				{
 					input: "```md\nnot a closing fence:\n``\n```",
-					expected: ["```md", "  not a closing fence:", "  ``", "```"],
+					expected: [`md  ${"─".repeat(76)}`, "not a closing fence:", "``", "─".repeat(80)],
 				},
 				{
 					input: "```ts\n``",
-					expected: ["```ts", "", "```"],
+					expected: [`ts  ${"─".repeat(76)}`, "", "─".repeat(80)],
 				},
 				{
 					input: "````\n```",
-					expected: ["```", "", "```"],
+					expected: [`Code  ${"─".repeat(74)}`, "", "─".repeat(80)],
 				},
 				{
 					input: "~~~~~\n~~~~",
-					expected: ["```", "", "```"],
+					expected: [`Code  ${"─".repeat(74)}`, "", "─".repeat(80)],
 				},
 				{
 					input: "```md\nnot a closing fence:\n``\n```\n\nafter",
-					expected: ["```md", "  not a closing fence:", "  ``", "```", "", "after"],
+					expected: [`md  ${"─".repeat(76)}`, "not a closing fence:", "``", "─".repeat(80), "", "after"],
 				},
 			];
 

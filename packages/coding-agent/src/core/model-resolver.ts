@@ -1,10 +1,9 @@
 /**
- * Model resolution, scoping, and initial selection
+ * Model resolution and initial selection
  */
 
 import type { ThinkingLevel } from "@candy/agent-core";
-import { type Api, type AuthOperationOptions, type KnownProvider, type Model, modelsAreEqual } from "@candy/ai";
-import { minimatch } from "minimatch";
+import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@candy/ai";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { cliThemeColor } from "../modes/interactive/theme/theme.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -54,12 +53,6 @@ export const defaultModelPerProvider: Partial<Record<KnownProvider, string>> = {
 	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
 	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
 };
-
-export interface ScopedModel {
-	model: Model<Api>;
-	/** Thinking level if explicitly specified in pattern (e.g., "model:high"), undefined otherwise */
-	thinkingLevel?: ThinkingLevel;
-}
 
 /**
  * Helper to check if a model ID looks like an alias (no date suffix)
@@ -250,131 +243,6 @@ export function parseModelPattern(
 	}
 }
 
-/**
- * Resolve model patterns to actual Model objects with optional thinking levels
- * Format: "pattern:level" where :level is optional
- * For each pattern, finds all matching models and picks the best version:
- * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
- * 2. If no alias, pick the latest dated version
- *
- * Supports models with colons in their IDs (e.g., OpenRouter's model:exacto).
- * The algorithm tries to match the full pattern first, then progressively
- * strips colon-suffixes to find a match.
- */
-export interface ModelScopeDiagnostic {
-	type: "warning";
-	code: "no-match" | "invalid-thinking-level";
-	message: string;
-	pattern: string;
-}
-
-export interface ResolveModelScopeResult {
-	scopedModels: ScopedModel[];
-	diagnostics: ModelScopeDiagnostic[];
-}
-
-export function resolveModelScopeFromModels(
-	patterns: string[],
-	models: readonly Model<Api>[],
-): ResolveModelScopeResult {
-	const availableModels = [...models];
-	const scopedModels: ScopedModel[] = [];
-	const diagnostics: ModelScopeDiagnostic[] = [];
-
-	for (const pattern of patterns) {
-		// Check if pattern contains glob characters
-		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
-			// Extract optional thinking level suffix (e.g., "provider/*:high")
-			const colonIdx = pattern.lastIndexOf(":");
-			let globPattern = pattern;
-			let thinkingLevel: ThinkingLevel | undefined;
-
-			if (colonIdx !== -1) {
-				const suffix = pattern.substring(colonIdx + 1);
-				if (isValidThinkingLevel(suffix)) {
-					thinkingLevel = suffix;
-					globPattern = pattern.substring(0, colonIdx);
-				}
-			}
-
-			const exactMatch = findExactModelReferenceMatch(globPattern, availableModels);
-			if (exactMatch) {
-				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, exactMatch))) {
-					scopedModels.push({ model: exactMatch, thinkingLevel });
-				}
-				continue;
-			}
-
-			// Match against "provider/modelId" format OR just model ID
-			// This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
-			const matchingModels = availableModels.filter((m) => {
-				const fullId = `${m.provider}/${m.id}`;
-				return minimatch(fullId, globPattern, { nocase: true }) || minimatch(m.id, globPattern, { nocase: true });
-			});
-
-			if (matchingModels.length === 0) {
-				diagnostics.push({
-					type: "warning",
-					code: "no-match",
-					message: `No models match pattern "${pattern}"`,
-					pattern,
-				});
-				continue;
-			}
-
-			for (const model of matchingModels) {
-				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
-					scopedModels.push({ model, thinkingLevel });
-				}
-			}
-			continue;
-		}
-
-		const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels);
-
-		if (warning) {
-			diagnostics.push({ type: "warning", code: "invalid-thinking-level", message: warning, pattern });
-		}
-
-		if (!model) {
-			diagnostics.push({
-				type: "warning",
-				code: "no-match",
-				message: `No models match pattern "${pattern}"`,
-				pattern,
-			});
-			continue;
-		}
-
-		// Avoid duplicates
-		if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
-			scopedModels.push({ model, thinkingLevel });
-		}
-	}
-
-	return { scopedModels, diagnostics };
-}
-
-export async function resolveModelScopeWithDiagnostics(
-	patterns: string[],
-	modelRuntime: ModelRuntime,
-	options?: AuthOperationOptions,
-): Promise<ResolveModelScopeResult> {
-	return resolveModelScopeFromModels(patterns, await modelRuntime.getAvailable(undefined, options));
-}
-
-export async function resolveModelScope(
-	patterns: string[],
-	modelRuntime: ModelRuntime,
-	options?: AuthOperationOptions,
-): Promise<ScopedModel[]> {
-	const { scopedModels, diagnostics } = await resolveModelScopeWithDiagnostics(patterns, modelRuntime, options);
-	for (const diagnostic of diagnostics) {
-		console.warn(cliThemeColor("warning", `Warning: ${diagnostic.message}`));
-	}
-	return scopedModels;
-}
-
 export interface ResolveCliModelResult {
 	model: Model<Api> | undefined;
 	thinkingLevel?: ThinkingLevel;
@@ -392,7 +260,7 @@ export interface ResolveCliModelResult {
  * Supports:
  * - --provider <provider> --model <pattern>
  * - --model <provider>/<pattern>
- * - Fuzzy matching (same rules as model scoping: exact id, then partial id/name)
+ * - Fuzzy matching (exact id, then partial id/name)
  *
  * Note: This does not apply the thinking level by itself, but it may *parse* and
  * return a thinking level from "<pattern>:<thinking>" so the caller can apply it.
@@ -606,18 +474,11 @@ export interface InitialModelResult {
 }
 
 /**
- * Find the initial model to use based on priority:
- * 1. CLI args (provider + model)
- * 2. First model from scoped models (if not continuing/resuming)
- * 3. Restored from session (if continuing/resuming)
- * 4. Saved default from settings
- * 5. First available model with valid API key
+ * Find the initial model to use from CLI selection, saved defaults, or authenticated models.
  */
 export async function findInitialModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
-	scopedModels: ScopedModel[];
-	isContinuing: boolean;
 	defaultProvider?: string;
 	defaultModelId?: string;
 	defaultThinkingLevel?: ThinkingLevel;
@@ -627,8 +488,6 @@ export async function findInitialModel(options: {
 	const {
 		cliProvider,
 		cliModel,
-		scopedModels,
-		isContinuing,
 		defaultProvider,
 		defaultModelId,
 		defaultThinkingLevel,
@@ -655,18 +514,7 @@ export async function findInitialModel(options: {
 		}
 	}
 
-	// 2. Use first model from scoped models (skip if continuing/resuming)
-	if (scopedModels.length > 0 && !isContinuing) {
-		const scopedModel = scopedModels[0];
-		const perModel = modelThinkingLevels?.[`${scopedModel.model.provider}/${scopedModel.model.id}`];
-		return {
-			model: scopedModel.model,
-			thinkingLevel: scopedModel.thinkingLevel ?? perModel ?? defaultThinkingLevel ?? DEFAULT_THINKING_LEVEL,
-			fallbackMessage: undefined,
-		};
-	}
-
-	// 3. Try saved default from settings if auth is configured.
+	// Try saved default from settings if auth is configured.
 	if (defaultProvider && defaultModelId) {
 		const found = modelRuntime.getModel(defaultProvider, defaultModelId);
 		if (found && modelRuntime.hasConfiguredAuth(found.provider)) {
@@ -681,7 +529,7 @@ export async function findInitialModel(options: {
 		}
 	}
 
-	// 4. Try first available model with valid API key
+	// Try first available model with valid API key
 	const availableModels = [...modelRuntime.getAvailableSnapshot()];
 
 	if (availableModels.length > 0) {
@@ -698,7 +546,7 @@ export async function findInitialModel(options: {
 		return { model: availableModels[0], thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 	}
 
-	// 5. No model found
+	// No model found
 	return { model: undefined, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 }
 

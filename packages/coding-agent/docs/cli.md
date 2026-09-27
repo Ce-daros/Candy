@@ -64,11 +64,9 @@ See [Choose a Model](models.md) for model selection and [Provider Authentication
 - `--model <pattern>`<br>
   Selects by exact ID or fuzzy ID/name match. It accepts `provider/id` and an optional `:<thinking>` suffix.
 - `--api-key <key>`<br>
-  Uses a non-persistent API-key override. It requires a model selected through `--model` or `--models`.
+  Uses a non-persistent API-key override. It requires a model selected through `--model`.
 - `--thinking <level>`<br>
   Sets `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It overrides a `--model` suffix and is clamped to the model's capabilities.
-- `--models <patterns>`<br>
-  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, fuzzy matches, case-insensitive globs, and optional `:<thinking>` suffixes.
 - `--list-models [search]`<br>
   Lists available models, optionally filtered by a fuzzy search, then exits.
 
@@ -230,7 +228,7 @@ Running `candy update` without a target updates candy itself.
 | Refresh model catalogs | `candy update --models` |
 | Update candy and all installed packages | `candy update --all` |
 
-Add `--force` to reinstall candy when the selected update includes Pi.
+Add `--force` to reinstall candy when the selected update includes the CLI.
 
 ### Aliases and command options
 

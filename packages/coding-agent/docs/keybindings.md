@@ -132,6 +132,16 @@ On native Windows, `app.suspend` has no default because Windows terminals do not
 
 In Shell mode, an empty-editor Backspace or Esc steps back one mode; Esc preserves a nonempty draft. Enter executes the command, Ctrl+C clears its draft, and the follow-up shortcut is inactive. Each mode has its own input history.
 
+#### Multi-region panels
+
+These keys move focus between the category, list, detail, and search regions in panels that expose them. The scope action is available in session and resource-configuration selectors.
+
+| Keybinding id | Default | Description |
+|---|---|---|
+| `app.panel.focusNext` | `tab` | Focus the next panel region |
+| `app.panel.focusPrevious` | `shift+tab` | Focus the previous panel region |
+| `app.panel.scope` | `alt+s` | Switch directory or configuration scope |
+
 ### Sessions
 
 | Keybinding id | Default | Description |
@@ -152,9 +162,7 @@ In Shell mode, an empty-editor Backspace or Esc steps back one mode; Esc preserv
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
 | `app.model.select` | `ctrl+l` | Open the inline model selector in the footer powerbar |
-| `app.model.cycleForward` | `ctrl+p` | Cycle to next model |
-| `app.model.cycleBackward` | `shift+ctrl+p` (`alt+p` on Windows and WSL) | Cycle to previous model |
-| `app.models.save` | `ctrl+s` | Save the selected default model or scoped model configuration to settings |
+| `app.models.save` | `ctrl+s` | Save the selected model as the default |
 | `app.thinking.cycle` | `shift+tab` | Cycle thinking level |
 | `app.thinking.save` | `ctrl+s` | Save current thinking level to settings |
 | `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
@@ -189,15 +197,3 @@ While a powerbar selector is open, `enter` confirms the highlighted item, `escap
 | `app.tree.filter.all` | `ctrl+a` | Toggle tree filter that shows all entries |
 | `app.tree.filter.cycleForward` | `ctrl+o` | Cycle tree filter forward |
 | `app.tree.filter.cycleBackward` | `shift+ctrl+o` | Cycle tree filter backward |
-
-### Scoped Models Selector
-
-Used inside the scoped models selector (opened via `/scoped-models`).
-
-| Keybinding id | Default | Description |
-|--------|---------|-------------|
-| `app.models.enableAll` | `ctrl+a` | Enable all models (or all matching the current search) |
-| `app.models.clearAll` | `ctrl+x` | Clear all models (or all matching the current search) |
-| `app.models.toggleProvider` | `ctrl+p` | Toggle all models for the current provider |
-| `app.models.reorderUp` | `alt+up` | Move the selected model up in the cycle order |
-| `app.models.reorderDown` | `alt+down` | Move the selected model down in the cycle order |

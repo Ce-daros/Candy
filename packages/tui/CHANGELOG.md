@@ -11,6 +11,10 @@
 - Added `Editor.setFirstLineGutter()` to replace the first-line gutter, for example when an input mode changes the prompt glyph.
 - Added a `bottomBorderClick` hook on `Editor` for subclasses to intercept left clicks on the editor's bottom border row (used by the coding-agent footer powerbar).
 - Added editor history scopes and a side-border styling hook for mode-specific composer history and frame animation.
+- Added `TuiAltScreen.setSearchHost()`, `TuiAltScreen.closeSearch()`, and exported `TuiAltScreenSearchHost` so applications can mount transcript search in their own focused UI while reusing the alt-screen search index, match count, highlighting, and navigation. Close search before replacing its host UI.
+- Added `MarkdownOptions.onCopyCode`, `codeBlockView`, and `maxProseWidth`, plus heading-level, code-label, and table-header theme hooks for copyable code blocks, alternate diagrams, and width-aware prose.
+- Added masked `Input` rendering and image-aware `Editor` hooks: colored paths and markers, viewport-limited editor height, `insertImageAtCursor()`, and `onImagePath` for marker activation.
+- Added viewport-bounded, expandable `Image` previews and additional `SelectList`/`SettingsList` layout and selection-detail hooks.
 
 ### Fixed
 

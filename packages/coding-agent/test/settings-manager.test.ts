@@ -26,35 +26,16 @@ describe("SettingsManager", () => {
 	});
 
 	describe("preserves externally added settings", () => {
-		it("should preserve enabledModels when changing thinking level", async () => {
-			// Create initial settings file
+		it("drops the removed enabledModels setting on load", async () => {
 			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(
-				settingsPath,
-				JSON.stringify({
-					theme: "dark",
-					defaultModel: "claude-sonnet",
-				}),
-			);
+			writeFileSync(settingsPath, JSON.stringify({ enabledModels: ["gpt-4o"] }));
 
-			// Create SettingsManager (simulates candy starting up)
 			const manager = SettingsManager.create(projectDir, agentDir);
-
-			// Simulate user editing settings.json externally to add enabledModels
-			const currentSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-			currentSettings.enabledModels = ["claude-opus-4-5", "gpt-5.2-codex"];
-			writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
-
-			// User changes thinking level via Shift+Tab
+			expect(manager.getGlobalSettings()).not.toHaveProperty("enabledModels");
 			manager.setDefaultThinkingLevel("high");
 			await manager.flush();
 
-			// Verify enabledModels is preserved
-			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-			expect(savedSettings.enabledModels).toEqual(["claude-opus-4-5", "gpt-5.2-codex"]);
-			expect(savedSettings.defaultThinkingLevel).toBe("high");
-			expect(savedSettings.theme).toBe("dark");
-			expect(savedSettings.defaultModel).toBe("claude-sonnet");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).not.toHaveProperty("enabledModels");
 		});
 
 		it("should preserve custom settings when changing theme", async () => {
@@ -509,23 +490,47 @@ describe("SettingsManager", () => {
 	});
 
 	describe("markdown.mermaid", () => {
-		it("defaults to streaming and persists rendering modes", async () => {
+		it("defaults to final rendering and persists rendering modes", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getMermaidRenderingMode()).toBe("streaming");
+			expect(manager.getMermaidRenderingMode()).toBe("final");
 
-			manager.setMermaidRenderingMode("final");
+			manager.setMermaidRenderingMode("streaming");
 			await manager.flush();
 
-			expect(manager.getMermaidRenderingMode()).toBe("final");
+			expect(manager.getMermaidRenderingMode()).toBe("streaming");
 			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(savedSettings.markdown.mermaid).toBe("final");
+			expect(savedSettings.markdown.mermaid).toBe("streaming");
 		});
 
-		it("falls back to streaming for unsupported values", () => {
+		it("uses final rendering for unsupported values", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ markdown: { mermaid: "sometimes" } }));
 
-			expect(SettingsManager.create(projectDir, agentDir).getMermaidRenderingMode()).toBe("streaming");
+			expect(SettingsManager.create(projectDir, agentDir).getMermaidRenderingMode()).toBe("final");
+		});
+	});
+
+	describe("redesign defaults", () => {
+		it("collapses thinking and changelog by default while preserving saved choices", () => {
+			expect(SettingsManager.inMemory().getHideThinkingBlock()).toBe(true);
+			expect(SettingsManager.inMemory().getCollapseChangelog()).toBe(true);
+			expect(
+				SettingsManager.inMemory({ hideThinkingBlock: false, collapseChangelog: false }).getHideThinkingBlock(),
+			).toBe(false);
+			expect(
+				SettingsManager.inMemory({ hideThinkingBlock: false, collapseChangelog: false }).getCollapseChangelog(),
+			).toBe(false);
+		});
+
+		it("defaults tool previews to five rows and persists the selected limit", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getToolPreviewLines()).toBe(5);
+
+			manager.setToolPreviewLines(20);
+			await manager.flush();
+
+			expect(SettingsManager.create(projectDir, agentDir).getToolPreviewLines()).toBe(20);
+			expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8")).toolPreviewLines).toBe(20);
 		});
 	});
 

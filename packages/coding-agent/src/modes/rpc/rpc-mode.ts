@@ -468,14 +468,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "set_model", model);
 			}
 
-			case "cycle_model": {
-				const result = await session.cycleModel();
-				if (!result) {
-					return success(id, "cycle_model", null);
-				}
-				return success(id, "cycle_model", result);
-			}
-
 			case "get_available_models": {
 				const models = session.modelRuntime.getAvailableSnapshot();
 				return success(id, "get_available_models", { models });

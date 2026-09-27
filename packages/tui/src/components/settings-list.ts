@@ -28,6 +28,7 @@ export interface SettingsListTheme {
 	value: (text: string, selected: boolean) => string;
 	description: (text: string) => string;
 	cursor: string;
+	selectedSuffix?: string;
 	hint: (text: string) => string;
 }
 
@@ -72,7 +73,18 @@ export class SettingsList implements Component {
 		}
 	}
 
-	/** Update an item's currentValue */
+	isSubmenuOpen(): boolean {
+		return this.submenuComponent !== null;
+	}
+
+	getSelectedItem(): SettingItem | undefined {
+		return this.getDisplayItems()[this.selectedIndex];
+	}
+
+	setMaxVisible(count: number): void {
+		this.maxVisible = Math.max(1, count);
+	}
+
 	updateValue(id: string, newValue: string): void {
 		const item = this.items.find((i) => i.id === id);
 		if (item) {
@@ -151,7 +163,12 @@ export class SettingsList implements Component {
 
 			const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
 
-			lines.push(truncateToWidth(prefix + labelText + separator + valueText, width));
+			lines.push(
+				truncateToWidth(
+					prefix + labelText + separator + valueText + (isSelected ? (this.theme.selectedSuffix ?? "") : ""),
+					width,
+				),
+			);
 		}
 
 		// Add scroll indicator if needed

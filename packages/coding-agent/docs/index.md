@@ -19,7 +19,7 @@ If candy is already installed, choose what you want to do:
 ## Customize candy
 
 candy can reuse prompts, load specialized instructions, add executable integrations, change its terminal interface, connect model services, and distribute these resources as packages.
-Use the [Quickstart customization chooser](quickstart.md#choose-how-to-customize-pi) to select the smallest mechanism that meets your need.
+Use the [Quickstart customization chooser](quickstart.md#choose-how-to-customize-candy) to select the smallest mechanism that meets your need.
 
 ## Automate or embed candy
 

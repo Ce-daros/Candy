@@ -21,6 +21,7 @@ import {
 	setCapabilities,
 } from "../src/terminal-image.ts";
 import type { TuiMouseEvent } from "../src/tui.ts";
+import { Container } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -639,6 +640,165 @@ describe("TuiAltScreen", () => {
 		assert.ok(!populated.some((line) => line.includes("Find in transcript")));
 	});
 
+	it("renders hosted transcript search as one inline row", () => {
+		const component = new AltScreenSearchComponent(() => {});
+		component.setInline(true);
+		const rendered = component.render(64);
+		assert.strictEqual(rendered.length, 1);
+		assert.strictEqual(visibleWidth(rendered[0] ?? ""), 64);
+		assert.ok(!rendered[0]?.includes("┌"));
+		assert.ok(stripTerminalSequences(rendered[0] ?? "").includes("Find in transcript"));
+
+		component.handleInput("needle");
+		component.setResult(1, 3);
+		const line = stripTerminalSequences(component.render(64)[0] ?? "");
+		assert.ok(line.includes("needle"));
+		assert.ok(line.includes("2/3"));
+		assert.strictEqual(component.getNavigationDirectionAt(0, line.indexOf("↑")), -1);
+		assert.strictEqual(component.getNavigationDirectionAt(0, line.indexOf("↓")), 1);
+		assert.strictEqual(component.getNavigationDirectionAt(2, line.indexOf("↓")), undefined);
+	});
+
+	it("mounts hosted search, excludes collapsed text, and restores the editor without resetting its draft", async () => {
+		const terminal = new RecordingTerminal(64, 8);
+		const tui = new TuiAltScreen(terminal);
+		let expanded = false;
+		const transcript = new ScrollView(
+			{
+				render: () =>
+					expanded ? ["visible needle", "collapsed secret phrase"] : ["visible needle", "▸ 1 hidden line"],
+				handleInput: () => {},
+				invalidate: () => {},
+			},
+			{ follow: "end", primary: true },
+		);
+		const editor = {
+			focused: false,
+			render: () => ["draft: keep this text"],
+			handleInput: () => {},
+			invalidate: () => {},
+		};
+		const composer = new Container();
+		composer.addChild(editor);
+		const mounted: AltScreenSearchComponent[] = [];
+		const unmounted: AltScreenSearchComponent[] = [];
+		tui.setLayoutRoot(
+			new VStack([
+				{ component: transcript, basis: 0, grow: 1, minSize: 1 },
+				{ component: composer, basis: 1, shrink: 0 },
+			]),
+		);
+		tui.setFocus(editor);
+		tui.setSearchHost({
+			mount: (component) => {
+				mounted.push(component);
+				composer.removeChild(editor);
+				composer.addChild(component);
+				tui.setFocus(component);
+			},
+			unmount: (component) => {
+				unmounted.push(component);
+				composer.removeChild(component);
+				composer.addChild(editor);
+				tui.setFocus(editor);
+			},
+			isFocused: () => tui.getFocusedComponent() === mounted.at(-1),
+		});
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[102;6u");
+		terminal.sendInput("secret");
+		await terminal.waitForRender();
+		assert.strictEqual(mounted.length, 1);
+		assert.ok(terminal.getViewport().some((line) => line.includes("No matches")));
+
+		expanded = true;
+		tui.requestRender();
+		await terminal.waitForRender();
+		assert.ok(terminal.getViewport().some((line) => line.includes("1/1")));
+		assert.ok(terminal.getViewport().some((line) => line.includes("collapsed secret phrase")));
+
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		assert.deepStrictEqual(unmounted, mounted);
+		assert.strictEqual(tui.getFocusedComponent(), editor);
+		assert.ok(terminal.getViewport().some((line) => line.includes("draft: keep this text")));
+
+		expanded = false;
+		tui.requestRender();
+		await terminal.waitForRender();
+		terminal.sendInput("\x1b[102;6u");
+		await terminal.waitForRender();
+		terminal.sendInput("secret");
+		await terminal.waitForRender();
+		assert.strictEqual(mounted.length, 2);
+		assert.ok(terminal.getViewport().some((line) => line.includes("No matches")));
+
+		tui.closeSearch();
+		assert.strictEqual(tui.getFocusedComponent(), editor);
+		terminal.sendInput("\x1b[102;6u");
+		await terminal.waitForRender();
+		terminal.sendInput("needle");
+		await terminal.waitForRender();
+		assert.strictEqual(mounted.length, 3);
+		assert.ok(terminal.getViewport().some((line) => line.includes("1/1")));
+		tui.stop();
+	});
+
+	it("keeps hosted match navigation anchored until the user moves to another result", async () => {
+		const terminal = new VirtualTerminal(60, 8);
+		const tui = new TuiAltScreen(terminal);
+		const transcript = new ScrollView(
+			new Text(
+				Array.from({ length: 12 }, (_, index) =>
+					index === 4 || index === 9 ? `line ${index + 1} needle` : `line ${index + 1}`,
+				).join("\n"),
+				0,
+				0,
+			),
+			{ follow: "end", primary: true },
+		);
+		const composer = new Container();
+		const editor = { focused: false, render: () => ["draft"], handleInput: () => {}, invalidate: () => {} };
+		let mountedSearch: AltScreenSearchComponent | undefined;
+		composer.addChild(editor);
+		tui.setLayoutRoot(
+			new VStack([
+				{ component: transcript, basis: 0, grow: 1, minSize: 1 },
+				{ component: composer, basis: 1, shrink: 0 },
+			]),
+		);
+		tui.setFocus(editor);
+		tui.setSearchHost({
+			mount: (component) => {
+				mountedSearch = component;
+				composer.removeChild(editor);
+				composer.addChild(component);
+				tui.setFocus(component);
+			},
+			unmount: () => {},
+			isFocused: () => tui.getFocusedComponent() === mountedSearch,
+		});
+		tui.start();
+		await terminal.waitForRender();
+		terminal.sendInput("\x1b[102;6u");
+		terminal.sendInput("needle");
+		await terminal.waitForRender();
+		assert.ok(terminal.getViewport().some((line) => line.includes("2/2")));
+		const selectedTop = transcript.scrollTop;
+
+		tui.requestRender();
+		await terminal.waitForRender();
+		assert.strictEqual(transcript.scrollTop, selectedTop);
+
+		terminal.sendInput("\x07");
+		await terminal.waitForRender();
+		assert.ok(terminal.getViewport().some((line) => line.includes("1/2")));
+		assert.ok(terminal.getViewport().some((line) => line.includes("line 5 needle")));
+		tui.stop();
+	});
+
 	it("navigates transcript search with hoverable arrow buttons and toggles it with its shortcut", async () => {
 		const terminal = new RecordingTerminal(120, 6);
 		const tui = new TuiAltScreen(terminal, undefined, undefined, {
@@ -1080,7 +1240,7 @@ describe("TuiAltScreen", () => {
 			assert.ok(placementIndex > redrawWrites.indexOf("changed"));
 			assert.ok(!redrawWrites.includes("\x1b_Ga=T"));
 			assert.ok(redrawWrites.length < 2000, `expected placement-only redraw, got ${redrawWrites.length} bytes`);
-			assert.ok(terminal.getViewport().some((line) => line.trimEnd() === "changed"));
+			assert.ok(terminal.getViewport().some((line) => line.includes("changed") && line.includes("Image")));
 			tui.stop();
 		} finally {
 			resetCapabilitiesCache();

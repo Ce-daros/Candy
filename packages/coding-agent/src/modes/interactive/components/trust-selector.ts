@@ -5,7 +5,6 @@ import {
 	type ProjectTrustStoreEntry,
 } from "../../../core/trust-manager.ts";
 import { theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
 export type TrustSelection = Pick<ProjectTrustOption, "trusted" | "updates">;
@@ -14,6 +13,7 @@ export interface TrustSelectorOptions {
 	cwd: string;
 	savedDecision: ProjectTrustStoreEntry | null;
 	projectTrusted: boolean;
+	includeSessionOnly?: boolean;
 	onSelect: (selection: TrustSelection) => void;
 	onCancel: () => void;
 }
@@ -41,7 +41,7 @@ export class TrustSelectorComponent extends Container {
 		super();
 
 		this.savedDecision = options.savedDecision;
-		this.trustOptions = getProjectTrustOptions(options.cwd);
+		this.trustOptions = getProjectTrustOptions(options.cwd, { includeSessionOnly: options.includeSessionOnly });
 		this.selectedIndex = Math.max(
 			0,
 			this.trustOptions.findIndex((option) => this.isSavedOption(option)),
@@ -49,8 +49,6 @@ export class TrustSelectorComponent extends Container {
 		this.onSelectCallback = options.onSelect;
 		this.onCancelCallback = options.onCancel;
 
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("accent", theme.bold("Project trust")), 1, 0));
 		this.addChild(new Text(theme.fg("muted", options.cwd), 1, 0));
 		this.addChild(new Spacer(1));
@@ -83,9 +81,6 @@ export class TrustSelectorComponent extends Container {
 				0,
 			),
 		);
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-
 		this.updateList();
 	}
 
@@ -108,9 +103,14 @@ export class TrustSelectorComponent extends Container {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = this.isSavedOption(option);
 			const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
-			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const label = isSelected ? theme.fg("accent", option.label) : theme.fg("text", option.label);
-			this.listContainer.addChild(new Text(`${prefix}${currentMarker}${label}`, 1, 0));
+			const prefix = isSelected ? theme.fg("thinkingHigh", "‹ ") : "  ";
+			const label = isSelected ? theme.bold(theme.fg("accent", option.label)) : theme.fg("text", option.label);
+			this.listContainer.addChild(
+				new Text(`${prefix}${currentMarker}${label}${isSelected ? theme.fg("thinkingHigh", " ›") : ""}`, 1, 0),
+			);
+			const savedPaths = option.updates.filter((update) => update.decision !== null).map((update) => update.path);
+			const detail = savedPaths.length === 0 ? "This session only · not saved" : `${savedPaths.join(", ")} · saved`;
+			this.listContainer.addChild(new Text(theme.fg("muted", `     ${detail}`), 1, 0));
 		}
 	}
 

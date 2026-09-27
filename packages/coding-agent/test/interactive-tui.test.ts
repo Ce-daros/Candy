@@ -310,6 +310,7 @@ type ClearStatusContext = {
 	activeStatusIndicator: { kind: StatusIndicatorKind; dispose: () => void } | undefined;
 	activeWorkingIndicatorEmbedded: boolean;
 	statusContainer: Container;
+	notification: Component;
 	defaultEditor: StatusEditor;
 	editor: Partial<StatusEditor>;
 	setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean;
@@ -324,6 +325,7 @@ type InteractiveModePrototype = {
 const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
 
 describe("clear-on-shrink status spacing", () => {
+	const notification: Component = new Text("", 0, 0);
 	it.each([true, false])("routes every status through the editor opt-in (%s)", (embedWorkingStatus) => {
 		initTheme("dark");
 		const tui = { requestRender: vi.fn() } as unknown as TUI;
@@ -332,6 +334,7 @@ describe("clear-on-shrink status spacing", () => {
 			activeStatusIndicator: undefined,
 			activeWorkingIndicatorEmbedded: false,
 			statusContainer: new Container(),
+			notification,
 			defaultEditor: { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() },
 			editor,
 			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
@@ -351,9 +354,9 @@ describe("clear-on-shrink status spacing", () => {
 				expect(context.activeWorkingIndicatorEmbedded).toBe(embedWorkingStatus);
 				if (embedWorkingStatus) {
 					expect(editor.setWorkingStatusIndicator).toHaveBeenLastCalledWith(indicator);
-					expect(context.statusContainer.children).toHaveLength(0);
+					expect(context.statusContainer.children).toEqual([notification]);
 				} else {
-					expect(context.statusContainer.children).toEqual([indicator]);
+					expect(context.statusContainer.children).toEqual([notification, indicator]);
 				}
 			}
 		} finally {
@@ -370,6 +373,7 @@ describe("clear-on-shrink status spacing", () => {
 				activeStatusIndicator: { kind, dispose },
 				activeWorkingIndicatorEmbedded: true,
 				statusContainer: new Container(),
+				notification,
 				defaultEditor: editor,
 				editor,
 				setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
@@ -379,7 +383,7 @@ describe("clear-on-shrink status spacing", () => {
 
 			expect(dispose).toHaveBeenCalledOnce();
 			expect(editor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
-			expect(context.statusContainer.children).toHaveLength(0);
+			expect(context.statusContainer.children).toEqual([notification]);
 		},
 	);
 
@@ -390,6 +394,7 @@ describe("clear-on-shrink status spacing", () => {
 			activeStatusIndicator: { kind: "working", dispose: vi.fn() },
 			activeWorkingIndicatorEmbedded: false,
 			statusContainer: new Container(),
+			notification,
 			defaultEditor,
 			editor: customEditor,
 			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
@@ -399,6 +404,6 @@ describe("clear-on-shrink status spacing", () => {
 
 		expect(defaultEditor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
 		expect(customEditor.setWorkingStatusIndicator).not.toHaveBeenCalled();
-		expect(context.statusContainer.children).toHaveLength(0);
+		expect(context.statusContainer.children).toEqual([notification]);
 	});
 });

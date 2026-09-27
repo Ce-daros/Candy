@@ -155,7 +155,7 @@ export async function showStartupSelector<T>(
 			options.map((option) => option.label),
 			(option) => void finish(options.find((entry) => entry.label === option)?.value),
 			() => void finish(undefined),
-			{ tui: ui },
+			{ tui: ui, getAvailableHeight: () => Math.floor(ui.terminal.rows * 0.8) },
 		);
 		ui.addChild(selector);
 		ui.setFocus(selector);
@@ -189,6 +189,7 @@ export async function showFirstTimeSetup(settingsManager: SettingsManager): Prom
 			setTheme(detectedTheme);
 			const component = new FirstTimeSetupComponent({
 				detectedTheme,
+				getAvailableHeight: () => ui.terminal.rows,
 				onThemePreview: (themeName) => {
 					setTheme(themeName);
 					ui.requestRender();

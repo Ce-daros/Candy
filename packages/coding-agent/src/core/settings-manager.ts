@@ -81,7 +81,7 @@ export type CacheWarmingMode = (typeof CACHE_WARMING_MODES)[number];
 
 export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
-	mermaid?: MermaidRenderingMode; // default: "streaming"
+	mermaid?: MermaidRenderingMode; // default: "final"
 }
 
 export interface WarningSettings {
@@ -115,6 +115,7 @@ export interface Settings {
 	defaultModel?: string;
 	defaultThinkingLevel?: ThinkingLevel;
 	modelThinkingLevels?: Record<string, ThinkingLevel>; // per-model default thinking level overrides keyed by "provider/modelId"
+	toolPreviewLines?: 5 | 10 | 20;
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
@@ -122,7 +123,7 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
-	hideThinkingBlock?: boolean;
+	hideThinkingBlock?: boolean; // default: true
 	showCacheMissNotices?: boolean; // default: false - show cache cost and provider recovery notices
 	externalEditor?: string; // Command for Ctrl+G external editor; takes precedence over VISUAL/EDITOR
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows); supports leading ~ expansion
@@ -130,7 +131,7 @@ export interface Settings {
 	defaultProjectTrust?: DefaultProjectTrust; // default: "ask"; global setting only
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
-	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
+	collapseChangelog?: boolean; // default: true; show condensed changelog after update
 	enableInstallTelemetry?: boolean; // default: true - anonymous version/update ping after changelog-detected updates
 	enableAnalytics?: boolean; // default: false - opt-in analytics data sharing
 	trackingId?: string; // analytics tracking identifier, generated when analytics is enabled
@@ -142,7 +143,6 @@ export interface Settings {
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
-	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	defaultTools?: string[]; // Initial built-in tool selection
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening /tree
@@ -442,6 +442,8 @@ export class SettingsManager {
 
 	/** Migrate old settings format to new format */
 	private static migrateSettings(settings: Record<string, unknown>): Settings {
+		delete settings.enabledModels;
+
 		// Migrate queueMode -> steeringMode
 		if ("queueMode" in settings && !("steeringMode" in settings)) {
 			settings.steeringMode = settings.queueMode;
@@ -979,7 +981,7 @@ export class SettingsManager {
 	}
 
 	getHideThinkingBlock(): boolean {
-		return this.settings.hideThinkingBlock ?? false;
+		return this.settings.hideThinkingBlock ?? true;
 	}
 
 	getShowCacheMissNotices(): boolean {
@@ -1083,7 +1085,7 @@ export class SettingsManager {
 	}
 
 	getCollapseChangelog(): boolean {
-		return this.settings.collapseChangelog ?? false;
+		return this.settings.collapseChangelog ?? true;
 	}
 
 	setCollapseChangelog(collapse: boolean): void {
@@ -1342,18 +1344,19 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getEnabledModels(): string[] | undefined {
-		return this.settings.enabledModels;
-	}
-
 	getDefaultTools(): string[] | undefined {
 		const tools = this.settings.defaultTools;
 		return tools ? [...tools] : undefined;
 	}
 
-	setEnabledModels(patterns: string[] | undefined): void {
-		this.globalSettings.enabledModels = patterns;
-		this.markModified("enabledModels");
+	getToolPreviewLines(): 5 | 10 | 20 {
+		const lines = this.settings.toolPreviewLines;
+		return lines === 10 || lines === 20 ? lines : 5;
+	}
+
+	setToolPreviewLines(lines: 5 | 10 | 20): void {
+		this.globalSettings.toolPreviewLines = lines;
+		this.markModified("toolPreviewLines");
 		this.save();
 	}
 
@@ -1425,7 +1428,7 @@ export class SettingsManager {
 
 	getMermaidRenderingMode(): MermaidRenderingMode {
 		const mode = this.settings.markdown?.mermaid;
-		return mode === "off" || mode === "final" ? mode : "streaming";
+		return mode === "off" || mode === "streaming" ? mode : "final";
 	}
 
 	setMermaidRenderingMode(mode: MermaidRenderingMode): void {

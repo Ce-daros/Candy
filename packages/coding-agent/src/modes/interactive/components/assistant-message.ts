@@ -1,12 +1,45 @@
 import type { AssistantMessage } from "@candy/ai";
-import { Container, Markdown, type MarkdownTheme, MouseRegion, Spacer, Text } from "@candy/tui";
+import {
+	type Component,
+	Container,
+	Markdown,
+	type MarkdownTheme,
+	MouseRegion,
+	Spacer,
+	Text,
+	type TuiMouseEvent,
+	truncateToWidth,
+} from "@candy/tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
+import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+const PROSE_WIDTH = 110;
+
+class ThinkingRail implements Component {
+	private readonly content: Markdown;
+
+	constructor(content: Markdown) {
+		this.content = content;
+	}
+
+	render(width: number): string[] {
+		return this.content.render(Math.max(1, width - 3)).map((line) => `${theme.fg("mdQuoteBorder", "│")}  ${line}`);
+	}
+
+	invalidate(): void {
+		this.content.invalidate();
+	}
+
+	handleMouse(event: TuiMouseEvent) {
+		if (event.x < 3) return undefined;
+		return this.content.handleMouse({ ...event, x: event.x - 3, width: Math.max(1, event.width - 3) });
+	}
+}
 
 /**
  * Component that renders a complete assistant message
@@ -18,6 +51,13 @@ export class AssistantMessageComponent extends Container {
 	private hiddenThinkingLabel: string;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
+	private codeBlockView?: (
+		code: string,
+		language: string | undefined,
+		width: number,
+		isStreaming: boolean,
+		complete: boolean,
+	) => string[] | undefined;
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 	private isStreaming = false;
@@ -25,11 +65,18 @@ export class AssistantMessageComponent extends Container {
 
 	constructor(
 		message?: AssistantMessage,
-		hideThinkingBlock = false,
+		hideThinkingBlock = true,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		hiddenThinkingLabel = "Thinking...",
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		codeBlockView?: (
+			code: string,
+			language: string | undefined,
+			width: number,
+			isStreaming: boolean,
+			complete: boolean,
+		) => string[] | undefined,
 	) {
 		super();
 
@@ -38,6 +85,7 @@ export class AssistantMessageComponent extends Container {
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.codeBlockView = codeBlockView;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -110,11 +158,20 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(
-					new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, {
-						transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
-					}),
-				);
+				const markdown = new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, {
+					transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
+					maxProseWidth: PROSE_WIDTH,
+					codeBlockView: (code, language, width, complete) =>
+						this.codeBlockView?.(code, language, width, this.isStreaming, complete),
+					onCopyCode: (code) => {
+						void copyToClipboard(code);
+					},
+				});
+				this.contentContainer.addChild({
+					render: (width: number) => markdown.render(width),
+					invalidate: () => markdown.invalidate(),
+					handleMouse: (event: TuiMouseEvent) => markdown.handleMouse(event),
+				});
 			} else if (content.type === "thinking") {
 				const thinkingBlocks: string[] = [];
 				for (; i < message.content.length; i++) {
@@ -141,28 +198,50 @@ export class AssistantMessageComponent extends Container {
 
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
-				const thinkingComponent = hidden
-					? new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0)
-					: new Markdown(
-							thinkingBlocks.join("\n\n"),
-							this.outputPad,
-							0,
-							this.markdownTheme,
-							{
-								color: (text: string) => theme.fg("thinkingText", text),
-								italic: true,
-							},
-							{
-								transform: createMarkdownTransform(
-									"assistant-thinking",
-									this.isStreaming,
-									this.markdownTransformers,
-								),
-							},
-						);
+				const thinkingText = thinkingBlocks.join("\n\n");
+				const excerpt = thinkingText.replace(/\s+/g, " ").slice(0, 72);
+				const thinkingLabel =
+					!this.isStreaming && this.hiddenThinkingLabel === "Thinking..." ? "Thought" : this.hiddenThinkingLabel;
+				const thinkingComponent = new Container();
+				thinkingComponent.addChild({
+					render: (width: number) => [
+						" ".repeat(this.outputPad) +
+							truncateToWidth(
+								theme.fg("thinkingText", `${hidden ? "▸" : "▾"} ${thinkingLabel} ${hidden ? excerpt : ""}`),
+								Math.max(1, width - this.outputPad),
+								"…",
+							),
+					],
+					invalidate: () => {},
+				});
+				if (!hidden) {
+					thinkingComponent.addChild(
+						new ThinkingRail(
+							new Markdown(
+								thinkingText,
+								this.outputPad,
+								0,
+								this.markdownTheme,
+								{
+									color: (text: string) => theme.fg("thinkingText", text),
+								},
+								{
+									transform: createMarkdownTransform(
+										"assistant-thinking",
+										this.isStreaming,
+										this.markdownTransformers,
+									),
+									onCopyCode: (code) => {
+										void copyToClipboard(code);
+									},
+								},
+							),
+						),
+					);
+				}
 				this.contentContainer.addChild(
 					new MouseRegion(thinkingComponent, (event) => {
-						if (event.type !== "click" || event.button !== "left") return undefined;
+						if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
 						this.thinkingVisibilityOverrides.set(runIndex, !hidden);
 						if (this.lastMessage) this.updateContent(this.lastMessage);
 						return { handled: true };
@@ -191,7 +270,7 @@ export class AssistantMessageComponent extends Container {
 						? message.errorMessage
 						: "Operation aborted";
 				this.contentContainer.addChild(new Spacer(1));
-				this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), this.outputPad, 0));
+				this.contentContainer.addChild(new Text(theme.fg("warning", abortMessage), this.outputPad, 0));
 			} else if (message.stopReason === "error") {
 				const errorMsg = message.errorMessage || "Unknown error";
 				this.contentContainer.addChild(new Spacer(1));

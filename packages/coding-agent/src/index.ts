@@ -17,7 +17,6 @@ export {
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
-	type ModelCycleResult,
 	type ParsedSkillBlock,
 	type PromptOptions,
 	parseSkillBlock,
@@ -170,6 +169,7 @@ export type {
 	ToolExecutionStartEvent,
 	ToolExecutionUpdateEvent,
 	ToolInfo,
+	ToolPreviewLines,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,
@@ -206,12 +206,8 @@ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts"
 export { convertToLlm } from "./core/messages.ts";
 export { ModelRegistry } from "./core/model-registry.ts";
 export {
-	type ModelScopeDiagnostic,
 	type ResolveCliModelResult,
-	type ResolveModelScopeResult,
 	resolveCliModel,
-	resolveModelScopeWithDiagnostics,
-	type ScopedModel,
 } from "./core/model-resolver.ts";
 export {
 	type CreateModelRuntimeOptions,
@@ -403,7 +399,6 @@ export {
 } from "./modes/index.ts";
 // UI components for extensions
 export {
-	ArminComponent,
 	AssistantMessageComponent,
 	BashExecutionComponent,
 	BorderedLoader,

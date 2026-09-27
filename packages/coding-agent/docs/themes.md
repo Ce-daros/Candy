@@ -6,7 +6,7 @@ Themes control the colors candy uses in interactive mode, CLI output, and HTML e
 
 ## Choose a theme
 
-Open `/settings` and select **Theme**. You can use one theme for every terminal appearance or choose separate themes for light and dark terminals.
+Open `/settings` and select **Theme**. The picker previews six semantic colors and a short conversation and diff sample. Moving through the themes previews each one; `Enter` applies it and `Escape` restores the previous theme. You can use one theme for every terminal appearance or choose separate themes for light and dark terminals.
 
 The selection is saved as the `theme` [setting](settings.md#terminal-and-display):
 
@@ -94,7 +94,9 @@ Theme colors describe interface roles rather than individual components. Use the
 
 The schema is the format reference. The built-in themes provide complete values that you can copy and adjust.
 
-The built-in themes map semantic colors to a shared 16-color palette. Normal editor borders use cyan, Shell borders use yellow, and selection focus uses purple. The footer model label uses purple and the picker `‹`/`›` arrows use cyan. Success and added diff lines use lime; errors and removed diff lines use pink-red. The animated status trails derive lighter and darker shades from the active `border` or `bashMode` color; thinking level changes their length and peak brightness rather than their hue. The built-in `thinking*` roles all use cyan. Syntax colors use blue keywords, yellow functions, cyan variables, pink strings, lime numbers, purple types, and dim comments. Light themes use darker values of the same hues. Custom themes can assign different values to each semantic role.
+The built-in themes map semantic colors to a shared palette. User prompts and primary Markdown headings use pink; selected rows use purple text with cyan markers. Success and added diff lines use lime; errors and removed diff lines use pink-red. Shell command titles use yellow. Syntax colors use blue keywords, yellow functions, cyan variables, pink strings, lime numbers, purple types, and dim comments. Light themes use darker values of the same hues.
+
+The editor border, thinking label, and six-step meter follow the active thinking level. In the built-in dark theme, Off and Minimal are gray, Low is blue, Medium is pink, High is cyan, and Xhigh and Max add flowing blue, pink, purple, and cyan with stronger near-white highlights at Max. The light theme uses darker colors for contrast. Active work adds moving trails; the border also breathes while idle from Medium upward. With `uiAnimations` disabled, the color and meter remain without movement. Custom themes provide their own `thinking*` colors and use the same level and motion rules.
 
 Six colors are optional and inherit another color when omitted:
 

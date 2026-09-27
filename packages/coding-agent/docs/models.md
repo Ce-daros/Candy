@@ -26,11 +26,9 @@ Keep `auth.json` and any credential commands private. Project settings and exten
 
 ## Select a model
 
-Run `/model` to search available models. The picker shows models whose providers have usable authentication. Press `Ctrl+S` on a model to save it as the default for new sessions.
+Run `/model` to search available models by name, ID, or provider. The picker shows providers beside their models and displays the selected model's full ID, provider, context size, maximum output, and reasoning capability below the list. Models with the same display name within one provider include an ID in their rows. The picker uses effective catalog data, including custom overrides. It shows models whose providers have usable authentication. Press `Ctrl+S` on a model to save it as the default for new sessions.
 
-Run `/thinking` to select the thinking level for the current model. Press `Ctrl+S` there to save the startup level. candy limits the choices to levels supported by the selected model.
-
-`Ctrl+P` cycles through available models. Use `/scoped-models` to control that cycle and save the selection, or configure model patterns through [Settings](settings.md#model-cycling).
+Run `/thinking` to select the thinking level for the current model. Moving through the levels previews each border and meter; `Escape` restores the old level and `Enter` applies the new one. Press `Ctrl+S` there to save the startup level. candy limits the choices to levels supported by the selected model. The footer model and thinking selectors remain available for quick changes.
 
 A session records model and thinking-level changes. Resuming the session restores them without changing defaults for new sessions.
 
@@ -61,7 +59,7 @@ Use [`models.json`](configuration.md#agent-directory) when an endpoint speaks an
 }
 ```
 
-The dummy key makes the model available to candy; Ollama ignores it. For an authenticated endpoint, `apiKey` and header values can use `$NAME` or `${NAME}` environment interpolation, a literal value, or a leading `!command`. Commands in `models.json` run at request time and are not cached by Pi.
+The dummy key makes the model available to candy; Ollama ignores it. For an authenticated endpoint, `apiKey` and header values can use `$NAME` or `${NAME}` environment interpolation, a literal value, or a leading `!command`. Commands in `models.json` run at request time and are not cached by candy.
 
 Opening `/model` reloads the file. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
 
@@ -112,11 +110,11 @@ Confirm that its provider has usable authentication. Custom models can load from
 
 ### Authentication works in one shell only
 
-Check whether the key came from an environment variable rather than `auth.json`. Environment variables must be present in the process that starts Pi.
+Check whether the key came from an environment variable rather than `auth.json`. Environment variables must be present in the process that starts candy.
 
 ### Sign-in opens a browser on a remote machine
 
-Complete the provider's headless authentication flow when available. Some providers let you paste the final redirect URL or authorization code back into Pi. See [Authenticate interactively](providers.md#authenticate-interactively).
+Complete the provider's headless authentication flow when available. Some providers let you paste the final redirect URL or authorization code back into candy. See [Authenticate interactively](providers.md#authenticate-interactively).
 
 ### A compatible endpoint rejects requests
 

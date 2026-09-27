@@ -1,7 +1,7 @@
 import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } from "marked";
 import { renderLatex } from "../latex.ts";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
-import type { Component } from "../tui.ts";
+import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 
 const STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
@@ -168,6 +168,15 @@ function trimPartialClosingFences(tokens: readonly Token[]): void {
 	token.text = token.text.slice(0, -lastLine.length).replace(/\n$/, "");
 }
 
+function hasCompleteClosingFence(raw: string): boolean {
+	const opening = /^[ \t]*(`{3,}|~{3,})/.exec(raw)?.[1];
+	if (!opening) return false;
+	const closing = raw.trimEnd().split("\n").at(-1)?.trim();
+	return (
+		closing !== undefined && closing.length >= opening.length && [...closing].every((char) => char === opening[0])
+	);
+}
+
 const markdownParser = new Marked();
 markdownParser.setOptions({
 	tokenizer: new StrictStrikethroughTokenizer(),
@@ -199,11 +208,14 @@ export interface DefaultTextStyle {
  */
 export interface MarkdownTheme {
 	heading: (text: string) => string;
+	headingLevel?: (level: number, text: string) => string;
 	link: (text: string) => string;
 	linkUrl: (text: string) => string;
 	code: (text: string) => string;
 	codeBlock: (text: string) => string;
 	codeBlockBorder: (text: string) => string;
+	codeBlockLabel?: (text: string) => string;
+	tableHeader?: (text: string) => string;
 	quote: (text: string) => string;
 	quoteBorder: (text: string) => string;
 	hr: (text: string) => string;
@@ -218,6 +230,17 @@ export interface MarkdownTheme {
 }
 
 export interface MarkdownOptions {
+	/** Copy the unstyled source of a code block. */
+	onCopyCode?: (code: string) => void;
+	/** Alternative rendering for a complete code block, such as a Mermaid diagram. */
+	codeBlockView?: (
+		code: string,
+		language: string | undefined,
+		width: number,
+		complete: boolean,
+	) => string[] | undefined;
+	/** Maximum width for prose tokens; code blocks and tables use the full available width. */
+	maxProseWidth?: number;
 	/** Preserve source list markers instead of normalizing them. */
 	preserveOrderedListMarkers?: boolean;
 	/** Preserve source backslash escapes instead of normalizing escaped punctuation. */
@@ -246,6 +269,10 @@ export class Markdown implements Component {
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	private codeBlocks: Array<{ index: number; row: number; source: string; hasAlternate: boolean }> = [];
+	private codeBlockViews = new Map<number, "diagram" | "source">();
+	private codeBlockIndex = 0;
+	private alternateBlockIndices = new Set<number>();
 
 	constructor(
 		text: string,
@@ -303,19 +330,41 @@ export class Markdown implements Component {
 
 		// Convert tokens to styled terminal output
 		const renderedLines: string[] = [];
+		this.codeBlockIndex = 0;
+		this.codeBlocks = [];
+		this.alternateBlockIndices.clear();
 
 		for (let i = 0; i < tokens.length; i++) {
 			const token = tokens[i];
 			const nextToken = tokens[i + 1];
-			const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
+			const firstLine = renderedLines.length;
+			const tokenWidth =
+				token.type === "code" || token.type === "table"
+					? contentWidth
+					: Math.min(contentWidth, this.options.maxProseWidth ?? contentWidth);
+			const tokenLines = this.renderToken(token, tokenWidth, nextToken?.type);
+			if (token.type === "code") {
+				this.codeBlocks.push({
+					index: this.codeBlockIndex - 1,
+					row: firstLine,
+					source: token.text,
+					hasAlternate: this.alternateBlockIndices.has(this.codeBlockIndex - 1),
+				});
+			}
 			for (const tokenLine of tokenLines) {
-				renderedLines.push(tokenLine);
+				if (tokenWidth < contentWidth && !isImageLine(tokenLine)) {
+					renderedLines.push(...wrapTextWithAnsi(tokenLine, tokenWidth));
+				} else {
+					renderedLines.push(tokenLine);
+				}
 			}
 		}
 
 		// Wrap lines (NO padding, NO background yet)
 		const wrappedLines: string[] = [];
-		for (const line of renderedLines) {
+		const sourceRows: number[] = [];
+		for (const [index, line] of renderedLines.entries()) {
+			sourceRows[index] = wrappedLines.length;
 			if (isImageLine(line)) {
 				wrappedLines.push(line);
 			} else {
@@ -324,6 +373,7 @@ export class Markdown implements Component {
 				}
 			}
 		}
+		for (const block of this.codeBlocks) block.row = sourceRows[block.row] + this.paddingY;
 
 		// Add margins and background to each wrapped line
 		const leftMargin = " ".repeat(this.paddingX);
@@ -366,6 +416,26 @@ export class Markdown implements Component {
 		this.cachedLines = result;
 
 		return result.length > 0 ? result : [""];
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		const blockIndex = this.codeBlocks.findIndex((block) => block.row === event.y);
+		if (blockIndex < 0) return undefined;
+		const block = this.codeBlocks[blockIndex];
+		if (this.options.onCopyCode && event.x >= (this.cachedWidth ?? 0) - this.paddingX - 4) {
+			this.options.onCopyCode(block.source);
+			return { handled: true };
+		}
+		if (block.hasAlternate) {
+			const view = event.x < this.paddingX + 7 ? "diagram" : event.x < this.paddingX + 16 ? "source" : undefined;
+			if (view) {
+				this.codeBlockViews.set(block.index, view);
+				this.invalidate();
+				return { handled: true };
+			}
+		}
+		return undefined;
 	}
 
 	/**
@@ -462,17 +532,12 @@ export class Markdown implements Component {
 		switch (token.type) {
 			case "heading": {
 				const headingLevel = token.depth;
-				const headingPrefix = `${"#".repeat(headingLevel)} `;
 
 				// Build a heading-specific style context so inline tokens (codespan, bold, etc.)
 				// restore heading styling after their own ANSI resets instead of falling back to
 				// the default text style.
-				let headingStyleFn: (text: string) => string;
-				if (headingLevel === 1) {
-					headingStyleFn = (text: string) => this.theme.heading(this.theme.bold(this.theme.underline(text)));
-				} else {
-					headingStyleFn = (text: string) => this.theme.heading(this.theme.bold(text));
-				}
+				const headingStyleFn = (text: string) =>
+					this.theme.headingLevel?.(headingLevel, text) ?? this.theme.heading(this.theme.bold(text));
 
 				const headingStyleContext: InlineStyleContext = {
 					applyText: headingStyleFn,
@@ -480,8 +545,7 @@ export class Markdown implements Component {
 				};
 
 				const headingText = this.renderInlineTokens(token.tokens || [], headingStyleContext);
-				const styledHeading = headingLevel >= 3 ? headingStyleFn(headingPrefix) + headingText : headingText;
-				lines.push(styledHeading);
+				lines.push(headingText);
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push(""); // Add spacing after headings (unless space token follows)
 				}
@@ -518,9 +582,29 @@ export class Markdown implements Component {
 			}
 
 			case "code": {
-				const indent = this.theme.codeBlockIndent ?? "  ";
-				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
-				if (this.theme.highlightCode) {
+				const blockIndex = this.codeBlockIndex++;
+				const alternate = this.options.codeBlockView?.(
+					token.text,
+					token.lang,
+					width,
+					hasCompleteClosingFence(token.raw),
+				);
+				if (alternate) this.alternateBlockIndices.add(blockIndex);
+				const showDiagram = !!alternate && this.codeBlockViews.get(blockIndex) !== "source";
+				const label = alternate ? "Diagram  Source" : token.lang || "Code";
+				const styledLabel = alternate
+					? `${showDiagram ? (this.theme.codeBlockLabel ?? this.theme.codeBlockBorder)(this.theme.bold("Diagram")) : this.theme.codeBlockBorder("Diagram")}  ${showDiagram ? this.theme.codeBlockBorder("Source") : (this.theme.codeBlockLabel ?? this.theme.codeBlockBorder)(this.theme.bold("Source"))}`
+					: (this.theme.codeBlockLabel ?? this.theme.codeBlockBorder)(label);
+				const copyLabel = this.options.onCopyCode
+					? ` ${(this.theme.codeBlockLabel ?? this.theme.codeBlockBorder)("Copy")}`
+					: "";
+				lines.push(
+					`${styledLabel}  ${this.theme.codeBlockBorder("─".repeat(Math.max(1, width - visibleWidth(label) - 2 - visibleWidth(copyLabel))))}${copyLabel}`,
+				);
+				const indent = this.theme.codeBlockIndent ?? "";
+				if (showDiagram && alternate) {
+					lines.push(...alternate);
+				} else if (this.theme.highlightCode) {
 					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
 					for (const hlLine of highlightedLines) {
 						lines.push(`${indent}${hlLine}`);
@@ -532,7 +616,7 @@ export class Markdown implements Component {
 						lines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
 					}
 				}
-				lines.push(this.theme.codeBlockBorder("```"));
+				lines.push(this.theme.codeBlockBorder("─".repeat(Math.max(1, width))));
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push(""); // Add spacing after code blocks (unless space token follows)
 				}
@@ -554,7 +638,7 @@ export class Markdown implements Component {
 			}
 
 			case "blockquote": {
-				const quoteStyle = (text: string) => this.theme.quote(this.theme.italic(text));
+				const quoteStyle = (text: string) => this.theme.quote(text);
 				const quoteStylePrefix = this.getStylePrefix(quoteStyle);
 				const applyQuoteStyle = (line: string): string => {
 					if (!quoteStylePrefix) {
@@ -768,7 +852,7 @@ export class Markdown implements Component {
 					: `${startNumber + i}. `
 				: this.options.preserveOrderedListMarkers
 					? (this.getUnorderedListMarker(item) ?? "- ")
-					: "- ";
+					: "• ";
 			const taskMarker = item.task ? `[${item.checked ? "x" : " "}] ` : "";
 			const marker = bullet + taskMarker;
 			const firstPrefix = indent + this.theme.listBullet(marker);
@@ -852,9 +936,7 @@ export class Markdown implements Component {
 			return lines;
 		}
 
-		// Calculate border overhead: "│ " + (n-1) * " │ " + " │"
-		// = 2 + (n-1) * 3 + 2 = 3n + 1
-		const borderOverhead = 3 * numCols + 1;
+		const borderOverhead = 2 * (numCols - 1);
 		const availableForCells = availableWidth - borderOverhead;
 		if (availableForCells < numCols) {
 			// Too narrow to render a stable table. Fall back to raw markdown.
@@ -956,10 +1038,6 @@ export class Markdown implements Component {
 			}
 		}
 
-		// Render top border
-		const topBorderCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push(`┌─${topBorderCells.join("─┬─")}─┐`);
-
 		// Render header with wrapping
 		const headerCellLines: string[][] = token.header.map((cell, i) => {
 			const text = this.renderInlineTokens(cell.tokens || [], styleContext);
@@ -971,14 +1049,14 @@ export class Markdown implements Component {
 			const rowParts = headerCellLines.map((cellLines, colIdx) => {
 				const text = cellLines[lineIdx] || "";
 				const padded = text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
-				return this.theme.bold(padded);
+				return (this.theme.tableHeader ?? this.theme.bold)(padded);
 			});
-			lines.push(`│ ${rowParts.join(" │ ")} │`);
+			lines.push(rowParts.join("  "));
 		}
 
-		// Render separator
-		const separatorCells = columnWidths.map((w) => "─".repeat(w));
-		const separatorLine = `├─${separatorCells.join("─┼─")}─┤`;
+		const separatorLine = this.theme.codeBlockBorder(
+			"─".repeat(columnWidths.reduce((sum, width) => sum + width, borderOverhead)),
+		);
 		lines.push(separatorLine);
 
 		// Render rows with wrapping
@@ -995,17 +1073,15 @@ export class Markdown implements Component {
 					const text = cellLines[lineIdx] || "";
 					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				});
-				lines.push(`│ ${rowParts.join(" │ ")} │`);
+				lines.push(rowParts.join("  "));
 			}
 
 			if (rowIndex < token.rows.length - 1) {
-				lines.push(separatorLine);
+				lines.push("");
 			}
 		}
 
-		// Render bottom border
-		const bottomBorderCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push(`└─${bottomBorderCells.join("─┴─")}─┘`);
+		lines.push(separatorLine);
 
 		if (nextTokenType && nextTokenType !== "space") {
 			lines.push(""); // Add spacing after table

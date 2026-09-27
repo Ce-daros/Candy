@@ -157,7 +157,9 @@ if (isViewportTUI(tui)) {
 }
 ```
 
-Stack entries support `basis`, `grow`, `shrink`, `minSize`, `maxSize`, and responsive `visible` callbacks. Mouse-wheel input targets the scroll view under the pointer and unused delta chains to outer scroll views by default. The primary scroll view receives the alternate-screen keyboard navigation actions and wheel input over non-scrollable regions. It can also jump between OSC 133 semantic prompt markers, matching common terminal prompt-navigation shortcuts. Press `Ctrl+Shift+F` to open or close its bordered search panel. The panel shows the configured previous/next shortcuts and provides clickable arrow controls; by default, `Enter`/`Ctrl+G` and `Shift+Enter`/`Ctrl+Shift+G` move between matches, and `Escape` also closes search. `TuiAltScreenOptions.searchMatchStyle` and `searchCurrentMatchStyle` customize match highlighting, while `searchNavigationButtonStyle` styles each arrow button and receives its hover state. `TuiAltScreenOptions.scrollToEndIndicator` renders a clickable label centered on the last row of a `follow: "end"` primary scroll view while it is scrolled away from the end; clicking it resumes end-following.
+Stack entries support `basis`, `grow`, `shrink`, `minSize`, `maxSize`, and responsive `visible` callbacks. Mouse-wheel input targets the scroll view under the pointer and unused delta chains to outer scroll views by default. The primary scroll view receives the alternate-screen keyboard navigation actions and wheel input over non-scrollable regions. It can also jump between OSC 133 semantic prompt markers, matching common terminal prompt-navigation shortcuts. Press `Ctrl+Shift+F` to open or close transcript search. By default, `Enter`/`Ctrl+G` and `Shift+Enter`/`Ctrl+Shift+G` move between matches, and `Escape` closes search. Without a search host, the search panel appears as an overlay. `TuiAltScreenOptions.searchMatchStyle` and `searchCurrentMatchStyle` customize match highlighting, while `searchNavigationButtonStyle` styles each arrow button and receives its hover state. `TuiAltScreenOptions.scrollToEndIndicator` renders a clickable label centered on the last row of a `follow: "end"` primary scroll view while it is scrolled away from the end; clicking it resumes end-following.
+
+Applications can mount the existing search component in their own layout with `TuiAltScreen.setSearchHost({ mount, unmount, isFocused })`. The host must place the component in its layout, give it keyboard focus, remove it on `unmount`, and report whether it has focus. The renderer still owns the visible-text index, match navigation, and highlighting. Call `closeSearch()` before replacing the host UI with another panel; the search can then reopen normally.
 
 Layout geometry is rebuilt for each requested frame. Stateful components are retained, and their existing rendered-line caches remain effective. Calling `render(width)` directly on these layout components produces an unbounded document, which is also used when alt mode restores the main screen.
 
@@ -421,6 +423,8 @@ input.getValue();
 
 Clicking positions the cursor and gives the input keyboard focus in alternate-screen mode.
 
+Pass `{ mask: true }` to the constructor for secrets. Masking changes only the displayed characters; `getValue()` and `onSubmit` receive the original input. `setMasked()` can change this behavior for an existing input.
+
 **Key Bindings:**
 - `Enter` - Submit
 - `Ctrl+A` / `Ctrl+E` - Line start/end
@@ -439,6 +443,9 @@ Multi-line text editor with autocomplete, file completion, paste handling, and v
 interface EditorTheme {
   borderColor: (str: string) => string;
   selectList: SelectListTheme;
+  textColor?: (str: string) => string;
+  pathColor?: (str: string) => string;
+  markerColor?: (str: string) => string;
 }
 
 interface EditorOptions {
@@ -453,6 +460,7 @@ editor.setAutocompleteProvider(provider);
 editor.borderColor = (s) => chalk.blue(s); // Change border dynamically
 editor.setPaddingX(1); // Update horizontal padding dynamically
 editor.getPaddingX();  // Get current padding
+editor.setViewportLines(12); // Bound the editor's content height
 ```
 
 **Features:**
@@ -463,6 +471,7 @@ editor.getPaddingX();  // Get current padding
 - Large paste handling (>10 lines creates `[paste #1 +50 lines]` marker)
 - Horizontal lines above/below editor
 - Fake cursor rendering (hidden real cursor)
+- `insertImageAtCursor(path, dimensions)` inserts an atomic image marker; `onImagePath` receives the original path when its label is clicked
 
 **Key Bindings:**
 - `Enter` - Submit
@@ -484,11 +493,14 @@ Renders markdown with syntax highlighting and theming support.
 ```typescript
 interface MarkdownTheme {
   heading: (text: string) => string;
+  headingLevel?: (level: number, text: string) => string;
   link: (text: string) => string;
   linkUrl: (text: string) => string;
   code: (text: string) => string;
   codeBlock: (text: string) => string;
   codeBlockBorder: (text: string) => string;
+  codeBlockLabel?: (text: string) => string;
+  tableHeader?: (text: string) => string;
   quote: (text: string) => string;
   quoteBorder: (text: string) => string;
   hr: (text: string) => string;
@@ -518,6 +530,8 @@ const md = new Markdown(
 );
 md.setText("Updated markdown");
 ```
+
+The optional sixth constructor argument accepts `MarkdownOptions`; the fifth is `DefaultTextStyle`. `maxProseWidth` limits paragraphs while code and tables retain the full width. `onCopyCode` enables the code block's Copy control and receives its original source. `codeBlockView(code, language, width, complete)` can provide an alternate rendering, such as a diagram; `complete` is true only after the closing fence appears. The reader can switch between the alternate view and source in the rendered block.
 
 **Features:**
 - Headings, bold, italic, code blocks, lists, links, blockquotes
@@ -666,6 +680,7 @@ interface ImageOptions {
   maxWidthCells?: number;
   maxHeightCells?: number;
   filename?: string;
+  viewportRows?: number;
 }
 
 const image = new Image(
@@ -678,6 +693,7 @@ tui.addChild(image);
 ```
 
 Supported formats: PNG, JPEG, GIF, WebP. Dimensions are parsed from the image headers automatically.
+When `viewportRows` is provided, the preview is limited to about one third of that height. Clicking its title expands it to about two thirds; `setExpanded()` and `setViewportRows()` also control those limits programmatically.
 
 #### Alternate-screen image compatibility
 

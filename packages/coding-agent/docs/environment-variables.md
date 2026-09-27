@@ -13,7 +13,7 @@ Provider API-key variables are documented separately in [Provider Authentication
 The CLI and RPC entry points set two process markers:
 
 - `CANDY_AGENT=candy` is a generic marker that lets tooling identify candy as the agent that launched the process.
-- `CANDY_CODING_AGENT=true` is Pi-specific and lets child processes detect that they run inside Pi.
+- `CANDY_CODING_AGENT=true` lets child processes detect that they run inside candy.
 
 Child processes inherit both markers. They are not session-specific and are not set automatically when candy is embedded through the SDK.
 
@@ -29,7 +29,7 @@ Commands run by the `bash` and `powershell` tools receive the current candy sess
 | `CANDY_MODEL` | Currently selected model ID |
 | `CANDY_REASONING_LEVEL` | Current effective reasoning level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
 
-The values are resolved when each command starts. Switching models or changing the reasoning level therefore affects the next shell command without restarting Pi. `CANDY_PROVIDER` and `CANDY_MODEL` identify the selected candy model, not a different upstream model that a router may choose internally.
+The values are resolved when each command starts. Switching models or changing the reasoning level therefore affects the next shell command without restarting candy. `CANDY_PROVIDER` and `CANDY_MODEL` identify the selected candy model, not a different upstream model that a router may choose internally.
 
 When asked which model or provider is running, inspect these variables instead of inferring the answer from the system prompt:
 
@@ -50,7 +50,7 @@ These variables are injected into the LLM-callable `bash` and `powershell` tools
 
 ### Custom Shell Tools
 
-Tools created with `createBashTool()` or `createPowerShellTool()` expose the session environment by default when registered with Pi. Injection happens before `spawnHook`, so a hook receives the variables in `ctx.env`:
+Tools created with `createBashTool()` or `createPowerShellTool()` expose the session environment by default when registered with candy. Injection happens before `spawnHook`, so a hook receives the variables in `ctx.env`:
 
 ```typescript
 const bashTool = createBashTool(cwd, {

@@ -7,7 +7,6 @@
  */
 
 import { Text } from "@candy/tui";
-import { keyHint } from "../../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../extensions/types.ts";
 import type { GrepToolDetails } from "../grep.ts";
@@ -41,18 +40,18 @@ function formatGrepResult(
 	options: ToolRenderResultOptions,
 	theme: Theme,
 	showImages: boolean,
+	isError: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
+	if (!options.expanded && !isError) {
+		const matches =
+			output === "No matches found" ? 0 : output.split("\n").filter((line) => /:\d+:/.test(line)).length;
+		return theme.fg("dim", `${matches} ${matches === 1 ? "match" : "matches"}`);
+	}
 	let text = "";
 	if (output) {
 		const lines = output.split("\n");
-		const maxLines = options.expanded ? lines.length : 15;
-		const displayLines = lines.slice(0, maxLines);
-		const remaining = lines.length - maxLines;
-		text += `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
-		if (remaining > 0) {
-			text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
-		}
+		text += lines.map((line) => theme.fg("toolOutput", line)).join("\n");
 	}
 
 	const matchLimit = result.details?.matchLimitReached;
@@ -76,7 +75,7 @@ export const grepRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "rende
 	},
 	renderResult(result, options, theme, context) {
 		const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-		text.setText(formatGrepResult(result as any, options, theme, context.showImages));
+		text.setText(formatGrepResult(result as any, options, theme, context.showImages, context.isError));
 		return text;
 	},
 };

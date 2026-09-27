@@ -10,8 +10,9 @@ import {
 	type Focusable,
 	getKeybindings,
 	Input,
-	matchesKey,
 	Spacer,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
 } from "@candy/tui";
@@ -202,7 +203,7 @@ class ConfigSelectorHeader implements Component {
 	render(width: number): string[] {
 		const title = theme.bold(this.writeScope === "project" ? "Project Local Resources" : "Global Resources");
 		const sep = theme.fg("muted", " · ");
-		const switchHint = this.projectModeAvailable ? keyHint("tui.input.tab", "switch mode") + sep : "";
+		const switchHint = this.projectModeAvailable ? keyHint("app.panel.scope", "scope") + sep : "";
 		const actionHint =
 			this.writeScope === "project" ? rawKeyHint("space", "cycle inherit/+/-") : rawKeyHint("space", "toggle");
 		const hint = switchHint + actionHint + sep + rawKeyHint("esc", "close");
@@ -231,6 +232,13 @@ class ResourceList implements Component, Focusable {
 	private agentDir: string;
 	private writeScope: ConfigWriteScope;
 	private inheritedEnabledByKey: Map<string, boolean>;
+	private selectedTypeIndex = 0;
+	private region: "categories" | "list" | "search" = "list";
+	private lastWide = false;
+	private lastCategoryWidth = 0;
+	private lastVisibleStart = 0;
+	private lastVisibleCount = 0;
+	private lastSearchRow = 0;
 
 	public onCancel?: () => void;
 	public onExit?: () => void;
@@ -243,7 +251,7 @@ class ResourceList implements Component, Focusable {
 	}
 	set focused(value: boolean) {
 		this._focused = value;
-		this.searchInput.focused = value;
+		this.searchInput.focused = value && this.region === "search";
 	}
 
 	constructor(
@@ -274,6 +282,10 @@ class ResourceList implements Component, Focusable {
 		this.filterItems(this.searchInput.getValue());
 	}
 
+	setAvailableHeight(height: number): void {
+		this.maxVisible = Math.max(4, height - 9);
+	}
+
 	private get groups(): ResourceGroup[] {
 		return this.groupsByScope[this.writeScope];
 	}
@@ -293,8 +305,12 @@ class ResourceList implements Component, Focusable {
 	private buildFlatList(): void {
 		this.flatItems = [];
 		for (const group of this.groups) {
+			const subgroups = group.subgroups.filter(
+				(subgroup) => subgroup.type === RESOURCE_TYPES[this.selectedTypeIndex],
+			);
+			if (subgroups.length === 0) continue;
 			this.flatItems.push({ type: "group", group });
-			for (const subgroup of group.subgroups) {
+			for (const subgroup of subgroups) {
 				this.flatItems.push({ type: "subgroup", subgroup, group });
 				for (const item of subgroup.items) {
 					this.flatItems.push({ type: "item", item });
@@ -391,14 +407,38 @@ class ResourceList implements Component, Focusable {
 
 	render(width: number): string[] {
 		const lines: string[] = [];
-
-		// Search input
-		lines.push(...this.searchInput.render(width));
-		lines.push("");
+		const wide = width >= 100;
+		const categoryWidth = wide ? 20 : width;
+		this.lastWide = wide;
+		this.lastCategoryWidth = categoryWidth;
+		const bodyWidth = wide ? width - categoryWidth - 3 : width;
+		const categoryLine = (index: number): string => {
+			const selected = index === this.selectedTypeIndex;
+			const label = RESOURCE_TYPE_LABELS[RESOURCE_TYPES[index]!];
+			const content = selected
+				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", label))}${theme.fg("borderAccent", " ♦")}`
+				: theme.fg("muted", `  ${label}`);
+			return truncateToWidth(content, categoryWidth);
+		};
 
 		if (this.filteredItems.length === 0) {
 			lines.push(theme.fg("muted", "  No resources found"));
-			return lines;
+			if (wide) {
+				const output = Array.from({ length: Math.max(this.maxVisible, RESOURCE_TYPES.length) }, (_, index) => {
+					const left = index < RESOURCE_TYPES.length ? categoryLine(index) : "";
+					return `${left}${" ".repeat(Math.max(0, categoryWidth - visibleWidth(left)))} ${theme.fg("borderMuted", "│")} ${lines[index] ?? ""}`;
+				});
+				this.lastSearchRow = output.length;
+				output.push(...this.searchInput.render(width));
+				return output;
+			}
+			while (lines.length < this.maxVisible) lines.push("");
+			this.lastSearchRow = 1 + lines.length;
+			return [
+				truncateToWidth(RESOURCE_TYPES.map((_, index) => categoryLine(index)).join(" "), width),
+				...lines,
+				...this.searchInput.render(width),
+			];
 		}
 
 		// Calculate visible range
@@ -407,6 +447,8 @@ class ResourceList implements Component, Focusable {
 			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
+		this.lastVisibleStart = startIndex;
+		this.lastVisibleCount = endIndex - startIndex;
 
 		for (let i = startIndex; i < endIndex; i++) {
 			const entry = this.filteredItems[i];
@@ -417,25 +459,27 @@ class ResourceList implements Component, Focusable {
 				const inherited = this.writeScope === "project" && entry.group.scope === "user";
 				const label = theme.bold(`${entry.group.label}${inherited ? " · inherited global" : ""}`);
 				const groupLine = theme.fg(inherited ? "dim" : "accent", label);
-				lines.push(truncateToWidth(`  ${groupLine}`, width, ""));
+				lines.push(truncateToWidth(`  ${groupLine}`, bodyWidth, ""));
 			} else if (entry.type === "subgroup") {
 				// Subgroup header (indented, no cursor)
 				const color = this.writeScope === "project" && entry.group.scope === "user" ? "dim" : "muted";
 				const subgroupLine = theme.fg(color, entry.subgroup.label);
-				lines.push(truncateToWidth(`    ${subgroupLine}`, width, ""));
+				lines.push(truncateToWidth(`    ${subgroupLine}`, bodyWidth, ""));
 			} else {
 				// Resource item (cursor only on items)
 				const item = entry.item;
-				const cursor = isSelected ? "> " : "  ";
+				const cursor = isSelected ? theme.fg("borderAccent", "♦ ") : "  ";
 				const dimmed = this.isDimmedItem(item);
-				const nameText = isSelected && !dimmed ? theme.bold(item.displayName) : item.displayName;
+				const nameText =
+					isSelected && !dimmed ? theme.bold(theme.fg("accent", item.displayName)) : item.displayName;
 				const name = dimmed ? theme.fg("dim", nameText) : nameText;
+				const marker = isSelected ? theme.fg("borderAccent", " ♦") : "";
 				lines.push(
 					truncateToWidth(
 						`${cursor}    ${this.renderCheckbox(item)} ${name}${this.getItemSuffix(item)}`,
-						width,
+						bodyWidth - visibleWidth(marker),
 						"...",
-					),
+					) + marker,
 				);
 			}
 		}
@@ -447,12 +491,93 @@ class ResourceList implements Component, Focusable {
 				this.filteredItems.slice(0, this.selectedIndex).filter((e) => e.type === "item").length + 1;
 			lines.push(theme.fg("dim", `  (${currentItemIndex}/${itemCount})`));
 		}
+		while (lines.length < this.maxVisible + 1) lines.push("");
 
-		return lines;
+		const selected = this.filteredItems[this.selectedIndex];
+		lines.push(theme.fg("borderMuted", "─".repeat(bodyWidth)));
+		if (selected?.type === "item") {
+			const item = selected.item;
+			const state =
+				this.writeScope === "project" ? this.getProjectOverrideState(item) : item.enabled ? "load" : "unload";
+			lines.push(truncateToWidth(theme.fg("muted", `${item.path}`), bodyWidth));
+			lines.push(
+				truncateToWidth(
+					theme.fg("muted", `${item.metadata.scope} · ${item.metadata.origin} · ${state}`),
+					bodyWidth,
+				),
+			);
+		}
+		if (wide) {
+			const rows = Math.max(lines.length, RESOURCE_TYPES.length);
+			const combined: string[] = [];
+			for (let row = 0; row < rows; row++) {
+				const left = row < RESOURCE_TYPES.length ? categoryLine(row) : "";
+				combined.push(
+					`${left}${" ".repeat(Math.max(0, categoryWidth - visibleWidth(left)))} ${theme.fg("borderMuted", "│")} ${lines[row] ?? ""}`,
+				);
+			}
+			combined.push(...this.searchInput.render(width));
+			this.lastSearchRow = combined.length - 1;
+			return combined;
+		}
+		this.lastSearchRow = lines.length + 2;
+		return [
+			truncateToWidth(RESOURCE_TYPES.map((_, index) => categoryLine(index)).join(" "), width),
+			theme.fg("borderMuted", "─".repeat(width)),
+			...lines,
+			...this.searchInput.render(width),
+		];
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type === "wheel" && event.wheelDelta) {
+			this.selectedIndex = this.findNextItem(this.selectedIndex, event.wheelDelta < 0 ? -1 : 1);
+			return { handled: true, render: true };
+		}
+		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+		if (event.y === this.lastSearchRow) {
+			this.region = "search";
+			return this.searchInput.handleMouse?.({ ...event, y: 0 });
+		}
+		if (this.lastWide && event.x < this.lastCategoryWidth && event.y < RESOURCE_TYPES.length) {
+			this.selectedTypeIndex = event.y;
+			this.region = "categories";
+			this.buildFlatList();
+			this.filterItems(this.searchInput.getValue());
+			return { handled: true, focus: true, render: true };
+		}
+		const row = event.y - (this.lastWide ? 0 : 2);
+		if (row >= 0 && row < this.lastVisibleCount && (!this.lastWide || event.x > this.lastCategoryWidth + 1)) {
+			const index = this.lastVisibleStart + row;
+			if (this.filteredItems[index]?.type !== "item") return undefined;
+			this.selectedIndex = index;
+			this.region = "list";
+			if (event.type === "click") this.handleInput(" ");
+			return { handled: true, focus: true, render: true };
+		}
+		return undefined;
 	}
 
 	handleInput(data: string): void {
 		const kb = getKeybindings();
+		if (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious")) {
+			const regions = ["categories", "list", "search"] as const;
+			const delta = kb.matches(data, "app.panel.focusNext") ? 1 : -1;
+			this.region = regions[(regions.indexOf(this.region) + delta + regions.length) % regions.length];
+			this.searchInput.focused = this._focused && this.region === "search";
+			return;
+		}
+		if (this.region === "categories" && (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down"))) {
+			const delta = kb.matches(data, "tui.select.down") ? 1 : -1;
+			this.selectedTypeIndex = (this.selectedTypeIndex + delta + RESOURCE_TYPES.length) % RESOURCE_TYPES.length;
+			this.buildFlatList();
+			this.filterItems(this.searchInput.getValue());
+			return;
+		}
+		if (this.region === "categories" && kb.matches(data, "tui.select.confirm")) {
+			this.region = "list";
+			return;
+		}
 
 		if (kb.matches(data, "tui.select.up")) {
 			this.selectedIndex = this.findNextItem(this.selectedIndex, -1);
@@ -484,19 +609,19 @@ class ResourceList implements Component, Focusable {
 			}
 			return;
 		}
+		if (kb.matches(data, "app.clear")) {
+			this.onExit?.();
+			return;
+		}
 		if (kb.matches(data, "tui.select.cancel")) {
 			this.onCancel?.();
 			return;
 		}
-		if (matchesKey(data, "ctrl+c")) {
-			this.onExit?.();
-			return;
-		}
-		if (kb.matches(data, "tui.input.tab")) {
+		if (kb.matches(data, "app.panel.scope")) {
 			this.onSwitchMode?.();
 			return;
 		}
-		if (data === " " || kb.matches(data, "tui.select.confirm")) {
+		if (this.region === "list" && (data === " " || kb.matches(data, "tui.select.confirm"))) {
 			const entry = this.filteredItems[this.selectedIndex];
 			if (entry?.type === "item" && (this.writeScope === "project" || this.getItemScope(entry.item) === "user")) {
 				const newEnabled = this.toggleResource(entry.item);
@@ -867,6 +992,8 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 	private header: ConfigSelectorHeader;
 	private resourceList: ResourceList;
 	private writeScope: ConfigWriteScope;
+	private readonly getAvailableHeight: (() => number) | undefined;
+	private availableHeight: number | undefined;
 
 	private _focused = false;
 	get focused(): boolean {
@@ -888,10 +1015,12 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		terminalHeight?: number,
 		writeScope: ConfigWriteScope = "global",
 		projectModeAvailable = true,
+		getAvailableHeight?: () => number,
 	) {
 		super();
 
 		this.writeScope = writeScope;
+		this.getAvailableHeight = getAvailableHeight;
 		const groupsByScope = {
 			global: buildGroups(resolvedPaths.global, agentDir),
 			project: buildGroups(resolvedPaths.project, agentDir),
@@ -930,10 +1059,21 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		this.addChild(new DynamicBorder());
 	}
 
+	override render(width: number): string[] {
+		const height = this.getAvailableHeight?.();
+		if (height !== undefined && height !== this.availableHeight) this.setAvailableHeight(height);
+		return super.render(width);
+	}
+
 	private switchWriteScope(): void {
 		this.writeScope = this.writeScope === "global" ? "project" : "global";
 		this.header.setWriteScope(this.writeScope);
 		this.resourceList.setWriteScope(this.writeScope);
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = height;
+		this.resourceList.setAvailableHeight(height - 6);
 	}
 
 	getResourceList(): ResourceList {

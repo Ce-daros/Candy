@@ -35,6 +35,8 @@ export interface SelectListLayoutOptions {
 	minPrimaryColumnWidth?: number;
 	maxPrimaryColumnWidth?: number;
 	truncatePrimary?: (context: SelectListTruncatePrimaryContext) => string;
+	descriptionAlign?: "left" | "right";
+	selectedDetail?: (item: SelectItem) => string | undefined;
 }
 
 export class SelectList implements Component {
@@ -68,6 +70,10 @@ export class SelectList implements Component {
 		this.selectedIndex = Math.max(0, Math.min(index, this.filteredItems.length - 1));
 	}
 
+	setMaxVisible(count: number): void {
+		this.maxVisible = Math.max(1, count);
+	}
+
 	invalidate(): void {
 		// No cached state to invalidate currently
 	}
@@ -77,7 +83,7 @@ export class SelectList implements Component {
 
 		// If no items match filter, show message
 		if (this.filteredItems.length === 0) {
-			lines.push(this.theme.noMatch("  No matching commands"));
+			lines.push(truncateToWidth(this.theme.noMatch("  No matches"), width, ""));
 			return lines;
 		}
 
@@ -103,6 +109,9 @@ export class SelectList implements Component {
 			lines.push(this.theme.scrollInfo(truncateToWidth(scrollText, width - 2, "")));
 		}
 
+		const selected = this.filteredItems[this.selectedIndex];
+		const detail = selected && this.layout.selectedDetail?.(selected);
+		if (detail) lines.push(this.theme.description(truncateToWidth(detail, width, "…")));
 		return lines;
 	}
 
@@ -187,25 +196,41 @@ export class SelectList implements Component {
 		descriptionSingleLine: string | undefined,
 		primaryColumnWidth: number,
 	): string {
-		const prefix = isSelected ? "→ " : "  ";
+		const prefix = isSelected ? this.theme.selectedPrefix("♦ ") : "  ";
+		const suffix = isSelected ? this.theme.selectedPrefix(" ♦") : "";
 		const prefixWidth = visibleWidth(prefix);
+		const suffixWidth = visibleWidth(suffix);
 
 		if (descriptionSingleLine && width > 40) {
 			const effectivePrimaryColumnWidth = Math.max(1, Math.min(primaryColumnWidth, width - prefixWidth - 4));
-			const maxPrimaryWidth = Math.max(1, effectivePrimaryColumnWidth - PRIMARY_COLUMN_GAP);
+			const maxPrimaryWidth = Math.max(1, effectivePrimaryColumnWidth - PRIMARY_COLUMN_GAP - 2);
 			const truncatedValue = this.truncatePrimary(item, isSelected, maxPrimaryWidth, effectivePrimaryColumnWidth);
 			const truncatedValueWidth = visibleWidth(truncatedValue);
-			const spacing = " ".repeat(Math.max(1, effectivePrimaryColumnWidth - truncatedValueWidth));
-			const descriptionStart = prefixWidth + truncatedValueWidth + spacing.length;
+			const spacing = " ".repeat(Math.max(1, effectivePrimaryColumnWidth - truncatedValueWidth - suffixWidth));
+			const descriptionStart = prefixWidth + truncatedValueWidth + suffixWidth + spacing.length;
 			const remainingWidth = width - descriptionStart - 2; // -2 for safety
 
 			if (remainingWidth > MIN_DESCRIPTION_WIDTH) {
-				const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, "");
+				const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, "…");
+				const gap =
+					this.layout.descriptionAlign === "right"
+						? " ".repeat(
+								Math.max(
+									1,
+									width - prefixWidth - truncatedValueWidth - suffixWidth - visibleWidth(truncatedDesc) - 2,
+								),
+							)
+						: spacing;
 				if (isSelected) {
-					return this.theme.selectedText(`${prefix}${truncatedValue}${spacing}${truncatedDesc}`);
+					return (
+						prefix +
+						this.theme.selectedText(truncatedValue) +
+						suffix +
+						this.theme.description(gap + truncatedDesc)
+					);
 				}
 
-				const descText = this.theme.description(spacing + truncatedDesc);
+				const descText = this.theme.description(gap + truncatedDesc);
 				return prefix + truncatedValue + descText;
 			}
 		}
@@ -213,7 +238,7 @@ export class SelectList implements Component {
 		const maxWidth = width - prefixWidth - 2;
 		const truncatedValue = this.truncatePrimary(item, isSelected, maxWidth, maxWidth);
 		if (isSelected) {
-			return this.theme.selectedText(`${prefix}${truncatedValue}`);
+			return prefix + this.theme.selectedText(truncatedValue) + suffix;
 		}
 
 		return prefix + truncatedValue;

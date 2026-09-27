@@ -99,7 +99,7 @@ Confirm that you installed both components:
 1. The Termux:API Android app from the same source as Termux
 2. The `termux-api` command-line package
 
-Then run the clipboard verification commands above outside Pi. If they fail there, fix the Termux:API installation before retrying candy's copy command.
+Then run the clipboard verification commands above outside candy. If they fail there, fix the Termux:API installation before retrying candy's copy command.
 
 ### Shared storage reports permission denied
 

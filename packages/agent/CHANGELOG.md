@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.
+
 ## [0.87.1] - 2026-09-22
 
 ## [0.87.0] - 2026-09-21

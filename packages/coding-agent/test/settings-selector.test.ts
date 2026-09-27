@@ -74,12 +74,15 @@ describe("SettingsSelectorComponent", () => {
 		list.handleInput("\r");
 		let output = stripAnsi(list.render(120).join("\n"));
 		expect(output).toContain("    Automatic");
-		expect(output).toContain("→ ✓ dark");
+		expect(output).toContain("♦ ✓ dark");
+		expect(output).toContain("● ● ● ● ● ●");
+		expect(output).toContain("◆ Can you check this change?");
+		expect(output).toContain("+ const newValue = true;");
 
 		list.handleInput("\x1b[B");
 		output = stripAnsi(list.render(120).join("\n"));
 		expect(output).toContain("  ✓ dark");
-		expect(output).toContain("→   light");
+		expect(output).toContain("♦   light");
 	});
 
 	it("keeps a configured automatic theme marked while browsing", () => {
@@ -89,7 +92,7 @@ describe("SettingsSelectorComponent", () => {
 			modelThinkingLevels: {},
 			currentTheme: "light/dark",
 			terminalTheme: "dark",
-			availableThemes: ["dark", "light", "other"],
+			availableThemes: ["dark", "light"],
 			warnings: {},
 		} as unknown as SettingsConfig;
 		const callbacks = { onThemePreview: vi.fn(), onCancel: () => {} } as unknown as SettingsCallbacks;
@@ -99,12 +102,12 @@ describe("SettingsSelectorComponent", () => {
 		list.handleInput("\r");
 		list.handleInput("\r");
 		let output = stripAnsi(list.render(120).join("\n"));
-		expect(output).toContain("→ ✓ light");
+		expect(output).toContain("♦ ✓ light");
 
 		list.handleInput("\x1b[B");
 		output = stripAnsi(list.render(120).join("\n"));
 		expect(output).toContain("  ✓ light");
-		expect(output).toContain("→   other");
+		expect(output).toContain("♦   dark");
 	});
 
 	it("keeps the configured per-model thinking level marked while browsing", async () => {
@@ -127,12 +130,90 @@ describe("SettingsSelectorComponent", () => {
 		list.handleInput("\r");
 
 		let output = stripAnsi(list.render(120).join("\n"));
-		expect(output).toContain("→ ✓ medium");
+		expect(output).toContain("♦ ✓ medium");
 		expect(output).toContain("    (clear override)");
 
 		list.handleInput("\x1b[B");
 		output = stripAnsi(list.render(120).join("\n"));
 		expect(output).toContain("  ✓ medium");
-		expect(output).toContain("→   high");
+		expect(output).toContain("♦   high");
+	});
+
+	it("navigates five categories and searches settings from the bottom input", () => {
+		const config: SettingsConfig = {
+			autoCompact: true,
+			defaultModel: "not set",
+			availableDefaultModels: [],
+			showImages: false,
+			imageWidthCells: 80,
+			autoResizeImages: true,
+			blockImages: false,
+			enableSkillCommands: true,
+			steeringMode: "all",
+			followUpMode: "all",
+			transport: "auto",
+			httpIdleTimeoutMs: 300_000,
+			cacheWarmingMode: "off",
+			thinkingLevel: "medium",
+			availableThinkingLevels: ["off", "medium"],
+			modelThinkingLevels: {},
+			availableThemes: ["dark", "light"],
+			currentTheme: "dark",
+			uiAnimations: true,
+			animationIntensity: "moderate",
+			terminalTheme: "dark",
+			hideThinkingBlock: true,
+			mermaidRenderingMode: "final",
+			showCacheMissNotices: true,
+			collapseChangelog: true,
+			enableInstallTelemetry: false,
+			doubleEscapeAction: "tree",
+			treeFilterMode: "default",
+			warnings: {},
+			toolPreviewLines: 5,
+			showHardwareCursor: true,
+			editorPaddingX: 1,
+			outputPad: 0,
+			autocompleteMaxVisible: 7,
+			quietStartup: false,
+			defaultProjectTrust: "ask",
+			clearOnShrink: false,
+			showTerminalProgress: true,
+			fullscreenExitOutput: "transcript",
+			fullscreenScrollbar: "auto",
+			fullscreenCopyOnSelect: true,
+		};
+		const onCancel = vi.fn();
+		const selector = new SettingsSelectorComponent(config, { onCancel } as unknown as SettingsCallbacks);
+		selector.setAvailableHeight(18);
+		let output = stripAnsi(selector.render(120).join("\n"));
+		for (const category of [
+			"Appearance",
+			"Conversation & Input",
+			"Models & Connection",
+			"Privacy & Trust",
+			"Terminal",
+		]) {
+			expect(output).toContain(category);
+		}
+		selector.handleInput("\t");
+		selector.handleInput("\t");
+		selector.handleInput("\x1b[B");
+		output = stripAnsi(selector.render(120).join("\n"));
+		expect(output).toContain("♦ Conversation & Input ♦");
+		selector.setAvailableHeight(17);
+		for (let index = 0; index < 3; index++) selector.handleInput("\x1b[B");
+		const narrow = stripAnsi(selector.render(76).join("\n")).split("\n");
+		expect(narrow).toHaveLength(17);
+		expect(narrow[2]).toContain("Terminal");
+		expect(narrow.at(-2)).toContain("Search");
+		selector.handleInput("t");
+		selector.handleInput("o");
+		selector.handleInput("o");
+		selector.handleInput("l");
+		output = stripAnsi(selector.render(120).join("\n"));
+		expect(output).toContain("Tool preview lines");
+		selector.handleInput("\x1b");
+		expect(onCancel).not.toHaveBeenCalled();
 	});
 });

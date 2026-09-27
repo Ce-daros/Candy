@@ -77,4 +77,18 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 			expect(w, `Line ${i} visibleWidth=${w} > 60`).toBeLessThanOrEqual(60);
 		}
 	});
+
+	it("shows the configured tail preview and keeps cancelled shell activity neutral", () => {
+		const { stub } = createTuiStub(80);
+		const component = new BashExecutionComponent("echo lines", stub, true, 10);
+		component.appendOutput(Array.from({ length: 15 }, (_, index) => `line-${index + 1}`).join("\n"));
+		component.setComplete(undefined, true);
+		const rendered = component.render(80).join("\n");
+		expect(rendered).toContain("!! echo lines");
+		expect(rendered).toContain("Excluded from model context");
+		expect(rendered).toContain("line-15");
+		expect(rendered).not.toContain("line-5");
+		expect(rendered).toContain("Cancelled");
+		expect(rendered).not.toContain("Exit undefined");
+	});
 });

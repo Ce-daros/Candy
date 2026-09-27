@@ -70,7 +70,7 @@ describe("AssistantMessageComponent", () => {
 		);
 		const rendered = component.render(80).join("\n");
 
-		expect(rendered).toContain("Thinking...");
+		expect(rendered).toContain("Thought");
 		expect(rendered).toContain("Response was truncated before completion.");
 	});
 
@@ -88,11 +88,78 @@ describe("AssistantMessageComponent", () => {
 		);
 		const rendered = stripAnsi(component.render(80).join("\n"));
 
-		expect(rendered.match(/Thinking\.\.\./g)).toHaveLength(1);
+		expect(rendered.match(/Thought/g)).toHaveLength(1);
 		expect(rendered).toContain("answer");
 	});
 
-	test("collapses individual thinking runs when clicked", () => {
+	test("keeps a long folded thinking excerpt on one 80-column row", () => {
+		initTheme("dark");
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "reasoning ".repeat(40) }]),
+			true,
+		);
+		const lines = component.render(80).map(stripAnsi);
+		const thinkingRows = lines.filter((line) => line.includes("Thought"));
+		expect(thinkingRows).toHaveLength(1);
+		expect(thinkingRows[0].length).toBeLessThanOrEqual(80);
+		expect(thinkingRows[0]).toContain("…");
+	});
+
+	test("changes the default thinking label after streaming finishes", () => {
+		initTheme("dark");
+		const message = createAssistantMessage([{ type: "thinking", thinking: "checking" }]);
+		const component = new AssistantMessageComponent(undefined, true);
+		component.updateContent(message, true);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("Thinking...");
+		component.updateContent(message, false);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("Thought checking");
+	});
+
+	test("keeps prose near 110 columns while code uses the full terminal width", () => {
+		initTheme("dark");
+		const prose = "Candy visual language ".repeat(13).trim();
+		const code = `const value = "${"x".repeat(120)}";`;
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "text", text: `${prose}\n\n\`\`\`ts\n${code}\n\`\`\`` }]),
+		);
+		const lines = component.render(160).map(stripAnsi);
+		const proseLines = lines.filter((line) => line.includes("Candy visual language"));
+		expect(proseLines.length).toBeGreaterThan(1);
+		expect(proseLines.every((line) => line.trimEnd().length <= 112)).toBe(true);
+		const codeLine = lines.find((line) => line.includes("const value"));
+		expect(codeLine?.trimEnd().length).toBeGreaterThan(112);
+		expect(codeLine?.trimEnd().length).toBeLessThanOrEqual(160);
+	});
+
+	test("marks a closed streamed code fence complete before the message finishes", () => {
+		initTheme("dark");
+		const completions: boolean[] = [];
+		const component = new AssistantMessageComponent(
+			undefined,
+			true,
+			undefined,
+			"Thinking...",
+			1,
+			[],
+			(_code, _language, _width, _streaming, complete) => {
+				completions.push(complete);
+				return undefined;
+			},
+		);
+		component.updateContent(
+			createAssistantMessage([{ type: "text", text: "```mermaid\nflowchart LR\n  A --> B" }]),
+			true,
+		);
+		component.render(100);
+		component.updateContent(
+			createAssistantMessage([{ type: "text", text: "```mermaid\nflowchart LR\n  A --> B\n```" }]),
+			true,
+		);
+		component.render(100);
+		expect(completions).toEqual([false, true]);
+	});
+
+	test("expands one thinking run without opening its neighbor", () => {
 		initTheme("dark");
 		const component = new AssistantMessageComponent(
 			createAssistantMessage([
@@ -121,10 +188,9 @@ describe("AssistantMessageComponent", () => {
 		};
 		expect(component.handleMouse(event)?.handled).toBe(true);
 
-		const collapsed = stripAnsi(component.render(width).join("\n"));
-		expect(collapsed).not.toContain("first reasoning");
-		expect(collapsed).toContain("Thinking...");
-		expect(collapsed).toContain("second reasoning");
+		const expanded = stripAnsi(component.render(width).join("\n"));
+		expect(expanded).toContain("│   first reasoning");
+		expect(expanded).toContain("Thought second reasoning");
 	});
 
 	test("uses configured output padding for text and thinking", () => {
@@ -148,7 +214,7 @@ describe("AssistantMessageComponent", () => {
 		component.setOutputPad(0);
 		const updatedLines = component.render(80).map((line) => stripAnsi(line));
 		expect(updatedLines.some((line) => line.startsWith("hello"))).toBe(true);
-		expect(updatedLines.some((line) => line.startsWith("reasoning"))).toBe(true);
+		expect(updatedLines.some((line) => /│\s+reasoning/.test(line))).toBe(true);
 	});
 
 	test("chains Markdown transformers in registration order", () => {
@@ -268,10 +334,10 @@ describe("AssistantMessageComponent", () => {
 
 		const paddedComponent = new UserMessageComponent("hello", undefined, 1);
 		const paddedLines = paddedComponent.render(40).map((line) => stripAnsi(line));
-		expect(paddedLines.some((line) => line.startsWith(" hello"))).toBe(true);
+		expect(paddedLines.some((line) => line.includes(" ◆ hello"))).toBe(true);
 
 		const unpaddedComponent = new UserMessageComponent("hello", undefined, 0);
 		const unpaddedLines = unpaddedComponent.render(40).map((line) => stripAnsi(line));
-		expect(unpaddedLines.some((line) => line.startsWith("hello"))).toBe(true);
+		expect(unpaddedLines.some((line) => line.includes("◆ hello"))).toBe(true);
 	});
 });

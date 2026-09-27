@@ -154,7 +154,6 @@ The detailed references formerly on this page now have dedicated pages. These an
 <a id="get_state"></a>
 <a id="get_messages"></a>
 <a id="set_model"></a>
-<a id="cycle_model"></a>
 <a id="get_available_models"></a>
 <a id="set_thinking_level"></a>
 <a id="cycle_thinking_level"></a>

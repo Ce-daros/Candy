@@ -1,6 +1,6 @@
 import { Input } from "./components/input.ts";
 import { getKeybindings } from "./keybindings.ts";
-import type { Component, Focusable } from "./tui.ts";
+import type { Component, Focusable, TuiMouseEvent, TuiMouseEventResult } from "./tui.ts";
 import { getGraphemeSegmenter, stripTerminalSequences, truncateToWidth, visibleWidth } from "./utils.ts";
 
 const segmenter = getGraphemeSegmenter();
@@ -202,6 +202,8 @@ export class AltScreenSearchComponent implements Component, Focusable {
 	});
 	private readonly onQueryChange: (query: string) => void;
 	private readonly navigationButtonStyle: (text: string, hovered: boolean) => string;
+	private readonly onNavigate: (direction: -1 | 1) => void;
+	private inline = false;
 	private resultCount = 0;
 	private resultIndex = -1;
 	private previousButtonStart = -1;
@@ -214,9 +216,11 @@ export class AltScreenSearchComponent implements Component, Focusable {
 	constructor(
 		onQueryChange: (query: string) => void,
 		navigationButtonStyle: (text: string, hovered: boolean) => string = (text) => text,
+		onNavigate: (direction: -1 | 1) => void = () => {},
 	) {
 		this.onQueryChange = onQueryChange;
 		this.navigationButtonStyle = navigationButtonStyle;
+		this.onNavigate = onNavigate;
 	}
 
 	get focused(): boolean {
@@ -233,8 +237,14 @@ export class AltScreenSearchComponent implements Component, Focusable {
 		this.resultCount = count;
 	}
 
+	setInline(inline: boolean): void {
+		if (this.inline === inline) return;
+		this.inline = inline;
+		this.invalidate();
+	}
+
 	getNavigationDirectionAt(row: number, column: number): -1 | 1 | undefined {
-		if (row !== 2) return undefined;
+		if (row !== (this.inline ? 0 : 2)) return undefined;
 		if (column >= this.previousButtonStart && column < this.previousButtonEnd) return -1;
 		if (column >= this.nextButtonStart && column < this.nextButtonEnd) return 1;
 		return undefined;
@@ -244,6 +254,17 @@ export class AltScreenSearchComponent implements Component, Focusable {
 		if (direction === this.hoveredNavigationDirection) return false;
 		this.hoveredNavigationDirection = direction;
 		return true;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		const direction = this.getNavigationDirectionAt(event.y, event.x);
+		const changed = this.setHoveredNavigationDirection(direction);
+		if (event.type === "click" && direction !== undefined) {
+			this.onNavigate(direction);
+			return { handled: true, render: true };
+		}
+		if (changed && (event.type === "move" || event.type === "drag")) return { handled: true, render: true };
+		return undefined;
 	}
 
 	handleInput(data: string): void {
@@ -259,6 +280,7 @@ export class AltScreenSearchComponent implements Component, Focusable {
 
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
+		if (this.inline) return this.renderInline(safeWidth);
 		const innerWidth = Math.max(0, safeWidth - 2);
 		const formatKey = (key: string | undefined): string =>
 			key
@@ -323,5 +345,59 @@ export class AltScreenSearchComponent implements Component, Focusable {
 			`│${content}│`,
 			`└${"─".repeat(leftRuleWidth)}${renderedButtons ? " " : ""}${renderedButtons}${renderedButtons ? " " : ""}${"─".repeat(rightRuleWidth)}┘`,
 		];
+	}
+
+	private renderInline(width: number): string[] {
+		const formatKey = (key: string | undefined): string =>
+			key
+				? key
+						.split("+")
+						.map((part) => {
+							if (process.platform === "darwin" && part.toLowerCase() === "alt") return "Option";
+							return part.charAt(0).toUpperCase() + part.slice(1);
+						})
+						.join("+")
+				: "Unbound";
+		const keybindings = getKeybindings();
+		let previousButton = `↑ ${formatKey(keybindings.getKeys("tui.altScreen.searchPrevious")[0])}`;
+		let nextButton = `↓ ${formatKey(keybindings.getKeys("tui.altScreen.searchNext")[0])}`;
+		let separator = " · ";
+		const availableControlsWidth = Math.max(0, width - 2);
+		let controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);
+		if (controlsWidth > availableControlsWidth) {
+			previousButton = "↑";
+			nextButton = "↓";
+			separator = " ";
+			controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);
+		}
+		const showButtons = controlsWidth <= availableControlsWidth;
+		const renderedButtons = showButtons
+			? this.navigationButtonStyle(previousButton, this.hoveredNavigationDirection === -1) +
+				separator +
+				this.navigationButtonStyle(nextButton, this.hoveredNavigationDirection === 1)
+			: "";
+		const controlStart = showButtons ? width - controlsWidth : width;
+		this.previousButtonStart = showButtons ? controlStart : -1;
+		this.previousButtonEnd = showButtons ? controlStart + visibleWidth(previousButton) : -1;
+		this.nextButtonStart = showButtons ? this.previousButtonEnd + visibleWidth(separator) : -1;
+		this.nextButtonEnd = showButtons ? this.nextButtonStart + visibleWidth(nextButton) : -1;
+
+		const query = this.input.getValue();
+		const result = !query
+			? ""
+			: this.resultCount === 0
+				? "No matches"
+				: `${this.resultIndex + 1}/${this.resultCount}`;
+		const resultText = result ? `\x1b[2m ${truncateToWidth(result, Math.max(0, width - 1), "")} \x1b[22m` : "";
+		const resultWidth = Math.min(width, visibleWidth(resultText));
+		const gapWidth = showButtons && controlStart > 0 ? 1 : 0;
+		const contentWidth = showButtons ? Math.max(0, controlStart - gapWidth) : width;
+		const inputWidth = Math.max(1, contentWidth - resultWidth);
+		const inputLine = truncateToWidth(this.input.render(inputWidth)[0] ?? "", inputWidth, "");
+		const inputText = `${inputLine}${" ".repeat(Math.max(0, inputWidth - visibleWidth(inputLine)))}`;
+		const text = `${inputText}${resultText}`;
+		const content = truncateToWidth(text, contentWidth, "");
+		const line = `${content}${" ".repeat(Math.max(0, contentWidth - visibleWidth(content)))}${gapWidth ? " " : ""}${renderedButtons}`;
+		return [truncateToWidth(line, width, "")];
 	}
 }

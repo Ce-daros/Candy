@@ -262,18 +262,6 @@ export class RpcClient {
 	}
 
 	/**
-	 * Cycle to next model.
-	 */
-	async cycleModel(): Promise<{
-		model: { provider: string; id: string };
-		thinkingLevel: ThinkingLevel;
-		isScoped: boolean;
-	} | null> {
-		const response = await this.send({ type: "cycle_model" });
-		return this.getData(response);
-	}
-
-	/**
 	 * Get list of available models.
 	 */
 	async getAvailableModels(): Promise<ModelInfo[]> {

@@ -179,7 +179,7 @@ Open Windows Terminal's `settings.json` with `Ctrl+Shift+,` or **Settings > Open
 }
 ```
 
-Fully close and reopen Windows Terminal, then verify that `Shift+Enter` inserts a new line in Pi.
+Fully close and reopen Windows Terminal, then verify that `Shift+Enter` inserts a new line in candy.
 
 ### Use Alt+Enter for follow-ups
 
@@ -216,4 +216,4 @@ candy automatically detects OSC 8 hyperlinks, inline image protocols, and trueco
 
 Settings take precedence over environment variables. An unset value or `auto` preserves automatic detection.
 
-Only force a capability supported by the complete terminal path. Unsupported escape sequences can corrupt rendering. See [Environment Variables](environment-variables.md#pi-process-configuration) and [Settings](settings.md) for the canonical value definitions.
+Only force a capability supported by the complete terminal path. Unsupported escape sequences can corrupt rendering. See [Environment Variables](environment-variables.md#candy-process-configuration) and [Settings](settings.md) for the canonical value definitions.

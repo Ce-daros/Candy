@@ -15,7 +15,7 @@ candy --resume
 
 Use `/name` or `--name` to assign a recognizable session name. Run `/session` to verify the current session file, ID, message count, token usage, and cost.
 
-The session picker lets you search, rename, and delete sessions. It can also show paths, change sorting, and limit results to named sessions. See [Keybindings](keybindings.md#sessions) for its shortcuts.
+The session picker shows each name, summary, time, and message count in a wide list, with more information below the selected row. It lets you search, rename, and delete sessions with confirmation. It can also show paths, change sorting, and limit results to named sessions. See [Keybindings](keybindings.md#sessions) for its shortcuts.
 
 ## Choose how to branch
 
@@ -27,7 +27,7 @@ candy stores entries as a tree, so returning to an earlier point does not erase 
 | `/fork` | Creates a new session from an earlier user message | The alternative should become separate work |
 | `/clone` | Copies the active branch into a new session | You want a separate copy of the current state |
 
-In `/tree`, select a user message to put its text back in the editor. Edit and submit it to create another branch. Selecting an assistant response or another entry continues after that entry with an empty editor.
+In `/tree`, each branch entry occupies one row and its complete content appears below the list. Select a user message to put its text back in the editor. Edit and submit it to create another branch. Selecting an assistant response or another entry continues after that entry with an empty editor. `/fork` shows two-line summaries of user messages and previews the complete selected message below them.
 
 When you leave a branch, candy can summarize it and attach that summary to the branch you enter. This preserves relevant work from the abandoned path without including every message from it.
 
@@ -37,7 +37,7 @@ For the persisted tree and entry types, see [Session Format](session-format.md).
 
 The model receives the active branch, not every branch in the session file. candy combines that history with the system prompt, discovered context files, available tools, and loaded skill descriptions. [How candy Works](how-candy-works.md#context) describes how those inputs are assembled.
 
-The editor's bottom border shows current context usage. When the active context approaches the model's limit, candy normally compacts older history automatically. Compaction adds a summary and keeps recent messages. It does not delete the original session entries.
+The top bar shows current context usage. When the active context approaches the model's limit, candy normally compacts older history automatically. Compaction adds a collapsible summary and keeps recent messages. It does not delete the original session entries.
 
 Run `/compact` to compact manually. You can add instructions when the summary should preserve a particular topic or decision. Configure automatic compaction and retained history through [Settings](settings.md#compaction).
 

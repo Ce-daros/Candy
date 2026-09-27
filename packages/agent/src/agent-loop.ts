@@ -550,6 +550,7 @@ async function executeToolCallsSequential(
 				toolCall,
 				result: preparation.result,
 				isError: preparation.isError,
+				cancelled: preparation.cancelled,
 			};
 		} else {
 			const executed = await executePreparedToolCall(preparation, signal, emit);
@@ -604,6 +605,7 @@ async function executeToolCallsParallel(
 				toolCall,
 				result: preparation.result,
 				isError: preparation.isError,
+				cancelled: preparation.cancelled,
 			} satisfies FinalizedToolCallOutcome;
 			await emitToolExecutionEnd(finalized, emit);
 			finalizedCalls.push(finalized);
@@ -619,6 +621,7 @@ async function executeToolCallsParallel(
 					toolCall,
 					result: createErrorToolResult("Operation aborted"),
 					isError: true,
+					cancelled: true,
 				} satisfies FinalizedToolCallOutcome;
 				await emitToolExecutionEnd(finalized, emit);
 				return finalized;
@@ -667,17 +670,20 @@ type ImmediateToolCallOutcome = {
 	kind: "immediate";
 	result: AgentToolResult<any>;
 	isError: boolean;
+	cancelled?: boolean;
 };
 
 type ExecutedToolCallOutcome = {
 	result: AgentToolResult<any>;
 	isError: boolean;
+	cancelled?: boolean;
 };
 
 type FinalizedToolCallOutcome = {
 	toolCall: AgentToolCall;
 	result: AgentToolResult<any>;
 	isError: boolean;
+	cancelled?: boolean;
 };
 
 type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);
@@ -734,6 +740,7 @@ async function prepareToolCall(
 					kind: "immediate",
 					result: createErrorToolResult("Operation aborted"),
 					isError: true,
+					cancelled: true,
 				};
 			}
 			if (beforeResult?.block) {
@@ -753,6 +760,7 @@ async function prepareToolCall(
 				kind: "immediate",
 				result: createErrorToolResult("Operation aborted"),
 				isError: true,
+				cancelled: true,
 			};
 		}
 		return {
@@ -766,6 +774,7 @@ async function prepareToolCall(
 			kind: "immediate",
 			result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
 			isError: true,
+			...(signal?.aborted ? { cancelled: true } : {}),
 		};
 	}
 }
@@ -807,6 +816,7 @@ async function executePreparedToolCall(
 		return {
 			result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
 			isError: true,
+			...(signal?.aborted ? { cancelled: true } : {}),
 		};
 	} finally {
 		acceptingUpdates = false;
@@ -823,6 +833,7 @@ async function finalizeExecutedToolCall(
 ): Promise<FinalizedToolCallOutcome> {
 	let result = executed.result;
 	let isError = executed.isError;
+	let cancelled = executed.cancelled;
 
 	if (config.afterToolCall) {
 		try {
@@ -850,6 +861,7 @@ async function finalizeExecutedToolCall(
 		} catch (error) {
 			result = createErrorToolResult(error instanceof Error ? error.message : String(error));
 			isError = true;
+			cancelled = signal?.aborted ? true : cancelled;
 		}
 	}
 
@@ -857,6 +869,7 @@ async function finalizeExecutedToolCall(
 		toolCall: prepared.toolCall,
 		result,
 		isError,
+		...(isError && cancelled ? { cancelled: true } : {}),
 	};
 }
 
@@ -874,6 +887,7 @@ async function emitToolExecutionEnd(finalized: FinalizedToolCallOutcome, emit: A
 		toolName: finalized.toolCall.name,
 		result: finalized.result,
 		isError: finalized.isError,
+		...(finalized.cancelled ? { cancelled: true } : {}),
 	});
 }
 
@@ -888,6 +902,7 @@ function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResul
 		details: finalized.result.details,
 		usage: finalized.result.usage,
 		isError: finalized.isError,
+		...(finalized.cancelled ? { cancelled: true } : {}),
 		timestamp: Date.now(),
 	};
 }

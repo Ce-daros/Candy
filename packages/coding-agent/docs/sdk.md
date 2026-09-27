@@ -99,7 +99,7 @@ Without overrides, the factory creates a `ModelRuntime`, file-backed `SettingsMa
 
 Each boundary can be supplied explicitly:
 
-- `modelRuntime`, `model`, `thinkingLevel`, and `scopedModels` control model access and selection.
+- `modelRuntime`, `model`, and `thinkingLevel` control model access and selection.
 - `settingsManager` supplies merged settings or an in-memory configuration.
 - `sessionManager` supplies persistent or in-memory conversation history.
 - `resourceLoader` supplies extensions, skills, prompt templates, themes, and context files.

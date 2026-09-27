@@ -10,6 +10,7 @@ vi.mock("../src/utils/image-convert.ts", () => imageConvertMocks);
 import { getReadmePath } from "../src/config.ts";
 import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.ts";
+import { createEditToolDefinition } from "../src/core/tools/edit.ts";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.ts";
 import { withBuiltInRenderers } from "../src/core/tools/renderers/index.ts";
 import { createWriteToolDefinition } from "../src/core/tools/write.ts";
@@ -33,6 +34,7 @@ function createBaseToolDefinition(name = "custom_tool"): ToolDefinition {
 function createFakeTui(): TUI {
 	return {
 		requestRender: () => {},
+		terminal: { rows: 30 },
 	} as unknown as TUI;
 }
 
@@ -166,6 +168,93 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toContain(":1");
 	});
 
+	test("renders edit diffs inside the activity rail with five preview rows", () => {
+		const component = new ToolExecutionComponent(
+			"edit",
+			"edit-preview",
+			{ path: "src/theme.ts", oldText: "before", newText: "after" },
+			{ toolPreviewLines: 5 },
+			createEditToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		const diff = Array.from({ length: 10 }, (_, i) => `+${i + 1} line-${i + 1}`).join("\n");
+		component.updateResult({ content: [], details: { diff, firstChangedLine: 1 }, isError: false });
+		const collapsed = stripAnsi(component.render(100).join("\n"));
+		expect(collapsed).toContain("✓─ ▸ edit");
+		expect(collapsed).toContain("line-5");
+		expect(collapsed).not.toContain("line-6");
+		component.setExpanded(true);
+		expect(stripAnsi(component.render(100).join("\n"))).toContain("line-10");
+	});
+
+	test("shows one bash tail preview hint and a named activity node", () => {
+		const component = new ToolExecutionComponent(
+			"bash",
+			"bash-tail",
+			{ command: "generate" },
+			{ toolPreviewLines: 5 },
+			createBashToolDefinition(process.cwd(), { exposeSessionEnvironment: false }),
+			createFakeTui(),
+			process.cwd(),
+		);
+		const output = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`).join("\n");
+		component.updateResult({ content: [{ type: "text", text: output }], isError: false });
+		const collapsed = stripAnsi(component.render(100).join("\n"));
+		expect(collapsed).toContain("✓─ ▸ bash $ generate");
+		expect(collapsed).toContain("5 earlier lines");
+		expect(collapsed).toContain("line-10");
+		expect(collapsed).not.toContain("line-5\n");
+		expect(collapsed).not.toContain("ctrl+o");
+		expect(collapsed.match(/earlier lines/g)).toHaveLength(1);
+	});
+
+	test("keeps tool images visible beyond the text preview and expands their title independently", () => {
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		const png = Buffer.alloc(24);
+		Buffer.from("89504e470d0a1a0a0000000d49484452", "hex").copy(png);
+		png.writeUInt32BE(800, 16);
+		png.writeUInt32BE(600, 20);
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"image-preview",
+			{},
+			{ toolPreviewLines: 5 },
+			createBaseToolDefinition(),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({
+			content: [
+				{ type: "text", text: Array.from({ length: 12 }, (_, i) => `line-${i + 1}`).join("\n") },
+				{ type: "image", data: png.toString("base64"), mimeType: "image/png" },
+			],
+			isError: false,
+		});
+		const lines = component.render(100);
+		const titleRow = lines.findIndex((line) => stripAnsi(line).includes("Image  800×600"));
+		expect(titleRow).toBeGreaterThan(5);
+		expect(lines.length - titleRow).toBeGreaterThan(5);
+		expect(stripAnsi(lines.join("\n"))).not.toContain("line-6");
+		const click: TuiMouseEvent = {
+			type: "click",
+			button: "left",
+			x: 2,
+			y: titleRow,
+			screenX: 2,
+			screenY: titleRow,
+			width: 100,
+			height: lines.length,
+			shift: false,
+			alt: false,
+			ctrl: false,
+			clickCount: 1,
+		};
+		expect(component.handleMouse(click)?.handled).toBe(true);
+		expect(component.render(100).length).toBeGreaterThan(lines.length);
+		expect(component.handleMouse({ ...click, y: titleRow + 2 })?.handled).not.toBe(true);
+	});
+
 	test("preserves legacy file_path rendering compatibility for built-in tools", () => {
 		const component = new ToolExecutionComponent(
 			"read",
@@ -232,8 +321,7 @@ describe("ToolExecutionComponent parity", () => {
 
 		const rendered = stripAnsi(component.render(200).join("\n"));
 		expect(rendered.match(/Full output:/g)?.length ?? 0).toBe(1);
-		expect(rendered).toMatch(/line-4000[^\n]*\n[^\S\n]*\n \[Full output:/);
-		expect(rendered).not.toMatch(/line-4000[^\n]*\n[^\S\n]*\n[^\S\n]*\n \[Full output:/);
+		expect(rendered).toContain("line-4000");
 		expect(rendered).toContain("Truncated: showing 2000 of 4000 lines");
 		expect(rendered).not.toContain("[Showing lines 2001-4000 of 4000. Full output:");
 	});
@@ -467,15 +555,61 @@ describe("ToolExecutionComponent parity", () => {
 
 		const collapsed = stripAnsi(component.render(120).join("\n"));
 		expect(collapsed).toContain("custom_tool");
-		expect(collapsed).toContain("line-10");
-		expect(collapsed).not.toContain("line-11");
-		expect(collapsed).toContain("5 more lines");
-		expect(collapsed).toContain("to expand");
+		expect(collapsed).toContain("line-5");
+		expect(collapsed).not.toContain("line-6");
+		expect(collapsed).toContain("10 more lines");
 
 		component.setExpanded(true);
 		const expanded = stripAnsi(component.render(120).join("\n"));
 		expect(expanded).toContain("line-15");
 		expect(expanded).not.toContain("more lines");
+	});
+
+	test("uses configurable screen-row previews and distinguishes success, error and cancellation", () => {
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-activity",
+			{},
+			{ toolPreviewLines: 10 },
+			createBaseToolDefinition(),
+			createFakeTui(),
+			process.cwd(),
+		);
+		const output = Array.from({ length: 15 }, (_, index) => `line-${index + 1}`).join("\n");
+		component.markExecutionStarted();
+		expect(stripAnsi(component.render(40)[0])).toContain("◇─ ▸");
+		component.updateResult({ content: [{ type: "text", text: output }], details: {}, isError: false });
+		const success = stripAnsi(component.render(40).join("\n"));
+		expect(success).toContain("✓─ ▸");
+		expect(success).toContain("line-10");
+		expect(success).not.toContain("line-11");
+		component.updateResult({ content: [{ type: "text", text: output }], details: {}, isError: true });
+		const error = stripAnsi(component.render(40).join("\n"));
+		expect(error).toContain("×─ ▸");
+		expect(error).toContain("line-12");
+		expect(error).not.toContain("line-13");
+		component.markCancelled();
+		const cancelled = stripAnsi(component.render(40).join("\n"));
+		expect(cancelled).toContain("⊘─ ▸");
+		expect(cancelled).toContain("Cancelled");
+	});
+
+	test("connects adjacent tool activity only when requested", () => {
+		const component = new ToolExecutionComponent(
+			"read",
+			"activity",
+			{ path: "README.md" },
+			{},
+			createReadToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({ content: [{ type: "text", text: "content" }], isError: false });
+		const isolated = stripAnsi(component.render(80).at(-1) ?? "");
+		component.setContinuesActivity(true);
+		const connected = stripAnsi(component.render(80).at(-1) ?? "");
+		expect(connected).toBe("│");
+		expect(isolated).not.toBe("│");
 	});
 
 	test("trims trailing blank display lines from write previews", () => {
@@ -592,6 +726,34 @@ describe("ToolExecutionComponent parity", () => {
 		component.setExpanded(true);
 		const expanded = stripAnsi(component.render(120).join("\n"));
 		expect(expanded).toContain("hidden content");
+	});
+
+	test.each([
+		{ name: "read", args: { path: "notes.txt" }, output: "1 first\n2 second", summary: "2 lines" },
+		{
+			name: "grep",
+			args: { pattern: "needle", path: "." },
+			output: "a.ts:1: needle\nb.ts:3: needle",
+			summary: "2 matches",
+		},
+		{ name: "find", args: { pattern: "*.ts", path: "." }, output: "a.ts\nb.ts", summary: "2 files" },
+		{ name: "ls", args: { path: "." }, output: "a.ts\nb.ts", summary: "2 entries" },
+	])("shows a real $name result count in its collapsed activity row", ({ name, args, output, summary }) => {
+		const component = new ToolExecutionComponent(
+			name,
+			`tool-${name}-summary`,
+			args,
+			{},
+			withBuiltInRenderers(name, createBaseToolDefinition(name)),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({ content: [{ type: "text", text: output }], isError: false });
+		const collapsed = stripAnsi(component.render(80).join("\n"));
+		expect(collapsed).toContain(summary);
+		expect(collapsed).not.toContain("second");
+		component.setExpanded(true);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain(output.split("\n").at(-1));
 	});
 
 	for (const scenario of [

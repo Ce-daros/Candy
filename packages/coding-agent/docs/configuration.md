@@ -4,6 +4,8 @@ candy supports user-level and project configuration. User-level configuration li
 
 In interactive mode, use `/settings` to change common preferences. For other options, ask candy to update the configuration or edit the relevant files directly. Run `/reload` after manually changing settings, keybindings, instructions, or resources.
 
+Run `candy config` to choose which package resources load. Its panel groups extensions, skills, prompts, and themes by package and source. It shows each resource's path and whether the current scope inherits, enables, or disables it. Use `Alt+S` to switch between user and project settings.
+
 ## Agent directory
 
 The agent directory is shown as `<agent-dir>` below. Set its location with the `CANDY_CODING_AGENT_DIR` environment variable or the SDK's [`agentDir`](sdk.md) option.

@@ -6,29 +6,14 @@
  * tool definition, so the tool's public shape is unchanged.
  */
 
-import { Container, Text, truncateToWidth } from "@candy/tui";
-import { keyHint } from "../../../modes/interactive/components/keybinding-hints.ts";
-import { truncateToVisualLines } from "../../../modes/interactive/components/visual-truncate.ts";
+import { Container, Text } from "@candy/tui";
 import { theme } from "../../../modes/interactive/theme/theme.ts";
-import type { ToolDefinition, ToolRenderResultOptions } from "../../extensions/types.ts";
+import type { ToolDefinition } from "../../extensions/types.ts";
 import type { BashToolDetails } from "../bash.ts";
 import { getTextOutput, invalidArgText, str } from "../render-utils.ts";
 import { DEFAULT_MAX_BYTES, formatSize } from "../truncate.ts";
 
-const BASH_PREVIEW_LINES = 5;
 export const BASH_UPDATE_THROTTLE_MS = 100;
-type BashResultRenderState = {
-	cachedWidth: number | undefined;
-	cachedLines: string[] | undefined;
-	cachedSkipped: number | undefined;
-};
-class BashResultRenderComponent extends Container {
-	state: BashResultRenderState = {
-		cachedWidth: undefined,
-		cachedLines: undefined,
-		cachedSkipped: undefined,
-	};
-}
 function formatDuration(ms: number): string {
 	const seconds = ms / 1000;
 	if (seconds < 60) return `${seconds.toFixed(1)}s`;
@@ -40,31 +25,41 @@ function formatDuration(ms: number): string {
 
 	return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
 }
-function formatShellCall(args: { command?: string; timeout?: number } | undefined, prompt: string): string {
+function formatShellCall(
+	args: { command?: string; timeout?: number } | undefined,
+	prompt: string,
+	toolName: string,
+	startedAt: number | undefined,
+	endedAt: number | undefined,
+): string {
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
 	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
-	return theme.fg("toolTitle", theme.bold(`${prompt} ${commandDisplay}`)) + timeoutSuffix;
+	const duration =
+		startedAt === undefined
+			? ""
+			: theme.fg(
+					"muted",
+					`  ${endedAt === undefined ? "Elapsed" : "Took"} ${formatDuration((endedAt ?? Date.now()) - startedAt)}`,
+				);
+	return theme.fg("toolTitle", theme.bold(`${toolName} ${prompt} ${commandDisplay}`)) + timeoutSuffix + duration;
 }
 function rebuildBashResultRenderComponent(
-	component: BashResultRenderComponent,
+	component: Container,
 	result: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		details?: BashToolDetails;
 	},
-	options: ToolRenderResultOptions,
 	showImages: boolean,
-	startedAt: number | undefined,
-	endedAt: number | undefined,
+	isPartial: boolean,
 ): void {
-	const state = component.state;
 	component.clear();
 
 	let output = getTextOutput(result as any, showImages).trim();
 	const truncation = result.details?.truncation;
 	const fullOutputPath = result.details?.fullOutputPath;
-	if (!options.isPartial && truncation?.truncated && fullOutputPath && output.endsWith("]")) {
+	if (!isPartial && truncation?.truncated && fullOutputPath && output.endsWith("]")) {
 		const footerStart = output.lastIndexOf("\n\n[");
 		if (footerStart !== -1 && output.slice(footerStart).includes(fullOutputPath)) {
 			output = output.slice(0, footerStart).trimEnd();
@@ -77,32 +72,7 @@ function rebuildBashResultRenderComponent(
 			.map((line) => theme.fg("toolOutput", line))
 			.join("\n");
 
-		if (options.expanded) {
-			component.addChild(new Text(`\n${styledOutput}`, 0, 0));
-		} else {
-			component.addChild({
-				render: (width: number) => {
-					if (state.cachedLines === undefined || state.cachedWidth !== width) {
-						const preview = truncateToVisualLines(styledOutput, BASH_PREVIEW_LINES, width);
-						state.cachedLines = preview.visualLines;
-						state.cachedSkipped = preview.skippedCount;
-						state.cachedWidth = width;
-					}
-					if (state.cachedSkipped && state.cachedSkipped > 0) {
-						const hint =
-							theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
-							` ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
-						return ["", truncateToWidth(hint, width, "..."), ...(state.cachedLines ?? [])];
-					}
-					return ["", ...(state.cachedLines ?? [])];
-				},
-				invalidate: () => {
-					state.cachedWidth = undefined;
-					state.cachedLines = undefined;
-					state.cachedSkipped = undefined;
-				},
-			});
-		}
+		component.addChild(new Text(styledOutput, 0, 0));
 	}
 
 	if (truncation?.truncated || fullOutputPath) {
@@ -121,16 +91,13 @@ function rebuildBashResultRenderComponent(
 		}
 		component.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
 	}
-
-	if (startedAt !== undefined) {
-		const label = options.isPartial ? "Elapsed" : "Took";
-		const endTime = endedAt ?? Date.now();
-		component.addChild(new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0));
-	}
 }
 
 /** Shell renderers are shared by bash and powershell, which differ only in the prompt they display. */
-export function createShellRenderers(prompt: string): Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> {
+export function createShellRenderers(
+	prompt: string,
+	toolName: string,
+): Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> {
 	return {
 		renderCall(args, _theme, context) {
 			const state = context.state;
@@ -139,7 +106,17 @@ export function createShellRenderers(prompt: string): Pick<ToolDefinition<any, a
 				state.endedAt = undefined;
 			}
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatShellCall(args as { command?: string; timeout?: number } | undefined, prompt));
+			text.setText(
+				formatShellCall(
+					args as { command?: string; timeout?: number } | undefined,
+					prompt,
+					toolName,
+					state.startedAt,
+					state.endedAt,
+				),
+			);
+			state.callComponent = text;
+			state.callArgs = args;
 			return text;
 		},
 		renderResult(result, options, _theme, context) {
@@ -154,16 +131,13 @@ export function createShellRenderers(prompt: string): Pick<ToolDefinition<any, a
 					state.interval = undefined;
 				}
 			}
-			const component =
-				(context.lastComponent as BashResultRenderComponent | undefined) ?? new BashResultRenderComponent();
-			rebuildBashResultRenderComponent(
-				component,
-				result as any,
-				options,
-				context.showImages,
-				state.startedAt,
-				state.endedAt,
-			);
+			if (state.callComponent) {
+				state.callComponent.setText(
+					formatShellCall(state.callArgs, prompt, toolName, state.startedAt, state.endedAt),
+				);
+			}
+			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			rebuildBashResultRenderComponent(component, result as any, context.showImages, options.isPartial);
 			component.invalidate();
 			return component;
 		},

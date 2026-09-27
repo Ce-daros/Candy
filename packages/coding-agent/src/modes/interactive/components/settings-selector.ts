@@ -3,13 +3,24 @@ import { getSupportedThinkingLevels, type Model, type Transport } from "@candy/a
 import {
 	type Component,
 	Container,
+	type Focusable,
+	foregroundAnsi,
+	fuzzyFilter,
 	getCapabilities,
+	getKeybindings,
+	getTerminalColorMode,
+	Input,
+	parseColor,
 	type ScrollViewScrollbar,
 	type SelectItem,
 	type SettingItem,
 	SettingsList,
 	Spacer,
 	Text,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	truncateToWidth,
+	visibleWidth,
 } from "@candy/tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.ts";
 import {
@@ -21,8 +32,13 @@ import {
 	type MermaidRenderingMode,
 	type WarningSettings,
 } from "../../../core/settings-manager.ts";
-import { getSettingsListTheme, parseAutoThemeSetting, type TerminalTheme, theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
+import {
+	getResolvedThemeColors,
+	getSettingsListTheme,
+	parseAutoThemeSetting,
+	type TerminalTheme,
+	theme,
+} from "../theme/theme.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";
 import { SelectSubmenu, SteppedSubmenu, type SteppedSubmenuStep } from "./settings-submenu.ts";
 
@@ -78,6 +94,7 @@ export interface SettingsConfig {
 	enableInstallTelemetry: boolean;
 	doubleEscapeAction: "fork" | "tree" | "none";
 	treeFilterMode: "default" | "no-tools" | "user-only" | "labeled-only" | "all";
+	toolPreviewLines: 5 | 10 | 20;
 	showHardwareCursor: boolean;
 	editorPaddingX: number;
 	outputPad: 0 | 1;
@@ -117,6 +134,7 @@ export interface SettingsCallbacks {
 	onEnableInstallTelemetryChange: (enabled: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onTreeFilterModeChange: (mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all") => void;
+	onToolPreviewLinesChange: (lines: 5 | 10 | 20) => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onOutputPadChange: (padding: 0 | 1) => void;
@@ -200,8 +218,30 @@ function modelItemLabel(model: Model<any>): string {
 function themeItems(availableThemes: string[], currentTheme: string): SelectItem[] {
 	return availableThemes.map((name) => ({
 		value: name,
-		label: `${name === currentTheme ? "✓ " : "  "}${name}`,
+		label: `${name === currentTheme ? "✓ " : "  "}${name}  ${themeSwatches(name)}`,
 	}));
+}
+
+function themeSwatches(name: string): string {
+	const colors = getResolvedThemeColors(name);
+	const mode = getTerminalColorMode();
+	return ["userMessageText", "text", "mdCode", "toolDiffAdded", "toolDiffRemoved", "accent"]
+		.map((token) => `${foregroundAnsi(parseColor(colors[token]), mode)}●\x1b[0m`)
+		.join(" ");
+}
+
+function themeSample(name: string, width: number): string[] {
+	const colors = getResolvedThemeColors(name);
+	const mode = getTerminalColorMode();
+	const paint = (token: string, text: string): string =>
+		`${foregroundAnsi(parseColor(colors[token]), mode)}${text}\x1b[0m`;
+	return [
+		paint("borderMuted", "─".repeat(Math.min(width, 36))),
+		paint("editorPrompt", "◆ ") + paint("userMessageText", "Can you check this change?"),
+		paint("text", "The updated line is ready."),
+		paint("toolDiffRemoved", "- const oldValue = true;"),
+		paint("toolDiffAdded", "+ const newValue = true;"),
+	];
 }
 
 const AUTOMATIC_THEME_VALUE = "/";
@@ -311,6 +351,10 @@ class ThemeSubmenu extends Container {
 			(value) => {
 				this.callbacks.onThemePreview?.(value === AUTOMATIC_THEME_VALUE ? this.getAutomaticThemeSetting() : value);
 			},
+			{
+				preview: (value, width) =>
+					themeSample(value === AUTOMATIC_THEME_VALUE ? this.getActiveAutomaticTheme() : value, width),
+			},
 		);
 		this.setContent(menu);
 	}
@@ -418,6 +462,7 @@ class ThemeSubmenu extends Container {
 				done();
 			},
 			(value) => this.callbacks.onThemePreview?.(value),
+			{ preview: (value, width) => themeSample(value, width) },
 		);
 	}
 
@@ -446,11 +491,40 @@ class ThemeSubmenu extends Container {
 /**
  * Main settings selector component.
  */
-export class SettingsSelectorComponent extends Container {
+export class SettingsSelectorComponent implements Focusable {
+	invalidate(): void {}
 	private settingsList: SettingsList;
+	private readonly categoryLists: SettingsList[] = [];
+	private readonly searchInput = new Input({ prompt: "Search  " });
+	private readonly categories = [
+		"Appearance",
+		"Conversation & Input",
+		"Models & Connection",
+		"Privacy & Trust",
+		"Terminal",
+	];
+	private readonly allItems: SettingItem[];
+	private readonly onSettingChange: (id: string, newValue: string) => void;
+	private selectedCategory = 0;
+	private region: "categories" | "settings" | "search" = "settings";
+	private searchList?: SettingsList;
+	private availableHeight = 20;
+	private readonly onCancel: () => void;
+	private _focused = false;
+	private lastCategoryWidth = 0;
+	private lastListStart = 0;
+	private lastSearchRow = 0;
+	private lastWide = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.searchInput.focused = value && this.region === "search";
+	}
 
 	constructor(config: SettingsConfig, callbacks: SettingsCallbacks) {
-		super();
+		this.onCancel = callbacks.onCancel;
 
 		const supportsImages = getCapabilities().images;
 		const followUpKey = keyDisplayText("app.message.followUp");
@@ -515,6 +589,13 @@ export class SettingsSelectorComponent extends Container {
 				description: "Hide thinking blocks in assistant responses",
 				currentValue: config.hideThinkingBlock ? "true" : "false",
 				values: ["true", "false"],
+			},
+			{
+				id: "tool-preview-lines",
+				label: "Tool preview lines",
+				description: "Visible lines for edit, write and shell activity before expanding",
+				currentValue: String(config.toolPreviewLines),
+				values: ["5", "10", "20"],
 			},
 			{
 				id: "mermaid-rendering",
@@ -841,132 +922,322 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Add borders
-		this.addChild(new DynamicBorder());
-
-		this.settingsList = new SettingsList(
-			items,
-			10,
-			getSettingsListTheme(),
-			(id, newValue) => {
-				switch (id) {
-					case "autocompact":
-						callbacks.onAutoCompactChange(newValue === "true");
-						break;
-					case "show-images":
-						callbacks.onShowImagesChange(newValue === "true");
-						break;
-					case "image-width-cells":
-						callbacks.onImageWidthCellsChange(parseInt(newValue, 10));
-						break;
-					case "auto-resize-images":
-						callbacks.onAutoResizeImagesChange(newValue === "true");
-						break;
-					case "block-images":
-						callbacks.onBlockImagesChange(newValue === "true");
-						break;
-					case "skill-commands":
-						callbacks.onEnableSkillCommandsChange(newValue === "true");
-						break;
-					case "steering-mode":
-						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
-						break;
-					case "follow-up-mode":
-						callbacks.onFollowUpModeChange(newValue as "all" | "one-at-a-time");
-						break;
-					case "transport":
-						callbacks.onTransportChange(newValue as Transport);
-						break;
-					case "http-idle-timeout": {
-						const choice = HTTP_IDLE_TIMEOUT_CHOICES.find((item) => item.label === newValue);
-						if (choice) {
-							callbacks.onHttpIdleTimeoutMsChange(choice.timeoutMs);
-						}
-						break;
+		const onSettingChange = (id: string, newValue: string): void => {
+			switch (id) {
+				case "autocompact":
+					callbacks.onAutoCompactChange(newValue === "true");
+					break;
+				case "show-images":
+					callbacks.onShowImagesChange(newValue === "true");
+					break;
+				case "image-width-cells":
+					callbacks.onImageWidthCellsChange(parseInt(newValue, 10));
+					break;
+				case "auto-resize-images":
+					callbacks.onAutoResizeImagesChange(newValue === "true");
+					break;
+				case "block-images":
+					callbacks.onBlockImagesChange(newValue === "true");
+					break;
+				case "skill-commands":
+					callbacks.onEnableSkillCommandsChange(newValue === "true");
+					break;
+				case "steering-mode":
+					callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
+					break;
+				case "follow-up-mode":
+					callbacks.onFollowUpModeChange(newValue as "all" | "one-at-a-time");
+					break;
+				case "transport":
+					callbacks.onTransportChange(newValue as Transport);
+					break;
+				case "http-idle-timeout": {
+					const choice = HTTP_IDLE_TIMEOUT_CHOICES.find((item) => item.label === newValue);
+					if (choice) {
+						callbacks.onHttpIdleTimeoutMsChange(choice.timeoutMs);
 					}
-					case "cache-warming-mode":
-						callbacks.onCacheWarmingModeChange(newValue as CacheWarmingMode);
-						break;
-					case "hide-thinking":
-						callbacks.onHideThinkingBlockChange(newValue === "true");
-						break;
-					case "mermaid-rendering":
-						callbacks.onMermaidRenderingModeChange(newValue as MermaidRenderingMode);
-						break;
-					case "cache-miss-notices":
-						callbacks.onShowCacheMissNoticesChange(newValue === "true");
-						break;
-					case "collapse-changelog":
-						callbacks.onCollapseChangelogChange(newValue === "true");
-						break;
-					case "quiet-startup":
-						callbacks.onQuietStartupChange(newValue === "true");
-						break;
-					case "install-telemetry":
-						callbacks.onEnableInstallTelemetryChange(newValue === "true");
-						break;
-					case "default-project-trust": {
-						const defaultProjectTrust = DEFAULT_PROJECT_TRUST_BY_LABEL.get(newValue);
-						if (defaultProjectTrust) {
-							callbacks.onDefaultProjectTrustChange(defaultProjectTrust);
-						}
-						break;
-					}
-					case "double-escape-action":
-						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
-						break;
-					case "tree-filter-mode":
-						callbacks.onTreeFilterModeChange(
-							newValue as "default" | "no-tools" | "user-only" | "labeled-only" | "all",
-						);
-						break;
-					case "show-hardware-cursor":
-						callbacks.onShowHardwareCursorChange(newValue === "true");
-						break;
-					case "editor-padding":
-						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
-						break;
-					case "output-padding":
-						callbacks.onOutputPadChange(newValue === "0" ? 0 : 1);
-						break;
-					case "autocomplete-max-visible":
-						callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
-						break;
-					case "clear-on-shrink":
-						callbacks.onClearOnShrinkChange(newValue === "true");
-						break;
-					case "terminal-progress":
-						callbacks.onShowTerminalProgressChange(newValue === "true");
-						break;
-					case "fullscreen-exit-output":
-						callbacks.onFullscreenExitOutputChange(newValue as FullscreenExitOutput);
-						break;
-					case "fullscreen-scrollbar":
-						callbacks.onFullscreenScrollbarChange(newValue as ScrollViewScrollbar);
-						break;
-					case "fullscreen-copy-on-select":
-						callbacks.onFullscreenCopyOnSelectChange(newValue === "true");
-						break;
-					case "theme":
-						callbacks.onThemeChange(newValue);
-						break;
-					case "ui-animations":
-						callbacks.onUiAnimationsChange(newValue === "true");
-						break;
-					case "animation-intensity":
-						callbacks.onAnimationIntensityChange(newValue as AnimationIntensity);
-						break;
+					break;
 				}
-			},
-			callbacks.onCancel,
-			{ enableSearch: true },
-		);
+				case "cache-warming-mode":
+					callbacks.onCacheWarmingModeChange(newValue as CacheWarmingMode);
+					break;
+				case "hide-thinking":
+					callbacks.onHideThinkingBlockChange(newValue === "true");
+					break;
+				case "tool-preview-lines":
+					callbacks.onToolPreviewLinesChange(Number(newValue) as 5 | 10 | 20);
+					break;
+				case "mermaid-rendering":
+					callbacks.onMermaidRenderingModeChange(newValue as MermaidRenderingMode);
+					break;
+				case "cache-miss-notices":
+					callbacks.onShowCacheMissNoticesChange(newValue === "true");
+					break;
+				case "collapse-changelog":
+					callbacks.onCollapseChangelogChange(newValue === "true");
+					break;
+				case "quiet-startup":
+					callbacks.onQuietStartupChange(newValue === "true");
+					break;
+				case "install-telemetry":
+					callbacks.onEnableInstallTelemetryChange(newValue === "true");
+					break;
+				case "default-project-trust": {
+					const defaultProjectTrust = DEFAULT_PROJECT_TRUST_BY_LABEL.get(newValue);
+					if (defaultProjectTrust) {
+						callbacks.onDefaultProjectTrustChange(defaultProjectTrust);
+					}
+					break;
+				}
+				case "double-escape-action":
+					callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+					break;
+				case "tree-filter-mode":
+					callbacks.onTreeFilterModeChange(
+						newValue as "default" | "no-tools" | "user-only" | "labeled-only" | "all",
+					);
+					break;
+				case "show-hardware-cursor":
+					callbacks.onShowHardwareCursorChange(newValue === "true");
+					break;
+				case "editor-padding":
+					callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
+					break;
+				case "output-padding":
+					callbacks.onOutputPadChange(newValue === "0" ? 0 : 1);
+					break;
+				case "autocomplete-max-visible":
+					callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
+					break;
+				case "clear-on-shrink":
+					callbacks.onClearOnShrinkChange(newValue === "true");
+					break;
+				case "terminal-progress":
+					callbacks.onShowTerminalProgressChange(newValue === "true");
+					break;
+				case "fullscreen-exit-output":
+					callbacks.onFullscreenExitOutputChange(newValue as FullscreenExitOutput);
+					break;
+				case "fullscreen-scrollbar":
+					callbacks.onFullscreenScrollbarChange(newValue as ScrollViewScrollbar);
+					break;
+				case "fullscreen-copy-on-select":
+					callbacks.onFullscreenCopyOnSelectChange(newValue === "true");
+					break;
+				case "theme":
+					callbacks.onThemeChange(newValue);
+					break;
+				case "ui-animations":
+					callbacks.onUiAnimationsChange(newValue === "true");
+					break;
+				case "animation-intensity":
+					callbacks.onAnimationIntensityChange(newValue as AnimationIntensity);
+					break;
+			}
+		};
+		this.allItems = items;
+		this.onSettingChange = onSettingChange;
+		this.settingsList = new SettingsList(items, 10, getSettingsListTheme(), onSettingChange, callbacks.onCancel, {
+			enableSearch: true,
+		});
 
-		this.addChild(this.settingsList);
-		this.addChild(new DynamicBorder());
+		const categoryIds = [
+			[
+				"theme",
+				"ui-animations",
+				"animation-intensity",
+				"editor-padding",
+				"output-padding",
+				"show-images",
+				"image-width-cells",
+				"mermaid-rendering",
+				"collapse-changelog",
+				"quiet-startup",
+				"warnings",
+			],
+			[
+				"hide-thinking",
+				"tool-preview-lines",
+				"autocompact",
+				"steering-mode",
+				"follow-up-mode",
+				"autocomplete-max-visible",
+				"skill-commands",
+				"double-escape-action",
+				"tree-filter-mode",
+			],
+			["model-thinking", "transport", "http-idle-timeout", "cache-warming-mode", "cache-miss-notices"],
+			["install-telemetry", "default-project-trust", "block-images", "auto-resize-images"],
+			[
+				"show-hardware-cursor",
+				"fullscreen-scrollbar",
+				"fullscreen-copy-on-select",
+				"fullscreen-exit-output",
+				"clear-on-shrink",
+				"terminal-progress",
+			],
+		];
+		for (const ids of categoryIds) {
+			this.categoryLists.push(
+				new SettingsList(
+					ids.flatMap((id) => items.filter((item) => item.id === id)),
+					10,
+					getSettingsListTheme(),
+					onSettingChange,
+					callbacks.onCancel,
+				),
+			);
+		}
 	}
 
 	getSettingsList(): SettingsList {
 		return this.settingsList;
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(8, height);
+	}
+
+	private getActiveList(): SettingsList {
+		return this.searchList ?? this.categoryLists[this.selectedCategory];
+	}
+
+	private updateSearch(): void {
+		const query = this.searchInput.getValue();
+		this.searchList = query
+			? new SettingsList(
+					fuzzyFilter(this.allItems, query, (item) => `${item.label} ${item.description ?? ""}`),
+					10,
+					getSettingsListTheme(),
+					this.onSettingChange,
+					this.onCancel,
+				)
+			: undefined;
+	}
+
+	render(width: number): string[] {
+		const wide = width >= 100;
+		const categoryWidth = wide ? Math.min(26, Math.floor(width * 0.25)) : width;
+		this.lastWide = wide;
+		this.lastCategoryWidth = categoryWidth;
+		this.lastListStart = wide ? 2 : 4;
+		const mainWidth = wide ? width - categoryWidth - 3 : width;
+		const list = this.getActiveList();
+		const searchLines = this.searchInput.render(width);
+		const bodyHeight = Math.max(3, this.availableHeight - (wide ? 2 : 4) - 1 - searchLines.length - 1);
+		list.setMaxVisible(Math.max(2, bodyHeight - 4));
+		const mainLines = list.render(mainWidth).slice(0, bodyHeight);
+		const lines = [theme.bold(theme.fg("accent", "Settings")), ""];
+		const categoryLine = (index: number): string => {
+			const selected = index === this.selectedCategory && !this.searchList;
+			const focused = selected && this.region === "categories";
+			const name = focused
+				? theme.bold(theme.fg("accent", this.categories[index]))
+				: selected
+					? theme.fg("accent", this.categories[index])
+					: theme.fg("muted", this.categories[index]);
+			const label = `${selected ? theme.fg("borderAccent", "♦ ") : "  "}${name}${selected ? theme.fg("borderAccent", " ♦") : ""}`;
+			return truncateToWidth(label, categoryWidth);
+		};
+		if (wide) {
+			for (let row = 0; row < bodyHeight; row++) {
+				const left = row < this.categories.length ? categoryLine(row) : "";
+				lines.push(
+					`${left}${" ".repeat(Math.max(0, categoryWidth - visibleWidth(left)))} ${theme.fg("borderMuted", "│")} ${mainLines[row] ?? ""}`,
+				);
+			}
+		} else {
+			let firstCategory = Math.max(0, this.selectedCategory - 1);
+			let categoryStrip = "";
+			for (let index = firstCategory; index < this.categories.length; index++) {
+				const candidate = `${categoryStrip}${categoryStrip ? "  " : ""}${categoryLine(index)}`;
+				if (visibleWidth(candidate) > width && index > this.selectedCategory) break;
+				if (visibleWidth(candidate) > width) {
+					firstCategory = this.selectedCategory;
+					categoryStrip = categoryLine(index);
+				} else categoryStrip = candidate;
+			}
+			lines.push(truncateToWidth(`${firstCategory > 0 ? theme.fg("muted", "‹ ") : ""}${categoryStrip}`, width));
+			lines.push(theme.fg("borderMuted", "─".repeat(width)));
+			lines.push(...mainLines);
+			while (lines.length < 4 + bodyHeight) lines.push("");
+		}
+		lines.push(theme.fg("borderMuted", "─".repeat(width)));
+		this.lastSearchRow = lines.length;
+		lines.push(...searchLines);
+		lines.push(theme.fg("dim", "Tab panels · Enter select · Esc back"));
+		return lines;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "press" && event.type !== "click" && event.type !== "wheel") return undefined;
+		if (event.y === this.lastSearchRow) {
+			this.region = "search";
+			this.searchInput.focused = this._focused;
+			return this.searchInput.handleMouse?.({ ...event, y: 0 });
+		}
+		if (this.lastWide && event.x < this.lastCategoryWidth && event.y >= 2 && event.y < 2 + this.categories.length) {
+			this.selectedCategory = event.y - 2;
+			this.region = "categories";
+			this.searchInput.setValue("");
+			this.searchList = undefined;
+			return { handled: true, focus: true, render: true };
+		}
+		if (
+			event.y >= this.lastListStart &&
+			event.y < this.lastSearchRow - 1 &&
+			(!this.lastWide || event.x > this.lastCategoryWidth + 1)
+		) {
+			this.region = "settings";
+			return this.getActiveList().handleMouse?.({
+				...event,
+				x: this.lastWide ? event.x - this.lastCategoryWidth - 3 : event.x,
+				y: event.y - this.lastListStart,
+			});
+		}
+		return undefined;
+	}
+
+	handleInput(data: string): void {
+		const kb = getKeybindings();
+		const list = this.getActiveList();
+		if (list.isSubmenuOpen()) {
+			list.handleInput(data);
+			return;
+		}
+		if (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious")) {
+			const regions = ["categories", "settings", "search"] as const;
+			const delta = kb.matches(data, "app.panel.focusNext") ? 1 : -1;
+			this.region = regions[(regions.indexOf(this.region) + delta + regions.length) % regions.length];
+			this.searchInput.focused = this._focused && this.region === "search";
+		} else if (
+			this.region === "categories" &&
+			(kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down"))
+		) {
+			const delta = kb.matches(data, "tui.select.down") ? 1 : -1;
+			this.selectedCategory = (this.selectedCategory + delta + this.categories.length) % this.categories.length;
+			this.searchInput.setValue("");
+			this.searchList = undefined;
+		} else if (this.region === "categories" && kb.matches(data, "tui.select.confirm")) {
+			this.region = "settings";
+		} else if (kb.matches(data, "tui.select.cancel")) {
+			if (this.searchInput.getValue()) {
+				this.searchInput.setValue("");
+				this.searchList = undefined;
+			} else this.onCancel();
+		} else if (
+			this.region === "settings" &&
+			(kb.matches(data, "tui.select.up") ||
+				kb.matches(data, "tui.select.down") ||
+				kb.matches(data, "tui.select.confirm") ||
+				data === " ")
+		) {
+			list.handleInput(data);
+		} else {
+			this.region = "search";
+			this.searchInput.focused = this._focused;
+			this.searchInput.handleInput(data);
+			this.updateSearch();
+		}
 	}
 }

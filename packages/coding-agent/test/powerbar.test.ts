@@ -122,7 +122,7 @@ describe("PowerbarController thinking track", () => {
 
 		// The collapse keeps the new anchor highlighted until the final swap.
 		const mid = stripAnsi(controller.render(200)!.text);
-		expect(mid).toContain("‹ High ›");
+		expect(mid).toContain("‹ High ▰▰▰▰▱▱ ›");
 
 		settle(controller);
 		expect(controller.isIdle()).toBe(true);
@@ -138,6 +138,28 @@ describe("PowerbarController thinking track", () => {
 		settle(controller);
 		expect(applied).toEqual([]);
 		expect(controller.isIdle()).toBe(true);
+	});
+
+	it("previews a level while navigating and restores the active level on cancel", () => {
+		const { controller, applied } = createFixture();
+		controller.setAnimationOptions(false, "moderate");
+		const preview = vi.fn();
+		const commit = vi.fn();
+		controller.onThinkingPreview = preview;
+		controller.onThinkingCommit = commit;
+		open(controller);
+		controller.move(2);
+		expect(preview).toHaveBeenLastCalledWith("xhigh");
+		controller.collapse();
+		expect(preview).toHaveBeenLastCalledWith("medium");
+		expect(commit).not.toHaveBeenCalled();
+		expect(applied).toEqual([]);
+		open(controller);
+		controller.move(3);
+		controller.confirm();
+		expect(commit).toHaveBeenLastCalledWith("max");
+		expect(applied).toEqual([{ level: "max", persist: false }]);
+		controller.dispose();
 	});
 
 	it("shows the final track immediately when animations are disabled", () => {

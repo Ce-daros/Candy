@@ -1,6 +1,16 @@
 // Core TUI interfaces and classes
 
 export { Marked, type Token, type Tokens } from "marked";
+// Alternate-screen transcript search
+export {
+	AltScreenSearchComponent,
+	AltScreenSearchIndex,
+	type AltScreenSearchMatch,
+	type AltScreenSearchResult,
+	type AltScreenSearchSegment,
+	findAltScreenSearchMatches,
+	getAltScreenSearchMatchKey,
+} from "./alt-screen-search.ts";
 // Autocomplete support
 export {
 	type AutocompleteItem,
@@ -170,7 +180,7 @@ export {
 	type TuiStopOptions,
 	type ViewportTUI,
 } from "./tui.ts";
-export { TuiAltScreen, type TuiAltScreenOptions } from "./tui-alt-screen.ts";
+export { TuiAltScreen, type TuiAltScreenOptions, type TuiAltScreenSearchHost } from "./tui-alt-screen.ts";
 export { TuiMainScreen, type TuiMainScreenRenderState } from "./tui-main-screen.ts";
 // Utilities
 export {

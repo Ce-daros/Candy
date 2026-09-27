@@ -16,11 +16,20 @@ import {
 import type { KeybindingsManager } from "../../../core/keybindings.ts";
 import { editInExternalEditor } from "../external-editor.ts";
 import { getEditorTheme, theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 export interface ExtensionEditorOptions extends EditorOptions {
 	description?: string;
+}
+
+class PanelEditor extends Editor {
+	protected override renderTopBorder(_width: number, _hiddenLineCount: number): string {
+		return "";
+	}
+
+	protected override renderBottomBorder(_width: number, _hiddenLineCount: number): string {
+		return "";
+	}
 }
 
 export class ExtensionEditorComponent extends Container implements Focusable {
@@ -30,6 +39,8 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 	private tui: TUI;
 	private keybindings: KeybindingsManager;
 	private externalEditorCommand: string;
+	private availableHeight = 20;
+	private readonly hasDescription: boolean;
 
 	private _focused = false;
 	get focused(): boolean {
@@ -62,13 +73,10 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		this.onSubmitCallback = onSubmit;
 		this.onCancelCallback = onCancel;
 		const { description, ...editorOptions } = options ?? {};
-
-		// Add top border
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
+		this.hasDescription = Boolean(description);
 
 		// Add title and optional description
-		this.addChild(new Text(theme.fg("accent", title), 1, 0));
+		this.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
 		if (description) {
 			this.addChild(new Spacer(1));
 			this.addChild(new Text(theme.fg("text", description), 1, 0));
@@ -76,7 +84,7 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 
 		// Create editor
-		this.editor = new Editor(tui, getEditorTheme(), editorOptions);
+		this.editor = new PanelEditor(tui, getEditorTheme(), editorOptions);
 		if (prefill) {
 			this.editor.setText(prefill);
 		}
@@ -97,11 +105,15 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 			keyHint("tui.select.cancel", "cancel") +
 			`  ${keyHint("app.editor.external", "external editor")}`;
 		this.addChild(new Text(hint, 1, 0));
+	}
 
-		this.addChild(new Spacer(1));
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(8, height);
+	}
 
-		// Add bottom border
-		this.addChild(new DynamicBorder());
+	override render(width: number): string[] {
+		this.editor.setViewportLines(Math.max(3, this.availableHeight - (this.hasDescription ? 8 : 6)));
+		return super.render(width);
 	}
 
 	handleInput(keyData: string): void {

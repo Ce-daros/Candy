@@ -59,6 +59,30 @@ describe("editor frame motion", () => {
 		expect(motion.paintBorder("─", 7, 0)).toContain("\x1b[38;");
 	});
 
+	it("keeps seven distinct levels and a static multicolor gradient with animations off", () => {
+		motion.setOptions(false, "moderate");
+		const frames = ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => {
+			motion.setThinking(level as Parameters<FrameMotion["setThinking"]>[0]);
+			return motion.paintBorder("─".repeat(60), 0, 0);
+		});
+		expect(new Set(frames).size).toBe(7);
+		expect(new Set(frames[5]!.match(/\x1b\[38;[^m]+m/g)).size).toBeGreaterThan(8);
+		const staticFrame = frames[6];
+		vi.advanceTimersByTime(4000);
+		expect(motion.paintBorder("─".repeat(60), 0, 0)).toBe(staticFrame);
+	});
+
+	it("continues breathing while idle and clears the animation timer on disposal", () => {
+		motion.beginFrame();
+		motion.setThinking("max");
+		vi.advanceTimersByTime(1000);
+		const before = motion.paintBorder("─".repeat(60), 0, 0);
+		vi.advanceTimersByTime(1300);
+		expect(motion.paintBorder("─".repeat(60), 0, 0)).not.toBe(before);
+		motion.dispose();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("blends cyan into yellow over multiple Shell frames", () => {
 		motion.beginFrame();
 		vi.advanceTimersByTime(520);

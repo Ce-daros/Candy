@@ -38,21 +38,22 @@ describe("model selector", () => {
 			createFakeTui(),
 			currentModel,
 			harness.session.modelRuntime,
-			[],
 			() => {},
 			() => {},
 		);
 
-		const getModelRow = (id: string): string | undefined =>
+		const getModelRow = (name: string): string | undefined =>
 			stripAnsi(selector.render(120).join("\n"))
 				.split("\n")
-				.find((line) => line.includes(`${id} [`))
+				.find((line) => line.includes(name))
 				?.trimEnd();
 
-		expect(getModelRow("current-model")).toBe(`→ ✓ current-model [${currentModel.provider}]`);
+		expect(getModelRow("Current Model")).toContain("♦ Current Model");
+		expect(getModelRow("Current Model")).toContain("✓");
 		selector.handleInput("\x1b[B");
-		expect(getModelRow("current-model")).toBe(`  ✓ current-model [${currentModel.provider}]`);
-		expect(getModelRow("browsed-model")).toBe(`→   browsed-model [${currentModel.provider}]`);
+		expect(getModelRow("Current Model")).not.toContain("♦ Current Model");
+		expect(getModelRow("Browsed Model")).toContain("♦ Browsed Model");
+		expect(stripAnsi(selector.render(120).join("\n"))).toContain(`${currentModel.provider}/browsed-model`);
 		selector.dispose();
 	});
 
@@ -65,14 +66,13 @@ describe("model selector", () => {
 			createFakeTui(),
 			currentModel,
 			harness.session.modelRuntime,
-			[],
 			() => {},
 			() => {},
 			undefined,
 			saveDefault,
 		);
 
-		expect(stripAnsi(selector.render(120).join("\n"))).toContain("Ctrl+R to set as default");
+		expect(stripAnsi(selector.render(120).join("\n"))).toContain("Ctrl+R set default");
 		selector.handleInput("\x13");
 		expect(saveDefault).not.toHaveBeenCalled();
 		selector.handleInput("\x12");
@@ -93,7 +93,6 @@ describe("model selector", () => {
 			createFakeTui(),
 			harness.getModel(),
 			harness.session.modelRuntime,
-			[],
 			() => {},
 			() => {},
 		);
@@ -102,5 +101,29 @@ describe("model selector", () => {
 			const rendered = stripAnsi(selector.render(120).join("\n"));
 			expect(rendered).toContain("Could not refresh 2 model catalogs (openai, anthropic); showing cached models.");
 		});
+	});
+
+	it("disambiguates duplicate names and searches their IDs at narrow widths", async () => {
+		harness = await createHarness({
+			models: [
+				{ id: "alpha-one", name: "Alpha", reasoning: true },
+				{ id: "alpha-two", name: "Alpha", reasoning: true },
+			],
+		});
+		const selector = new ModelSelectorComponent(
+			createFakeTui(),
+			harness.getModel("alpha-one"),
+			harness.session.modelRuntime,
+			() => {},
+			() => {},
+		);
+		let output = stripAnsi(selector.render(80).join("\n"));
+		expect(output).toContain("Alpha · alpha-one");
+		expect(output).toContain("Alpha · alpha-two");
+		for (const character of "alpha-two") selector.handleInput(character);
+		output = stripAnsi(selector.render(80).join("\n"));
+		expect(output).toContain("Alpha · alpha-two");
+		expect(output).not.toContain("Alpha · alpha-one");
+		selector.dispose();
 	});
 });

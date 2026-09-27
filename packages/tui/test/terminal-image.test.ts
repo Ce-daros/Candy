@@ -557,7 +557,7 @@ describe("Kitty image cursor movement", () => {
 		}
 	});
 
-	it("caps Image component height to a square pixel box by default", () => {
+	it("caps Image component height to a square pixel box within viewport bounds", () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		setCellDimensions({ widthPx: 10, heightPx: 20 });
 		try {
@@ -569,8 +569,45 @@ describe("Kitty image cursor movement", () => {
 				{ widthPx: 10, heightPx: 100 },
 			);
 			const lines = image.render(12);
-			assert.strictEqual(lines.length, 5);
-			assert.ok(lines[0].includes(",c=1,r=5"));
+			assert.strictEqual(lines.length, 6);
+			assert.ok(lines[0].startsWith("Image"));
+			assert.ok(lines[1].includes(",c=1,r=5"));
+		} finally {
+			resetCapabilitiesCache();
+			setCellDimensions({ widthPx: 9, heightPx: 18 });
+		}
+	});
+
+	it("expands image preview from one-third to two-thirds of the viewport", () => {
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		setCellDimensions({ widthPx: 10, heightPx: 10 });
+		try {
+			const image = new Image(
+				"AAAA",
+				"image/png",
+				{ fallbackColor: (value) => value },
+				{ maxWidthCells: 20, viewportRows: 30, filename: "sample.png" },
+				{ widthPx: 100, heightPx: 1000 },
+			);
+			const collapsed = image.render(22);
+			assert.strictEqual(collapsed.length, 11);
+			assert.ok(collapsed[0].includes("sample.png"));
+			image.handleMouse({
+				type: "click",
+				button: "left",
+				x: 0,
+				y: 0,
+				screenX: 0,
+				screenY: 0,
+				width: 22,
+				height: collapsed.length,
+				shift: false,
+				alt: false,
+				ctrl: false,
+			});
+			assert.strictEqual(image.render(22).length, 21);
+			image.setViewportRows(12);
+			assert.strictEqual(image.render(22).length, 9);
 		} finally {
 			resetCapabilitiesCache();
 			setCellDimensions({ widthPx: 9, heightPx: 18 });
@@ -591,11 +628,11 @@ describe("Kitty image cursor movement", () => {
 			const lines = image.render(4);
 			const imageId = image.getImageId();
 			assert.strictEqual(typeof imageId, "number");
-			assert.ok(lines[0].startsWith("\x1b_G"));
-			assert.ok(lines[0].includes(",C=1,"));
-			assert.ok(lines[0].includes(`,i=${imageId}`));
-			assert.ok(lines[0].endsWith("\x1b\\"));
-			assert.deepStrictEqual(lines.slice(1, lines.length), [""]);
+			assert.ok(lines[1].startsWith("\x1b_G"));
+			assert.ok(lines[1].includes(",C=1,"));
+			assert.ok(lines[1].includes(`,i=${imageId}`));
+			assert.ok(lines[1].endsWith("\x1b\\"));
+			assert.deepStrictEqual(lines.slice(2, lines.length), [""]);
 		} finally {
 			resetCapabilitiesCache();
 			setCellDimensions({ widthPx: 9, heightPx: 18 });
@@ -619,13 +656,13 @@ describe("Kitty image cursor movement", () => {
 				{ widthPx: 1280, heightPx: 720 },
 			);
 			const lines = image.render(width);
-			assert.strictEqual(lines.length, 1);
+			assert.strictEqual(lines.length, 2);
 			assert.ok(
-				visibleWidth(lines[0]) <= width,
+				lines.every((line) => visibleWidth(line) <= width),
 				`fallback line wider than ${width}: visible=${visibleWidth(lines[0])} raw=${JSON.stringify(lines[0])}`,
 			);
-			assert.ok(lines[0].includes("..."), "expected ellipsis when truncating long fallback path");
-			assert.ok(lines[0].includes("~"), "expected home-shortened path in fallback");
+			assert.ok(lines[1].includes("..."), "expected ellipsis when truncating long fallback path");
+			assert.ok(lines[1].includes("~"), "expected home-shortened path in fallback");
 		} finally {
 			resetCapabilitiesCache();
 		}
@@ -658,30 +695,30 @@ describe("image cell sizing", () => {
 				"AAAA",
 				"image/png",
 				{ fallbackColor: (value) => value },
-				{ maxWidthCells: 60, imageId: 8938 },
+				{ maxWidthCells: 60, imageId: 8938, viewportRows: 100 },
 				{ widthPx: 615, heightPx: 86 },
 			);
 			const lines = image.render(62);
-			assert.strictEqual(lines.length, 4);
-			assert.deepStrictEqual(lines.slice(1), ["", "", ""]);
-			assert.ok(lines[0].includes(",c=60,r=4,i=8938;"));
-			assert.deepStrictEqual(getKittyImageMetadata(lines[0]), {
+			assert.strictEqual(lines.length, 5);
+			assert.deepStrictEqual(lines.slice(2), ["", "", ""]);
+			assert.ok(lines[1].includes(",c=60,r=4,i=8938;"));
+			assert.deepStrictEqual(getKittyImageMetadata(lines[1]), {
 				imageId: 8938,
 				columns: 60,
 				rows: 4,
 				widthPx: 615,
 				heightPx: 86,
 			});
-			const cropped = cropKittyImageLine(lines[0], 1, 2);
+			const cropped = cropKittyImageLine(lines[1], 1, 2);
 			assert.strictEqual(
 				getKittyImagePlacement(cropped)?.sequence,
 				"\x1b_Ga=p,q=2,C=1,c=60,i=8938,y=21,h=44,r=2\x1b\\",
 			);
 
 			const narrowerLines = image.render(32);
-			assert.strictEqual(narrowerLines.length, 2);
-			assert.ok(narrowerLines[0].includes(",c=30,r=2,i=8938;"));
-			assert.strictEqual(getKittyImageMetadata(narrowerLines[0])?.rows, 2);
+			assert.strictEqual(narrowerLines.length, 3);
+			assert.ok(narrowerLines[1].includes(",c=30,r=2,i=8938;"));
+			assert.strictEqual(getKittyImageMetadata(narrowerLines[1])?.rows, 2);
 		});
 
 		it("keeps the ceiling placement when rounding down would increase distortion", () => {
@@ -698,13 +735,13 @@ describe("image cell sizing", () => {
 				"AAAA",
 				"image/png",
 				{ fallbackColor: (value) => value },
-				{ maxWidthCells: 30, imageId: 8938 },
+				{ maxWidthCells: 30, imageId: 8938, viewportRows: 100 },
 				{ widthPx: 400, heightPx: 900 },
 			);
 			const lines = image.render(32);
-			assert.strictEqual(lines.length, 15);
-			assert.ok(lines[0].includes(",c=13,r=15,i=8938;"));
-			assert.deepStrictEqual(getKittyImageMetadata(lines[0]), {
+			assert.strictEqual(lines.length, 16);
+			assert.ok(lines[1].includes(",c=13,r=15,i=8938;"));
+			assert.deepStrictEqual(getKittyImageMetadata(lines[1]), {
 				imageId: 8938,
 				columns: 13,
 				rows: 15,
@@ -712,12 +749,12 @@ describe("image cell sizing", () => {
 				heightPx: 900,
 			});
 			assert.strictEqual(
-				getKittyImagePlacement(cropKittyImageLine(lines[0], 1, 2))?.sequence,
+				getKittyImagePlacement(cropKittyImageLine(lines[1], 1, 2))?.sequence,
 				"\x1b_Ga=p,q=2,C=1,c=13,i=8938,y=60,h=120,r=2\x1b\\",
 			);
 			const narrowerLines = image.render(22);
-			assert.strictEqual(narrowerLines.length, 10);
-			assert.ok(narrowerLines[0].includes(",c=9,r=10,i=8938;"));
+			assert.strictEqual(narrowerLines.length, 11);
+			assert.ok(narrowerLines[1].includes(",c=9,r=10,i=8938;"));
 		});
 
 		it("chooses thin Kitty widths by proportions while keeping at least one column", () => {
@@ -756,10 +793,11 @@ describe("image cell sizing", () => {
 				"AAAA",
 				"image/png",
 				{ fallbackColor: (value) => value },
-				{ maxWidthCells: 60 },
+				{ maxWidthCells: 60, viewportRows: 100 },
 				{ widthPx: 615, heightPx: 86 },
 			);
 			assert.deepStrictEqual(image.render(62), [
+				"Image  615×86",
 				"",
 				"",
 				"",

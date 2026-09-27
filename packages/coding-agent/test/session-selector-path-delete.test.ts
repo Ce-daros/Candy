@@ -67,8 +67,8 @@ function createSymlinkedSessionPaths(): {
 	mkdirSync(sharedDir, { recursive: true });
 	const aliasASessions = join(aliasADir, "sessions");
 	const aliasBSessions = join(aliasBDir, "sessions");
-	symlinkSync(sharedDir, aliasASessions);
-	symlinkSync(sharedDir, aliasBSessions);
+	symlinkSync(sharedDir, aliasASessions, process.platform === "win32" ? "junction" : "dir");
+	symlinkSync(sharedDir, aliasBSessions, process.platform === "win32" ? "junction" : "dir");
 
 	const parentRealPath = join(sharedDir, "parent.jsonl");
 	const childRealPath = join(sharedDir, "child.jsonl");
@@ -204,8 +204,8 @@ describe("session selector path/delete interactions", () => {
 		await flushPromises();
 
 		const list = selector.getSessionList();
-		list.handleInput("\t"); // current -> all (starts async load)
-		list.handleInput("\t"); // all -> current
+		list.handleInput("\x1bs"); // current -> all (starts async load)
+		list.handleInput("\x1bs"); // all -> current
 
 		allDeferred.resolve([makeSession({ id: "all" })]);
 		await flushPromises();
@@ -238,9 +238,9 @@ describe("session selector path/delete interactions", () => {
 		await flushPromises();
 
 		const list = selector.getSessionList();
-		list.handleInput("\t"); // current -> all (starts async load)
-		list.handleInput("\t"); // all -> current
-		list.handleInput("\t"); // current -> all again while load pending
+		list.handleInput("\x1bs"); // current -> all (starts async load)
+		list.handleInput("\x1bs"); // all -> current
+		list.handleInput("\x1bs"); // current -> all again while load pending
 
 		expect(allLoadCalls).toBe(1);
 		expect(selector.getSessionList().getSelectedSessionPath()).toBe(allSessions[0]!.path);

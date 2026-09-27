@@ -69,14 +69,14 @@ describe("issue #6999 models.json hot reload", () => {
 			tui,
 			undefined,
 			modelRuntime,
-			[],
 			() => {},
 			() => {},
 		);
 
 		await renderedAfterRefresh;
 		const rendered = stripAnsi(selector.render(120).join("\n"));
-		expect(rendered).toContain("new-model [new-provider]");
-		expect(rendered).not.toContain("old-model [old-provider]");
+		expect(rendered).toContain("new-model");
+		expect(rendered).toContain("new-provider");
+		expect(rendered).not.toContain("old-model");
 	});
 });

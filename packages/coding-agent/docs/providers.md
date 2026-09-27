@@ -11,7 +11,7 @@ Use `/login [provider]` to see the methods supported by a provider. Amazon Bedro
 
 Run `/login` and select a provider. candy guides you through its OAuth or API-key flow and saves the resulting credential in [`auth.json`](configuration.md#agent-directory).
 
-On a remote or headless machine, an OAuth callback may not reach the local process. When prompted, paste the final redirect URL or authorization code back into Pi.
+On a remote or headless machine, an OAuth callback may not reach the local process. When prompted, paste the final redirect URL or authorization code back into candy. The sign-in panel keeps the provider, URL, and verification code visible while the flow is pending. API-key input is masked and the submitted key is not echoed.
 
 Run `/logout` and select a provider to remove its stored credential. This does not unset environment variables, remove authentication from `models.json`, or revoke the credential at the provider.
 

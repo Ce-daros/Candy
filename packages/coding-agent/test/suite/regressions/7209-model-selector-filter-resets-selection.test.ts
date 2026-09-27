@@ -10,13 +10,13 @@ function createFakeTui(): TUI {
 	return { requestRender: () => {} } as unknown as TUI;
 }
 
-/** Return the model id of the highlighted (→) row in the rendered selector. */
-function selectedModelId(rendered: string): string | undefined {
-	const line = rendered.split("\n").find((l) => l.startsWith("→ "));
-	if (!line) return undefined;
-	const rest = line.replace(/^→\s*/, "");
-	const id = rest.split(" [")[0]?.replace(/^✓\s*/, "");
-	return id?.trim() || undefined;
+function selectedModelName(rendered: string): string | undefined {
+	const line = rendered.split("\n").find((value) => value.includes("│ ♦ "));
+	const modelColumn = line?.split("│ ")[1];
+	return modelColumn
+		?.replace(/^♦\s*/, "")
+		.split(/\s+✓|\s+· default|\s+♦$/)[0]
+		?.trim();
 }
 
 describe("model selector filter resets selection to top", () => {
@@ -52,7 +52,6 @@ describe("model selector filter resets selection to top", () => {
 			createFakeTui(),
 			current,
 			harness.session.modelRuntime,
-			[],
 			() => {},
 			() => {},
 		);
@@ -63,64 +62,22 @@ describe("model selector filter resets selection to top", () => {
 		});
 
 		// Current model (alpha-1) is sorted first, so selection starts on row 0.
-		expect(selectedModelId(stripAnsi(selector.render(120).join("\n")))).toBe("alpha-1");
+		expect(selectedModelName(stripAnsi(selector.render(120).join("\n")))).toBe("Alpha One");
 
-		// Move selection down two rows to alpha-3.
+		// Model names sort alphabetically, so two moves select Alpha Two.
 		selector.handleInput("\x1b[B");
 		selector.handleInput("\x1b[B");
-		expect(selectedModelId(stripAnsi(selector.render(120).join("\n")))).toBe("alpha-3");
+		expect(selectedModelName(stripAnsi(selector.render(120).join("\n")))).toBe("Alpha Two");
 
 		// Type a query that matches the three alpha models. The selection must
-		// move back to the top row (alpha-1), not stay clamped at index 2.
+		// move back to the top row (Alpha One), not stay clamped at index 2.
 		for (const char of "alpha") {
 			selector.handleInput(char);
 		}
 
 		const rendered = stripAnsi(selector.render(120).join("\n"));
-		expect(selectedModelId(rendered)).toBe("alpha-1");
+		expect(selectedModelName(rendered)).toBe("Alpha One");
 		// Sanity: the filter actually narrowed the list.
 		expect(rendered).not.toContain("beta-1");
-	});
-
-	it("moves selection to the first row in the Scoped tab when typing a query", async () => {
-		const harness = await createHarness({
-			models: [
-				{ id: "alpha-1", name: "Alpha One", reasoning: true },
-				{ id: "alpha-2", name: "Alpha Two", reasoning: true },
-				{ id: "alpha-3", name: "Alpha Three", reasoning: true },
-			],
-		});
-		harnesses.push(harness);
-
-		const alpha1 = harness.getModel("alpha-1")!;
-		const alpha2 = harness.getModel("alpha-2")!;
-		const alpha3 = harness.getModel("alpha-3")!;
-
-		// Scoped list is intentionally not in current-model-first order; the
-		// current model (alpha-1) sits at index 2.
-		const selector = new ModelSelectorComponent(
-			createFakeTui(),
-			alpha1,
-			harness.session.modelRuntime,
-			[{ model: alpha2 }, { model: alpha3 }, { model: alpha1 }],
-			() => {},
-			() => {},
-		);
-
-		await vi.waitFor(() => {
-			const rendered = stripAnsi(selector.render(120).join("\n"));
-			expect(rendered).toContain("Model catalogs refreshed.");
-		});
-
-		// Selection starts on the current model (alpha-1), which is row 2 here.
-		expect(selectedModelId(stripAnsi(selector.render(120).join("\n")))).toBe("alpha-1");
-
-		// Type a query matching all three scoped models. Selection must move to
-		// the top row (alpha-2), not stay clamped at index 2 (alpha-1).
-		for (const char of "alpha") {
-			selector.handleInput(char);
-		}
-
-		expect(selectedModelId(stripAnsi(selector.render(120).join("\n")))).toBe("alpha-2");
 	});
 });

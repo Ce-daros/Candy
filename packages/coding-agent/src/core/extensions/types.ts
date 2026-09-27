@@ -62,7 +62,6 @@ import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
 import type { KeybindingsManager } from "../keybindings.ts";
 import type { CustomMessage } from "../messages.ts";
 import type { ModelRegistry } from "../model-registry.ts";
-import type { ScopedModel } from "../model-resolver.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -310,11 +309,6 @@ export interface ExtensionContext {
 	modelRegistry: ModelRegistry;
 	/** Current model (may be undefined) */
 	model: Model<any> | undefined;
-	/** Models scoped to this session (resolved from `--models` /
-	 *  `enabledModels` settings against the available catalogue). Same set
-	 *  the `/scoped-models` command shows. Empty when no scoping is
-	 *  configured (all available models are usable). Read-only snapshot. */
-	scopedModels: readonly ScopedModel[];
 	/** Current thinking level, when provided by the session runtime. */
 	thinkingLevel?: ThinkingLevel;
 	/** Whether the agent is idle (not streaming) */
@@ -406,8 +400,12 @@ export interface ToolRenderResultOptions {
 	isPartial: boolean;
 }
 
+export type ToolPreviewLines = 5 | 10 | 20;
+
 /** Context passed to tool renderers. */
 export interface ToolRenderContext<TState = any, TArgs = any> {
+	/** Preferred maximum number of terminal rows for tool previews. */
+	previewLines: ToolPreviewLines;
 	/** Current tool call arguments. Shared across call/result renders for the same tool call. */
 	args: TArgs;
 	/** Unique id for this tool execution. Stable across call/result renders for the same tool call. */
@@ -896,13 +894,14 @@ export interface ToolExecutionEndEvent {
 	toolName: string;
 	result: any;
 	isError: boolean;
+	cancelled?: boolean;
 }
 
 // ============================================================================
 // Model Events
 // ============================================================================
 
-export type ModelSelectSource = "set" | "cycle" | "restore";
+export type ModelSelectSource = "set" | "restore";
 
 /** Fired when a new model is selected */
 export interface ModelSelectEvent {
@@ -1869,7 +1868,6 @@ export interface ExtensionActions {
  */
 export interface ExtensionContextActions {
 	getModel: () => Model<any> | undefined;
-	getScopedModels: () => readonly ScopedModel[];
 	isIdle: () => boolean;
 	isProjectTrusted: () => boolean;
 	getSignal: () => AbortSignal | undefined;

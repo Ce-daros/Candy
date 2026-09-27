@@ -1,9 +1,11 @@
 import type { ThinkingLevel } from "@candy/agent-core";
-import { Editor, type EditorOptions, type EditorTheme, type TUI, visibleWidth } from "@candy/tui";
+import { Editor, type EditorOptions, type EditorTheme, type TUI, truncateToWidth, visibleWidth } from "@candy/tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
+import { stripAnsi } from "../../../utils/ansi.ts";
 import { theme } from "../theme/theme.ts";
 import { FrameMotion, type ShellMode } from "./frame-motion.ts";
+import { PanelTransition } from "./panel-transition.ts";
 import type { StatusIndicator } from "./status-indicator.ts";
 
 export type CustomEditorOptions = EditorOptions & {
@@ -38,6 +40,9 @@ export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
 	private bottomStatus: EditorBottomStatus | undefined;
 	private readonly frameMotion: FrameMotion;
+	private statusIndicator: StatusIndicator | undefined;
+	private readonly autocompleteMotion: PanelTransition;
+	private autocompleteLines: string[] = [];
 	public readonly embedWorkingStatus: boolean;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
@@ -68,12 +73,18 @@ export class CustomEditor extends Editor {
 		this.keybindings = keybindings;
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 		this.frameMotion = new FrameMotion(tui);
+		this.autocompleteMotion = new PanelTransition(() => tui.requestRender());
 		this.bottomBorderClick = (x) => this.onBottomBorderClick?.(x) ?? false;
 	}
 
 	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void {
 		indicator?.stop();
+		this.statusIndicator = indicator;
 		this.frameMotion.setStatus(indicator?.kind);
+	}
+
+	getFrameMotion(): FrameMotion {
+		return this.frameMotion;
 	}
 
 	setBottomStatus(status: EditorBottomStatus | undefined): void {
@@ -92,6 +103,7 @@ export class CustomEditor extends Editor {
 
 	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
 		this.frameMotion.setOptions(enabled, intensity);
+		this.autocompleteMotion.setOptions(enabled, intensity);
 	}
 
 	restartEntranceAnimation(): void {
@@ -100,6 +112,34 @@ export class CustomEditor extends Editor {
 
 	dispose(): void {
 		this.frameMotion.dispose();
+		this.autocompleteMotion.dispose();
+	}
+
+	renderPanelFooter(width: number): string {
+		return (
+			this.bottomStatus?.renderBottomBorder(width, 0, this.borderColor) ??
+			this.frameMotion.paintBorder(`╰${"─".repeat(Math.max(0, width - 2))}╯`, 0, this.frameMotion.getBottomRow())
+		);
+	}
+
+	protected override presentAutocomplete(lines: string[], width: number): string[] {
+		this.autocompleteMotion.setOpen(lines.length > 0);
+		if (lines.length > 0) this.autocompleteLines = lines;
+		const progress = this.autocompleteMotion.value();
+		if (progress === 0) return [];
+		const growth = Math.max(0, Math.min(1, (progress - 0.12) / 0.55));
+		const height = Math.ceil(this.autocompleteLines.length * growth);
+		return this.autocompleteLines
+			.slice(0, height)
+			.map((line, index) =>
+				progress >= 0.72 + (index / Math.max(1, this.autocompleteLines.length)) * 0.25
+					? truncateToWidth(line, width, "")
+					: "",
+			);
+	}
+
+	protected override renderAutocompleteSeparator(width: number, row: number): string {
+		return this.frameMotion.paintBorder(`├${"─".repeat(Math.max(0, width - 2))}┤`, 0, row);
 	}
 
 	override render(width: number): string[] {
@@ -144,25 +184,30 @@ export class CustomEditor extends Editor {
 		this.frameMotion.setGeometry(width, this.getFrameRowCount(), anchors.left, anchors.right);
 		this.frameMotion.beginFrame();
 		if (width < 2) return this.frameMotion.paintBorder("─".repeat(Math.max(0, width)), 0, 0);
-		const line = `╭${"─".repeat(width - 2)}╮`;
-		const status =
-			!this.frameMotion.isEnabled() && this.embedWorkingStatus ? this.frameMotion.getStatus() : undefined;
+		const panelProgress = this.autocompleteMotion.value();
+		const expanded = panelProgress > 0.12;
+		const topReveal =
+			panelProgress < 0.12 ? 1 - panelProgress / 0.12 : Math.min(1, Math.max(0, (panelProgress - 0.65) / 0.08));
+		const side = Math.min(Math.floor((width - 2) / 2), Math.ceil(((width - 2) / 2) * topReveal));
+		const middle =
+			topReveal >= 1
+				? "─".repeat(width - 2)
+				: "─".repeat(side) + " ".repeat(Math.max(0, width - 2 - side * 2)) + "─".repeat(side);
+		const line = `${expanded ? "┌" : "╭"}${middle}${expanded ? "┐" : "╮"}`;
+		const status = this.embedWorkingStatus ? this.frameMotion.getStatus() : undefined;
 		const statusWord =
-			status === "working"
+			status === "working" && !this.frameMotion.isEnabled()
 				? "Working"
-				: status === "retry"
-					? "Retrying"
-					: status === "compaction"
-						? "Compacting"
-						: status === "branchSummary"
-							? "Summarizing"
-							: "";
+				: status && status !== "working"
+					? stripAnsi(this.statusIndicator?.renderInBorder(Math.max(1, width - 24)) ?? "").trim()
+					: "";
 		const shellTitle = this.frameMotion.getShellTitle();
 		// Shell titles get one half-width space of padding on each side.
-		const title = shellTitle ? ` ${[shellTitle, statusWord].filter(Boolean).join(" · ")} ` : statusWord;
+		const caption = [shellTitle, statusWord].filter(Boolean).join(" · ");
+		const title = caption ? ` ${caption} ` : "";
 		const titleStart = 7;
 		const titleWidth = Math.min(visibleWidth(title), Math.max(0, width - titleStart - 2));
-		const displayedTitle = title.slice(0, titleWidth);
+		const displayedTitle = truncateToWidth(title, titleWidth, "");
 		const overflow = hiddenLineCount > 0 ? ` ↑ ${hiddenLineCount} more ` : "";
 		const overflowStart = Math.floor((width - visibleWidth(overflow)) / 2);
 		const showOverflow =
@@ -238,7 +283,6 @@ export class CustomEditor extends Editor {
 		}
 
 		// Explicit history bindings take precedence over app actions while the editor is focused.
-		// This lets users bind Ctrl+P even though it cycles models by default.
 		if (
 			this.keybindings.matches(data, "tui.editor.historyPrevious") ||
 			this.keybindings.matches(data, "tui.editor.historyNext")

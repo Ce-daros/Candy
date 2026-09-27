@@ -31,7 +31,6 @@ export type RpcCommand =
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
-	| { id?: string; type: "cycle_model" }
 	| { id?: string; type: "get_available_models" }
 
 	// Thinking
@@ -144,13 +143,6 @@ export type RpcResponse =
 			command: "set_model";
 			success: true;
 			data: Model<any>;
-	  }
-	| {
-			id?: string;
-			type: "response";
-			command: "cycle_model";
-			success: true;
-			data: { model: Model<any>; thinkingLevel: ThinkingLevel; isScoped: boolean } | null;
 	  }
 	| {
 			id?: string;

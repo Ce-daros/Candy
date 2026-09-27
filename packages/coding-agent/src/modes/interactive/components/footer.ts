@@ -3,7 +3,7 @@ import type { AgentSession } from "../../../core/agent-session.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { theme } from "../theme/theme.ts";
 import type { EditorBottomStatus } from "./custom-editor.ts";
-import type { FrameMotion } from "./frame-motion.ts";
+import { type FrameMotion, thinkingMeter } from "./frame-motion.ts";
 import { PowerbarController, type PowerbarHost } from "./powerbar.ts";
 
 /** Frame corner that opens the merged bottom border. */
@@ -20,19 +20,8 @@ export function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
-/**
- * Display name for the status line: the catalog name without a leading
- * `<Vendor>: ` prefix, falling back to the last path segment of the id.
- *
- * Catalog names use `<Vendor>: <Model>` (for example `MoonshotAI: Kimi K2.6`),
- * while gateway ids embed the vendor as a path prefix (`moonshotai/kimi-k2.6`).
- * Model names themselves are never rewritten.
- */
-export function modelDisplayName(model: { id: string; name?: string }): string {
-	const name = model.name?.trim();
-	if (name) return name.replace(/^[^:]+:\s+/, "");
-	const separator = model.id.lastIndexOf("/");
-	return separator === -1 ? model.id : model.id.slice(separator + 1);
+export function modelDisplayName(model: { name: string }): string {
+	return model.name;
 }
 
 /** Clickable range relative to the content area (after the frame corner). */
@@ -65,6 +54,11 @@ export class FooterComponent implements EditorBottomStatus {
 
 	setFrameMotion(motion: FrameMotion): void {
 		this.frameMotion = motion;
+		if (this.powerbar) {
+			this.powerbar.paintThinking = (text) => motion.paintThinking(text);
+			this.powerbar.onThinkingPreview = (level) => motion.setThinking(level);
+			this.powerbar.onThinkingCommit = (level) => motion.setThinking(level, true);
+		}
 	}
 
 	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
@@ -239,7 +233,7 @@ export class FooterComponent implements EditorBottomStatus {
 		return region !== undefined && x >= region.start && x < region.start + region.width;
 	}
 
-	/** Short model name, without the provider prefix or context window. */
+	/** Display name from the model catalog. */
 	private modelLabel(): string {
 		const model = this.session.state.model;
 		const name = model ? modelDisplayName(model) : "no-model";
@@ -251,9 +245,9 @@ export class FooterComponent implements EditorBottomStatus {
 	private thinkingLabel(): string | undefined {
 		const model = this.session.state.model;
 		if (!model?.reasoning) return undefined;
-		const level = this.session.state.thinkingLevel || "off";
-		const label = level.charAt(0).toUpperCase() + level.slice(1);
-		if (this.frameMotion) return this.frameMotion.paintLabel(label, "muted");
-		return theme.fg("muted", label);
+		const level = this.frameMotion?.getThinking() ?? this.session.state.thinkingLevel;
+		const label = `${level.charAt(0).toUpperCase() + level.slice(1)} ${thinkingMeter(level)}`;
+		if (this.frameMotion) return this.frameMotion.paintThinking(label);
+		return theme.getThinkingBorderColor(level)(label);
 	}
 }

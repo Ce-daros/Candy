@@ -7,7 +7,9 @@ import { TuiMainScreen } from "../../tui/src/tui-main-screen.ts";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
+import { LoadedResourcesComponent } from "../src/modes/interactive/components/loaded-resources.ts";
 import type { AuthSelectorProvider } from "../src/modes/interactive/components/oauth-selector.ts";
+import { TransientNotification } from "../src/modes/interactive/components/transient-notification.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
@@ -66,6 +68,13 @@ function normalizeRenderedOutput(container: Container, width = 220): string {
 		.trim();
 }
 
+function normalizeResourceDetails(container: Container): string {
+	const resources = container.children.find((child) => child instanceof LoadedResourcesComponent);
+	if (!resources) throw new Error("Loaded resources component was not rendered");
+	resources.setExpanded(true);
+	return normalizeRenderedOutput(container);
+}
+
 type ExtensionFixture = {
 	path: string;
 	sourceInfo?: SourceInfo;
@@ -77,44 +86,37 @@ describe("InteractiveMode.showStatus", () => {
 		initTheme("dark");
 	});
 
-	test("coalesces immediately-sequential status messages", () => {
+	test("replaces immediately-sequential transient status messages", () => {
+		const notification = new TransientNotification(vi.fn(), () => false);
 		const fakeThis: any = {
 			chatContainer: new Container(),
-			ui: { requestRender: vi.fn() },
-			lastStatusSpacer: undefined,
-			lastStatusText: undefined,
+			notification,
 		};
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
-		expect(fakeThis.chatContainer.children).toHaveLength(2);
-		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_ONE");
+		expect(notification.render(120).join("\n")).toContain("STATUS_ONE");
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
-		// second status updates the previous line instead of appending
-		expect(fakeThis.chatContainer.children).toHaveLength(2);
-		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
-		expect(renderLastLine(fakeThis.chatContainer)).not.toContain("STATUS_ONE");
+		expect(notification.render(120).join("\n")).toContain("STATUS_TWO");
+		expect(notification.render(120).join("\n")).not.toContain("STATUS_ONE");
+		expect(fakeThis.chatContainer.children).toHaveLength(0);
+		notification.dispose();
 	});
 
-	test("appends a new status line if something else was added in between", () => {
+	test("keeps a transient status outside the transcript when chat changes", () => {
+		const notification = new TransientNotification(vi.fn(), () => false);
 		const fakeThis: any = {
 			chatContainer: new Container(),
-			ui: { requestRender: vi.fn() },
-			lastStatusSpacer: undefined,
-			lastStatusText: undefined,
+			notification,
 		};
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
-		expect(fakeThis.chatContainer.children).toHaveLength(2);
-
-		// Something else gets added to the chat in between status updates
 		fakeThis.chatContainer.addChild({ render: () => ["OTHER"], invalidate: () => {} });
-		expect(fakeThis.chatContainer.children).toHaveLength(3);
-
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
-		// adds spacer + text
-		expect(fakeThis.chatContainer.children).toHaveLength(5);
-		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
+		expect(fakeThis.chatContainer.children).toHaveLength(1);
+		expect(renderLastLine(fakeThis.chatContainer)).toBe("OTHER");
+		expect(notification.render(120).join("\n")).toContain("STATUS_TWO");
+		notification.dispose();
 	});
 });
 
@@ -163,7 +165,7 @@ describe("InteractiveMode.setToolsExpanded", () => {
 		expect(header.setExpanded).toHaveBeenCalledWith(true);
 		expect(loadedResourcesChild.setExpanded).toHaveBeenCalledWith(true);
 		expect(chatChild.setExpanded).toHaveBeenCalledWith(true);
-		expect(fakeThis.showStatus).toHaveBeenCalledWith("Tool output: expanded");
+		expect(fakeThis.showStatus).toHaveBeenCalledWith("Details expanded");
 	});
 });
 
@@ -405,7 +407,6 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		type TestModel = { id: string; provider: string; name: string };
 		type FakeInteractiveMode = {
 			session: {
-				scopedModels: Array<{ model: TestModel }>;
 				modelRuntime: { getAvailableSnapshot: () => TestModel[] };
 				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
@@ -428,7 +429,6 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		];
 		const fakeThis: FakeInteractiveMode = {
 			session: {
-				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => models },
 				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
@@ -455,7 +455,6 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 	test("matches login command arguments by provider id and name", async () => {
 		type FakeInteractiveMode = {
 			session: {
-				scopedModels: [];
 				modelRuntime: { getAvailableSnapshot: () => [] };
 				promptTemplates: [];
 				extensionRunner: { getRegisteredCommands: () => [] };
@@ -475,7 +474,6 @@ describe("InteractiveMode.createBaseAutocompleteProvider", () => {
 		).prototype.createBaseAutocompleteProvider;
 		const fakeThis: FakeInteractiveMode = {
 			session: {
-				scopedModels: [],
 				modelRuntime: { getAvailableSnapshot: () => [] },
 				promptTemplates: [],
 				extensionRunner: { getRegisteredCommands: () => [] },
@@ -713,9 +711,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("[Skills]");
-		expect(output).toContain("commit");
-		expect(output).not.toContain("resource-list");
+		expect(output).toContain("Loaded resources · 1  1 skills");
+		expect(output).not.toContain("commit");
+		expect(output).not.toContain("/tmp/skill/SKILL.md");
 	});
 
 	test("shows full resource listing when expanded", () => {
@@ -730,9 +728,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("[Skills]");
-		expect(output).toContain("resource-list");
-		expect(output).not.toContain("commit");
+		expect(output).toContain("Loaded resources · 1  1 skills");
+		expect(output).toContain("Skills  1");
+		expect(output).toContain("commit");
+		expect(output).toContain("/tmp/skill/SKILL.md");
 	});
 
 	test("shows full resource listing on verbose startup even when tool output is collapsed", () => {
@@ -748,9 +747,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("[Skills]");
-		expect(output).toContain("resource-list");
-		expect(output).not.toContain("commit");
+		expect(output).toContain("Loaded resources · 1  1 skills");
+		expect(output).toContain("commit");
+		expect(output).toContain("/tmp/skill/SKILL.md");
 	});
 
 	test("abbreviates extensions in compact listing", () => {
@@ -764,9 +763,11 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("[Extensions]");
-		expect(output).toContain("answer.ts, btw.ts");
-		expect(output).not.toContain("extensions/answer.ts");
+		expect(output).toContain("Loaded resources · 2  2 extensions");
+		expect(output).not.toContain("answer.ts");
+		const details = normalizeResourceDetails(fakeThis.loadedResourcesContainer);
+		expect(details).toContain("answer.ts");
+		expect(details).toContain("btw.ts");
 	});
 
 	test("captures mixed extension layouts in compact output", () => {
@@ -780,9 +781,26 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 8  8 extensions
+			  Extensions  8
+			    answer.ts  · local
+			      /tmp/project/.candy/extensions/answer.ts
+			    local-index  · local
+			      /tmp/project/.candy/extensions/local-index/index.ts
+			    user-index  · local
+			      /tmp/agent/extensions/user-index/index.ts
+			    pi-markdown-preview  · npm:pi-markdown-preview
+			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts
+			    @scope/pi-scoped  · npm:@scope/pi-scoped
+			      /tmp/project/.candy/npm/node_modules/@scope/pi-scoped/extensions/index.ts
+			    HazAT/pi-interactive-subagents  · git:github.com/HazAT/pi-interactive-subagents
+			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/index.ts
+			    HazAT/pi-interactive-subagents:subagents  · git:github.com/HazAT/pi-interactive-subagents
+			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.ts
+			    cli-extension.ts  · cli
+			      /tmp/temp/cli-extension.ts"
+		`);
 	});
 
 	test("adds more parent folders until local extension labels are unique", () => {
@@ -826,9 +844,16 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  alpha/one, beta/one, gamma/one"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 3  3 extensions
+			  Extensions  3
+			    alpha/one  · cli
+			      /tmp/alpha/one/index.ts
+			    beta/one  · cli
+			      /tmp/beta/one/index.ts
+			    gamma/one  · cli
+			      /tmp/gamma/one/index.ts"
+		`);
 	});
 
 	test("strips index.ts from local extension label, showing parent dir", () => {
@@ -854,9 +879,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  plan-mode"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 1  1 extensions
+			  Extensions  1
+			    plan-mode  · local
+			      /tmp/extensions/plan-mode/index.ts"
+		`);
 	});
 
 	test("strips index.js from local extension label, showing parent dir", () => {
@@ -882,9 +910,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  plan-mode"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 1  1 extensions
+			  Extensions  1
+			    plan-mode  · local
+			      /tmp/extensions/plan-mode/index.js"
+		`);
 	});
 
 	test("mixed single-file and subdirectory index.ts extensions strip index.ts", () => {
@@ -919,9 +950,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  plan-mode, webfetch.ts"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 2  2 extensions
+			  Extensions  2
+			    webfetch.ts  · local
+			      /tmp/extensions/webfetch.ts
+			    plan-mode  · local
+			      /tmp/extensions/plan-mode/index.ts"
+		`);
 	});
 
 	test("multiple index.ts with unique parent dirs need no disambiguation", () => {
@@ -956,9 +992,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  bar, foo"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 2  2 extensions
+			  Extensions  2
+			    foo  · local
+			      /tmp/extensions/foo/index.ts
+			    bar  · local
+			      /tmp/extensions/bar/index.ts"
+		`);
 	});
 
 	test("multiple index.ts with same parent dir name disambiguated with grandparent", () => {
@@ -993,9 +1034,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  alpha/tools, beta/tools"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 2  2 extensions
+			  Extensions  2
+			    alpha/tools  · cli
+			      /tmp/alpha/tools/index.ts
+			    beta/tools  · cli
+			      /tmp/beta/tools/index.ts"
+		`);
 	});
 
 	test("non-index file in subdirectory stays as filename", () => {
@@ -1021,9 +1067,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  main.ts"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 1  1 extensions
+			  Extensions  1
+			    main.ts  · local
+			      /tmp/extensions/my-ext/main.ts"
+		`);
 	});
 
 	test("package extensions still strip index.ts correctly (regression guard)", () => {
@@ -1052,9 +1101,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  pi-markdown-preview"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 1  1 extensions
+			  Extensions  1
+			    pi-markdown-preview  · npm:pi-markdown-preview
+			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts"
+		`);
 	});
 
 	test("labels npm sibling extensions relative to the declaring package", () => {
@@ -1089,9 +1141,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  primary-package, primary-package:../sibling-package"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 2  2 extensions
+			  Extensions  2
+			    primary-package  · npm:primary-package
+			      /tmp/project/.candy/npm/node_modules/primary-package/index.ts
+			    primary-package:../sibling-package  · npm:primary-package
+			      /tmp/project/.candy/npm/node_modules/sibling-package/index.ts"
+		`);
 	});
 
 	test("labels Windows npm sibling extensions relative to the declaring package", () => {
@@ -1129,9 +1186,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  primary-package, primary-package:../sibling-package"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 2  2 extensions
+			  Extensions  2
+			    primary-package  · npm:primary-package
+			      C:/Users/me/.candy/agent/npm/node_modules/primary-package/index.ts
+			    primary-package:../sibling-package  · npm:primary-package
+			      C:/Users/me/.candy/agent/npm/node_modules/sibling-package/index.ts"
+		`);
 	});
 
 	test("captures mixed extension layouts in expanded output", () => {
@@ -1146,22 +1208,26 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  project
-    /tmp/project/.candy/extensions/answer.ts
-    /tmp/project/.candy/extensions/local-index
-    git:github.com/HazAT/pi-interactive-subagents
-      extensions
-      extensions/subagents
-    npm:@scope/pi-scoped
-      extensions
-    npm:pi-markdown-preview
-      extensions
-  user
-    /tmp/agent/extensions/user-index
-  path
-    /tmp/temp/cli-extension.ts"`);
+		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
+			"▾ Loaded resources · 8  8 extensions
+			  Extensions  8
+			    answer.ts  · local
+			      /tmp/project/.candy/extensions/answer.ts
+			    local-index  · local
+			      /tmp/project/.candy/extensions/local-index/index.ts
+			    user-index  · local
+			      /tmp/agent/extensions/user-index/index.ts
+			    pi-markdown-preview  · npm:pi-markdown-preview
+			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts
+			    @scope/pi-scoped  · npm:@scope/pi-scoped
+			      /tmp/project/.candy/npm/node_modules/@scope/pi-scoped/extensions/index.ts
+			    HazAT/pi-interactive-subagents  · git:github.com/HazAT/pi-interactive-subagents
+			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/index.ts
+			    HazAT/pi-interactive-subagents:subagents  · git:github.com/HazAT/pi-interactive-subagents
+			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.ts
+			    cli-extension.ts  · cli
+			      /tmp/temp/cli-extension.ts"
+		`);
 	});
 
 	test("shows context paths relative to cwd while preserving full external paths", () => {
@@ -1180,10 +1246,13 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		const output = renderAll(fakeThis.loadedResourcesContainer).replace(/\\/g, "/");
-		expect(output).toContain("[Context]");
-		expect(output).toContain("~/.candy/agent/AGENTS.md, AGENTS.md");
-		expect(output).not.toContain(`${cwd.replace(/\\/g, "/")}/AGENTS.md`);
+		const collapsed = renderAll(fakeThis.loadedResourcesContainer).replace(/\\/g, "/");
+		expect(collapsed).toContain("Loaded resources · 2  2 context");
+		expect(collapsed).not.toContain("AGENTS.md");
+		const details = normalizeResourceDetails(fakeThis.loadedResourcesContainer);
+		expect(details).toContain("~/.candy/agent/AGENTS.md");
+		expect(details).toContain("AGENTS.md");
+		expect(details).toContain(`${cwd.replace(/\\/g, "/")}/AGENTS.md`);
 	});
 
 	test("shows system prompt context paths before project context files", () => {
@@ -1200,9 +1269,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		const output = renderAll(fakeThis.loadedResourcesContainer).replace(/\\/g, "/");
-		expect(output).toContain("[Context]");
-		expect(output).toContain(".candy/SYSTEM.md, .candy/APPEND_SYSTEM.md, AGENTS.md");
+		const output = normalizeResourceDetails(fakeThis.loadedResourcesContainer);
+		expect(output).toContain("Context  3");
+		expect(output.indexOf(".candy/SYSTEM.md")).toBeLessThan(output.indexOf(".candy/APPEND_SYSTEM.md"));
+		expect(output.indexOf(".candy/APPEND_SYSTEM.md")).toBeLessThan(output.indexOf("AGENTS.md"));
 	});
 
 	test("shows full context paths when expanded", () => {
@@ -1223,10 +1293,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer).replace(/\\/g, "/");
-		expect(output).toContain("[Context]");
+		expect(output).toContain("Context  2");
 		expect(output).toContain("~/.candy/agent/AGENTS.md");
-		expect(output).toContain("~/Development/pi-mono/AGENTS.md");
-		expect(output).not.toContain("~/.candy/agent/AGENTS.md, AGENTS.md");
+		expect(output).toContain(`${cwd.replace(/\\/g, "/")}/AGENTS.md`);
 	});
 
 	test("does not show verbose listing on quiet startup during reload", () => {

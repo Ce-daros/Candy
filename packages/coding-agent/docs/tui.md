@@ -1,6 +1,6 @@
 # Terminal UI
 
-`@candy/tui` provides the terminal component system used by Pi. Extensions use it when built-in dialogs, notifications, status text, and widgets are not enough for the interaction they need.
+`@candy/tui` provides the terminal component system used by candy. Extensions use it when built-in dialogs, notifications, status text, and widgets are not enough for the interaction they need.
 
 Start with `ctx.ui` methods from an [extension](extensions.md#interact-with-the-user). Build a custom component only when the UI needs its own rendering, keyboard or mouse input, focus, layout, or lifecycle.
 
@@ -53,7 +53,7 @@ Extend candy’s `CustomEditor` when replacing the main editor. It preserves app
 
 Forward keys your editor does not own to the base implementation, and restore the default by clearing the custom editor factory.
 
-The default editor draws the startup frame, Shell color transition, and animated working, retry, compaction, and branch-summary trails. Those trails change the brightness of the current border color; the thinking level controls their length and peak brightness. With `uiAnimations` disabled, the editor shows a short status word in its top border. A replacement editor owns its own frame and status presentation. Extensions can use `ctx.ui.setWorkingVisible()` to hide the built-in working state.
+The default editor draws the startup frame and the border for the active thinking level. Its color, six-step meter, idle motion, and working trails change with that level. Shell command titles use yellow; retry, compaction, and branch-summary state appears on the upper border. Built-in selectors and dialogs expand above the editor and restore its draft and focus when closed. With `uiAnimations` disabled, they appear in their final position and the editor retains level colors and a short status word. A replacement editor owns its own frame and status presentation. Extensions can use `ctx.ui.setWorkingVisible()` to hide the built-in working state.
 
 ## Handle mouse input
 

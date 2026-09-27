@@ -25,7 +25,6 @@ import type {
 } from "../src/core/extensions/types.ts";
 import { KeybindingsManager, type KeyId } from "../src/core/keybindings.ts";
 import type { ModelRegistry } from "../src/core/model-registry.ts";
-import type { ScopedModel } from "../src/core/model-resolver.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
 
@@ -107,24 +106,7 @@ describe("ExtensionRunner", () => {
 		getContextUsage: () => undefined,
 		compact: () => {},
 		getSystemPrompt: () => "",
-		getScopedModels: () => [],
 	};
-
-	describe("scopedModels", () => {
-		it("reflects the getScopedModels context action on ctx.scopedModels", async () => {
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-
-			// Before bindCore the default is an empty list (never undefined).
-			expect(runner.createContext().scopedModels).toEqual([]);
-
-			// After bindCore wires a getScopedModels action, ctx.scopedModels
-			// returns it live (same reference, lazy getter).
-			const scoped = [{ model: { id: "scoped-test" }, thinkingLevel: "high" }] as unknown as ScopedModel[];
-			runner.bindCore(extensionActions, { ...extensionContextActions, getScopedModels: () => scoped });
-			expect(runner.createContext().scopedModels).toBe(scoped);
-		});
-	});
 
 	describe("project_trust", () => {
 		it("continues past undecided handlers and returns the first yes/no decision", async () => {
@@ -189,7 +171,7 @@ describe("ExtensionRunner", () => {
 			warnSpy.mockRestore();
 		});
 
-		it("allows a shortcut when the reserved set no longer contains the default key", async () => {
+		it("allows a shortcut on the freed model cycling key", async () => {
 			const extCode = `
 				export default function(candy) {
 					candy.registerShortcut("ctrl+p", {
@@ -204,8 +186,7 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...defaultKeybindings, "app.model.cycleForward": "ctrl+n" as KeyId };
-			const shortcuts = runner.getShortcuts(keybindings);
+			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(shortcuts.has("ctrl+p")).toBe(true);
 			expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -265,7 +246,7 @@ describe("ExtensionRunner", () => {
 			warnSpy.mockRestore();
 		});
 
-		it("blocks shortcuts when reserved key is also bound to non-reserved actions", async () => {
+		it("warns and allows shortcuts that override a built-in action", async () => {
 			const extCode = `
 				export default function(candy) {
 					candy.registerShortcut("ctrl+p", {
@@ -282,8 +263,8 @@ describe("ExtensionRunner", () => {
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
-			expect(shortcuts.has("ctrl+p")).toBe(false);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("built-in shortcut for app.session.togglePath"));
+			expect(shortcuts.has("ctrl+p")).toBe(true);
 
 			warnSpy.mockRestore();
 		});

@@ -1119,7 +1119,11 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 export function getMarkdownTheme(): MarkdownTheme {
 	return {
 		heading: (text: string) => theme.fg("mdHeading", text),
-		link: (text: string) => theme.fg("mdLink", text),
+		headingLevel: (level: number, text: string) =>
+			theme.bold(theme.fg(level === 1 ? "mdHeading" : level === 2 ? "accent" : "text", text)),
+		codeBlockLabel: (text: string) => theme.fg("borderAccent", text),
+		tableHeader: (text: string) => theme.bold(theme.fg("accent", text)),
+		link: (text: string) => theme.underline(theme.fg("mdLink", text)),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
 		code: (text: string) => theme.fg("mdCode", text),
 		codeBlock: (text: string) => theme.fg("mdCodeBlock", text),
@@ -1157,8 +1161,8 @@ export function getMarkdownTheme(): MarkdownTheme {
 
 export function getSelectListTheme(): SelectListTheme {
 	return {
-		selectedPrefix: (text: string) => theme.fg("accent", text),
-		selectedText: (text: string) => theme.fg("accent", text),
+		selectedPrefix: (text: string) => theme.fg("borderAccent", text),
+		selectedText: (text: string) => theme.bold(theme.fg("accent", text)),
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),
 		noMatch: (text: string) => theme.fg("muted", text),
@@ -1170,15 +1174,19 @@ export function getEditorTheme(): EditorTheme {
 		borderColor: (text: string) => theme.fg("borderMuted", text),
 		selectList: getSelectListTheme(),
 		textColor: (text: string) => theme.fg("text", text),
+		pathColor: (text: string) => theme.fg("warning", text),
+		markerColor: (text: string) => theme.fg("warning", text),
 	};
 }
 
 export function getSettingsListTheme(): SettingsListTheme {
 	return {
-		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
-		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+		label: (text: string, selected: boolean) => (selected ? theme.bold(theme.fg("accent", text)) : text),
+		value: (text: string, selected: boolean) =>
+			selected ? theme.bold(theme.fg("accent", text)) : theme.fg("muted", text),
 		description: (text: string) => theme.fg("dim", text),
-		cursor: theme.fg("accent", "→ "),
+		cursor: theme.fg("borderAccent", "‹ "),
+		selectedSuffix: theme.fg("borderAccent", " ›"),
 		hint: (text: string) => theme.fg("dim", text),
 	};
 }

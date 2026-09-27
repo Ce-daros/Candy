@@ -14,6 +14,8 @@
 
 This is the home of the candy agent harness project including our self extensible coding agent.
 
+The terminal agent has a fullscreen conversation view, a prompt editor with file and command completion, and panels for settings, models, sessions, and authentication. Its transcript keeps assistant prose readable while tool calls form a compact activity line. See the [interactive guide](packages/coding-agent/docs/usage.md) for the current interface.
+
 * **[@candy/coding-agent](packages/coding-agent)**: Interactive coding agent CLI
 * **[@candy/agent-core](packages/agent)**: Agent runtime with tool calling and state management
 * **[@candy/ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
