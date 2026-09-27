@@ -249,6 +249,13 @@ export interface EditorOptions {
 	 * Clipped when the terminal is too narrow to hold it plus a content column and the cursor.
 	 */
 	leftGutter?: string;
+	/**
+	 * Variant of `leftGutter` drawn on the first content line, e.g. "│> " for a
+	 * shell-style prompt. Keep the same visible width as `leftGutter`; the gutter
+	 * slot is sized from `leftGutter`, so a narrower or wider variant shifts text
+	 * and mouse offsets on the first line only.
+	 */
+	firstLineGutter?: string;
 	rightGutter?: string;
 }
 
@@ -315,6 +322,7 @@ export class Editor implements Component, Focusable {
 	private theme: EditorTheme;
 	private paddingX: number = 0;
 	private leftGutter: string = "";
+	private firstLineGutter: string | undefined;
 	private rightGutter: string = "";
 	private minContentLines: number = 1;
 
@@ -395,6 +403,7 @@ export class Editor implements Component, Focusable {
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
 		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
 		this.leftGutter = options.leftGutter ?? "";
+		this.firstLineGutter = options.firstLineGutter;
 		this.rightGutter = options.rightGutter ?? "";
 		this.minContentLines = Math.max(1, Math.floor(options.minContentLines ?? 1));
 	}
@@ -409,12 +418,16 @@ export class Editor implements Component, Focusable {
 		return segmentWithMarkers(text, mode === "word" ? wordSegmenter : graphemeSegmenter, this.validPasteIds());
 	}
 
-	/** Left gutter clipped so it always leaves room for one content column plus the cursor. */
-	private gutterFor(width: number): string {
+	/**
+	 * Left gutter clipped so it always leaves room for one content column plus the cursor.
+	 * `firstLine` selects the first-line variant, clipped to the same slot width.
+	 */
+	private gutterFor(width: number, firstLine = false): string {
 		if (!this.leftGutter) return "";
 		const gutterWidth = Math.min(visibleWidth(this.leftGutter), Math.max(0, width - 2));
-		if (gutterWidth === visibleWidth(this.leftGutter)) return this.leftGutter;
-		return truncateToWidth(this.leftGutter, gutterWidth, "");
+		const gutter = firstLine && this.firstLineGutter ? this.firstLineGutter : this.leftGutter;
+		if (visibleWidth(gutter) === gutterWidth) return gutter;
+		return truncateToWidth(gutter, gutterWidth, "");
 	}
 
 	getPaddingX(): number {
@@ -658,7 +671,8 @@ export class Editor implements Component, Focusable {
 
 			// Render the line (no side borders, just horizontal lines above and below)
 			const row = index + 1;
-			const left = gutter ? this.colorSideBorder(gutter, "left", row, totalFrameRows) : "";
+			const rowGutter = this.scrollOffset + index === 0 ? this.gutterFor(width, true) : gutter;
+			const left = rowGutter ? this.colorSideBorder(rowGutter, "left", row, totalFrameRows) : "";
 			const right = rightGutter ? this.colorSideBorder(rightGutter, "right", row, totalFrameRows) : "";
 			result.push(`${left}${leftPadding}${displayText}${padding}${lineRightPadding}${right}`);
 		}

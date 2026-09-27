@@ -21,7 +21,9 @@ export interface EditorBottomStatus {
 }
 
 /** Default left gutter so the input area reads as one frame with the bottom border. */
-const DEFAULT_LEFT_GUTTER = "│ ";
+const DEFAULT_LEFT_GUTTER = "│  ";
+/** Gutter on the first input line: a shell-style prompt symbol before the text. */
+const PROMPT_LEFT_GUTTER = "│> ";
 
 /**
  * Custom editor that handles app-level keybindings for coding-agent.
@@ -50,7 +52,13 @@ export class CustomEditor extends Editor {
 	public onExtensionShortcut?: (data: string) => boolean;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: CustomEditorOptions) {
-		super(tui, theme, { leftGutter: DEFAULT_LEFT_GUTTER, rightGutter: "│", minContentLines: 2, ...options });
+		super(tui, theme, {
+			leftGutter: DEFAULT_LEFT_GUTTER,
+			firstLineGutter: PROMPT_LEFT_GUTTER,
+			rightGutter: "│",
+			minContentLines: 2,
+			...options,
+		});
 		this.keybindings = keybindings;
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 		this.frameMotion = new FrameMotion(tui);

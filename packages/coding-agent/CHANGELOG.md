@@ -23,7 +23,7 @@
 
 ### Changed
 
-- Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage is shown only by the length of the top bar line. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
+- Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. The first input line now starts with a `>` prompt symbol. Context usage is shown only by the length of the top bar line. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
 - Connected the model and thinking labels with a border line, added frame and activity animations, and applied the selected theme to CLI output and HTML exports.
 - Consolidated the built-in themes into 16 palette variables while retaining semantic color roles for custom themes.
 - Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).

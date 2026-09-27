@@ -922,6 +922,43 @@ describe("Editor component", () => {
 			assert.strictEqual(stripVTControlCharacters(editor.render(3)[1]!).startsWith("│ "), false);
 		});
 
+		it("draws the first-line gutter on the first content line only", () => {
+			const width = 20;
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, {
+				leftGutter: "│  ",
+				firstLineGutter: "│> ",
+			});
+			editor.setText("hello world this wraps");
+			const lines = editor.render(width);
+			const plain = lines.map((line) => stripVTControlCharacters(line));
+
+			for (const line of lines) {
+				assert.strictEqual(visibleWidth(line), width);
+			}
+			assert.ok(plain[1]!.startsWith("│> hello"), `expected prompt, got ${JSON.stringify(plain[1])}`);
+			assert.ok(plain[2]!.startsWith("│  "), `expected continuation gutter, got ${JSON.stringify(plain[2])}`);
+			assert.ok(!plain[0]!.startsWith("│>"));
+			assert.ok(!plain.at(-1)!.startsWith("│>"));
+		});
+
+		it("clips the first-line gutter on narrow terminals", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, {
+				leftGutter: "│  ",
+				firstLineGutter: "│> ",
+			});
+			editor.setText("hello");
+
+			for (const width of [2, 3, 4, 5]) {
+				for (const line of editor.render(width)) {
+					assert.ok(visibleWidth(line) <= width, `width ${width} produced line width ${visibleWidth(line)}`);
+				}
+			}
+
+			// Width 3 leaves one column for the gutter, so the prompt cell is clipped with the trailing space.
+			assert.strictEqual(stripVTControlCharacters(editor.render(3)[1]!)[0], "│");
+			assert.strictEqual(stripVTControlCharacters(editor.render(4)[1]!).startsWith("│>"), true);
+		});
+
 		it("offsets mouse clicks by the gutter width", () => {
 			const width = 20;
 			const editor = new Editor(createTestTUI(), defaultEditorTheme, { leftGutter: "│ " });
