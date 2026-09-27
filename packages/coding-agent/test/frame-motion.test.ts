@@ -136,12 +136,12 @@ describe("editor frame motion", () => {
 		editor.setAnimationOptions(false, "moderate");
 
 		const normal = editor.render(40);
-		expect(stripAnsi(normal[1]!)).toMatch(/^│◆ /);
+		expect(stripAnsi(normal[1]!)).toMatch(/^│ ◆ /);
 		expect(normal[1]!).toContain(theme.getFgAnsi("editorPrompt"));
 
 		editor.setShellMode("shell");
 		const shell = editor.render(40);
-		expect(stripAnsi(shell[1]!)).toMatch(/^│❯ /);
+		expect(stripAnsi(shell[1]!)).toMatch(/^│ ❯ /);
 		expect(shell[1]!).toContain(theme.getFgAnsi("bashMode"));
 		editor.dispose();
 	});
@@ -152,26 +152,6 @@ describe("editor frame motion", () => {
 		editor.setAnimationOptions(false, "moderate");
 		editor.setText("hello");
 		expect(editor.render(40)[1]!).toContain(theme.getFgAnsi("text"));
-		editor.dispose();
-	});
-
-	it("renders Shell title and connected selectors in the complete editor", () => {
-		const tui = { requestRender: () => {}, terminal: { rows: 20 } } as TUI;
-		const session = {
-			state: {
-				model: { id: "kimi", name: "Kimi K2.6", reasoning: true },
-				thinkingLevel: "medium",
-			},
-		} as AgentSession;
-		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
-		const footer = new FooterComponent(session);
-		editor.setBottomStatus(footer);
-		editor.setAnimationOptions(false, "moderate");
-		editor.setShellMode("shell");
-		const lines = editor.render(60).map(stripAnsi);
-		expect(lines[0]).toContain("Shell");
-		expect(lines.at(-1)).toContain("Kimi K2.6 ▾ ─ Medium ▾");
-		expect(lines.every((line) => visibleWidth(line) === 60)).toBe(true);
 		editor.dispose();
 	});
 

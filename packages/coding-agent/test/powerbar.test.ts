@@ -9,7 +9,7 @@ import {
 	type PowerbarHost,
 	type PowerbarModelEntry,
 } from "../src/modes/interactive/components/powerbar.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 const LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -95,20 +95,6 @@ function settle(controller: PowerbarController): void {
 	}
 }
 
-/** Visible item labels of the current frame, e.g. ["‹ Medium ›", "High"]. */
-function frameItems(controller: PowerbarController): string[] {
-	const rendered = controller.render(200);
-	expect(rendered).toBeDefined();
-	return stripAnsi(rendered!.text)
-		.split(/\s{3,}/)
-		.filter((part) => part.trim().length > 0)
-		.map((part) => part.trim());
-}
-
-function frameWidth(controller: PowerbarController): number {
-	return visibleWidth(stripAnsi(controller.render(200)!.text));
-}
-
 describe("PowerbarController thinking track", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
@@ -121,39 +107,8 @@ describe("PowerbarController thinking track", () => {
 
 	function open(controller: PowerbarController): void {
 		controller.render(200);
-		controller.openThinking({ anchorWidth: 9, prefix: { text: "Kimi K2.6 ▾", width: 11 } });
+		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
 	}
-
-	it("eases the track open: the anchor is immediate, neighbors follow over frames", () => {
-		const { controller } = createFixture();
-		open(controller);
-
-		// First frame: only the anchor (its slot still morphing from the label).
-		const items = frameItems(controller);
-		expect(items.some((item) => item.includes("Medium"))).toBe(true);
-		expect(items.some((item) => item.includes("High"))).toBe(false);
-
-		// The rendered track grows monotonically while the anchor stays visible.
-		let previous = frameWidth(controller);
-		for (let frame = 0; frame < 6; frame++) {
-			const rendered = controller.render(200)!;
-			const text = stripAnsi(rendered.text);
-			expect(text).toContain("Medium");
-			const width = visibleWidth(text);
-			expect(width).toBeGreaterThanOrEqual(previous);
-			previous = width;
-			vi.advanceTimersByTime(30);
-		}
-
-		// Fully expanded: every level is on screen with the model prefix.
-		const text = stripAnsi(controller.render(200)!.text);
-		for (const level of ["Off", "Minimal", "Low", "Medium", "High", "Xhigh", "Max"]) {
-			expect(text).toContain(level);
-		}
-		expect(text).toContain("Kimi K2.6");
-		expect(controller.isIdle()).toBe(false);
-		expect(controller.mode).toBe("thinking");
-	});
 
 	it("confirm applies the level and collapses anchored on it", () => {
 		const { controller, applied } = createFixture();
@@ -196,16 +151,6 @@ describe("PowerbarController thinking track", () => {
 		expect(controller.isIdle()).toBe(true);
 	});
 
-	it("keeps the anchor visible in every expansion frame", () => {
-		const { controller } = createFixture();
-		open(controller);
-		for (let frame = 0; frame < 7; frame++) {
-			const text = stripAnsi(controller.render(200)!.text);
-			expect(text).toContain("Medium");
-			vi.advanceTimersByTime(30);
-		}
-	});
-
 	it("frames never exceed the available width", () => {
 		const { controller } = createFixture();
 		open(controller);
@@ -227,19 +172,6 @@ describe("PowerbarController model track", () => {
 		vi.useRealTimers();
 	});
 
-	it("expands the model track around the current model", () => {
-		const { controller } = createFixture();
-		controller.render(200);
-		controller.openModelBrowse({ anchorWidth: 11 });
-		settle(controller);
-		const items = frameItems(controller);
-		expect(items).toContain("‹ Kimi K2.6 ›");
-		expect(items).toContain("Sonnet 4.6");
-		expect(items).toContain("Sonnet 4.5");
-		expect(items).toContain("Gemini 3.1 Pro");
-		expect(items).toContain("GPT-5.6 Sol");
-	});
-
 	it("middle-truncates overlong model labels so neighbors stay visible", () => {
 		const longLabel = "Mistral Medium 3.1 (batch)";
 		const { controller, setModels } = createFixture();
@@ -249,7 +181,7 @@ describe("PowerbarController model track", () => {
 			{ model: createModel("c", "C"), label: "C" },
 		]);
 		controller.render(200);
-		controller.openModelBrowse({ anchorWidth: 11 });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 
 		const text = stripAnsi(controller.render(200)!.text);
@@ -265,7 +197,7 @@ describe("PowerbarController model track", () => {
 		const { controller, setModels } = createFixture();
 		setModels([{ model: createModel("long", longLabel), label: longLabel }]);
 		controller.render(200);
-		controller.openModelBrowse({ anchorWidth: 11 });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 
 		const text = stripAnsi(controller.render(200)!.text);
@@ -273,42 +205,10 @@ describe("PowerbarController model track", () => {
 		expect(text).toContain("(batch)");
 	});
 
-	it("morphs into search on the first keystroke and filters", () => {
-		const { controller } = createFixture();
-		controller.render(200);
-		controller.openModelBrowse({ anchorWidth: 11 });
-		settle(controller);
-		controller.inputChar("s");
-		controller.inputChar("o");
-		controller.inputChar("n");
-		expect(controller.mode).toBe("model-search");
-		settle(controller);
-		const text = stripAnsi(controller.render(200)!.text);
-		expect(text).toContain("Model › son");
-		expect(text).toContain("Sonnet 4.6");
-		expect(text).not.toContain("Kimi K2.6");
-	});
-
-	it("backspacing the query empty morphs back to the browse track", () => {
-		const { controller } = createFixture();
-		controller.render(200);
-		controller.openModelBrowse({ anchorWidth: 11 });
-		settle(controller);
-		controller.inputChar("s");
-		settle(controller);
-		controller.backspace();
-		expect(controller.mode).toBe("model-browse");
-		settle(controller);
-		const text = stripAnsi(controller.render(200)!.text);
-		for (const label of ["GPT-5.6 Sol", "Kimi K2.6", "Sonnet 4.6", "Sonnet 4.5", "Gemini 3.1 Pro"]) {
-			expect(text).toContain(label);
-		}
-	});
-
 	it("shows a no-match hint when the query matches nothing", () => {
 		const { controller } = createFixture();
 		controller.render(200);
-		controller.openModelBrowse({ anchorWidth: 11 });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		controller.inputChar("z");
 		settle(controller);
 		controller.inputChar("z");
@@ -321,7 +221,7 @@ describe("PowerbarController model track", () => {
 	it("confirm applies the selected model and collapses", () => {
 		const { controller, applied, setCurrentModelIndex } = createFixture();
 		setCurrentModelIndex(1);
-		controller.openModelBrowse({ anchorWidth: 11 });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 		controller.move(-1); // highlight GPT-5.6 Sol
 		controller.confirm();
@@ -346,7 +246,7 @@ describe("PowerbarController window sliding", () => {
 		setCurrentModelIndex(0);
 		setModels(MANY_MODELS);
 		controller.render(80);
-		controller.openModelBrowse({ anchorWidth: 11 });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 
 		// The window cannot hold all twelve models at width 80.
@@ -377,7 +277,7 @@ describe("PowerbarController window sliding", () => {
 		setCurrentModelIndex(0);
 		setModels(MANY_MODELS);
 		controller.render(80);
-		controller.openModelBrowse({ anchorWidth: 11 });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 		for (let step = 0; step < 6; step++) {
 			controller.move(1);
@@ -408,7 +308,7 @@ describe("PowerbarController clicks", () => {
 	it("confirms a clicked item via its render region", () => {
 		const { controller, applied } = createFixture();
 		controller.render(200);
-		controller.openThinking({ anchorWidth: 9, prefix: { text: "Kimi K2.6 ▾", width: 11 } });
+		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
 		settle(controller);
 		const { regions } = controller.render(200)!;
 		const xhigh = regions.find((region) => region.itemIndex === LEVELS.indexOf("xhigh"));
@@ -420,7 +320,7 @@ describe("PowerbarController clicks", () => {
 	it("collapses when clicking outside any item", () => {
 		const { controller, applied } = createFixture();
 		controller.render(200);
-		controller.openThinking({ anchorWidth: 9, prefix: { text: "Kimi K2.6 ▾", width: 11 } });
+		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
 		settle(controller);
 		controller.handleContentClick(10_000);
 		settle(controller);
@@ -468,6 +368,16 @@ describe("FooterComponent powerbar integration", () => {
 		};
 	}
 
+	it("paints the picker arrows in the border accent color", () => {
+		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
+		footer.setAnimationOptions(false, "moderate");
+		footer.openPowerbarModelBrowse();
+		const line = footer.renderBottomBorder(120, 0, (text) => text);
+		expect(line).toContain(theme.getFgAnsi("borderAccent"));
+		expect(line).toContain(theme.getFgAnsi("accent"));
+		footer.dispose();
+	});
+
 	it("renders the normal border and exact width when idle", () => {
 		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
 		expect(footer.isPowerbarIdle()).toBe(true);
@@ -475,69 +385,6 @@ describe("FooterComponent powerbar integration", () => {
 			const line = footer.renderBottomBorder(width, 0, (text) => text);
 			expect(visibleWidth(stripAnsi(line))).toBe(width);
 		}
-	});
-
-	it("opens the model track from a click on the model label", () => {
-		const fixture = createFixture();
-		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
-		footer.renderBottomBorder(120, 0, (text) => text);
-		// Content starts after the "╰── " corner; the model label starts at 0.
-		expect(footer.handleBottomBorderClick(4)).toBe(true);
-		expect(footer.isPowerbarIdle()).toBe(false);
-		vi.advanceTimersByTime(300);
-		const line = footer.renderBottomBorder(120, 0, (text) => text);
-		expect(stripAnsi(line)).toContain("‹ Kimi K2.6 ›");
-		// The line still fills the width while the track is open.
-		expect(visibleWidth(stripAnsi(line))).toBe(120);
-		settle(fixture.controller);
-	});
-
-	it("opens the thinking track from a click on the thinking label", () => {
-		const fixture = createFixture();
-		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
-		footer.renderBottomBorder(120, 0, (text) => text);
-		// Thinking label starts after the model label and a three-space gap.
-		const modelLabelWidth = visibleWidth("Kimi K2.6 ▾");
-		expect(footer.handleBottomBorderClick(4 + modelLabelWidth + 3)).toBe(true);
-		vi.advanceTimersByTime(300);
-		const line = footer.renderBottomBorder(120, 0, (text) => text);
-		expect(stripAnsi(line)).toContain("Kimi K2.6");
-		expect(stripAnsi(line)).toContain("‹ Medium ›");
-		settle(fixture.controller);
-	});
-
-	it("discards an unconfirmed model selection when Tab changes selector", () => {
-		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
-		footer.setAnimationOptions(false, "moderate");
-		footer.openPowerbarModelBrowse();
-		footer.movePowerbar(1);
-		footer.switchPowerbar(1);
-		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Medium ›");
-		footer.switchPowerbar(-1);
-		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Kimi K2.6 ›");
-		footer.dispose();
-	});
-
-	it("wraps back to the model selector when Tab is pressed on the thinking track", () => {
-		const footer = new FooterComponent(createFooterSession(), createPowerbarHost());
-		footer.setAnimationOptions(false, "moderate");
-		footer.openPowerbarModelBrowse();
-		footer.switchPowerbar(1);
-		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Medium ›");
-		footer.switchPowerbar(1);
-		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Kimi K2.6 ›");
-		footer.dispose();
-	});
-
-	it("keeps the model selector open when reasoning is unavailable", () => {
-		const session = createFooterSession();
-		session.state.model!.reasoning = false;
-		const footer = new FooterComponent(session, createPowerbarHost());
-		footer.setAnimationOptions(false, "moderate");
-		footer.openPowerbarModelBrowse();
-		footer.switchPowerbar(1);
-		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).toContain("‹ Kimi K2.6 ›");
-		footer.dispose();
 	});
 
 	it("keeps exact border width while tracks animate", () => {

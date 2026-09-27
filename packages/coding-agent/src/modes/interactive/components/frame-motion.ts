@@ -45,7 +45,7 @@ export class FrameMotion {
 	private borderRamp: string[] = [];
 	private statusRamps: string[][] = [];
 	private titleRamp: string[] = [];
-	private labelRamps: Record<"text" | "muted", string[]> = { text: [], muted: [] };
+	private labelRamps: Record<"text" | "muted" | "accent", string[]> = { text: [], muted: [], accent: [] };
 	private width = 80;
 	private rows = 4;
 	private leftAnchor = 4;
@@ -149,7 +149,7 @@ export class FrameMotion {
 		return Math.min(RAMP_STEPS, Math.floor(p * (RAMP_STEPS + 1)));
 	}
 
-	paintLabel(text: string, color: "text" | "muted"): string {
+	paintLabel(text: string, color: "text" | "muted" | "accent"): string {
 		const phase = this.getLabelPhase();
 		if (phase === 0) return " ".repeat(visibleWidth(text));
 		this.refreshPalette();
@@ -363,7 +363,9 @@ export class FrameMotion {
 
 	private refreshPalette(): void {
 		const key =
-			(["border", "bashMode", "dim", "text", "muted"] as const).map((name) => theme.getFgAnsi(name)).join("") +
+			(["border", "bashMode", "dim", "text", "muted", "accent"] as const)
+				.map((name) => theme.getFgAnsi(name))
+				.join("") +
 			theme.getColorMode() +
 			isLightTheme();
 		if (key === this.paletteKey) return;
@@ -390,7 +392,11 @@ export class FrameMotion {
 			);
 		});
 		this.titleRamp = ramp(colors.dim, colors.bashMode);
-		this.labelRamps = { text: ramp(colors.dim, colors.text), muted: ramp(colors.dim, colors.muted) };
+		this.labelRamps = {
+			text: ramp(colors.dim, colors.text),
+			muted: ramp(colors.dim, colors.muted),
+			accent: ramp(colors.dim, colors.accent),
+		};
 		this.paletteKey = key;
 	}
 

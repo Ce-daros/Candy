@@ -39,7 +39,7 @@ describe("status indicators", () => {
 		const lines = editor.render(20);
 		expect(stripAnsi(lines[0]!)).toBe(`╭${"─".repeat(18)}╮`);
 		expect(lines).toHaveLength(4);
-		expect(stripAnsi(lines[1]!)).toMatch(/^│◆ /);
+		expect(stripAnsi(lines[1]!)).toMatch(/^│ ◆ /);
 		expect(stripAnsi(lines[1]!)).toMatch(/│$/);
 		expect(stripAnsi(lines[2]!)).toBe(`│${" ".repeat(18)}│`);
 		expect(lines.every((line) => visibleWidth(line) === 20)).toBe(true);

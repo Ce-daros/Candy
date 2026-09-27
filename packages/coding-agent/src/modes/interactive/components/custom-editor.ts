@@ -22,14 +22,14 @@ export interface EditorBottomStatus {
 }
 
 /** Default left gutter so the input area reads as one frame with the bottom border. */
-const DEFAULT_LEFT_GUTTER = "│  ";
+const DEFAULT_LEFT_GUTTER = "│   ";
 /** Prompt glyph on the first input line: a diamond in normal mode. */
 const PROMPT_GLYPH_NORMAL = "◆";
 /** Prompt glyph on the first input line: a chevron in Shell modes. */
 const PROMPT_GLYPH_SHELL = "❯";
-/** Gutter on the first input line: border, prompt glyph, then one column before the text. */
-const PROMPT_LEFT_GUTTER_NORMAL = `│${PROMPT_GLYPH_NORMAL} `;
-const PROMPT_LEFT_GUTTER_SHELL = `│${PROMPT_GLYPH_SHELL} `;
+/** Gutter on the first input line: border, space, prompt glyph, then one column before the text. */
+const PROMPT_LEFT_GUTTER_NORMAL = `│ ${PROMPT_GLYPH_NORMAL} `;
+const PROMPT_LEFT_GUTTER_SHELL = `│ ${PROMPT_GLYPH_SHELL} `;
 
 /**
  * Custom editor that handles app-level keybindings for coding-agent.

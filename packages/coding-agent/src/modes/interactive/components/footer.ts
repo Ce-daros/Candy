@@ -9,9 +9,6 @@ import { PowerbarController, type PowerbarHost } from "./powerbar.ts";
 /** Frame corner that opens the merged bottom border. */
 const BOTTOM_BORDER_CORNER = "╰── ";
 
-/** Chevron hinting that a segment can be changed. */
-const SELECTOR_CHEVRON = "▾";
-
 /**
  * Format token counts for compact display.
  */
@@ -164,12 +161,12 @@ export class FooterComponent implements EditorBottomStatus {
 		if (!model?.reasoning) return false;
 		const modelName = model ? modelDisplayName(model) : "no-model";
 		const thinkingLevel = this.session.state.thinkingLevel || "off";
-		const anchorLabel = `${thinkingLevel.charAt(0).toUpperCase() + thinkingLevel.slice(1)} ${SELECTOR_CHEVRON}`;
+		const anchorLabel = thinkingLevel.charAt(0).toUpperCase() + thinkingLevel.slice(1);
 		this.powerbar.openThinking({
 			anchorWidth: visibleWidth(anchorLabel),
 			prefix: {
-				text: `${modelName} ${theme.fg("dim", SELECTOR_CHEVRON)}`,
-				width: visibleWidth(`${modelName} ${SELECTOR_CHEVRON}`),
+				text: modelName,
+				width: visibleWidth(modelName),
 			},
 		});
 		return true;
@@ -180,8 +177,7 @@ export class FooterComponent implements EditorBottomStatus {
 		if (!this.powerbar) return false;
 		const model = this.session.state.model;
 		const modelName = model ? modelDisplayName(model) : "no-model";
-		const anchorLabel = `${modelName} ${SELECTOR_CHEVRON}`;
-		this.powerbar.openModelBrowse({ anchorWidth: visibleWidth(anchorLabel) });
+		this.powerbar.openModelBrowse({ anchorWidth: visibleWidth(modelName) });
 		return true;
 	}
 
@@ -247,9 +243,8 @@ export class FooterComponent implements EditorBottomStatus {
 	private modelLabel(): string {
 		const model = this.session.state.model;
 		const name = model ? modelDisplayName(model) : "no-model";
-		const label = `${name} ${SELECTOR_CHEVRON}`;
-		if (this.frameMotion) return this.frameMotion.paintLabel(label, "text");
-		return `${name} ${theme.fg("dim", SELECTOR_CHEVRON)}`;
+		if (this.frameMotion) return this.frameMotion.paintLabel(name, "accent");
+		return theme.fg("accent", name);
 	}
 
 	/** Thinking level, only for models that support reasoning. */
@@ -257,8 +252,8 @@ export class FooterComponent implements EditorBottomStatus {
 		const model = this.session.state.model;
 		if (!model?.reasoning) return undefined;
 		const level = this.session.state.thinkingLevel || "off";
-		const label = `${level.charAt(0).toUpperCase() + level.slice(1)} ${SELECTOR_CHEVRON}`;
+		const label = level.charAt(0).toUpperCase() + level.slice(1);
 		if (this.frameMotion) return this.frameMotion.paintLabel(label, "muted");
-		return `${theme.fg("muted", level.charAt(0).toUpperCase() + level.slice(1))} ${theme.fg("dim", SELECTOR_CHEVRON)}`;
+		return theme.fg("muted", label);
 	}
 }

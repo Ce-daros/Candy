@@ -613,7 +613,9 @@ export class PowerbarController {
 		if (!item) return "";
 		const content = middleTruncate(item.label, this.slotWidth(index) - 4);
 		if (index === this.selectedIndex) {
-			return theme.bold(theme.fg("accent", `‹ ${content} ›`));
+			return theme.bold(
+				`${theme.fg("borderAccent", "‹ ")}${theme.fg("accent", content)}${theme.fg("borderAccent", " ›")}`,
+			);
 		}
 		return `  ${theme.fg("muted", content)}`;
 	}
@@ -781,7 +783,7 @@ export class PowerbarController {
 		const parts: string[] = [];
 		let end = this.trackLeft();
 
-		if (this.leftIndicator) parts.push(theme.fg("dim", "‹ "));
+		if (this.leftIndicator) parts.push(theme.fg("borderAccent", "‹ "));
 
 		for (const span of spans) {
 			const text = sliceByColumn(span.label, span.sliceStart, span.width, true);
@@ -800,7 +802,7 @@ export class PowerbarController {
 		if (this.rightIndicator) {
 			const right = maxWidth - 1;
 			if (right > end) parts.push(" ".repeat(right - end));
-			parts.push(theme.fg("dim", "›"));
+			parts.push(theme.fg("borderAccent", "›"));
 		} else if (this.mode === "model-search" && this.items.length === 0) {
 			parts.push(theme.fg("muted", "   no match"));
 		}
