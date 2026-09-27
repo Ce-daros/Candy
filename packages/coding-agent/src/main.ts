@@ -8,7 +8,6 @@
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@candy/ai";
 import { setCapabilityOverrides } from "@candy/tui";
-import chalk from "chalk";
 import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
 import {
 	type AuthCheckResult,
@@ -64,7 +63,14 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { builtInExtensions } from "./extensions/index.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
-import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
+import {
+	cliThemeColor,
+	getDefaultTheme,
+	initTheme,
+	resolveThemeSetting,
+	setThemeJsonValidator,
+	stopThemeWatcher,
+} from "./modes/interactive/theme/theme.ts";
 import { validateThemeJson } from "./modes/interactive/theme/theme-json.ts";
 import { cleanupManagedInstall, handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
@@ -97,7 +103,8 @@ async function readPipedStdin(): Promise<string | undefined> {
 
 function reportDiagnostics(diagnostics: readonly AgentSessionRuntimeDiagnostic[]): void {
 	for (const diagnostic of diagnostics) {
-		const color = diagnostic.type === "error" ? chalk.red : diagnostic.type === "warning" ? chalk.yellow : chalk.dim;
+		const color = (text: string) =>
+			cliThemeColor(diagnostic.type === "error" ? "error" : diagnostic.type === "warning" ? "warning" : "dim", text);
 		const prefix = diagnostic.type === "error" ? "Error: " : diagnostic.type === "warning" ? "Warning: " : "";
 		console.error(color(`${prefix}${diagnostic.message}`));
 	}
@@ -140,7 +147,7 @@ async function runAuthCommand(args: string[]): Promise<boolean> {
 		command = parseAuthCommand(args);
 	} catch (error) {
 		const message = error instanceof AuthCommandError ? error.message : "Failed to parse auth command";
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(cliThemeColor("error", `Error: ${message}`));
 		process.exitCode = 1;
 		return true;
 	}
@@ -149,8 +156,8 @@ async function runAuthCommand(args: string[]): Promise<boolean> {
 	const parsed = parseArgs(command.args);
 	if (parsed.unknownFlags.size > 0) {
 		const option = parsed.unknownFlags.keys().next().value;
-		console.error(chalk.red(`Unknown option --${option} for "${getAuthCommandName(command.kind)}".`));
-		console.error(chalk.dim(`Use "${APP_NAME} --help" or "${getAuthCommandUsage(command.kind)}".`));
+		console.error(cliThemeColor("error", `Unknown option --${option} for "${getAuthCommandName(command.kind)}".`));
+		console.error(cliThemeColor("dim", `Use "${APP_NAME} --help" or "${getAuthCommandUsage(command.kind)}".`));
 		process.exitCode = 1;
 		return true;
 	}
@@ -201,7 +208,7 @@ async function runAuthCommand(args: string[]): Promise<boolean> {
 		process.exitCode = result.status === "ready" ? 0 : result.status === "not_ready" ? 1 : 2;
 	} catch (error) {
 		const message = error instanceof AuthCommandError ? error.message : "Failed to resolve credential";
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(cliThemeColor("error", `Error: ${message}`));
 		process.exitCode = command.kind === "check" ? 2 : 1;
 	}
 	return true;
@@ -306,7 +313,7 @@ function validateForkFlags(parsed: Args): void {
 	].filter((flag): flag is string => flag !== undefined);
 
 	if (conflictingFlags.length > 0) {
-		console.error(chalk.red(`Error: --fork cannot be combined with ${conflictingFlags.join(", ")}`));
+		console.error(cliThemeColor("error", `Error: --fork cannot be combined with ${conflictingFlags.join(", ")}`));
 		process.exit(1);
 	}
 }
@@ -321,7 +328,9 @@ function validateSessionIdFlags(parsed: Args): void {
 	].filter((flag): flag is string => flag !== undefined);
 
 	if (conflictingFlags.length > 0) {
-		console.error(chalk.red(`Error: --session-id cannot be combined with ${conflictingFlags.join(", ")}`));
+		console.error(
+			cliThemeColor("error", `Error: --session-id cannot be combined with ${conflictingFlags.join(", ")}`),
+		);
 		process.exit(1);
 	}
 
@@ -329,7 +338,7 @@ function validateSessionIdFlags(parsed: Args): void {
 		assertValidSessionId(parsed.sessionId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(cliThemeColor("error", `Error: ${message}`));
 		process.exit(1);
 	}
 }
@@ -339,7 +348,7 @@ function openSessionOrExit(path: string, sessionDir?: string): SessionManager {
 		return SessionManager.open(path, sessionDir);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(cliThemeColor("error", `Error: ${message}`));
 		process.exit(1);
 	}
 }
@@ -349,7 +358,7 @@ function forkSessionOrExit(sourcePath: string, cwd: string, sessionDir?: string,
 		return SessionManager.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(cliThemeColor("error", `Error: ${message}`));
 		process.exit(1);
 	}
 }
@@ -368,7 +377,7 @@ export async function createSessionManager(
 		if (parsed.sessionId) {
 			const existingTarget = findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
 			if (existingTarget) {
-				console.error(chalk.red(`Session already exists with id '${parsed.sessionId}'`));
+				console.error(cliThemeColor("error", `Session already exists with id '${parsed.sessionId}'`));
 				process.exit(1);
 			}
 		}
@@ -382,7 +391,7 @@ export async function createSessionManager(
 				return forkSessionOrExit(resolved.path, cwd, sessionDir, parsed.sessionId);
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				console.error(cliThemeColor("error", `No session found matching '${resolved.arg}'`));
 				process.exit(1);
 		}
 	}
@@ -396,17 +405,17 @@ export async function createSessionManager(
 				return openSessionOrExit(resolved.path, sessionDir);
 
 			case "global": {
-				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
+				console.log(cliThemeColor("warning", `Session found in different project: ${resolved.cwd}`));
 				const shouldFork = await promptConfirm("Fork this session into current directory?");
 				if (!shouldFork) {
-					console.log(chalk.dim("Aborted."));
+					console.log(cliThemeColor("dim", "Aborted."));
 					process.exit(0);
 				}
 				return forkSessionOrExit(resolved.path, cwd, sessionDir);
 			}
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				console.error(cliThemeColor("error", `No session found matching '${resolved.arg}'`));
 				process.exit(1);
 		}
 	}
@@ -419,7 +428,7 @@ export async function createSessionManager(
 				settingsManager,
 			);
 			if (!selectedPath) {
-				console.log(chalk.dim("No session selected"));
+				console.log(cliThemeColor("dim", "No session selected"));
 				process.exit(0);
 			}
 			return SessionManager.open(selectedPath, sessionDir);
@@ -438,7 +447,8 @@ export async function createSessionManager(
 			return SessionManager.open(existingSession.path, sessionDir);
 		}
 		console.error(
-			chalk.yellow(
+			cliThemeColor(
+				"warning",
 				`Warning: No project session found with id '${parsed.sessionId}'; creating a new session with that id.`,
 			),
 		);
@@ -565,6 +575,11 @@ export interface MainOptions {
 
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
+	setThemeJsonValidator(validateThemeJson);
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+	initTheme(resolveThemeSetting(bootstrapSettingsManager.getThemeSetting(), getDefaultTheme()));
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.CANDY_OFFLINE);
 	if (offlineMode) {
@@ -581,9 +596,6 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	cleanupManagedInstall();
 
-	const cwd = process.cwd();
-	const agentDir = getAgentDir();
-	const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 	applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher();
 
@@ -605,9 +617,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	const parsed = parseArgs(args);
+	if (parsed.useTheme !== undefined) initTheme(resolveThemeSetting(parsed.useTheme, getDefaultTheme()));
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
-			const color = d.type === "error" ? chalk.red : chalk.yellow;
+			const color = (text: string) => cliThemeColor(d.type === "error" ? "error" : "warning", text);
 			console.error(color(`${d.type === "error" ? "Error" : "Warning"}: ${d.message}`));
 		}
 		if (parsed.diagnostics.some((d) => d.type === "error")) {
@@ -625,10 +638,16 @@ export async function main(args: string[], options?: MainOptions) {
 		let result: string;
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
-			result = await exportFromFile(parsed.export, outputPath);
+			result = await exportFromFile(parsed.export, {
+				outputPath,
+				themeName: resolveThemeSetting(
+					parsed.useTheme ?? bootstrapSettingsManager.getThemeSetting(),
+					getDefaultTheme(),
+				),
+			});
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";
-			console.error(chalk.red(`Error: ${message}`));
+			console.error(cliThemeColor("error", `Error: ${message}`));
 			process.exit(1);
 		}
 		console.log(`Exported to: ${result}`);
@@ -642,7 +661,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
+		console.error(cliThemeColor("error", "Error: @file arguments are not supported in RPC mode"));
 		process.exit(1);
 	}
 
@@ -663,7 +682,7 @@ export async function main(args: string[], options?: MainOptions) {
 		time("firstTimeSetup");
 	}
 
-	if (appMode === "interactive" && parsed.useTheme !== undefined) {
+	if (parsed.useTheme !== undefined) {
 		startupSettingsManager.applyOverrides({ theme: parsed.useTheme });
 	}
 
@@ -687,14 +706,14 @@ export async function main(args: string[], options?: MainOptions) {
 			}
 			sessionManager = SessionManager.open(missingSessionCwdIssue.sessionFile!, sessionDir, selectedCwd);
 		} else {
-			console.error(chalk.red(new MissingSessionCwdError(missingSessionCwdIssue).message));
+			console.error(cliThemeColor("error", new MissingSessionCwdError(missingSessionCwdIssue).message));
 			process.exit(1);
 		}
 	}
 	if (parsed.name !== undefined) {
 		const name = normalizeSessionName(parsed.name);
 		if (name === undefined) {
-			console.error(chalk.red("Error: --name requires a non-empty value"));
+			console.error(cliThemeColor("error", "Error: --name requires a non-empty value"));
 			process.exit(1);
 		}
 		sessionManager.appendSessionInfo(name);
@@ -886,8 +905,6 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, stdinContent);
 	time("prepareInitialMessage");
-	// candy reads user-authored themes, so it opts into full validation before any theme loads.
-	setThemeJsonValidator(validateThemeJson);
 	initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
 
@@ -904,20 +921,20 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	if (hasRuntimeErrors) {
 		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {
-			console.error(chalk.yellow(EXTENSION_LOAD_FAILURE_HINT));
+			console.error(cliThemeColor("warning", EXTENSION_LOAD_FAILURE_HINT));
 		}
 		process.exit(1);
 	}
 	time("createAgentSession");
 
 	if (appMode !== "interactive" && !session.model) {
-		console.error(chalk.red(formatNoModelsAvailableMessage()));
+		console.error(cliThemeColor("error", formatNoModelsAvailableMessage()));
 		process.exit(1);
 	}
 
 	const startupBenchmark = isTruthyEnvFlag(process.env.CANDY_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
-		console.error(chalk.red("Error: CANDY_STARTUP_BENCHMARK only supports interactive mode"));
+		console.error(cliThemeColor("error", "Error: CANDY_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
 	}
 

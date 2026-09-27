@@ -80,13 +80,7 @@ function adjustBrightness(color: string, factor: number): string {
 /** Derive export background colors from a base color (e.g., userMessageBg). */
 function deriveExportColors(baseColor: string): { pageBg: string; cardBg: string; infoBg: string } {
 	const parsed = parseColor(baseColor);
-	if (!parsed) {
-		return {
-			pageBg: "rgb(24, 24, 30)",
-			cardBg: "rgb(30, 30, 36)",
-			infoBg: "rgb(60, 55, 40)",
-		};
-	}
+	if (!parsed) throw new Error(`Invalid export background color: ${baseColor}`);
 
 	const luminance = getLuminance(parsed.r, parsed.g, parsed.b);
 	const isLight = luminance > 0.5;
@@ -117,7 +111,7 @@ function generateThemeVars(themeName?: string): string {
 
 	// Use explicit theme export colors if available, otherwise derive from userMessageBg
 	const themeExport = getThemeExportColors(themeName);
-	const userMessageBg = colors.userMessageBg || "#343541";
+	const userMessageBg = colors.userMessageBg;
 	const derivedColors = deriveExportColors(userMessageBg);
 
 	lines.push(`--exportPageBg: ${themeExport.pageBg ?? derivedColors.pageBg};`);
@@ -151,7 +145,7 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 	const themeVars = generateThemeVars(themeName);
 	const colors = getResolvedThemeColors(themeName);
 	const themeExport = getThemeExportColors(themeName);
-	const derivedExportColors = deriveExportColors(colors.userMessageBg || "#343541");
+	const derivedExportColors = deriveExportColors(colors.userMessageBg);
 	const bodyBg = themeExport.pageBg ?? derivedExportColors.pageBg;
 	const containerBg = themeExport.cardBg ?? derivedExportColors.cardBg;
 	const infoBg = themeExport.infoBg ?? derivedExportColors.infoBg;

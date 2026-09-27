@@ -296,7 +296,7 @@
 
     .header-toggle-btn:hover,
     .download-json-btn:hover {
-      background: var(--hover);
+      background: var(--selectedBg);
       border-color: var(--borderAccent);
     }
 
@@ -405,9 +405,9 @@
     }
 
     .copy-link-btn.copied {
-      background: var(--success, #22c55e);
-      color: white;
-      border-color: var(--success, #22c55e);
+      background: var(--success);
+      color: var(--body-bg);
+      border-color: var(--success);
     }
 
     /* Highlight effect for deep-linked messages */
@@ -770,7 +770,7 @@
     }
 
     .tool-param-required {
-      color: var(--warning, #e8a838);
+      color: var(--warning);
       font-size: 10px;
     }
 
@@ -900,7 +900,7 @@
     }
 
     .markdown-content code {
-      background: rgba(128, 128, 128, 0.2);
+      background: color-mix(in srgb, var(--muted) 20%, transparent);
       color: var(--mdCode);
       padding: 0 4px;
       border-radius: 3px;
@@ -956,7 +956,7 @@
     }
 
     .markdown-content th {
-      background: rgba(128, 128, 128, 0.1);
+      background: color-mix(in srgb, var(--muted) 10%, transparent);
       font-weight: bold;
     }
 

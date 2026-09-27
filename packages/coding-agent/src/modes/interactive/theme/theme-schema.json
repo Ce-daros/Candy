@@ -39,7 +39,7 @@
 		},
 		"colors": {
 			"type": "object",
-			"description": "Theme color definitions (scrollbar, thinkingMax, and search highlight colors are optional and use compatible fallbacks)",
+			"description": "Semantic colors for the terminal interface, CLI output, and HTML export (scrollbar, thinkingMax, and search highlight colors are optional)",
 			"required": [
 				"accent",
 				"border",
@@ -96,11 +96,11 @@
 			"properties": {
 				"accent": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Primary accent color (logo, selected items, cursor)"
+					"description": "Primary selection and focus accent"
 				},
 				"border": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Normal borders"
+					"description": "Normal editor and interface borders"
 				},
 				"borderAccent": {
 					"$ref": "#/$defs/colorValue",
@@ -288,7 +288,7 @@
 				},
 				"thinkingOff": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: off"
+					"description": "Legacy thinking-level border color; use the normal border hue"
 				},
 				"thinkingMinimal": {
 					"$ref": "#/$defs/colorValue",
@@ -316,7 +316,7 @@
 				},
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Editor border color in bash mode"
+					"description": "Editor border and label color in Shell mode"
 				}
 			},
 			"additionalProperties": false

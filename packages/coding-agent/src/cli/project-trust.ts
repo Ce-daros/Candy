@@ -1,7 +1,7 @@
-import chalk from "chalk";
 import type { ProjectTrustContext } from "../core/extensions/types.ts";
 import type { AppMode } from "../core/project-trust.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
+import { cliThemeColor } from "../modes/interactive/theme/theme.ts";
 import { showStartupInput, showStartupSelector } from "./startup-ui.ts";
 
 export function createProjectTrustContext(options: {
@@ -53,7 +53,8 @@ export function createProjectTrustContext(options: {
 			},
 			notify: (message, type = "info") => {
 				if (options.mode !== "interactive") {
-					const color = type === "error" ? chalk.red : type === "warning" ? chalk.yellow : chalk.cyan;
+					const color = (text: string) =>
+						cliThemeColor(type === "error" ? "error" : type === "warning" ? "warning" : "border", text);
 					console.error(color(message));
 				}
 			},

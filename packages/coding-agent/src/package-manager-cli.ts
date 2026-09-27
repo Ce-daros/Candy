@@ -34,6 +34,7 @@ import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
+import { cliThemeColor } from "./modes/interactive/theme/theme.ts";
 import { getCandyUserAgent } from "./utils/candy-user-agent.ts";
 import { spawnProcess, spawnProcessSync, waitForChildProcess } from "./utils/child-process.ts";
 import { canonicalizePath, getCwdRelativePath } from "./utils/paths.ts";
@@ -221,16 +222,16 @@ async function runManagedSelfUpdate(managedRoot: string, version: string): Promi
 }
 
 const SELF_UPDATE_NOTE_MARKDOWN_THEME: MarkdownTheme = {
-	heading: (text) => chalk.bold(chalk.yellow(text)),
-	link: (text) => chalk.cyan(text),
-	linkUrl: (text) => chalk.dim(text),
-	code: (text) => chalk.yellow(text),
-	codeBlock: (text) => chalk.dim(text),
-	codeBlockBorder: (text) => chalk.dim(text),
-	quote: (text) => chalk.dim(text),
-	quoteBorder: (text) => chalk.dim(text),
-	hr: (text) => chalk.dim(text),
-	listBullet: (text) => chalk.yellow(text),
+	heading: (text) => chalk.bold(cliThemeColor("warning", text)),
+	link: (text) => cliThemeColor("mdLink", text),
+	linkUrl: (text) => cliThemeColor("dim", text),
+	code: (text) => cliThemeColor("warning", text),
+	codeBlock: (text) => cliThemeColor("dim", text),
+	codeBlockBorder: (text) => cliThemeColor("dim", text),
+	quote: (text) => cliThemeColor("dim", text),
+	quoteBorder: (text) => cliThemeColor("dim", text),
+	hr: (text) => cliThemeColor("dim", text),
+	listBullet: (text) => cliThemeColor("warning", text),
 	bold: (text) => chalk.bold(text),
 	italic: (text) => chalk.italic(text),
 	strikethrough: (text) => chalk.strikethrough(text),
@@ -255,9 +256,9 @@ interface PackageCommandOptions {
 function reportSettingsErrors(settingsManager: SettingsManager, context: string): void {
 	const errors = settingsManager.drainErrors();
 	for (const { scope, error } of errors) {
-		console.error(chalk.yellow(`Warning (${context}, ${scope} settings): ${error.message}`));
+		console.error(cliThemeColor("warning", `Warning (${context}, ${scope} settings): ${error.message}`));
 		if (error.stack) {
-			console.error(chalk.dim(error.stack));
+			console.error(cliThemeColor("dim", error.stack));
 		}
 	}
 }
@@ -605,7 +606,7 @@ async function refreshModelCatalogs(agentDir: string): Promise<void> {
 	} finally {
 		clearTimeout(timeout);
 	}
-	console.log(chalk.green("Model catalogs refreshed"));
+	console.log(cliThemeColor("success", "Model catalogs refreshed"));
 }
 
 function printSelfUpdateUnavailable(
@@ -623,12 +624,14 @@ function printSelfUpdateUnavailable(
 }
 
 function printSelfUpdateFallback(command: SelfUpdateCommand): void {
-	console.error(chalk.dim(`If this keeps failing, run this command yourself: ${command.display}`));
+	console.error(cliThemeColor("dim", `If this keeps failing, run this command yourself: ${command.display}`));
 }
 
 function printPnpmSelfUpdateMetadataHint(): void {
-	console.error(chalk.yellow("If pnpm reports missing package versions, its cached registry metadata may be stale."));
-	console.error(chalk.yellow(`Run \`pnpm store prune\` and retry \`${APP_NAME} update --self\`.`));
+	console.error(
+		cliThemeColor("warning", "If pnpm reports missing package versions, its cached registry metadata may be stale."),
+	);
+	console.error(cliThemeColor("warning", `Run \`pnpm store prune\` and retry \`${APP_NAME} update --self\`.`));
 }
 
 function printSelfUpdateNote(note: string): void {
@@ -638,7 +641,7 @@ function printSelfUpdateNote(note: string): void {
 	}
 
 	console.log();
-	console.log(chalk.bold(chalk.yellow("Update note")));
+	console.log(chalk.bold(cliThemeColor("warning", "Update note")));
 	try {
 		const width = Math.max(20, process.stdout.columns ?? 80);
 		const renderedLines = new Markdown(trimmedNote, 0, 0, SELF_UPDATE_NOTE_MARKDOWN_THEME)
@@ -684,12 +687,12 @@ async function getSelfUpdatePlan(force: boolean): Promise<SelfUpdatePlan> {
 		};
 	}
 
-	console.log(chalk.green(`${APP_NAME} is already up to date (v${VERSION})`));
+	console.log(cliThemeColor("success", `${APP_NAME} is already up to date (v${VERSION})`));
 	return { packageName, installSpec, version: latestRelease.version, shouldRun: false };
 }
 
 async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
-	console.log(chalk.dim(`Updating ${APP_NAME} with ${command.display}...`));
+	console.log(cliThemeColor("dim", `Updating ${APP_NAME} with ${command.display}...`));
 	for (const step of command.steps ?? [command]) {
 		await new Promise<void>((resolve, reject) => {
 			const child = spawnProcess(step.command, step.args, {
@@ -736,7 +739,7 @@ function getCommandAppMode(): AppMode {
 
 function reportProjectTrustWarnings(warnings: readonly string[]): void {
 	for (const warning of warnings) {
-		console.error(chalk.yellow(`Warning: ${warning}`));
+		console.error(cliThemeColor("warning", `Warning: ${warning}`));
 	}
 }
 
@@ -812,13 +815,13 @@ export async function handleConfigCommand(
 		} else if (arg === "-na" || arg === "--no-approve") {
 			projectTrustOverride = false;
 		} else if (arg.startsWith("-")) {
-			console.error(chalk.red(`Unknown option ${arg} for "config".`));
-			console.error(chalk.dim(`Use "${APP_NAME} --help" or "${CONFIG_COMMAND_USAGE}".`));
+			console.error(cliThemeColor("error", `Unknown option ${arg} for "config".`));
+			console.error(cliThemeColor("dim", `Use "${APP_NAME} --help" or "${CONFIG_COMMAND_USAGE}".`));
 			process.exitCode = 1;
 			return true;
 		} else {
-			console.error(chalk.red(`Unexpected argument ${arg}.`));
-			console.error(chalk.dim(`Usage: ${CONFIG_COMMAND_USAGE}`));
+			console.error(cliThemeColor("error", `Unexpected argument ${arg}.`));
+			console.error(cliThemeColor("dim", `Usage: ${CONFIG_COMMAND_USAGE}`));
 			process.exitCode = 1;
 			return true;
 		}
@@ -834,7 +837,7 @@ export async function handleConfigCommand(
 	});
 	reportProjectTrustWarnings(projectTrustWarnings);
 	if (local && !settingsManager.isProjectTrusted()) {
-		console.error(chalk.red("Project is not trusted. Use --approve to modify local resource config."));
+		console.error(cliThemeColor("error", "Project is not trusted. Use --approve to modify local resource config."));
 		process.exitCode = 1;
 		return true;
 	}
@@ -876,37 +879,37 @@ export async function handlePackageCommand(
 	}
 
 	if (options.invalidOption) {
-		console.error(chalk.red(`Unknown option ${options.invalidOption} for "${options.command}".`));
-		console.error(chalk.dim(`Use "${APP_NAME} --help" or "${getPackageCommandUsage(options.command)}".`));
+		console.error(cliThemeColor("error", `Unknown option ${options.invalidOption} for "${options.command}".`));
+		console.error(cliThemeColor("dim", `Use "${APP_NAME} --help" or "${getPackageCommandUsage(options.command)}".`));
 		process.exitCode = 1;
 		return true;
 	}
 
 	if (options.missingOptionValue) {
-		console.error(chalk.red(`Missing value for ${options.missingOptionValue}.`));
-		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
+		console.error(cliThemeColor("error", `Missing value for ${options.missingOptionValue}.`));
+		console.error(cliThemeColor("dim", `Usage: ${getPackageCommandUsage(options.command)}`));
 		process.exitCode = 1;
 		return true;
 	}
 
 	if (options.invalidArgument) {
-		console.error(chalk.red(`Unexpected argument ${options.invalidArgument}.`));
-		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
+		console.error(cliThemeColor("error", `Unexpected argument ${options.invalidArgument}.`));
+		console.error(cliThemeColor("dim", `Usage: ${getPackageCommandUsage(options.command)}`));
 		process.exitCode = 1;
 		return true;
 	}
 
 	if (options.conflictingOptions) {
-		console.error(chalk.red(options.conflictingOptions));
-		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
+		console.error(cliThemeColor("error", options.conflictingOptions));
+		console.error(cliThemeColor("dim", `Usage: ${getPackageCommandUsage(options.command)}`));
 		process.exitCode = 1;
 		return true;
 	}
 
 	const source = options.source;
 	if ((options.command === "install" || options.command === "remove") && !source) {
-		console.error(chalk.red(`Missing ${options.command} source.`));
-		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
+		console.error(cliThemeColor("error", `Missing ${options.command} source.`));
+		console.error(cliThemeColor("dim", `Usage: ${getPackageCommandUsage(options.command)}`));
 		process.exitCode = 1;
 		return true;
 	}
@@ -916,7 +919,7 @@ export async function handlePackageCommand(
 			await refreshModelCatalogs(getAgentDir());
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Unknown model catalog refresh error";
-			console.error(chalk.red(`Error: ${message}`));
+			console.error(cliThemeColor("error", `Error: ${message}`));
 			process.exitCode = 1;
 		}
 		return true;
@@ -934,7 +937,7 @@ export async function handlePackageCommand(
 	});
 	reportProjectTrustWarnings(projectTrustWarnings);
 	if (!settingsManager.isProjectTrusted() && writesProjectPackageConfig) {
-		console.error(chalk.red("Project is not trusted. Use --approve to modify local package config."));
+		console.error(cliThemeColor("error", "Project is not trusted. Use --approve to modify local package config."));
 		process.exitCode = 1;
 		return true;
 	}
@@ -945,7 +948,7 @@ export async function handlePackageCommand(
 
 	packageManager.setProgressCallback((event) => {
 		if (event.type === "start") {
-			process.stdout.write(chalk.dim(`${event.message}\n`));
+			process.stdout.write(cliThemeColor("dim", `${event.message}\n`));
 		}
 	});
 
@@ -953,17 +956,17 @@ export async function handlePackageCommand(
 		switch (options.command) {
 			case "install":
 				await packageManager.installAndPersist(source!, { local: options.local });
-				console.log(chalk.green(`Installed ${source}`));
+				console.log(cliThemeColor("success", `Installed ${source}`));
 				return true;
 
 			case "remove": {
 				const removed = await packageManager.removeAndPersist(source!, { local: options.local });
 				if (!removed) {
-					console.error(chalk.red(`No matching package found for ${source}`));
+					console.error(cliThemeColor("error", `No matching package found for ${source}`));
 					process.exitCode = 1;
 					return true;
 				}
-				console.log(chalk.green(`Removed ${source}`));
+				console.log(cliThemeColor("success", `Removed ${source}`));
 				return true;
 			}
 
@@ -973,7 +976,7 @@ export async function handlePackageCommand(
 				const projectPackages = configuredPackages.filter((pkg) => pkg.scope === "project");
 
 				if (configuredPackages.length === 0) {
-					console.log(chalk.dim("No packages installed."));
+					console.log(cliThemeColor("dim", "No packages installed."));
 					return true;
 				}
 
@@ -981,7 +984,7 @@ export async function handlePackageCommand(
 					const display = pkg.filtered ? `${pkg.source} (filtered)` : pkg.source;
 					console.log(`  ${display}`);
 					if (pkg.installedPath) {
-						console.log(chalk.dim(`    ${pkg.installedPath}`));
+						console.log(cliThemeColor("dim", `    ${pkg.installedPath}`));
 					}
 				};
 
@@ -1007,23 +1010,27 @@ export async function handlePackageCommand(
 				const target = options.updateTarget ?? { type: "self" };
 				if (options.showExtensionsSkippedNote) {
 					console.log(
-						chalk.dim(`Extensions are skipped. Run ${APP_NAME} update --extensions to update extensions.`),
+						cliThemeColor(
+							"dim",
+							`Extensions are skipped. Run ${APP_NAME} update --extensions to update extensions.`,
+						),
 					);
 				}
 				if (updateTargetIncludesExtensions(target)) {
 					const updateSource = target.type === "extensions" ? target.source : undefined;
 					await packageManager.update(updateSource);
 					if (updateSource) {
-						console.log(chalk.green(`Updated ${updateSource}`));
+						console.log(cliThemeColor("success", `Updated ${updateSource}`));
 					} else {
-						console.log(chalk.green("Updated packages"));
+						console.log(cliThemeColor("success", "Updated packages"));
 					}
 				}
 				if (updateTargetIncludesSelf(target)) {
 					const managedInstallRoot = getActiveManagedInstallRoot();
 					if (managedInstallRoot && options.force) {
 						console.error(
-							chalk.red(
+							cliThemeColor(
+								"error",
 								`Managed ${APP_NAME} installations do not support --force; rerun the installer to repair this installation.`,
 							),
 						);
@@ -1039,24 +1046,31 @@ export async function handlePackageCommand(
 							printSelfUpdateNote(selfUpdatePlan.note);
 						}
 						try {
-							console.log(chalk.dim(`Updating managed ${APP_NAME} installation...`));
+							console.log(cliThemeColor("dim", `Updating managed ${APP_NAME} installation...`));
 							await runManagedSelfUpdate(managedInstallRoot, selfUpdatePlan.version);
 						} catch (error: unknown) {
 							const message = error instanceof Error ? error.message : "Unknown managed update error";
-							console.error(chalk.red(`Error: ${message}`));
+							console.error(cliThemeColor("error", `Error: ${message}`));
 							process.exitCode = 1;
 							return true;
 						}
-						console.log(chalk.green(`Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}`));
+						console.log(
+							cliThemeColor("success", `Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}`),
+						);
 						return true;
 					}
 
 					const installMethod = detectInstallMethod();
 					if (process.platform === "win32" && installMethod !== "npm" && installMethod !== "pnpm") {
 						console.error(
-							chalk.red(`${APP_NAME} self-update on Windows is only supported for npm and pnpm installs.`),
+							cliThemeColor(
+								"error",
+								`${APP_NAME} self-update on Windows is only supported for npm and pnpm installs.`,
+							),
 						);
-						console.error(chalk.dim(`Detected install method: ${installMethod}. Update ${APP_NAME} manually.`));
+						console.error(
+							cliThemeColor("dim", `Detected install method: ${installMethod}. Update ${APP_NAME} manually.`),
+						);
 						process.exitCode = 1;
 						return true;
 					}
@@ -1080,7 +1094,7 @@ export async function handlePackageCommand(
 						await runSelfUpdate(selfUpdateCommand);
 					} catch (error: unknown) {
 						const message = error instanceof Error ? error.message : "Unknown package command error";
-						console.error(chalk.red(`Error: ${message}`));
+						console.error(cliThemeColor("error", `Error: ${message}`));
 						if (installMethod === "pnpm") {
 							printPnpmSelfUpdateMetadataHint();
 						}
@@ -1088,14 +1102,16 @@ export async function handlePackageCommand(
 						process.exitCode = 1;
 						return true;
 					}
-					console.log(chalk.green(`Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}`));
+					console.log(
+						cliThemeColor("success", `Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}`),
+					);
 				}
 				return true;
 			}
 		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : "Unknown package command error";
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(cliThemeColor("error", `Error: ${message}`));
 		process.exitCode = 1;
 		return true;
 	}

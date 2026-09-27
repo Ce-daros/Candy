@@ -1,9 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { detectCapabilities, getTerminalColorMode, type TerminalColorMode } from "@candy/tui";
-import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.ts";
-import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.ts";
+import { cliThemeColor, loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
@@ -116,7 +115,7 @@ function resolvePromptInput(input: string | undefined, description: string): str
 		try {
 			return stripBom(readFileSync(input, "utf-8"));
 		} catch (error) {
-			console.error(chalk.yellow(`Warning: Could not read ${description} file ${input}: ${error}`));
+			console.error(cliThemeColor("warning", `Warning: Could not read ${description} file ${input}: ${error}`));
 			return input;
 		}
 	}
@@ -138,7 +137,7 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 					content: stripBom(readFileSync(filePath, "utf-8")),
 				};
 			} catch (error) {
-				console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
+				console.error(cliThemeColor("warning", `Warning: Could not read ${filePath}: ${error}`));
 			}
 		}
 	}

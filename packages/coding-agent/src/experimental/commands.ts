@@ -1,8 +1,8 @@
-import chalk from "chalk";
 import { cli } from "../cli/experimental/cli.ts";
 import type { ClientCommand } from "../cli/experimental/commands/client.ts";
 import type { ServerCommand } from "../cli/experimental/commands/server.ts";
 import { areExperimentalFeaturesEnabled } from "../core/experimental.ts";
+import { cliThemeColor } from "../modes/interactive/theme/theme.ts";
 import { runClient } from "./client.ts";
 import { runClientTui } from "./client-tui.ts";
 import type { RadiusRelayHostStatus } from "./radius-relay.ts";
@@ -95,11 +95,11 @@ export async function runExperimentalCommand(args: string[]): Promise<boolean> {
 	try {
 		const result = await cli.execute(args, { runServer: runServerCommand, runClient: runClientCommand });
 		if (!result.ok) {
-			for (const error of result.errors) console.error(chalk.red(`Error: ${error}`));
+			for (const error of result.errors) console.error(cliThemeColor("error", `Error: ${error}`));
 			process.exitCode = 1;
 		}
 	} catch (error) {
-		console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+		console.error(cliThemeColor("error", `Error: ${error instanceof Error ? error.message : String(error)}`));
 		process.exitCode = 1;
 	}
 	return true;

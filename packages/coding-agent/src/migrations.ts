@@ -2,11 +2,11 @@
  * One-time migrations that run on startup.
  */
 
-import chalk from "chalk";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
+import { cliThemeColor } from "./modes/interactive/theme/theme.ts";
 import { stripBom } from "./utils/text.ts";
 
 const MIGRATION_GUIDE_URL =
@@ -141,11 +141,12 @@ function migrateCommandsToPrompts(baseDir: string, label: string): boolean {
 	if (existsSync(commandsDir) && !existsSync(promptsDir)) {
 		try {
 			renameSync(commandsDir, promptsDir);
-			console.log(chalk.green(`Migrated ${label} commands/ → prompts/`));
+			console.log(cliThemeColor("success", `Migrated ${label} commands/ → prompts/`));
 			return true;
 		} catch (err) {
 			console.log(
-				chalk.yellow(
+				cliThemeColor(
+					"warning",
 					`Warning: Could not migrate ${label} commands/ to prompts/: ${err instanceof Error ? err.message : err}`,
 				),
 			);
@@ -211,7 +212,7 @@ function migrateToolsToBin(): void {
 	}
 
 	if (movedAny) {
-		console.log(chalk.green(`Migrated managed binaries tools/ → bin/`));
+		console.log(cliThemeColor("success", `Migrated managed binaries tools/ → bin/`));
 	}
 }
 
@@ -278,12 +279,12 @@ export async function showDeprecationWarnings(warnings: string[]): Promise<void>
 	if (warnings.length === 0) return;
 
 	for (const warning of warnings) {
-		console.log(chalk.yellow(`Warning: ${warning}`));
+		console.log(cliThemeColor("warning", `Warning: ${warning}`));
 	}
-	console.log(chalk.yellow(`\nMove your extensions to the extensions/ directory.`));
-	console.log(chalk.yellow(`Migration guide: ${MIGRATION_GUIDE_URL}`));
-	console.log(chalk.yellow(`Documentation: ${EXTENSIONS_DOC_URL}`));
-	console.log(chalk.dim(`\nPress any key to continue...`));
+	console.log(cliThemeColor("warning", `\nMove your extensions to the extensions/ directory.`));
+	console.log(cliThemeColor("warning", `Migration guide: ${MIGRATION_GUIDE_URL}`));
+	console.log(cliThemeColor("warning", `Documentation: ${EXTENSIONS_DOC_URL}`));
+	console.log(cliThemeColor("dim", `\nPress any key to continue...`));
 
 	await new Promise<void>((resolve) => {
 		process.stdin.setRawMode?.(true);

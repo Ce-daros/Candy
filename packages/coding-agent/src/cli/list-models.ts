@@ -4,9 +4,9 @@
 
 import type { Api, Model } from "@candy/ai";
 import { fuzzyFilter } from "@candy/tui";
-import chalk from "chalk";
 import { formatNoModelsAvailableMessage } from "../core/auth-guidance.ts";
 import type { ModelRuntime } from "../core/model-runtime.ts";
+import { cliThemeColor } from "../modes/interactive/theme/theme.ts";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")
@@ -33,7 +33,7 @@ export async function listModels(
 ): Promise<void> {
 	const loadError = modelRuntime.getError();
 	if (loadError) {
-		console.error(chalk.yellow(`Warning: errors loading models.json:\n${loadError}`));
+		console.error(cliThemeColor("warning", `Warning: errors loading models.json:\n${loadError}`));
 	}
 
 	const models = [...(await modelRuntime.getAvailable(undefined, { signal }))];

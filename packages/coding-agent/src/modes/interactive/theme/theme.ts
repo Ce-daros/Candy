@@ -732,7 +732,7 @@ export async function detectTerminalThemeForAuto({
 	return (await backgroundThemePromise).theme;
 }
 
-export function getDefaultTheme(): string {
+export function getDefaultTheme(): TerminalTheme {
 	return detectTerminalBackgroundFromEnv().theme;
 }
 
@@ -753,6 +753,11 @@ export const theme: Theme = new Proxy({} as Theme, {
 		return (t as unknown as Record<string | symbol, unknown>)[prop];
 	},
 });
+
+export function cliThemeColor(color: ThemeColor, text: string): string {
+	const activeTheme = (globalThis as Record<symbol, Theme>)[THEME_KEY] ?? loadTheme(getDefaultTheme());
+	return chalk.hex(colorToHex(activeTheme.colors[color]))(text);
+}
 
 function setGlobalTheme(t: Theme): void {
 	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
