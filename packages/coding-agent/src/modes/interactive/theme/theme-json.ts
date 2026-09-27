@@ -86,6 +86,8 @@ const ThemeJsonSchema = Type.Object({
 		thinkingMax: Type.Optional(ColorValueSchema),
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
+		// Editor Prompt (1 optional color)
+		editorPrompt: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({

@@ -89,13 +89,14 @@ Theme colors describe interface roles rather than individual components. Use the
 | Tool diffs | `toolDiff*` |
 | Syntax highlighting | `syntax*` |
 | Editor modes | `thinking*`, `bashMode` |
+| Editor prompt | `editorPrompt` |
 | HTML export | `export.pageBg`, `export.cardBg`, `export.infoBg` |
 
 The schema is the format reference. The built-in themes provide complete values that you can copy and adjust.
 
 The built-in themes map semantic colors to a shared 16-color palette. Normal editor borders use cyan, Shell borders use yellow, and selection focus uses purple. Success and added diff lines use lime; errors and removed diff lines use pink-red. The animated status trails derive lighter and darker shades from the active `border` or `bashMode` color; thinking level changes their length and peak brightness rather than their hue. The built-in `thinking*` roles all use cyan. Syntax colors use blue keywords, yellow functions, cyan variables, pink strings, lime numbers, purple types, and dim comments. Light themes use darker values of the same hues. Custom themes can assign different values to each semantic role.
 
-Five colors are optional and inherit another color when omitted:
+Six colors are optional and inherit another color when omitted:
 
 | Optional color | Fallback |
 |---|---|
@@ -104,6 +105,7 @@ Five colors are optional and inherit another color when omitted:
 | `searchMatchBg` | `selectedBg` |
 | `searchMatchText` | `text` |
 | `thinkingMax` | `thinkingXhigh` |
+| `editorPrompt` | `mdCode` |
 
 If `export` colors are omitted, candy derives HTML page and panel backgrounds from `userMessageBg`.
 

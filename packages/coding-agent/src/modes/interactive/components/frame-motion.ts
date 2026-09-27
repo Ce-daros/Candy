@@ -322,7 +322,8 @@ export class FrameMotion {
 	}
 
 	private distanceFromTitle(column: number, row: number, mode: ShellMode): number {
-		const center = 7 + Math.floor((mode === "shell-no-context" ? 18 : 5) / 2);
+		// Shell titles render with one space of padding on each side, so the title text starts one column later.
+		const center = 8 + Math.floor((mode === "shell-no-context" ? 18 : 5) / 2);
 		if (row === 0) return Math.abs(column - center);
 		if (column === 0) return center + row;
 		if (column === this.width - 1) return this.width - 1 - center + row;
@@ -334,7 +335,7 @@ export class FrameMotion {
 
 	private exitFraction(column: number, row: number, from: ShellMode): number {
 		const bottom = this.rows - 1;
-		const titleEnd = Math.min(this.width - 1, 7 + (from === "shell-no-context" ? 18 : 5));
+		const titleEnd = Math.min(this.width - 1, 9 + (from === "shell-no-context" ? 18 : 5));
 		const leftLength = Math.max(1, this.leftAnchor + bottom + Math.min(7, titleEnd));
 		const rightLength = Math.max(1, this.width - 1 - this.rightAnchor + bottom + this.width - 1 - titleEnd);
 		if (row === bottom && column > this.leftAnchor && column < this.rightAnchor) {

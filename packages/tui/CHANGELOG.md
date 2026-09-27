@@ -7,6 +7,8 @@
 - Added Sixel image protocol support (Windows Terminal 1.22+), auto-detected for `WT_SESSION` and forceable via `CANDY_IMAGE_PROTOCOL=sixel`. Includes a `SixelImage` component for pre-encoded sequences and a `calculateSixelCellSize` helper.
 - Added an optional `leftGutter` to `EditorOptions` that prefixes editor content lines (never the horizontal borders), clipped on narrow terminals.
 - Added an optional `firstLineGutter` to `EditorOptions` for a distinct prefix on the first content line, e.g. a `> ` shell prompt, clipped against the `leftGutter` slot width.
+- Added an optional `textColor` to `EditorTheme` that styles the typed editor text without coloring the frame.
+- Added `Editor.setFirstLineGutter()` to replace the first-line gutter, for example when an input mode changes the prompt glyph.
 - Added a `bottomBorderClick` hook on `Editor` for subclasses to intercept left clicks on the editor's bottom border row (used by the coding-agent footer powerbar).
 - Added editor history scopes and a side-border styling hook for mode-specific composer history and frame animation.
 

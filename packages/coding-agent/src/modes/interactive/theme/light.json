@@ -75,7 +75,8 @@
 		"thinkingHigh": "cyan",
 		"thinkingXhigh": "cyan",
 		"thinkingMax": "cyan",
-		"bashMode": "yellow"
+		"bashMode": "yellow",
+		"editorPrompt": "pink"
 	},
 	"export": {
 		"pageBg": "#F7F6FB",

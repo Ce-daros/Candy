@@ -959,6 +959,17 @@ describe("Editor component", () => {
 			assert.strictEqual(stripVTControlCharacters(editor.render(4)[1]!).startsWith("│>"), true);
 		});
 
+		it("switches the first-line gutter with setFirstLineGutter", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, {
+				leftGutter: "│  ",
+				firstLineGutter: "│> ",
+			});
+			editor.setText("hi");
+			assert.ok(stripVTControlCharacters(editor.render(20)[1]!).startsWith("│> hi"));
+			editor.setFirstLineGutter("│◆ ");
+			assert.ok(stripVTControlCharacters(editor.render(20)[1]!).startsWith("│◆ hi"));
+		});
+
 		it("offsets mouse clicks by the gutter width", () => {
 			const width = 20;
 			const editor = new Editor(createTestTUI(), defaultEditorTheme, { leftGutter: "│ " });
@@ -968,6 +979,39 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.handleMouse(mouseClick(4, width))?.handled, true);
 			editor.handleInput("X");
 			assert.strictEqual(editor.getText(), "abXcdef");
+		});
+	});
+
+	describe("Text color", () => {
+		const coloredTheme = {
+			...defaultEditorTheme,
+			textColor: (text: string) => `\x1b[38;5;9m${text}\x1b[39m`,
+		};
+
+		it("colors the typed text without coloring the frame or padding", () => {
+			const editor = new Editor(createTestTUI(), coloredTheme, { leftGutter: "│ " });
+			editor.setText("abc");
+			const content = editor.render(12)[1]!;
+
+			assert.ok(content.startsWith("\x1b[2m│"), `expected the dim frame first, got ${JSON.stringify(content)}`);
+			assert.ok(content.includes("\x1b[38;5;9mabc"), `expected colored text, got ${JSON.stringify(content)}`);
+			assert.strictEqual(visibleWidth(content), 12);
+		});
+
+		it("keeps the text color after the cursor reset", () => {
+			const editor = new Editor(createTestTUI(), coloredTheme);
+			editor.setText("abcdef");
+			editor.handleInput("\x1b[D");
+			editor.handleInput("\x1b[D");
+			const content = editor.render(12)[1]!;
+
+			const cursor = content.indexOf("\x1b[7m");
+			assert.ok(cursor > -1, "expected the cursor in the rendered line");
+			assert.ok(
+				content.slice(cursor).includes("\x1b[38;5;9mf"),
+				`expected the text after the cursor to keep its color, got ${JSON.stringify(content)}`,
+			);
+			assert.strictEqual(visibleWidth(content), 12);
 		});
 	});
 

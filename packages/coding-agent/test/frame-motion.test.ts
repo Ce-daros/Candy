@@ -6,7 +6,7 @@ import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.ts";
 import { FooterComponent } from "../src/modes/interactive/components/footer.ts";
 import { FrameMotion } from "../src/modes/interactive/components/frame-motion.ts";
-import { getEditorTheme, initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { getEditorTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("editor frame motion", () => {
@@ -116,6 +116,43 @@ describe("editor frame motion", () => {
 		motion.setOptions(false, "moderate");
 		expect(stripAnsi(motion.paintBorder("╭───╮", 0, 0))).toBe("╭───╮");
 		expect(motion.getLabelPhase()).toBe(8);
+	});
+
+	it("renders the Shell title with one space of padding on each side", () => {
+		const tui = { requestRender: () => {}, terminal: { rows: 20 } } as TUI;
+		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
+		editor.setAnimationOptions(false, "moderate");
+		expect(stripAnsi(editor.render(40)[0]!)).toBe(`╭${"─".repeat(38)}╮`);
+		editor.setShellMode("shell");
+		expect(stripAnsi(editor.render(40)[0]!)).toContain(" Shell ");
+		editor.setShellMode("shell-no-context");
+		expect(stripAnsi(editor.render(40)[0]!)).toContain(" Shell · No Context ");
+		editor.dispose();
+	});
+
+	it("renders the prompt glyph per input mode with its own color", () => {
+		const tui = { requestRender: () => {}, terminal: { rows: 20 } } as TUI;
+		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
+		editor.setAnimationOptions(false, "moderate");
+
+		const normal = editor.render(40);
+		expect(stripAnsi(normal[1]!)).toMatch(/^│◆ /);
+		expect(normal[1]!).toContain(theme.getFgAnsi("editorPrompt"));
+
+		editor.setShellMode("shell");
+		const shell = editor.render(40);
+		expect(stripAnsi(shell[1]!)).toMatch(/^│❯ /);
+		expect(shell[1]!).toContain(theme.getFgAnsi("bashMode"));
+		editor.dispose();
+	});
+
+	it("renders the typed text in the text color", () => {
+		const tui = { requestRender: () => {}, terminal: { rows: 20 } } as TUI;
+		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
+		editor.setAnimationOptions(false, "moderate");
+		editor.setText("hello");
+		expect(editor.render(40)[1]!).toContain(theme.getFgAnsi("text"));
+		editor.dispose();
 	});
 
 	it("renders Shell title and connected selectors in the complete editor", () => {

@@ -317,6 +317,10 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border and label color in Shell mode"
+				},
+				"editorPrompt": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Prompt glyph color in the editor's first line (falls back to mdCode when omitted)"
 				}
 			},
 			"additionalProperties": false

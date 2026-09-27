@@ -2,6 +2,7 @@ import type { ThinkingLevel } from "@candy/agent-core";
 import { Editor, type EditorOptions, type EditorTheme, type TUI, visibleWidth } from "@candy/tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
+import { theme } from "../theme/theme.ts";
 import { FrameMotion, type ShellMode } from "./frame-motion.ts";
 import type { StatusIndicator } from "./status-indicator.ts";
 
@@ -22,8 +23,13 @@ export interface EditorBottomStatus {
 
 /** Default left gutter so the input area reads as one frame with the bottom border. */
 const DEFAULT_LEFT_GUTTER = "│  ";
-/** Gutter on the first input line: a shell-style prompt symbol before the text. */
-const PROMPT_LEFT_GUTTER = "│> ";
+/** Prompt glyph on the first input line: a diamond in normal mode. */
+const PROMPT_GLYPH_NORMAL = "◆";
+/** Prompt glyph on the first input line: a chevron in Shell modes. */
+const PROMPT_GLYPH_SHELL = "❯";
+/** Gutter on the first input line: border, prompt glyph, then one column before the text. */
+const PROMPT_LEFT_GUTTER_NORMAL = `│${PROMPT_GLYPH_NORMAL} `;
+const PROMPT_LEFT_GUTTER_SHELL = `│${PROMPT_GLYPH_SHELL} `;
 
 /**
  * Custom editor that handles app-level keybindings for coding-agent.
@@ -54,7 +60,7 @@ export class CustomEditor extends Editor {
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: CustomEditorOptions) {
 		super(tui, theme, {
 			leftGutter: DEFAULT_LEFT_GUTTER,
-			firstLineGutter: PROMPT_LEFT_GUTTER,
+			firstLineGutter: PROMPT_LEFT_GUTTER_NORMAL,
 			rightGutter: "│",
 			minContentLines: 2,
 			...options,
@@ -77,6 +83,7 @@ export class CustomEditor extends Editor {
 
 	setShellMode(mode: ShellMode): void {
 		this.frameMotion.setMode(mode);
+		this.setFirstLineGutter(mode === "normal" ? PROMPT_LEFT_GUTTER_NORMAL : PROMPT_LEFT_GUTTER_SHELL);
 	}
 
 	setThinkingLevel(level: ThinkingLevel): void {
@@ -102,6 +109,21 @@ export class CustomEditor extends Editor {
 	}
 
 	protected override colorSideBorder(text: string, side: "left" | "right", row: number, _totalRows: number): string {
+		if (side === "left") {
+			const mode = this.frameMotion.getMode();
+			const glyph = mode === "normal" ? PROMPT_GLYPH_NORMAL : PROMPT_GLYPH_SHELL;
+			const index = text.indexOf(glyph);
+			if (index !== -1) {
+				// The border cell keeps the animated frame color; only the prompt glyph takes its own color.
+				const before = text.slice(0, index);
+				const after = text.slice(index + glyph.length);
+				return (
+					this.frameMotion.paintBorder(before, 0, row) +
+					theme.fg(mode === "normal" ? "editorPrompt" : "bashMode", glyph) +
+					(after ? this.frameMotion.paintBorder(after, index + glyph.length, row) : "")
+				);
+			}
+		}
 		return this.frameMotion.paintBorder(text, side === "left" ? 0 : this.frameWidth - 1, row);
 	}
 
@@ -136,7 +158,8 @@ export class CustomEditor extends Editor {
 							? "Summarizing"
 							: "";
 		const shellTitle = this.frameMotion.getShellTitle();
-		const title = [shellTitle, statusWord].filter(Boolean).join(" · ");
+		// Shell titles get one half-width space of padding on each side.
+		const title = shellTitle ? ` ${[shellTitle, statusWord].filter(Boolean).join(" · ")} ` : statusWord;
 		const titleStart = 7;
 		const titleWidth = Math.min(visibleWidth(title), Math.max(0, width - titleStart - 2));
 		const displayedTitle = title.slice(0, titleWidth);

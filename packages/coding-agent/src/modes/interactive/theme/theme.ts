@@ -99,7 +99,8 @@ export type ThemeColor =
 	| "thinkingHigh"
 	| "thinkingXhigh"
 	| "thinkingMax"
-	| "bashMode";
+	| "bashMode"
+	| "editorPrompt";
 
 export type ThemeBg =
 	| "selectedBg"
@@ -121,7 +122,7 @@ export interface ThemeStyle extends TextAttributes {
 	bg?: ThemeBg | Color;
 }
 
-type OptionalThemeColor = "scrollbarTrack" | "scrollbarThumb" | "thinkingMax" | "searchMatchText";
+type OptionalThemeColor = "scrollbarTrack" | "scrollbarThumb" | "thinkingMax" | "searchMatchText" | "editorPrompt";
 type OptionalThemeBg = "searchMatchBg";
 
 // ============================================================================
@@ -163,6 +164,7 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 	thinkingMax: ColorValue;
 	searchMatchBg: ColorValue;
 	searchMatchText: ColorValue;
+	editorPrompt: ColorValue;
 } {
 	return {
 		...colors,
@@ -171,6 +173,7 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 		thinkingMax: colors.thinkingMax ?? colors.thinkingXhigh,
 		searchMatchBg: colors.searchMatchBg ?? colors.selectedBg,
 		searchMatchText: colors.searchMatchText ?? colors.text,
+		editorPrompt: colors.editorPrompt ?? colors.mdCode,
 	};
 }
 
@@ -255,6 +258,7 @@ export class Theme {
 			scrollbarThumb: fgColors.scrollbarThumb ?? fgColors.text,
 			thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh,
 			searchMatchText: fgColors.searchMatchText ?? fgColors.text,
+			editorPrompt: fgColors.editorPrompt ?? fgColors.mdCode,
 		};
 		const backgrounds = { ...bgColors, searchMatchBg: bgColors.searchMatchBg ?? bgColors.selectedBg };
 		const concreteForegrounds: Color[] = [];
@@ -1165,6 +1169,7 @@ export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),
 		selectList: getSelectListTheme(),
+		textColor: (text: string) => theme.fg("text", text),
 	};
 }
 

@@ -238,6 +238,8 @@ interface LayoutLine {
 export interface EditorTheme {
 	borderColor: (str: string) => string;
 	selectList: SelectListTheme;
+	/** Optional foreground style for the typed text. */
+	textColor?: (str: string) => string;
 }
 
 export interface EditorOptions {
@@ -432,6 +434,16 @@ export class Editor implements Component, Focusable {
 
 	getPaddingX(): number {
 		return this.paddingX;
+	}
+
+	/**
+	 * Replace the first-line gutter variant, e.g. when the input mode changes the prompt glyph.
+	 * Keep the same visible width as `leftGutter` so columns and mouse offsets stay aligned.
+	 */
+	setFirstLineGutter(gutter: string | undefined): void {
+		if (this.firstLineGutter === gutter) return;
+		this.firstLineGutter = gutter;
+		this.tui.requestRender();
 	}
 
 	setPaddingX(padding: number): void {
@@ -631,6 +643,7 @@ export class Editor implements Component, Focusable {
 		const emitCursorMarker = this.focused;
 
 		const totalFrameRows = this.renderedVisibleLineCount + 2;
+		const paintText = this.theme.textColor;
 		for (const [index, layoutLine] of visibleLines.entries()) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
@@ -643,6 +656,9 @@ export class Editor implements Component, Focusable {
 
 				// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
 				const marker = emitCursorMarker ? CURSOR_MARKER : "";
+				// Color the text runs around the cursor separately: the cursor's reset would
+				// otherwise drop the text color for the rest of the line.
+				const paintedBefore = before && paintText ? paintText(before) : before;
 
 				if (after.length > 0) {
 					// Cursor is on a character (grapheme) - replace it with highlighted version
@@ -651,18 +667,21 @@ export class Editor implements Component, Focusable {
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
 					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
-					displayText = before + marker + cursor + restAfter;
+					const paintedAfter = restAfter && paintText ? paintText(restAfter) : restAfter;
+					displayText = paintedBefore + marker + cursor + paintedAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - add highlighted space
 					const cursor = "\x1b[7m \x1b[0m";
-					displayText = before + marker + cursor;
+					displayText = paintedBefore + marker + cursor;
 					lineVisibleWidth = lineVisibleWidth + 1;
 					// If cursor overflows content width into the padding, flag it
 					if (lineVisibleWidth > contentWidth && paddingX > 0) {
 						cursorInPadding = true;
 					}
 				}
+			} else if (displayText && paintText) {
+				displayText = paintText(displayText);
 			}
 
 			// Calculate padding based on actual visible width
