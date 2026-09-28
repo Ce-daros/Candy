@@ -127,7 +127,7 @@ function mergeCompat(
 	const baseNested = base as Record<string, unknown> | undefined;
 	const overrideNested = override as Record<string, unknown>;
 	const mergedNested = merged as Record<string, unknown>;
-	for (const key of ["openRouterRouting", "vercelGatewayRouting", "chatTemplateKwargs", "chatTemplateArgs"] as const) {
+	for (const key of ["openRouterRouting", "vercelGatewayRouting", "chatTemplateKwargs"] as const) {
 		const baseValue = baseNested?.[key];
 		const overrideValue = overrideNested[key];
 		if (
@@ -304,7 +304,7 @@ function applyModelsJson(
 	}
 
 	const models: AnyModel[] = baseModels.map((model) => {
-		const baseUrl = config.oauth === "radius" ? model.baseUrl : (config.baseUrl ?? model.baseUrl);
+		const baseUrl = config.baseUrl ?? model.baseUrl;
 		return isModelType(model, "chat")
 			? { ...model, baseUrl, compat: mergeCompat(model.compat, config.compat) }
 			: { ...model, baseUrl };

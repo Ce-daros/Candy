@@ -17,8 +17,6 @@ Run `/logout` and select a provider to remove its stored credential. This does n
 
 `auth.json` can contain API keys and OAuth tokens. Keep it private and do not commit it.
 
-Radius authentication uses its gateway catalog and caches refreshed model metadata for later offline startup. A custom Radius gateway configured in `models.json` uses its own catalog rather than inheriting the public `radius.pi.dev` catalog.
-
 ## Use an API key from the environment
 
 Environment variables are useful in CI and anywhere candy should not store the key. Set the variable before starting candy:
@@ -33,7 +31,6 @@ This table covers providers with a single primary API-key variable. Providers th
 | Provider | Environment variable |
 |---|---|
 | Anthropic | `ANTHROPIC_API_KEY` |
-| Ant Ling | `ANT_LING_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | DeepSeek | `DEEPSEEK_API_KEY` |
 | NVIDIA NIM | `NVIDIA_API_KEY` |
@@ -48,11 +45,9 @@ This table covers providers with a single primary API-key variable. Providers th
 | ZAI Coding Plan (Global) | `ZAI_API_KEY` |
 | ZAI Coding Plan (China) | `ZAI_CODING_CN_API_KEY` |
 | OpenCode Zen and Go | `OPENCODE_API_KEY` |
-| Radius | `RADIUS_API_KEY` |
 | Hugging Face | `HF_TOKEN` |
 | Fireworks | `FIREWORKS_API_KEY` |
 | Together AI | `TOGETHER_API_KEY` |
-| Baseten | `BASETEN_API_KEY` |
 | Kimi For Coding | `KIMI_API_KEY` |
 | Meta | `META_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |

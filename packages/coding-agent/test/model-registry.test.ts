@@ -256,6 +256,22 @@ describe("ModelRegistry", () => {
 			expect(model?.baseUrl).toBe("https://openrouter.ai/api/v1");
 		});
 
+		test("custom models can use the pi-messages API", async () => {
+			writeModelsJson({
+				"custom-messages": providerConfig("http://localhost:8788/v1", [{ id: "custom-model" }], "pi-messages"),
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const model = registry.find("custom-messages", "custom-model");
+
+			expect(registry.getError()).toBeUndefined();
+			expect(model).toMatchObject({
+				api: "pi-messages",
+				provider: "custom-messages",
+				baseUrl: "http://localhost:8788/v1",
+			});
+		});
+
 		test("non-built-in provider custom models still require baseUrl", async () => {
 			writeRawModelsJson({
 				"my-custom-provider": {
@@ -486,37 +502,18 @@ describe("ModelRegistry", () => {
 								},
 							},
 						},
-						{
-							id: "args-model",
-							reasoning: true,
-							input: ["text"],
-							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-							contextWindow: 1000,
-							maxTokens: 100,
-							compat: {
-								thinkingFormat: "baseten",
-								chatTemplateArgs: {
-									enable_thinking: { $var: "thinking.enabled" },
-								},
-							},
-						},
 					],
 				},
 			});
 
 			const registry = await createModelRegistry(authStorage, modelsJsonPath);
 			const kwargsCompat = registry.find("demo", "kwargs-model")?.compat as OpenAICompletionsCompat | undefined;
-			const argsCompat = registry.find("demo", "args-model")?.compat as OpenAICompletionsCompat | undefined;
 
 			expect(registry.getError()).toBeUndefined();
 			expect(kwargsCompat?.thinkingFormat).toBe("chat-template");
 			expect(kwargsCompat?.chatTemplateKwargs).toEqual({
 				preserve_thinking: true,
 				thinking: { $var: "thinking.enabled" },
-			});
-			expect(argsCompat?.thinkingFormat).toBe("baseten");
-			expect(argsCompat?.chatTemplateArgs).toEqual({
-				enable_thinking: { $var: "thinking.enabled" },
 			});
 		});
 

@@ -366,7 +366,6 @@ ${chalk.bold("Environment Variables:")}
   ANTHROPIC_AUTH_TOKEN             - Anthropic bearer auth token
   ANTHROPIC_API_KEY                - Anthropic Claude API key
   ANTHROPIC_OAUTH_TOKEN            - Anthropic OAuth token (alternative to API key)
-  ANT_LING_API_KEY                 - Ant Ling API key
   OPENAI_API_KEY                   - OpenAI GPT API key
   AZURE_OPENAI_API_KEY             - Azure OpenAI API key
   AZURE_OPENAI_BASE_URL            - Azure OpenAI/Cognitive Services base URL (e.g. https://{resource}.openai.azure.com)
@@ -381,7 +380,6 @@ ${chalk.bold("Environment Variables:")}
   XAI_API_KEY                      - xAI Grok API key
   FIREWORKS_API_KEY                - Fireworks API key
   TOGETHER_API_KEY                 - Together AI API key
-  BASETEN_API_KEY                  - Baseten API key
   OPENROUTER_API_KEY               - OpenRouter API key
   AI_GATEWAY_API_KEY               - Vercel AI Gateway API key
   ZAI_API_KEY                      - ZAI Coding Plan API key (Global)
@@ -411,7 +409,6 @@ ${chalk.bold("Environment Variables:")}
   CANDY_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
   CANDY_OFFLINE                       - Disable startup network operations when set to 1/true/yes
   CANDY_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  CANDY_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
   read       - Read file contents
