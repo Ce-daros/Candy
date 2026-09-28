@@ -29,7 +29,7 @@ export default function (candy: ExtensionAPI) {
 }
 ```
 
-Start candy and run `/hello`. During development, load a file directly:
+Start candy, open Command, and choose `hello`. During development, load a file directly:
 
 ```bash
 candy --extension ./hello.ts
@@ -74,7 +74,7 @@ Automatic retries, recovery, compaction, or queued work can continue afterward.
 |---|---|
 | Observe or modify lifecycle behavior | `pi.on()` |
 | Add a model-callable operation | `pi.registerTool()` |
-| Add a `/` command | `pi.registerCommand()` |
+| Add a Command entry | `candy.registerCommand()` |
 | Add a shortcut or CLI flag | `pi.registerShortcut()` or `pi.registerFlag()` |
 | Send user or custom messages | `pi.sendUserMessage()` or `pi.sendMessage()` |
 | Persist non-context session data | `pi.appendEntry()` |

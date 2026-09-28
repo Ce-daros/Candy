@@ -27,6 +27,7 @@ import type { SourceInfo } from "../../../core/source-info.ts";
 import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.ts";
 import { highlight, supportsLanguage } from "../../../utils/syntax-highlight.ts";
 import { stripBom } from "../../../utils/text.ts";
+import { formatKeycap } from "../components/keycap-format.ts";
 
 // ============================================================================
 // Types & Schema
@@ -1188,5 +1189,6 @@ export function getSettingsListTheme(): SettingsListTheme {
 		cursor: theme.fg("borderAccent", "‹ "),
 		selectedSuffix: theme.fg("borderAccent", " ›"),
 		hint: (text: string) => theme.fg("dim", text),
+		keycap: (key) => formatKeycap(key, (text) => theme.fg("borderAccent", text)),
 	};
 }

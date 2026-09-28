@@ -4,7 +4,7 @@
  * Demonstrates registering tools after session initialization.
  *
  * - Registers one tool during session_start
- * - Registers additional tools at runtime via /add-echo-tool <name>
+ * - Registers additional tools at runtime via the `add-echo-tool` Command entry with a name argument
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";
@@ -54,11 +54,11 @@ export default function dynamicToolsExtension(candy: ExtensionAPI) {
 	});
 
 	candy.registerCommand("add-echo-tool", {
-		description: "Register a new echo tool dynamically: /add-echo-tool <tool_name>",
+		description: "Register a new echo tool",
 		handler: async (args, ctx) => {
 			const toolName = normalizeToolName(args);
 			if (!toolName) {
-				ctx.ui.notify("Usage: /add-echo-tool <tool_name> (lowercase, numbers, underscores)", "warning");
+				ctx.ui.notify("Enter a tool name using lowercase letters, numbers, or underscores", "warning");
 				return;
 			}
 

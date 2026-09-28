@@ -2,7 +2,7 @@
  * Model status extension - shows model changes in the status bar.
  *
  * Demonstrates the `model_select` hook which fires when the model changes
- * via /model command, Ctrl+P cycling, or session restore.
+ * via the Model selector, or session restore.
  *
  * Usage: candy -e ./model-status.ts
  */

@@ -122,4 +122,35 @@ describe("issues #7027 and #7113 credential refresh hang", () => {
 			"Saved API key for Stalled Login, but its model catalog refresh timed out; using cached models.",
 		);
 	});
+
+	it("does not report a late catalog result after leaving the login page", async () => {
+		harness = await createHarness();
+		let resolveRefresh: (result: { aborted: boolean; errors: Map<string, Error> }) => void = () => {};
+		vi.spyOn(harness.session.modelRuntime, "refresh").mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveRefresh = resolve;
+				}),
+		);
+		const context = {
+			session: harness.session,
+			panelGeneration: 1,
+			updateAvailableProviderCount: vi.fn(),
+			footer: { invalidate: vi.fn() },
+			refreshContextLine: vi.fn(),
+			updateEditorBorderColor: vi.fn(),
+			showStatus: vi.fn(),
+			showError: vi.fn(),
+			showWarning: vi.fn(),
+			maybeWarnAboutAnthropicSubscriptionAuth: vi.fn(),
+			ui: { requestRender: vi.fn() },
+		};
+		await complete.call(context, dynamicModel.provider, "Stalled Login", "api_key", harness.getModel());
+		context.panelGeneration++;
+		resolveRefresh({ aborted: true, errors: new Map() });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(context.ui.requestRender).not.toHaveBeenCalled();
+		expect(context.showWarning).not.toHaveBeenCalled();
+	});
 });

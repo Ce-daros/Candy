@@ -83,7 +83,7 @@ The command should report `/workspace`. Changes under `/workspace` write through
 
 [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) runs the complete candy process inside a managed sandbox. Its proxy can keep the real provider credential on the host and substitute it when requests leave the sandbox.
 
-Configure credentials before creating the sandbox. Do not run `/login` inside the sandbox because that writes a real credential into it.
+Configure credentials before creating the sandbox. Connecting an account through Sources inside the sandbox writes a real credential into it.
 
 ### Use a Claude Pro or Max token
 

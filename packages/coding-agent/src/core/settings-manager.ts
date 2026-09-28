@@ -15,6 +15,20 @@ export interface CompactionModelOverride {
 	keepRecentTokens?: number;
 }
 
+export interface ScopedModelRef {
+	provider: string;
+	modelId: string;
+}
+
+export type SettingValueSource =
+	| "runtime-model"
+	| "project-model"
+	| "global-model"
+	| "runtime"
+	| "project"
+	| "global"
+	| "default";
+
 const DEFAULT_COMPACTION_TOKEN_SETTINGS: Required<CompactionModelOverride> = {
 	reserveTokens: 16384,
 	keepRecentTokens: 20000,
@@ -113,6 +127,7 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	scopedModels?: ScopedModelRef[]; // global quick-selection scope; omitted means all available models
 	defaultThinkingLevel?: ThinkingLevel;
 	modelThinkingLevels?: Record<string, ThinkingLevel>; // per-model default thinking level overrides keyed by "provider/modelId"
 	toolPreviewLines?: 5 | 10 | 20;
@@ -140,12 +155,12 @@ export interface Settings {
 	skills?: string[]; // Array of local skill file paths or directories
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
-	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
+	enableSkillCommands?: boolean; // default: true - show skills in Command
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	defaultTools?: string[]; // Initial built-in tool selection
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
-	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening /tree
+	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening History tree
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	outputPad?: 0 | 1; // Horizontal padding for chat message output (default: 1)
@@ -321,6 +336,7 @@ export class SettingsManager {
 	private globalSettings: Settings;
 	private projectSettings: Settings;
 	private settings: Settings;
+	private runtimeOverrides: Settings = {};
 	private projectTrusted: boolean;
 	private modifiedFields = new Set<keyof Settings>(); // Track global fields modified during session
 	private modifiedNestedFields = new Map<keyof Settings, Set<string>>(); // Track global nested field modifications
@@ -528,6 +544,7 @@ export class SettingsManager {
 		if (!trusted) {
 			this.projectSettings = {};
 			this.projectSettingsLoadError = null;
+			this.runtimeOverrides = {};
 			this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
 			return;
 		}
@@ -539,6 +556,7 @@ export class SettingsManager {
 			this.recordError("project", projectLoad.error);
 		}
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.runtimeOverrides = {};
 	}
 
 	async reload(): Promise<void> {
@@ -567,10 +585,12 @@ export class SettingsManager {
 		}
 
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.runtimeOverrides = {};
 	}
 
 	/** Apply additional overrides on top of current settings */
 	applyOverrides(overrides: Partial<Settings>): void {
+		this.runtimeOverrides = deepMergeSettings(this.runtimeOverrides, overrides);
 		this.settings = deepMergeSettings(this.settings, overrides);
 	}
 
@@ -672,6 +692,7 @@ export class SettingsManager {
 
 	private save(): void {
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.runtimeOverrides = {};
 
 		if (this.globalSettingsLoadError) {
 			return;
@@ -690,6 +711,7 @@ export class SettingsManager {
 		this.assertProjectTrustedForWrite();
 		this.projectSettings = structuredClone(settings);
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.runtimeOverrides = {};
 
 		if (this.projectSettingsLoadError) {
 			return;
@@ -764,6 +786,20 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getScopedModels(): ScopedModelRef[] | undefined {
+		return this.globalSettings.scopedModels?.map((model) => ({ ...model }));
+	}
+
+	setScopedModels(models: ScopedModelRef[] | undefined): void {
+		if (models === undefined) {
+			delete this.globalSettings.scopedModels;
+		} else {
+			this.globalSettings.scopedModels = models.map((model) => ({ ...model }));
+		}
+		this.markModified("scopedModels");
+		this.save();
+	}
+
 	getSteeringMode(): "all" | "one-at-a-time" {
 		return this.settings.steeringMode || "one-at-a-time";
 	}
@@ -813,6 +849,27 @@ export class SettingsManager {
 
 	getModelThinkingLevel(provider: string, modelId: string): ThinkingLevel | undefined {
 		return this.settings.modelThinkingLevels?.[`${provider}/${modelId}`];
+	}
+
+	getModelThinkingSettingWithSource(model: Pick<Model<string>, "provider" | "id">): {
+		requested: ThinkingLevel | undefined;
+		source: SettingValueSource;
+		savedGlobalOverride: ThinkingLevel | undefined;
+	} {
+		const key = `${model.provider}/${model.id}`;
+		let source: SettingValueSource;
+		if (this.runtimeOverrides.modelThinkingLevels?.[key] !== undefined) source = "runtime-model";
+		else if (this.projectSettings.modelThinkingLevels?.[key] !== undefined) source = "project-model";
+		else if (this.globalSettings.modelThinkingLevels?.[key] !== undefined) source = "global-model";
+		else if (this.runtimeOverrides.defaultThinkingLevel !== undefined) source = "runtime";
+		else if (this.projectSettings.defaultThinkingLevel !== undefined) source = "project";
+		else if (this.globalSettings.defaultThinkingLevel !== undefined) source = "global";
+		else source = "default";
+		return {
+			requested: this.getModelThinkingLevel(model.provider, model.id) ?? this.getDefaultThinkingLevel(),
+			source,
+			savedGlobalOverride: this.globalSettings.modelThinkingLevels?.[key],
+		};
 	}
 
 	getAllModelThinkingLevels(): Record<string, ThinkingLevel> {
@@ -895,6 +952,62 @@ export class SettingsManager {
 
 	getCompactionKeepRecentTokens(model?: Pick<Model<string>, "provider" | "id">): number {
 		return this.getCompactionTokenSetting("keepRecentTokens", model);
+	}
+
+	getCompactionTokenSettingsWithSources(
+		model: Pick<Model<string>, "provider" | "id">,
+	): Record<
+		keyof CompactionModelOverride,
+		{ value: number; source: SettingValueSource; savedGlobalOverride?: number }
+	> {
+		const key = `${model.provider}/${model.id}`;
+		const sourceFor = (field: keyof CompactionModelOverride): SettingValueSource => {
+			if (this.runtimeOverrides.compaction?.modelOverrides?.[key]?.[field] !== undefined) return "runtime-model";
+			if (this.projectSettings.compaction?.modelOverrides?.[key]?.[field] !== undefined) return "project-model";
+			if (this.globalSettings.compaction?.modelOverrides?.[key]?.[field] !== undefined) return "global-model";
+			if (this.runtimeOverrides.compaction?.[field] !== undefined) return "runtime";
+			if (this.projectSettings.compaction?.[field] !== undefined) return "project";
+			if (this.globalSettings.compaction?.[field] !== undefined) return "global";
+			return "default";
+		};
+		return {
+			reserveTokens: {
+				value: this.getCompactionReserveTokens(model),
+				source: sourceFor("reserveTokens"),
+				savedGlobalOverride: this.globalSettings.compaction?.modelOverrides?.[key]?.reserveTokens,
+			},
+			keepRecentTokens: {
+				value: this.getCompactionKeepRecentTokens(model),
+				source: sourceFor("keepRecentTokens"),
+				savedGlobalOverride: this.globalSettings.compaction?.modelOverrides?.[key]?.keepRecentTokens,
+			},
+		};
+	}
+
+	setModelCompactionOverride(
+		provider: string,
+		modelId: string,
+		field: keyof CompactionModelOverride,
+		value: number | undefined,
+	): void {
+		if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+			throw new Error(
+				`Invalid compaction.modelOverrides.${field} setting: ${String(value)}. Expected a non-negative safe integer.`,
+			);
+		}
+		const key = `${provider}/${modelId}`;
+		this.globalSettings.compaction ??= {};
+		const compaction = this.globalSettings.compaction;
+		compaction.modelOverrides ??= {};
+		const modelOverrides = compaction.modelOverrides;
+		const entry = { ...(modelOverrides[key] ?? {}) };
+		if (value === undefined) delete entry[field];
+		else entry[field] = value;
+		if (Object.keys(entry).length === 0) delete modelOverrides[key];
+		else modelOverrides[key] = entry;
+		if (Object.keys(modelOverrides).length === 0) delete compaction.modelOverrides;
+		this.markModified("compaction", "modelOverrides");
+		this.save();
 	}
 
 	/** Resolve each token setting through model override, ordinary setting, then built-in default. */
@@ -1347,6 +1460,13 @@ export class SettingsManager {
 	getDefaultTools(): string[] | undefined {
 		const tools = this.settings.defaultTools;
 		return tools ? [...tools] : undefined;
+	}
+
+	setDefaultTools(tools: string[] | undefined): void {
+		if (tools === undefined) delete this.globalSettings.defaultTools;
+		else this.globalSettings.defaultTools = [...tools];
+		this.markModified("defaultTools");
+		this.save();
 	}
 
 	getToolPreviewLines(): 5 | 10 | 20 {

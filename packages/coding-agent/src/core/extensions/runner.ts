@@ -462,8 +462,8 @@ export class ExtensionRunner {
 		}
 		this.runtime.pendingNativeProviderRegistrations = [];
 
-		// From this point on, provider registration/unregistration takes effect immediately
-		// without requiring a /reload.
+		// From this point on, provider registration and unregistration take effect immediately
+		// in the active runtime.
 		this.runtime.registerProvider = (name, config) => {
 			if (providerActions?.registerProvider) {
 				providerActions.registerProvider(name, config);

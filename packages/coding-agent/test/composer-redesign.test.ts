@@ -86,6 +86,22 @@ describe("composer redesign", () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
+	it("runs the latest close callback when close is requested again during a transition", () => {
+		vi.useFakeTimers();
+		const motion = new PanelTransition(() => {});
+		motion.setOpen(true);
+		vi.advanceTimersByTime(400);
+		const old = vi.fn();
+		const latest = vi.fn();
+		motion.setOpen(false, old);
+		motion.setOpen(false, latest);
+		vi.advanceTimersByTime(600);
+		expect(old).not.toHaveBeenCalled();
+		expect(latest).toHaveBeenCalledOnce();
+		motion.dispose();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("keeps a resized panel aligned while closing and reopening with new content", () => {
 		vi.useFakeTimers();
 		const { editor: input, ui } = editor();

@@ -9,11 +9,12 @@ import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
 import type { ImageContent } from "@candy/ai";
 import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
+import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { JsonAgentSessionEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.ts";
 
 // ============================================================================
 // Types
@@ -201,6 +202,14 @@ export class RpcClient {
 		streamingBehavior?: "steer" | "followUp",
 	): Promise<PromptDisposition> {
 		const response = await this.send({ type: "prompt", message, images, streamingBehavior });
+		return this.getData<{ disposition: PromptDisposition }>(response).disposition;
+	}
+
+	async executeCommand(
+		invocation: CommandInvocation,
+		streamingBehavior?: "steer" | "followUp",
+	): Promise<PromptDisposition> {
+		const response = await this.send({ type: "execute_command", ...invocation, streamingBehavior });
 		return this.getData<{ disposition: PromptDisposition }>(response).disposition;
 	}
 
@@ -443,9 +452,9 @@ export class RpcClient {
 	/**
 	 * Get available commands (extension commands, prompt templates, skills).
 	 */
-	async getCommands(): Promise<RpcSlashCommand[]> {
+	async getCommands(): Promise<CommandInfo[]> {
 		const response = await this.send({ type: "get_commands" });
-		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
+		return this.getData<{ commands: CommandInfo[] }>(response).commands;
 	}
 
 	// =========================================================================

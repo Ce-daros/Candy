@@ -2,7 +2,7 @@ import type { AuthInfoLink, OAuthDeviceCodeInfo } from "@candy/ai";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@candy/tui";
 import { openBrowser } from "../../../utils/open-browser.ts";
 import { theme } from "../theme/theme.ts";
-import { keyHint } from "./keybinding-hints.ts";
+import { keycap, keyHint } from "./keybinding-hints.ts";
 
 /**
  * Login dialog component - replaces editor during OAuth login flow
@@ -88,13 +88,17 @@ export class LoginDialogComponent extends Container implements Focusable {
 	}
 
 	private cancel(): void {
+		this.abort();
+		this.onComplete(false, "Login cancelled");
+	}
+
+	abort(): void {
 		this.abortController.abort();
 		if (this.inputRejecter) {
 			this.inputRejecter(new Error("Login cancelled"));
 			this.inputResolver = undefined;
 			this.inputRejecter = undefined;
 		}
-		this.onComplete(false, "Login cancelled");
 	}
 
 	/**
@@ -110,9 +114,9 @@ export class LoginDialogComponent extends Container implements Focusable {
 		const linkedUrl = `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
 
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+		const clickHint = `${keycap(process.platform === "darwin" ? "Cmd+Click" : "Ctrl+Click")}${theme.fg("dim", " to open")}`;
 		const hyperlink = `\x1b]8;;${url}\x07${clickHint}\x1b]8;;\x07`;
-		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
+		this.contentContainer.addChild(new Text(hyperlink, 1, 0));
 
 		if (instructions) {
 			this.contentContainer.addChild(new Spacer(1));
@@ -136,9 +140,9 @@ export class LoginDialogComponent extends Container implements Focusable {
 		const linkedUrl = `\x1b]8;;${info.verificationUri}\x07${info.verificationUri}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
 
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+		const clickHint = `${keycap(process.platform === "darwin" ? "Cmd+Click" : "Ctrl+Click")}${theme.fg("dim", " to open")}`;
 		const hyperlink = `\x1b]8;;${info.verificationUri}\x07${clickHint}\x1b]8;;\x07`;
-		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
+		this.contentContainer.addChild(new Text(hyperlink, 1, 0));
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("warning", `Enter code: ${info.userCode}`), 1, 0));
 

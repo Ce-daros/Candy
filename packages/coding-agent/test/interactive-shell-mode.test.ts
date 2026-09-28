@@ -2,24 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
-type ShellMode = "normal" | "shell" | "shell-no-context";
+type InputMode = "normal" | "shell" | "shell-no-context" | "command";
 
 type ShellContext = {
-	shellMode: ShellMode;
+	inputMode: InputMode;
 	editor: { getText(): string };
 	defaultEditor: {
 		getText(): string;
 		setHistoryScope: ReturnType<typeof vi.fn>;
-		setShellMode: ReturnType<typeof vi.fn>;
+		setInputMode: ReturnType<typeof vi.fn>;
 	};
 	keybindings: KeybindingsManager;
-	setShellMode(mode: ShellMode): void;
+	setInputMode(mode: InputMode): void;
+	openPresentation: ReturnType<typeof vi.fn>;
 	updateEditorBorderColor: ReturnType<typeof vi.fn>;
 };
 
 const prototype = InteractiveMode.prototype as unknown as {
-	setShellMode(this: ShellContext, mode: ShellMode): void;
-	handleShellInput(this: ShellContext, data: string): boolean;
+	setInputMode(this: ShellContext, mode: InputMode): void;
+	handleModeInput(this: ShellContext, data: string): boolean;
 	setupEditorSubmitHandler(this: SubmitContext): void;
 };
 
@@ -28,14 +29,15 @@ function makeShellContext() {
 	const editor = {
 		getText: () => text,
 		setHistoryScope: vi.fn(),
-		setShellMode: vi.fn(),
+		setInputMode: vi.fn(),
 	};
 	const context: ShellContext = {
-		shellMode: "normal",
+		inputMode: "normal",
 		editor,
 		defaultEditor: editor,
 		keybindings: new KeybindingsManager(),
-		setShellMode: prototype.setShellMode,
+		setInputMode: prototype.setInputMode,
+		openPresentation: vi.fn(),
 		updateEditorBorderColor: vi.fn(),
 	};
 	return {
@@ -47,7 +49,7 @@ function makeShellContext() {
 }
 
 type SubmitContext = {
-	shellMode: ShellMode;
+	inputMode: InputMode;
 	defaultEditor: { onSubmit?: (text: string) => Promise<void> };
 	editor: { addToHistory: ReturnType<typeof vi.fn>; setText: ReturnType<typeof vi.fn> };
 	session: { isBashRunning: boolean; isCompacting: boolean; isStreaming: boolean };
@@ -60,29 +62,41 @@ type SubmitContext = {
 describe("interactive Shell mode", () => {
 	it("steps through both tiers with empty keyboard input", () => {
 		const { context } = makeShellContext();
-		expect(prototype.handleShellInput.call(context, "!")).toBe(true);
-		expect(context.shellMode).toBe("shell");
-		expect(prototype.handleShellInput.call(context, "!")).toBe(true);
-		expect(context.shellMode).toBe("shell-no-context");
-		expect(prototype.handleShellInput.call(context, "\x7f")).toBe(true);
-		expect(context.shellMode).toBe("shell");
-		expect(prototype.handleShellInput.call(context, "\x7f")).toBe(true);
-		expect(context.shellMode).toBe("normal");
+		expect(prototype.handleModeInput.call(context, "!")).toBe(true);
+		expect(context.inputMode).toBe("shell");
+		expect(prototype.handleModeInput.call(context, "!")).toBe(true);
+		expect(context.inputMode).toBe("shell-no-context");
+		expect(prototype.handleModeInput.call(context, "\x7f")).toBe(true);
+		expect(context.inputMode).toBe("shell");
+		expect(prototype.handleModeInput.call(context, "\x7f")).toBe(true);
+		expect(context.inputMode).toBe("normal");
 		expect(context.defaultEditor.setHistoryScope).toHaveBeenLastCalledWith("default");
 	});
 
 	it("treats nonempty input and bracketed paste as literal text", () => {
 		const { context, setText } = makeShellContext();
 		setText("draft");
-		expect(prototype.handleShellInput.call(context, "!")).toBe(false);
+		expect(prototype.handleModeInput.call(context, "!")).toBe(false);
 		setText("");
-		expect(prototype.handleShellInput.call(context, "\x1b[200~!\x1b[201~")).toBe(false);
-		expect(context.shellMode).toBe("normal");
+		expect(prototype.handleModeInput.call(context, "\x1b[200~!\x1b[201~")).toBe(false);
+		expect(context.inputMode).toBe("normal");
+	});
+
+	it("enters Command only from an empty editor on a single slash key", () => {
+		const { context, setText } = makeShellContext();
+		expect(prototype.handleModeInput.call(context, "/")).toBe(true);
+		expect(context.openPresentation).toHaveBeenCalledWith("command");
+		context.openPresentation.mockClear();
+		setText("draft");
+		expect(prototype.handleModeInput.call(context, "/")).toBe(false);
+		setText("");
+		expect(prototype.handleModeInput.call(context, "\x1b[200~/\x1b[201~")).toBe(false);
+		expect(context.openPresentation).not.toHaveBeenCalled();
 	});
 
 	it("submits commands by active tier and keeps a pasted exclamation mark in normal prompts", async () => {
 		const context: SubmitContext = {
-			shellMode: "shell",
+			inputMode: "shell",
 			defaultEditor: {},
 			editor: { addToHistory: vi.fn(), setText: vi.fn() },
 			session: { isBashRunning: false, isCompacting: false, isStreaming: false },
@@ -94,14 +108,15 @@ describe("interactive Shell mode", () => {
 		prototype.setupEditorSubmitHandler.call(context);
 		await context.defaultEditor.onSubmit?.("pwd");
 		expect(context.handleBashCommand).toHaveBeenCalledWith("pwd", false);
-		expect(context.shellMode).toBe("shell");
+		expect(context.inputMode).toBe("shell");
 
-		context.shellMode = "shell-no-context";
+		context.inputMode = "shell-no-context";
 		await context.defaultEditor.onSubmit?.("ls");
 		expect(context.handleBashCommand).toHaveBeenCalledWith("ls", true);
 
-		context.shellMode = "normal";
+		context.inputMode = "normal";
 		await context.defaultEditor.onSubmit?.("!literal prompt");
-		expect(context.pendingUserInputs).toEqual(["!literal prompt"]);
+		await context.defaultEditor.onSubmit?.("/literal prompt");
+		expect(context.pendingUserInputs).toEqual(["!literal prompt", "/literal prompt"]);
 	});
 });

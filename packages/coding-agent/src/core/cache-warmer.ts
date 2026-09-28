@@ -87,7 +87,7 @@ function price(
 
 export type CacheWarmingAction = "warm" | "stop";
 
-/** Inputs and outcome of one warm-or-stop decision, as shown by `/session`. */
+/** Inputs and outcome of one warm-or-stop decision, as shown in session details. */
 export interface CacheWarmingDecision {
 	/** "streaming" while the agent run that sent the request is still active. */
 	phase: "streaming" | "idle";
@@ -429,7 +429,7 @@ function formatCacheWarmingDecisionTime(nextWarmAt: number | undefined, now: num
 	return `Decision in ${parts.join(" ")}`;
 }
 
-/** One-line status for `/session`. */
+/** One-line status for session details. */
 export function formatCacheWarmingStatus(status: CacheWarmingStatus, now = Date.now()): string {
 	const decision = status.decision;
 	// A decision is attached once candy (or an extension) acted on it; "inactive"

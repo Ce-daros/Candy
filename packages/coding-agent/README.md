@@ -14,7 +14,7 @@
 
 candy is a minimal, extensible AI agent for the terminal. Adapt candy to your workflow, not the other way around.
 
-Its fullscreen interface shows assistant text, thinking, and tool activity in a shared conversation. The editor offers command and file completion; panels handle settings, model and thinking selection, session navigation, and sign-in. Read the [terminal guide](docs/usage.md) for the current controls.
+Its fullscreen interface shows assistant text, thinking, and tool activity in a shared conversation. The Powerbar handles model and thinking selection; its Sources, Details, History, and Agent pages handle the surrounding tasks. Type `/` in an empty editor to search commands and settings. Read the [terminal guide](docs/usage.md) for the current controls.
 
 Ask candy to create the prompt templates, skills, extensions, and themes you need, or install a candy package. Use candy directly, automate it in print, JSON, or RPC mode, or build applications with the TypeScript SDK.
 
@@ -41,7 +41,7 @@ cd /path/to/project
 candy
 ```
 
-For a built-in AI provider, run `/login` inside candy to connect a subscription or API key. Then give candy a task.
+For a built-in AI provider, open Model → Sources to connect a subscription or API key. Then give candy a task.
 
 See the [documentation](docs/index.md) for full setup and usage instructions.
 

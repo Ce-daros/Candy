@@ -7,11 +7,7 @@
  *
  * Usage: node examples/rpc-extension-ui.ts
  *
- * Slash commands:
- *   /select  - demo select dialog
- *   /confirm - demo confirm dialog
- *   /input   - demo input dialog
- *   /editor  - demo editor dialog
+ * Type / in an empty input to open local demo actions.
  */
 
 import { spawn } from "node:child_process";
@@ -21,13 +17,16 @@ import { fileURLToPath } from "node:url";
 import {
 	type Component,
 	Container,
+	type Focusable,
+	getKeybindings,
 	Input,
-	matchesKey,
 	ProcessTerminal,
 	SelectList,
+	setKeybindings,
 	type TUI,
 	TuiMainScreen,
 } from "@candy/tui";
+import { KeybindingsManager } from "../src/core/keybindings.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -138,17 +137,32 @@ class LoadingIndicator implements Component {
 // Prompt input: label + single-line input
 // ============================================================================
 
-class PromptInput implements Component {
+class PromptInput implements Component, Focusable {
 	readonly input: Input;
 	onCtrlD?: () => void;
+	onCommand?: () => void;
+	private focusedValue = false;
 
 	constructor() {
 		this.input = new Input();
 	}
 
+	get focused(): boolean {
+		return this.focusedValue;
+	}
+
+	set focused(value: boolean) {
+		this.focusedValue = value;
+		this.input.focused = value;
+	}
+
 	handleInput(data: string): void {
-		if (matchesKey(data, "ctrl+d")) {
+		if (getKeybindings().matches(data, "app.exit")) {
 			this.onCtrlD?.();
+			return;
+		}
+		if (getKeybindings().matches(data, "app.command.enter") && this.input.getValue() === "") {
+			this.onCommand?.();
 			return;
 		}
 		this.input.handleInput(data);
@@ -228,7 +242,7 @@ class InputDialog implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "ctrl+d")) {
+		if (getKeybindings().matches(data, "app.exit")) {
 			this.onCtrlD?.();
 			return;
 		}
@@ -253,6 +267,7 @@ class InputDialog implements Component {
 // ============================================================================
 
 async function main() {
+	setKeybindings(KeybindingsManager.create());
 	const extensionPath = join(__dirname, "extensions/rpc-demo.ts");
 	const cliPath = join(__dirname, "../dist/cli.js");
 
@@ -287,7 +302,7 @@ async function main() {
 	root.addChild(promptInput);
 
 	tui.addChild(root);
-	tui.setFocus(promptInput.input);
+	tui.setFocus(promptInput);
 
 	// -- Agent communication --
 
@@ -322,7 +337,7 @@ async function main() {
 	function showPrompt(): void {
 		activeDialog = null;
 		setBottomComponent(promptInput);
-		tui.setFocus(promptInput.input);
+		tui.setFocus(promptInput);
 	}
 
 	function showDialog(dialog: Component): void {
@@ -338,7 +353,7 @@ async function main() {
 			root.addChild(outputLog);
 			root.addChild(loadingIndicator);
 			root.addChild(activeDialog ?? promptInput);
-			if (!activeDialog) tui.setFocus(promptInput.input);
+			if (!activeDialog) tui.setFocus(promptInput);
 			loadingIndicator.start(tui);
 			tui.requestRender();
 		}
@@ -349,7 +364,7 @@ async function main() {
 		root.clear();
 		root.addChild(outputLog);
 		root.addChild(activeDialog ?? promptInput);
-		if (!activeDialog) tui.setFocus(promptInput.input);
+		if (!activeDialog) tui.setFocus(promptInput);
 		tui.requestRender();
 	}
 
@@ -466,11 +481,11 @@ async function main() {
 		}
 	}
 
-	// -- Slash commands (local, not sent to agent) --
+	// -- Local demo actions --
 
-	function handleSlashCommand(cmd: string): boolean {
+	function runDemoCommand(cmd: string): void {
 		switch (cmd) {
-			case "/select":
+			case "Select":
 				showSelectDialog("Pick a color", ["Red", "Green", "Blue", "Yellow"], (value) => {
 					if (value) {
 						outputLog.append(`${MAGENTA}${BOLD}Notification:${RESET} You picked: ${value}`);
@@ -479,17 +494,17 @@ async function main() {
 					}
 					tui.requestRender();
 				});
-				return true;
+				return;
 
-			case "/confirm":
+			case "Confirm":
 				showSelectDialog("Are you sure?", ["Yes", "No"], (value) => {
 					const confirmed = value === "Yes";
 					outputLog.append(`${MAGENTA}${BOLD}Notification:${RESET} Confirmed: ${confirmed}`);
 					tui.requestRender();
 				});
-				return true;
+				return;
 
-			case "/input":
+			case "Input":
 				showInputDialog("Enter your name", undefined, (value) => {
 					if (value) {
 						outputLog.append(`${MAGENTA}${BOLD}Notification:${RESET} You entered: ${value}`);
@@ -498,9 +513,9 @@ async function main() {
 					}
 					tui.requestRender();
 				});
-				return true;
+				return;
 
-			case "/editor":
+			case "Editor":
 				showInputDialog("Edit text", "Hello, world!", (value) => {
 					if (value) {
 						outputLog.append(`${MAGENTA}${BOLD}Notification:${RESET} Submitted: ${value}`);
@@ -509,12 +524,15 @@ async function main() {
 					}
 					tui.requestRender();
 				});
-				return true;
-
-			default:
-				return false;
+				return;
 		}
 	}
+
+	promptInput.onCommand = () => {
+		showSelectDialog("Command", ["Select", "Confirm", "Input", "Editor"], (value) => {
+			if (value) runDemoCommand(value);
+		});
+	};
 
 	// -- Process agent stdout --
 
@@ -613,12 +631,6 @@ async function main() {
 
 		promptInput.input.setValue("");
 
-		if (handleSlashCommand(trimmed)) {
-			outputLog.append(`${GREEN}${BOLD}You:${RESET} ${trimmed}`);
-			tui.requestRender();
-			return;
-		}
-
 		outputLog.append(`${GREEN}${BOLD}You:${RESET} ${trimmed}`);
 		send({ type: "prompt", message: trimmed });
 		tui.requestRender();
@@ -649,7 +661,7 @@ async function main() {
 
 	outputLog.append(`${BOLD}RPC Chat${RESET}`);
 	outputLog.append(`${DIM}Type a message and press Enter. Esc to abort or exit. Ctrl+D to quit.${RESET}`);
-	outputLog.append(`${DIM}Slash commands: /select /confirm /input /editor${RESET}`);
+	outputLog.append(`${DIM}Type / in an empty input for demo actions${RESET}`);
 	outputLog.append("");
 
 	tui.start();

@@ -8,13 +8,13 @@
  * UI methods exercised:
  * - select() - on tool_call for dangerous bash commands
  * - confirm() - on session_before_switch
- * - input() - via /rpc-input command
- * - editor() - via /rpc-editor command
+ * - input() - via the `rpc-input` Command entry
+ * - editor() - via the `rpc-editor` Command entry
  * - notify() - after each dialog completes
  * - setStatus() - on turn_start/turn_end
  * - setWidget() - on session_start
  * - setTitle() - on session_start
- * - setEditorText() - via /rpc-prefill command
+ * - setEditorText() - via the `rpc-prefill` Command entry
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";

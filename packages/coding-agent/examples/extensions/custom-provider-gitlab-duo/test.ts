@@ -32,7 +32,7 @@ async function main() {
 	const authData = JSON.parse(readFileSync(authPath, "utf-8"));
 	const gitlabCred = authData["gitlab-duo"];
 	if (!gitlabCred?.access) {
-		console.error("No gitlab-duo credentials. Run /login gitlab-duo first.");
+		console.error("No gitlab-duo credentials. Connect GitLab Duo in Sources first.");
 		process.exit(1);
 	}
 

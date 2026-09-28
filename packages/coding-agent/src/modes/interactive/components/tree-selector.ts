@@ -15,7 +15,7 @@ import {
 } from "@candy/tui";
 import type { SessionTreeNode } from "../../../core/session-manager.ts";
 import { theme } from "../theme/theme.ts";
-import { formatKeyText, keyHint } from "./keybinding-hints.ts";
+import { formatKeyText, keycap, keyHint } from "./keybinding-hints.ts";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
 interface GutterInfo {
@@ -1254,15 +1254,13 @@ class TreeHelp implements Component {
 	render(width: number): string[] {
 		const items = TREE_HELP_ITEMS.map(({ keys, label, labelFirst }) => {
 			const text = formatHelpKeys(keys);
-			if (!text) return label;
-			return labelFirst ? `${label} ${text}` : `${text} ${label}`;
+			if (!text) return theme.fg("muted", label);
+			return labelFirst ? `${theme.fg("muted", label)} ${text}` : `${text} ${theme.fg("muted", label)}`;
 		});
 
-		const primary = `Tab panels · ${keyHint("tui.select.confirm", "navigate")} · ${keyHint("tui.select.cancel", "close")} · ${items.slice(0, 5).join(" · ")}`;
+		const primary = `${keyHint("app.panel.focusNext", "panels")} · ${keyHint("tui.select.confirm", "navigate")} · ${keyHint("tui.select.cancel", "close")} · ${items.slice(0, 5).join(" · ")}`;
 		const secondary = items.slice(5).join(" · ");
-		return [...wrapTextWithAnsi(primary, Math.max(1, width)), ...wrapTextWithAnsi(secondary, Math.max(1, width))].map(
-			(line) => theme.fg("muted", line),
-		);
+		return [...wrapTextWithAnsi(primary, Math.max(1, width)), ...wrapTextWithAnsi(secondary, Math.max(1, width))];
 	}
 }
 
@@ -1295,13 +1293,15 @@ function formatHelpKeys(keybindings: Keybinding[]): string {
 	}
 	if (keys.length === 0) return "";
 
-	return formatKeyText(compactRawKeys(keys))
-		.replace(/\bpageUp\b/g, "pgup")
-		.replace(/\bpageDown\b/g, "pgdn")
-		.replace(/\bup\b/g, "↑")
-		.replace(/\bdown\b/g, "↓")
-		.replace(/\bleft\b/g, "←")
-		.replace(/\bright\b/g, "→");
+	return keycap(
+		formatKeyText(compactRawKeys(keys))
+			.replace(/\bpageUp\b/g, "pgup")
+			.replace(/\bpageDown\b/g, "pgdn")
+			.replace(/\bup\b/g, "↑")
+			.replace(/\bdown\b/g, "↓")
+			.replace(/\bleft\b/g, "←")
+			.replace(/\bright\b/g, "→"),
+	);
 }
 
 function compactRawKeys(keys: string[]): string {

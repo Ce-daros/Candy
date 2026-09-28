@@ -5,7 +5,7 @@
  * When enabled, built-in write tools are disabled.
  *
  * Features:
- * - /plan command or Ctrl+Alt+P to toggle
+ * - Open Command and choose `plan`, or press Ctrl+Alt+P to toggle
  * - Bash restricted to allowlisted read-only commands
  * - Extracts numbered plan steps from "Plan:" sections
  * - [DONE:n] markers to complete steps during execution
@@ -147,7 +147,7 @@ export default function planModeExtension(candy: ExtensionAPI): void {
 		description: "Show current plan todo list",
 		handler: async (_args, ctx) => {
 			if (todoItems.length === 0) {
-				ctx.ui.notify("No todos. Create a plan first with /plan", "info");
+				ctx.ui.notify("No todos. Choose plan in Command to create one.", "info");
 				return;
 			}
 			const list = todoItems.map((item, i) => `${i + 1}. ${item.completed ? "✓" : "○"} ${item.text}`).join("\n");
@@ -168,7 +168,7 @@ export default function planModeExtension(candy: ExtensionAPI): void {
 		if (!isSafeCommand(command)) {
 			return {
 				block: true,
-				reason: `Plan mode: command blocked (not allowlisted). Use /plan to disable plan mode first.\nCommand: ${command}`,
+				reason: `Plan mode: command blocked. Choose plan in Command to disable plan mode.\nCommand: ${command}`,
 			};
 		}
 	});

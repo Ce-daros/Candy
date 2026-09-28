@@ -55,6 +55,7 @@ import type { Static, TSchema } from "typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import type { BashResult } from "../bash-executor.ts";
 import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult } from "../cache-warmer.ts";
+import type { CommandInfo } from "../commands.ts";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { ExecOptions, ExecResult } from "../exec.ts";
@@ -72,7 +73,6 @@ import type {
 	SessionEntry,
 	SessionManager,
 } from "../session-manager.ts";
-import type { SlashCommandInfo } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { BuildSystemPromptOptions, NormalizedBuildSystemPromptOptions } from "../system-prompt.ts";
 import type { BashOperations } from "../tools/bash.ts";
@@ -384,7 +384,7 @@ export interface ReplacedSessionContext extends ExtensionCommandContext {
 
 	sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
-		options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
+		options?: { deliverAs?: "steer" | "followUp" },
 	): Promise<void>;
 }
 
@@ -583,7 +583,7 @@ export interface SessionBeforeCompactEvent {
 	preparation: CompactionPreparation;
 	branchEntries: SessionEntry[];
 	customInstructions?: string;
-	/** What triggered the compaction: manual /compact, the context threshold, or context overflow recovery */
+	/** What triggered the compaction: manual request, the context threshold, or context overflow recovery */
 	reason: "manual" | "threshold" | "overflow";
 	/** True when the aborted turn is retried after this compaction (overflow recovery) */
 	willRetry: boolean;
@@ -595,7 +595,7 @@ export interface SessionCompactEvent {
 	type: "session_compact";
 	compactionEntry: CompactionEntry;
 	fromExtension: boolean;
-	/** What triggered the compaction: manual /compact, the context threshold, or context overflow recovery */
+	/** What triggered the compaction: manual request, the context threshold, or context overflow recovery */
 	reason: "manual" | "threshold" | "overflow";
 	/** True when the aborted turn is retried after this compaction (overflow recovery) */
 	willRetry: boolean;
@@ -604,7 +604,7 @@ export interface SessionCompactEvent {
 /** Fired after context compaction fails or is aborted */
 export interface SessionCompactFailedEvent {
 	type: "session_compact_failed";
-	/** What triggered the compaction: manual /compact, the context threshold, or context overflow recovery */
+	/** What triggered the compaction: manual request, the context threshold, or context overflow recovery */
 	reason: "manual" | "threshold" | "overflow";
 	/** Error text when compaction failed for a non-abort reason. */
 	errorMessage?: string;
@@ -1483,11 +1483,10 @@ export interface ExtensionAPI {
 	/**
 	 * Send a user message to the agent. Always triggers a turn.
 	 * When the agent is streaming, use deliverAs to specify how to queue the message.
-	 * Set expandPromptTemplates to dispatch extension commands and expand skill commands and prompt templates.
 	 */
 	sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
-		options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
+		options?: { deliverAs?: "steer" | "followUp" },
 	): void;
 
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
@@ -1518,8 +1517,8 @@ export interface ExtensionAPI {
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
 
-	/** Get available slash commands in the current session. */
-	getCommands(): SlashCommandInfo[];
+	/** Get available commands in the current session. */
+	getCommands(): CommandInfo[];
 
 	// =========================================================================
 	// Model and Thinking Level
@@ -1549,13 +1548,13 @@ export interface ExtensionAPI {
 	 *
 	 * If `models` is provided: replaces all existing models for this provider.
 	 * If only `baseUrl` is provided: overrides the URL for existing models.
-	 * If `oauth` is provided: registers OAuth provider for /login support.
+	 * If `oauth` is provided: registers OAuth provider authentication.
 	 * If `streamSimple` is provided: registers a custom API stream handler.
 	 *
 	 * During initial extension load this call is queued and applied once the
 	 * runner has bound its context. After that it takes effect immediately, so
 	 * it is safe to call from command handlers or event callbacks without
-	 * requiring a `/reload`.
+	 * requiring a reload.
 	 *
 	 * @example
 	 * // Register a new provider with custom models
@@ -1662,7 +1661,7 @@ export interface ProviderConfig {
 	 * Use context.publish({ persist: entry }) when the catalog should persist across sessions.
 	 */
 	refreshModels?(context: RefreshModelsContext): Promise<ProviderModelConfig[]>;
-	/** OAuth provider for /login support. The `id` is set automatically from the provider name. */
+	/** OAuth provider authentication. The `id` is set automatically from the provider name. */
 	oauth?: {
 		/** Display name for the provider in login UI. */
 		name: string;
@@ -1782,7 +1781,7 @@ export type SendMessageHandler = <T = unknown>(
 
 export type SendUserMessageHandler = (
 	content: string | (TextContent | ImageContent)[],
-	options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
+	options?: { deliverAs?: "steer" | "followUp" },
 ) => void;
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
@@ -1800,7 +1799,7 @@ export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters
 
 export type GetAllToolsHandler = () => ToolInfo[];
 
-export type GetCommandsHandler = () => SlashCommandInfo[];
+export type GetCommandsHandler = () => CommandInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 

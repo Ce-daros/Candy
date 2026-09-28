@@ -2,9 +2,9 @@
  * Example extension demonstrating timed dialogs with live countdown.
  *
  * Commands:
- * - /timed - Shows confirm dialog that auto-cancels after 5 seconds with countdown
- * - /timed-select - Shows select dialog that auto-cancels after 10 seconds with countdown
- * - /timed-signal - Shows confirm using AbortSignal (manual approach)
+ * - `timed` Command entry shows a confirm dialog that auto-cancels after 5 seconds with countdown
+ * - `timed-select` Command entry shows a select dialog that auto-cancels after 10 seconds with countdown
+ * - `timed-signal` Command entry shows confirm using AbortSignal (manual approach)
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";

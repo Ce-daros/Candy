@@ -296,25 +296,3 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): LoadPr
 
 	return { templates, diagnostics };
 }
-
-/**
- * Expand a prompt template if it matches a template name.
- * Returns the expanded content or the original text if not a template.
- */
-export function expandPromptTemplate(text: string, templates: PromptTemplate[]): string {
-	if (!text.startsWith("/")) return text;
-
-	const match = text.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
-	if (!match) return text;
-
-	const templateName = match[1];
-	const argsString = match[2] ?? "";
-
-	const template = templates.find((t) => t.name === templateName);
-	if (template) {
-		const args = parseCommandArgs(argsString);
-		return substituteArgs(template.content, args);
-	}
-
-	return text;
-}

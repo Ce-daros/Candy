@@ -10,7 +10,7 @@ candy --extension ./examples/extensions/doom-overlay
 
 Then run:
 ```
-/doom-overlay
+Open Command and choose `doom-overlay`.
 ```
 
 The shareware WAD file (~4MB) is auto-downloaded on first run.

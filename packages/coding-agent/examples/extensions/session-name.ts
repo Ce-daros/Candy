@@ -4,14 +4,14 @@
  * Shows setSessionName/getSessionName to give sessions friendly names
  * that appear in the session selector instead of the first message.
  *
- * Usage: /session-name [name] - set or show session name
+ * Usage: open Command and choose `session-name`; add a name to set it or leave it empty to show it.
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";
 
 export default function (candy: ExtensionAPI) {
 	candy.registerCommand("session-name", {
-		description: "Set or show session name (usage: /session-name [new name])",
+		description: "Set or show the session name",
 		handler: async (args, ctx) => {
 			const name = args.trim();
 

@@ -1,7 +1,8 @@
-import { type TUI, visibleWidth } from "@candy/tui";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { setCapabilityOverrides, setKeybindings, type TUI, visibleWidth } from "@candy/tui";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.ts";
+import { keycap, keyText } from "../src/modes/interactive/components/keybinding-hints.ts";
 import {
 	BranchSummaryStatusIndicator,
 	CompactionStatusIndicator,
@@ -13,7 +14,13 @@ import { getEditorTheme, initTheme, theme } from "../src/modes/interactive/theme
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("status indicators", () => {
+	beforeEach(() => {
+		setKeybindings(KeybindingsManager.create());
+		setCapabilityOverrides({ trueColor: true });
+	});
+
 	afterEach(() => {
+		setCapabilityOverrides({});
 		vi.useRealTimers();
 	});
 
@@ -82,7 +89,7 @@ describe("status indicators", () => {
 		editor.setWorkingStatusIndicator(indicator);
 
 		const topBorder = editor.render(20)[0]!;
-		expect(stripAnsi(topBorder)).toBe("╭──────Working─────╮");
+		expect(stripAnsi(topBorder)).toBe("╭────── Working ───╮");
 		expect(visibleWidth(topBorder)).toBe(20);
 		expect(topBorder).toContain(theme.getFgAnsi("border"));
 		indicator.dispose();
@@ -108,7 +115,7 @@ describe("status indicators", () => {
 			const callsBeforeMotion = requestRender.mock.calls.length;
 			for (let elapsed = 0; elapsed < 900; elapsed += 90) {
 				const lines = editor.render(80);
-				const border = `${lines[0]}${lines.at(-1)}`;
+				const border = lines.join("\n");
 				frames.add(border);
 				for (const ansi of border.match(/\x1b\[38;2;\d+;\d+;\d+m/g) ?? []) colors.add(ansi);
 				expect(stripAnsi(lines[0])).not.toContain("Working");
@@ -152,8 +159,8 @@ describe("status indicators", () => {
 			vi.advanceTimersByTime(520);
 			editor.setWorkingStatusIndicator(indicator);
 			const frames = new Set<string>();
-			for (let index = 0; index < 6; index++) {
-				frames.add(editor.render(80)[0]);
+			for (let index = 0; index < 24; index++) {
+				frames.add(editor.render(80).join("\n"));
 				vi.advanceTimersByTime(90);
 			}
 			expect(frames.size).toBeGreaterThan(3);
@@ -180,18 +187,18 @@ describe("status indicators", () => {
 		try {
 			for (const indicator of indicators) {
 				editor.setWorkingStatusIndicator(indicator);
-				const line = stripAnsi(editor.render(120)[0]!);
-				expect(line).not.toContain("Retrying");
-				expect(line).not.toContain("Compacting");
-				expect(line).not.toContain("Summarizing");
+				const line = editor.render(120)[0]!;
+				expect(stripAnsi(line)).toMatch(/Retrying|[Cc]ompacting|Summarizing/);
+				expect(line).toContain(keycap(keyText("app.interrupt")));
 				for (const width of [1, 4, 10, 20, 80, 120]) {
 					expect(visibleWidth(editor.render(width)[0]!)).toBe(width);
 				}
 			}
 			editor.setAnimationOptions(false, "moderate");
 			expect(stripAnsi(editor.render(120)[0]!)).toContain("Retrying");
+			expect(editor.render(120)[0]).toContain(keycap(keyText("app.interrupt")));
 			vi.advanceTimersByTime(1000);
-			expect(stripAnsi(editor.render(120)[0]!)).not.toContain("(1/3)");
+			expect(stripAnsi(editor.render(120)[0]!)).toContain("(1/3) in 2s");
 			editor.setWorkingStatusIndicator(undefined);
 			expect(stripAnsi(editor.render(120)[0]!)).toBe(`╭${"─".repeat(118)}╮`);
 		} finally {

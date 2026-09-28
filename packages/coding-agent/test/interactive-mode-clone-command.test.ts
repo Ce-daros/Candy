@@ -19,7 +19,7 @@ type InteractiveModePrototype = {
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
 
-describe("InteractiveMode /clone", () => {
+describe("InteractiveMode History clone", () => {
 	it("clones the current leaf into a new session", async () => {
 		const fork = vi.fn(async () => ({ cancelled: false }));
 		const renderCurrentSessionState = vi.fn();

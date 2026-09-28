@@ -13,9 +13,8 @@
  *   3. Ask for something that produces reasoning output
  *   4. The collapsed thinking block label will show the custom text
  *
- * Commands:
- *   /thinking-label <text>   Set a custom hidden thinking label
- *   /thinking-label          Reset to the default label
+ * Open Command and choose `thinking-label` to set a custom hidden thinking label;
+ * leave the argument empty to reset to the default label.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@candy/coding-agent";

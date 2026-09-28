@@ -2,7 +2,7 @@
 
 This reference lists user-configurable settings, their types, defaults, and purposes. Project settings override agent-directory settings. Resource lists are combined. See [Configuration](configuration.md) for file locations and trust behavior.
 
-Open `/settings` to browse Appearance, Conversation & Input, Models & Connection, Privacy & Trust, and Terminal. Search from the bottom of the panel. `Tab` and `Shift+Tab` move between regions; arrow keys select an item, `Enter` changes or opens it, and `Escape` returns. Simple values save immediately. The Theme picker previews changes while you move and restores the previous theme if you cancel.
+Type `/` in an empty editor to open Command and search individual settings. Simple values save immediately. The Theme picker previews changes while you move and restores the previous theme if you cancel. Model-specific settings are in Model → Details; steering, follow-up, and retry controls are in Thinking → Agent → Behavior.
 
 ## Model and thinking
 
@@ -12,12 +12,13 @@ Open `/settings` to browse Appearance, Conversation & Input, Models & Connection
 | `defaultModel` | string | Automatic | Startup model ID. |
 | `defaultThinkingLevel` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"` | `"medium"` | Startup thinking level. |
 | `modelThinkingLevels` | object | None | Per-model startup thinking levels keyed by exact `provider/modelId`. |
+| `scopedModels` | `{ provider: string, modelId: string }[]` | Unset | User-level quick-selection scope. Unset includes all available models; an empty array includes none. Unavailable configured entries remain saved. |
 | `thinkingBudgets` | object | Built-in budgets | Token budgets for `minimal`, `low`, `medium`, and `high` thinking levels. |
 | `hideThinkingBlock` | boolean | `true` | Start thinking blocks collapsed in the transcript; expand a block to inspect its text. |
 | `showCacheMissNotices` | boolean | `false` | Show notices for significant cache misses, successful cache warming, compaction usage, and provider recovery. |
 | `cacheWarming` | `"off" \| "streaming" \| "idle"` | `"streaming"` | Keep eligible provider prompt caches warm during active runs or, with `"idle"`, between runs. Global setting only. |
 
-Cache warming runs only when the model declares a cache lifetime and candy estimates at least $0.05 in avoided cache-miss cost. Refresh usage counts toward session totals but does not enter model context. `/session` shows the next decision; extensions can override it with `cache_warming_decision`. See [Prompt Cache Lifetimes](models.md#prompt-cache-lifetimes).
+Cache warming runs only when the model declares a cache lifetime and candy estimates at least $0.05 in avoided cache-miss cost. Refresh usage counts toward session totals but does not enter model context. History → Session details shows the next decision; extensions can override it with `cache_warming_decision`. See [Prompt Cache Lifetimes](models.md#prompt-cache-lifetimes).
 
 See [Choose a Model](models.md) for model selection and thinking controls.
 
@@ -30,7 +31,7 @@ See [Choose a Model](models.md) for model selection and thinking controls.
 | `toolPreviewLines` | `5 \| 10 \| 20` | `5` | Terminal rows shown for edit, write, and shell previews before expansion. Errors show up to 12 rows. |
 | `externalEditor` | string | `$VISUAL`, `$EDITOR`, then platform default | Command opened by the external-editor keybinding. |
 | `doubleEscapeAction` | `"tree" \| "fork" \| "none"` | `"tree"` | Action for double Escape with an empty editor. |
-| `treeFilterMode` | `"default" \| "no-tools" \| "user-only" \| "labeled-only" \| "all"` | `"default"` | Initial filter used by `/tree`. |
+| `treeFilterMode` | `"default" \| "no-tools" \| "user-only" \| "labeled-only" \| "all"` | `"default"` | Initial filter used by History → Tree. |
 | `defaultProjectTrust` | `"ask" \| "always" \| "never"` | `"ask"` | Fallback project-trust behavior. **Can only be set in agent-directory settings.** |
 
 ## Tools
@@ -98,7 +99,7 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 
 See [Themes](themes.md) and [Terminal Setup](terminal-setup.md) for format and platform details.
 
-Set both values in `/settings` or in `settings.json`:
+Set both values in Command or in `settings.json`:
 
 ```json
 {
@@ -148,7 +149,7 @@ Resource paths in user settings resolve from the agent directory. Paths in proje
 | `skills` | `string[]` | `[]` | Skill files or directories. |
 | `prompts` | `string[]` | `[]` | Prompt-template files or directories. |
 | `themes` | `string[]` | `[]` | Theme files or directories. |
-| `enableSkillCommands` | boolean | `true` | Register skills as `/skill:name` commands. |
+| `enableSkillCommands` | boolean | `true` | Show loaded skills under their names in Command. |
 
 Resource arrays support glob exclusions with `!pattern`, exact inclusion with `+path`, and exact exclusion with `-path`. candy loads resources listed in both user-level and project settings.
 

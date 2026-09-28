@@ -1,13 +1,13 @@
 # Choose a Model
 
-For a built-in provider, start with `/login`, then choose a model with `/model`. Use custom model configuration only when candy does not already include the provider or endpoint you need.
+For a built-in provider, open Sources to connect it, then choose a model in the Model selector. Use custom model configuration when candy does not already include the provider or endpoint you need.
 
 ## Choose a connection
 
 | What you have | Recommended setup |
 |---|---|
-| A supported subscription | Sign in through `/login` |
-| A provider API key | Store it through `/login` or set its environment variable |
+| A supported subscription | Sign in through Sources |
+| A provider API key | Store it through Sources or set its environment variable |
 | A local GGUF model | Configure its server as a compatible endpoint in `models.json` |
 | An OpenAI-, Anthropic-, or Google-compatible endpoint | Add it to `models.json` |
 | A provider with a custom protocol or authentication flow | Build or install a provider extension |
@@ -16,7 +16,7 @@ Browse the [model catalog](https://pi.dev/models) for current providers, model I
 
 ## Authenticate
 
-Run `/login` and select a provider. candy stores credentials in [`auth.json`](configuration.md#agent-directory). Run `/logout` to remove stored credentials for a provider.
+Open Sources and select a provider to connect it. candy stores credentials in [`auth.json`](configuration.md#agent-directory). Remove saved credentials from that provider's page.
 
 You can instead provide an API key through the provider's environment variable. This is useful in CI and other environments where candy should not write credentials. [Provider Authentication](providers.md) lists the variables and cloud-provider setup.
 
@@ -26,9 +26,14 @@ Keep `auth.json` and any credential commands private. Project settings and exten
 
 ## Select a model
 
-Run `/model` to search available models by name, ID, or provider. The picker shows providers beside their models and displays the selected model's full ID, provider, context size, maximum output, and reasoning capability below the list. Models with the same display name within one provider include an ID in their rows. The picker uses effective catalog data, including custom overrides. It shows models whose providers have usable authentication. Press `Ctrl+S` on a model to save it as the default for new sessions.
+Press `Ctrl+L` or click Model in the editor border to open the Powerbar. `Left` and `Right` browse the quick-selection scope; typing searches model names, IDs, and providers. `Enter` changes the model for the current session. `Up` opens Sources to manage provider access, refresh catalogs, and choose which models appear here. Sources keeps configured scope entries when a model or its authentication becomes unavailable. An unset scope includes every available model; an explicitly empty scope shows no quick-selection models.
 
-Run `/thinking` to select the thinking level for the current model. Moving through the levels previews each border and meter; `Escape` restores the old level and `Enter` applies the new one. Press `Ctrl+S` there to save the startup level. candy limits the choices to levels supported by the selected model. The footer model and thinking selectors remain available for quick changes.
+In Sources, `Space` toggles the highlighted model in quick selection. Select or clear a provider as a group. `Ctrl+A` includes the models matching the current search, `Ctrl+D` clears those matches, and `Tab` moves between search and the list. Bulk actions do nothing when the search has no matches. Clicking a row focuses it.
+
+Press `Down` from a highlighted model to open its Details. Details shows the model's full ID, provider, input types, context and output limits, reasoning support, and price. **Set as default** saves the model for new sessions without changing the current session. You can also set or clear the model's default thinking level and compaction token overrides there. Details shows the source of an inherited thinking or compaction value.
+Numeric override inputs open with their current saved value filled in.
+
+Press `Tab` to move to Thinking. `Left` and `Right` browse supported levels, with a live border and meter preview. `Escape` restores the old level and `Enter` applies the new one. Models without reasoning still show Off. The global default thinking level is available in Command.
 
 A session records model and thinking-level changes. Resuming the session restores them without changing defaults for new sessions.
 
@@ -61,7 +66,7 @@ A custom backend that implements Candy's `pi-messages` protocol can set `api` to
 
 The dummy key makes the model available to candy; Ollama ignores it. For an authenticated endpoint, `apiKey` and header values can use `$NAME` or `${NAME}` environment interpolation, a literal value, or a leading `!command`. Commands in `models.json` run at request time and are not cached by candy.
 
-Opening `/model` reloads the file. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
+Choose Reload in Command after changing `models.json`. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
 
 ### Describe model input and caching
 
@@ -106,7 +111,7 @@ Use an extension when the provider needs custom streaming, model discovery, or a
 
 ### A model does not appear
 
-Confirm that its provider has usable authentication. Custom models can load from `models.json` but remain unavailable in `/model` until candy can resolve credentials.
+Check the provider status in Sources. Custom models can load from `models.json` but remain unavailable in quick selection until candy can resolve credentials.
 
 ### Authentication works in one shell only
 

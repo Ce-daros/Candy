@@ -28,16 +28,14 @@ With images:
 
 If the agent is streaming and no `streamingBehavior` is specified, the command returns an error.
 
-**Extension commands**: If the message is an extension command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `pi.sendMessage()`.
-
-**Input expansion**: Skill commands (`/skill:name`) and prompt templates (`/template`) are expanded before sending/queueing.
+Messages are sent as text. A leading `/` has no special meaning in `prompt`.
 
 Response:
 ```json
 {"id": "req-1", "type": "response", "command": "prompt", "success": true, "data": {"disposition": "started"}}
 ```
 
-`data.disposition` is `"handled"` if an extension command or input handler consumed the prompt, `"queued"` if candy queued it during a run, or `"started"` if candy accepted it to start a run. This describes the submitted prompt, not independent work started by an extension or a guarantee of completion.
+`data.disposition` is `"handled"` if an input handler consumed the prompt, `"queued"` if candy queued it during a run, or `"started"` if candy accepted it to start a run. This describes the submitted prompt, not independent work started by an extension or a guarantee of completion.
 
 `success: true` means the prompt was accepted, queued, or handled immediately. `success: false` means the prompt was rejected before acceptance. Failures after acceptance are reported through the normal event and message stream, not as a second `response` for the same request id.
 
@@ -45,7 +43,7 @@ The `images` field is optional. Each image uses `ImageContent` format: `{"type":
 
 ### steer
 
-Queue a steering message while the agent is running. It is delivered after the current assistant turn finishes executing its tool calls, before the next LLM call. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+Queue a steering message while the agent is running. It is delivered after the current assistant turn finishes executing its tool calls, before the next LLM call. The message is treated as text.
 
 ```json
 {"type": "steer", "message": "Stop and do this instead"}
@@ -69,7 +67,7 @@ See [set_steering_mode](#set_steering_mode) for controlling how steering message
 
 ### follow_up
 
-Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. The message is treated as text.
 
 ```json
 {"type": "follow_up", "message": "After you're done, also do this"}
@@ -763,7 +761,7 @@ The current session name is available via `get_state` in the `sessionName` field
 
 ### get_commands
 
-Get available commands (extension commands, prompt templates, and skills). Run one through the `prompt` command by prefixing its name with `/`.
+Get available commands (extension commands, prompt templates, and skills). Execute one with `execute_command` using its `source` and `name`.
 
 ```json
 {"type": "get_commands"}
@@ -794,12 +792,12 @@ Response:
 ```
 
 Each command has:
-- `name`: Command name (use `/name`)
+- `name`: Command name
 - `description`: Human-readable description (optional for extension commands)
 - `source`: What kind of command:
   - `"extension"`: Registered via `pi.registerCommand()` in an extension
   - `"prompt"`: Loaded from a prompt template `.md` file
-  - `"skill"`: Loaded from a skill directory (name is prefixed with `skill:`)
+  - `"skill"`: Loaded from a skill directory
 - `sourceInfo`: Metadata for the resource that registered the command:
   - `path`: Absolute path to the resource
   - `source`: How candy discovered it, such as `"local"`, `"auto"`, or `"cli"`
@@ -807,7 +805,17 @@ Each command has:
   - `origin`: `"top-level"` for a directly loaded resource or `"package"` for a package resource
   - `baseDir`: Package base directory, when applicable
 
-**Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
+### execute_command
+
+Execute an extension command, prompt template, or skill returned by `get_commands`. The pair (`source`, `name`) selects the command. `args` is the full argument string.
+
+```json
+{"id":"req-2","type":"execute_command","source":"prompt","name":"fix-tests","args":"src/app.ts"}
+```
+
+An extension command runs immediately, including while the agent is streaming or compacting. Prompt templates and skills submit a user message; during streaming, pass `streamingBehavior` as `"steer"` or `"followUp"` to queue it. `data.disposition` is `"handled"` for an extension, `"started"` for a new agent run, or `"queued"` during streaming. A failed command returns an error response and does not consume a provider response.
+
+Built-in TUI actions are not included in `get_commands`. Use the corresponding structured RPC operation for model and session controls.
 
 ## Model object
 

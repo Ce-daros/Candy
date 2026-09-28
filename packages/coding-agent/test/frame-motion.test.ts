@@ -1,5 +1,5 @@
 import type { TUI } from "@candy/tui";
-import { visibleWidth } from "@candy/tui";
+import { setCapabilityOverrides, visibleWidth } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
@@ -21,6 +21,7 @@ describe("editor frame motion", () => {
 
 	afterEach(() => {
 		motion.dispose();
+		setCapabilityOverrides({});
 		vi.useRealTimers();
 	});
 
@@ -59,14 +60,17 @@ describe("editor frame motion", () => {
 		expect(motion.paintBorder("─", 7, 0)).toContain("\x1b[38;");
 	});
 
-	it("keeps seven distinct levels and a static multicolor gradient with animations off", () => {
+	it.each([true, false])("keeps distinct static thinking gradients with trueColor=%s", (trueColor) => {
+		setCapabilityOverrides({ trueColor });
+		initTheme("dark", false);
 		motion.setOptions(false, "moderate");
 		const frames = ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => {
 			motion.setThinking(level as Parameters<FrameMotion["setThinking"]>[0]);
 			return motion.paintBorder("─".repeat(60), 0, 0);
 		});
 		expect(new Set(frames).size).toBe(7);
-		expect(new Set(frames[5]!.match(/\x1b\[38;[^m]+m/g)).size).toBeGreaterThan(8);
+		expect(frames[5]).toContain(trueColor ? "\x1b[38;2;" : "\x1b[38;5;");
+		expect(new Set(frames[5]!.match(/\x1b\[38;[^m]+m/g)).size).toBeGreaterThan(trueColor ? 8 : 1);
 		const staticFrame = frames[6];
 		vi.advanceTimersByTime(4000);
 		expect(motion.paintBorder("─".repeat(60), 0, 0)).toBe(staticFrame);
@@ -107,6 +111,47 @@ describe("editor frame motion", () => {
 		expect(motion.paintBorder("─", 8, 0)).not.toBe(before);
 	});
 
+	it("sweeps into Command and reverses from its current border color", () => {
+		motion.beginFrame();
+		vi.advanceTimersByTime(520);
+		motion.setMode("command");
+		expect(motion.getModeTitle()).toBe("Command");
+		vi.advanceTimersByTime(120);
+		const before = motion.paintBorder("─", 8, 0);
+		motion.setMode("normal");
+		expect(motion.paintBorder("─", 8, 0)).toBe(before);
+		vi.advanceTimersByTime(360);
+		expect(motion.getModeTitle()).toBe("");
+	});
+
+	it("uses the Command accent when animation is disabled", () => {
+		motion.setOptions(false, "moderate");
+		motion.setMode("command");
+		expect(motion.paintBorder("─", 8, 0)).toContain(theme.getFgAnsi("accent"));
+		expect(motion.getModeTitle()).toBe("Command");
+	});
+
+	it("releases a Command transition timer on disposal", () => {
+		motion.beginFrame();
+		motion.setMode("command");
+		expect(vi.getTimerCount()).toBeGreaterThan(0);
+		motion.dispose();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("preserves styled keycaps and display width while a title retracts", () => {
+		const keycap = theme.fg("borderAccent", "<Escape>");
+		const title = `${keycap} 中文`;
+		motion.setMode("command");
+		vi.advanceTimersByTime(360);
+		expect(motion.paintTitle(title)).toContain(keycap);
+		motion.setMode("normal");
+		for (let elapsed = 0; elapsed <= 360; elapsed += 24) {
+			expect(visibleWidth(motion.paintTitle(title))).toBe(visibleWidth(title));
+			vi.advanceTimersByTime(24);
+		}
+	});
+
 	it("keeps activity trails visible on the yellow Shell frame in the light theme", () => {
 		initTheme("light", false);
 		motion.beginFrame();
@@ -128,9 +173,9 @@ describe("editor frame motion", () => {
 		motion.setMode("shell");
 		vi.advanceTimersByTime(360);
 		motion.setMode("normal");
-		expect(motion.getShellTitle()).toBe("Shell");
+		expect(motion.getModeTitle()).toBe("Shell");
 		vi.advanceTimersByTime(360);
-		expect(motion.getShellTitle()).toBe("");
+		expect(motion.getModeTitle()).toBe("");
 	});
 
 	it("shows the finished border immediately when animation is disabled", () => {
@@ -147,9 +192,9 @@ describe("editor frame motion", () => {
 		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
 		editor.setAnimationOptions(false, "moderate");
 		expect(stripAnsi(editor.render(40)[0]!)).toBe(`╭${"─".repeat(38)}╮`);
-		editor.setShellMode("shell");
+		editor.setInputMode("shell");
 		expect(stripAnsi(editor.render(40)[0]!)).toContain(" Shell ");
-		editor.setShellMode("shell-no-context");
+		editor.setInputMode("shell-no-context");
 		expect(stripAnsi(editor.render(40)[0]!)).toContain(" Shell · No Context ");
 		editor.dispose();
 	});
@@ -163,10 +208,16 @@ describe("editor frame motion", () => {
 		expect(stripAnsi(normal[1]!)).toMatch(/^│ ◆ /);
 		expect(normal[1]!).toContain(theme.getFgAnsi("editorPrompt"));
 
-		editor.setShellMode("shell");
+		editor.setInputMode("shell");
 		const shell = editor.render(40);
 		expect(stripAnsi(shell[1]!)).toMatch(/^│ ❯ /);
 		expect(shell[1]!).toContain(theme.getFgAnsi("bashMode"));
+
+		editor.setInputMode("command");
+		const command = editor.render(40);
+		expect(stripAnsi(command[0]!)).toContain(" Command ");
+		expect(stripAnsi(command[1]!)).toMatch(/^│ \/ /);
+		expect(command[1]!).toContain(theme.getFgAnsi("accent"));
 		editor.dispose();
 	});
 
@@ -191,7 +242,7 @@ describe("editor frame motion", () => {
 				expect(editor.render(width).every((line) => visibleWidth(line) === width)).toBe(true);
 				vi.advanceTimersByTime(48);
 			}
-			editor.setShellMode("shell");
+			editor.setInputMode("shell");
 			for (let elapsed = 0; elapsed < 360; elapsed += 48) {
 				expect(editor.render(width).every((line) => visibleWidth(line) === width)).toBe(true);
 				vi.advanceTimersByTime(48);

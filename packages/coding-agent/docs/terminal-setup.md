@@ -16,7 +16,7 @@ candy uses extended-key protocols so terminals can distinguish combinations such
 | An IME candidate window appears in the wrong place | [WezTerm](#wezterm) or [IntelliJ IDEA](#intellij-idea-integrated-terminal) |
 | Modified keys fail only inside tmux | [Run candy in tmux](tmux.md) |
 
-Use `/hotkeys` to inspect candy's active shortcuts. See [Keybindings](keybindings.md) to change them.
+Open **Hotkeys** in Command to inspect candy's active shortcuts. See [Keybindings](keybindings.md) to change them.
 
 ## Kitty
 

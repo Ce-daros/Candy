@@ -83,9 +83,9 @@ Use a chain: first have scout find the read tool, then have planner suggest impr
 
 ### Workflow prompts
 ```
-/implement add Redis caching to the session store
-/scout-and-plan refactor auth to support OAuth
-/implement-and-review add input validation to API endpoints
+Open Command and choose `implement`; enter `add Redis caching to the session store` as its argument.
+Open Command and choose `scout-and-plan`; enter `refactor auth to support OAuth` as its argument.
+Open Command and choose `implement-and-review`; enter `add input validation to API endpoints` as its argument.
 ```
 
 ## Tool Modes
@@ -158,9 +158,9 @@ Project agents override user agents with the same name when `agentScope: "both"`
 
 | Prompt | Flow |
 |--------|------|
-| `/implement <query>` | scout → planner → worker |
-| `/scout-and-plan <query>` | scout → planner |
-| `/implement-and-review <query>` | worker → reviewer → worker |
+| `implement` with a query argument | scout → planner → worker |
+| `scout-and-plan` with a query argument | scout → planner |
+| `implement-and-review` with a query argument | worker → reviewer → worker |
 
 ## Error Handling
 

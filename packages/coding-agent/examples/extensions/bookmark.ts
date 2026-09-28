@@ -1,17 +1,17 @@
 /**
  * Entry bookmarking example.
  *
- * Shows setLabel to mark entries with labels for easy navigation in /tree.
+ * Shows setLabel to mark entries for easy navigation in History's tree.
  * Labels appear in the tree view and help you find important points.
  *
- * Usage: /bookmark [label] - bookmark the last assistant message
+ * Usage: open Command and choose `bookmark`; add a label as the argument.
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";
 
 export default function (candy: ExtensionAPI) {
 	candy.registerCommand("bookmark", {
-		description: "Bookmark last message (usage: /bookmark [label])",
+		description: "Bookmark last message with an optional label",
 		handler: async (args, ctx) => {
 			const label = args.trim() || `bookmark-${Date.now()}`;
 

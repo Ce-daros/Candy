@@ -30,7 +30,7 @@ cp permission-gate.ts ~/.candy/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `todo.ts` | Todo list tool + `/todos` command with custom rendering and state persistence |
+| `todo.ts` | Todo list tool and `todos` Command entry with custom rendering and state persistence |
 | `hello.ts` | Minimal custom tool example |
 | `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions with custom UI |
 | `questionnaire.ts` | Multi-question input with tab bar navigation between questions |
@@ -47,10 +47,10 @@ cp permission-gate.ts ~/.candy/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `preset.ts` | Named presets for model, thinking level, tools, and instructions via `--preset` flag and `/preset` command |
-| `plan-mode/` | Claude Code-style plan mode for read-only exploration with `/plan` command and step tracking |
-| `tools.ts` | Interactive `/tools` command to enable/disable tools with session persistence |
-| `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |
+| `preset.ts` | Named presets for model, thinking level, tools, and instructions via `--preset` flag and the `preset` Command entry |
+| `plan-mode/` | Claude Code-style plan mode for read-only exploration with the `plan` Command entry and step tracking |
+| `tools.ts` | Interactive `tools` Command entry to enable or disable tools with session persistence |
+| `handoff.ts` | Transfer context to a new focused session; open Command and choose `handoff` with a goal |
 | `qna.ts` | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
 | `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
 | `github-issue-autocomplete.ts` | Adds `#1234` issue completions by stacking a custom autocomplete provider that preloads open issues from `gh issue list` |
@@ -72,8 +72,8 @@ cp permission-gate.ts ~/.candy/agent/extensions/
 | `overlay-test.ts` | Test overlay compositing with inline text inputs and edge cases |
 | `overlay-qa-tests.ts` | Comprehensive overlay QA tests: anchors, margins, stacking, overflow, animation |
 | `doom-overlay/` | DOOM game running as an overlay at 35 FPS (demonstrates real-time game rendering) |
-| `shutdown-command.ts` | Adds `/quit` command demonstrating `ctx.shutdown()` |
-| `reload-runtime.ts` | Adds `/reload-runtime` and `reload_runtime` tool showing safe reload flow |
+| `shutdown-command.ts` | Adds a `quit` Command entry demonstrating `ctx.shutdown()` |
+| `reload-runtime.ts` | Adds a `reload-runtime` Command entry and `reload_runtime` tool that asks you to reload after the current turn |
 | `interactive-shell.ts` | Run interactive commands (vim, htop) with full terminal via `user_bash` hook |
 | `inline-bash.ts` | Expands `!{command}` patterns in prompts via `input` event transformation |
 | `input-transform-streaming.ts` | Skips expensive input preprocessing for mid-stream steering via `streamingBehavior` |
@@ -92,7 +92,7 @@ cp permission-gate.ts ~/.candy/agent/extensions/
 | `pirate.ts` | Demonstrates `systemPromptAppend` to dynamically modify system prompt |
 | `claude-rules.ts` | Scans `.claude/rules/` folder and lists rules in system prompt |
 | `custom-compaction.ts` | Custom compaction that summarizes entire conversation |
-| `trigger-compact.ts` | Triggers compaction when context usage exceeds 100k tokens and adds `/trigger-compact` command |
+| `trigger-compact.ts` | Triggers compaction when context usage exceeds 100k tokens and adds a `trigger-compact` Command entry |
 
 ### System Integration
 
@@ -112,7 +112,7 @@ cp permission-gate.ts ~/.candy/agent/extensions/
 |-----------|-------------|
 | `message-renderer.ts` | Custom message rendering with colors and expandable details via `registerMessageRenderer` |
 | `entry-renderer.ts` | TUI-only session entry rendering via `appendEntry` and `registerEntryRenderer` |
-| `debug-provider.ts` | Toggle raw provider stream capture with `/debug-provider` and inspect each assistant message in a TUI-only session entry |
+| `debug-provider.ts` | Toggle raw provider stream capture with the `debug-provider` Command entry and inspect each assistant message in a TUI-only session entry |
 | `event-bus.ts` | Inter-extension communication via `pi.events` |
 
 ### Session Metadata
@@ -120,7 +120,7 @@ cp permission-gate.ts ~/.candy/agent/extensions/
 | Extension | Description |
 |-----------|-------------|
 | `session-name.ts` | Name sessions for the session selector via `setSessionName` |
-| `bookmark.ts` | Bookmark entries with labels for `/tree` navigation via `setLabel` |
+| `bookmark.ts` | Bookmark entries with labels for History tree navigation via `setLabel` |
 
 ### Custom Providers
 

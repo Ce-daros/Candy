@@ -6,7 +6,7 @@
  *
  * Usage:
  * 1. Copy this file to ~/.candy/agent/extensions/ or your project's .candy/extensions/
- * 2. Use /pirate to toggle pirate mode
+ * 2. Open Command and choose `pirate` to toggle pirate mode
  * 3. When enabled, the agent will respond like a pirate
  */
 
@@ -15,7 +15,7 @@ import type { ExtensionAPI } from "@candy/coding-agent";
 export default function pirateExtension(candy: ExtensionAPI) {
 	let pirateMode = false;
 
-	// Register /pirate command to toggle pirate mode
+	// Register the `pirate` Command entry to toggle pirate mode
 	candy.registerCommand("pirate", {
 		description: "Toggle pirate mode (agent speaks like a pirate)",
 		handler: async (_args, ctx) => {

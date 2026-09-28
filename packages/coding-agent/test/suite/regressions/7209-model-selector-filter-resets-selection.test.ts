@@ -1,83 +1,34 @@
-import { setKeybindings, type TUI } from "@candy/tui";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../../../src/core/keybindings.ts";
-import { ModelSelectorComponent } from "../../../src/modes/interactive/components/model-selector.ts";
+import type { Model } from "@candy/ai/compat";
+import { describe, expect, it } from "vitest";
+import { PowerbarController, type PowerbarHost } from "../../../src/modes/interactive/components/powerbar.ts";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
-import { stripAnsi } from "../../../src/utils/ansi.ts";
-import { createHarness, type Harness } from "../harness.ts";
 
-function createFakeTui(): TUI {
-	return { requestRender: () => {} } as unknown as TUI;
-}
+describe("Powerbar model search selection", () => {
+	// Regression for #7209: filtering must choose the first match, not retain a stale row index.
+	it("resets the highlight to the first match when a query starts", () => {
+		initTheme(undefined, false);
+		const models = ["Alpha One", "Alpha Two", "Alpha Three", "Beta One"].map((name, index) => ({
+			model: { provider: "test", id: `model-${index}`, name } as Model<any>,
+			label: name,
+		}));
+		const host: PowerbarHost = {
+			requestRender() {},
+			getThinkingLevels: () => ["off"],
+			getThinkingLevel: () => "off",
+			getModels: () => models,
+			getCurrentModelIndex: () => 0,
+			applyThinking() {},
+			applyModel() {},
+		};
+		const powerbar = new PowerbarController(host);
+		powerbar.render(120);
+		powerbar.openModelBrowse({ anchorWidth: 9 });
+		powerbar.move(2);
+		expect(powerbar.getHighlightedModel()?.name).toBe("Alpha Three");
 
-function selectedModelName(rendered: string): string | undefined {
-	const line = rendered.split("\n").find((value) => value.includes("│ ♦ "));
-	const modelColumn = line?.split("│ ")[1];
-	return modelColumn
-		?.replace(/^♦\s*/, "")
-		.split(/\s+✓|\s+· default|\s+♦$/)[0]
-		?.trim();
-}
+		for (const char of "alpha") powerbar.inputChar(char);
 
-describe("model selector filter resets selection to top", () => {
-	const harnesses: Harness[] = [];
-
-	beforeAll(() => {
-		initTheme("dark");
-	});
-
-	beforeEach(() => {
-		setKeybindings(new KeybindingsManager());
-	});
-
-	afterAll(() => {
-		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
-		}
-	});
-
-	it("moves selection to the first row in the All tab when typing a query", async () => {
-		const harness = await createHarness({
-			models: [
-				{ id: "alpha-1", name: "Alpha One", reasoning: true },
-				{ id: "alpha-2", name: "Alpha Two", reasoning: true },
-				{ id: "alpha-3", name: "Alpha Three", reasoning: true },
-				{ id: "beta-1", name: "Beta One", reasoning: true },
-			],
-		});
-		harnesses.push(harness);
-
-		const current = harness.getModel("alpha-1")!;
-		const selector = new ModelSelectorComponent(
-			createFakeTui(),
-			current,
-			harness.session.modelRuntime,
-			() => {},
-			() => {},
-		);
-
-		await vi.waitFor(() => {
-			const rendered = stripAnsi(selector.render(120).join("\n"));
-			expect(rendered).toContain("Model catalogs refreshed.");
-		});
-
-		// Current model (alpha-1) is sorted first, so selection starts on row 0.
-		expect(selectedModelName(stripAnsi(selector.render(120).join("\n")))).toBe("Alpha One");
-
-		// Model names sort alphabetically, so two moves select Alpha Two.
-		selector.handleInput("\x1b[B");
-		selector.handleInput("\x1b[B");
-		expect(selectedModelName(stripAnsi(selector.render(120).join("\n")))).toBe("Alpha Two");
-
-		// Type a query that matches the three alpha models. The selection must
-		// move back to the top row (Alpha One), not stay clamped at index 2.
-		for (const char of "alpha") {
-			selector.handleInput(char);
-		}
-
-		const rendered = stripAnsi(selector.render(120).join("\n"));
-		expect(selectedModelName(rendered)).toBe("Alpha One");
-		// Sanity: the filter actually narrowed the list.
-		expect(rendered).not.toContain("beta-1");
+		expect(powerbar.getHighlightedModel()?.name).toBe("Alpha One");
+		expect(powerbar.capture()?.query).toBe("alpha");
 	});
 });

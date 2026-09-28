@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed slash-command and `skill:` autocomplete from the generic editor. Applications can provide command navigation separately; editor text beginning with `/` is submitted literally.
+- `SettingsListTheme` now requires a `keycap` renderer for shortcut hints.
+
 ### Added
 
 - Added Sixel image protocol support (Windows Terminal 1.22+), auto-detected for `WT_SESSION` and forceable via `CANDY_IMAGE_PROTOCOL=sixel`. Includes a `SixelImage` component for pre-encoded sequences and a `calculateSixelCellSize` helper.
@@ -12,13 +17,13 @@
 - Added a `bottomBorderClick` hook on `Editor` for subclasses to intercept left clicks on the editor's bottom border row (used by the coding-agent footer powerbar).
 - Added editor history scopes and a side-border styling hook for mode-specific composer history and frame animation.
 - Added `TuiAltScreen.setSearchHost()`, `TuiAltScreen.closeSearch()`, and exported `TuiAltScreenSearchHost` so applications can mount transcript search in their own focused UI while reusing the alt-screen search index, match count, highlighting, and navigation. Close search before replacing its host UI.
+- Added `TuiAltScreenOptions.searchKeycapStyle` to style transcript search navigation shortcuts.
 - Added `MarkdownOptions.onCopyCode`, `codeBlockView`, and `maxProseWidth`, plus heading-level, code-label, and table-header theme hooks for copyable code blocks, alternate diagrams, and width-aware prose.
 - Added masked `Input` rendering and image-aware `Editor` hooks: colored paths and markers, viewport-limited editor height, `insertImageAtCursor()`, and `onImagePath` for marker activation.
 - Added viewport-bounded, expandable `Image` previews and additional `SelectList`/`SettingsList` layout and selection-detail hooks.
 
 ### Fixed
 
-- Fixed `/skill` autocomplete appearing empty when loaded skill names did not contain the letters in `skill` ([#9944](https://github.com/earendil-works/pi/issues/9944)).
 - Fixed path and `@` autocomplete not working after opening wrappers such as `(`, `[`, `{`, `<`, or a backtick, e.g. `(~/Dev<Tab>`.
 - Reduced image stretching in terminals that use the Kitty graphics protocol ([#8938](https://github.com/earendil-works/pi/issues/8938)).
 - Fixed the shell cursor staying hidden after exit when an extension closed an overlay during shutdown ([#10026](https://github.com/earendil-works/pi/issues/10026)).

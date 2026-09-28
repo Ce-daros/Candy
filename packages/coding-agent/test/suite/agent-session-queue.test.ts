@@ -3,6 +3,9 @@ import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import type { ExtensionAPI, InputEvent } from "@candy/coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
+import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
+import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";
 
 async function createWaitingHarness(
@@ -66,7 +69,7 @@ describe("AgentSession queue characterization", () => {
 		}
 	});
 
-	it("dispatches extension commands immediately when prompted while idle", async () => {
+	it("dispatches an explicit extension command immediately while idle", async () => {
 		const commandRuns: string[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
@@ -82,7 +85,7 @@ describe("AgentSession queue characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.prompt("/testcmd hello world");
+		await harness.session.executeCommand({ source: "extension", name: "testcmd", args: "hello world" });
 
 		expect(commandRuns).toEqual(["hello world"]);
 		expect(harness.getPendingResponseCount()).toBe(0);
@@ -437,40 +440,36 @@ describe("AgentSession queue characterization", () => {
 		expect(harness.session.pendingMessageCount).toBe(0);
 	});
 
-	it("throws when queueing an extension command with steer", async () => {
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.registerCommand("testcmd", {
-						description: "Test command",
-						handler: async () => {},
-					});
-				},
-			],
-		});
+	it.each(["steer", "followUp"] as const)("keeps a matching command literal in %s", async (method) => {
+		const commandRuns: string[] = [];
+		const extensionsResult = await createTestExtensionsResult([
+			(candy) =>
+				candy.registerCommand("testcmd", {
+					handler: async (args) => {
+						commandRuns.push(args);
+					},
+				}),
+		]);
+		const template: PromptTemplate = {
+			name: "testcmd",
+			description: "Test template",
+			content: "expanded $1",
+			filePath: "/virtual/testcmd.md",
+			sourceInfo: createSyntheticSourceInfo("/virtual/testcmd.md", { source: "local" }),
+		};
+		const resourceLoader = {
+			...createTestResourceLoader({ extensionsResult }),
+			getPrompts: () => ({ prompts: [template], diagnostics: [] }),
+		};
+		const harness = await createHarness({ resourceLoader });
 		harnesses.push(harness);
-
-		await expect(harness.session.steer("/testcmd queued")).rejects.toThrow(
-			'Extension command "/testcmd" cannot be queued. Use prompt() or execute the command when not streaming.',
-		);
-	});
-
-	it("throws when queueing an extension command with followUp", async () => {
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.registerCommand("testcmd", {
-						description: "Test command",
-						handler: async () => {},
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-
-		await expect(harness.session.followUp("/testcmd queued")).rejects.toThrow(
-			'Extension command "/testcmd" cannot be queued. Use prompt() or execute the command when not streaming.',
-		);
+		const text = "/testcmd queued";
+		const disposition = await harness.session[method](text);
+		expect(disposition).toBe("queued");
+		expect(
+			method === "steer" ? harness.session.getSteeringMessages() : harness.session.getFollowUpMessages(),
+		).toEqual([text]);
+		expect(commandRuns).toEqual([]);
 	});
 
 	it("delivers follow-ups queued during agent_end", async () => {

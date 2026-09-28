@@ -1,3 +1,4 @@
+import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import {
@@ -50,5 +51,52 @@ describe("ConfigSelectorComponent viewport", () => {
 		expect(text).toContain("C:/demo/.candy/extensions/example.ts");
 		rows = 45;
 		expect(selector.render(160).length).toBeGreaterThan(compact.length);
+	});
+
+	it("limits Agent resource view to skills and reports toggles", async () => {
+		initTheme("dark");
+		const settings = SettingsManager.inMemory();
+		let toggles = 0;
+		const paths = {
+			extensions: [],
+			skills: [
+				{
+					path: "C:/demo/.candy/skills/review/SKILL.md",
+					enabled: true,
+					metadata: {
+						source: "auto",
+						scope: "user" as const,
+						origin: "top-level" as const,
+						baseDir: "C:/demo/.candy",
+					},
+				},
+			],
+			prompts: [],
+			themes: [],
+		};
+		const selector = new ConfigSelectorComponent(
+			{ global: paths, project: paths },
+			settings,
+			"C:/demo",
+			"C:/demo/.candy",
+			() => {},
+			() => {},
+			() => {},
+			24,
+			"global",
+			true,
+			undefined,
+			{ resourceTypes: ["skills"], onToggle: () => toggles++ },
+		);
+		const text = stripAnsi(selector.render(80).join("\n"));
+		expect(text).toContain("Skills");
+		expect(text).toContain("review");
+		expect(text).not.toContain("Extensions");
+		selector.getResourceList().handleInput(" ");
+		await settings.flush();
+		expect(toggles).toBe(1);
+		expect(settings.getGlobalSettings().skills).toEqual([
+			`-${relative("C:/demo/.candy", "C:/demo/.candy/skills/review/SKILL.md")}`,
+		]);
 	});
 });

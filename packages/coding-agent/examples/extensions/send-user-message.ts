@@ -6,9 +6,9 @@
  * actual user messages that appear in the conversation as if typed by the user.
  *
  * Usage:
- *   /ask What is 2+2?     - Sends a user message (always triggers a turn)
- *   /steer Focus on X     - Sends while streaming with steer delivery
- *   /followup And then?   - Sends while streaming with followUp delivery
+ *   Open Command, choose `ask`, and enter `What is 2+2?` - sends a user message (always triggers a turn)
+ *   Open Command, choose `steer`, and enter `Focus on X` - sends while streaming with steer delivery
+ *   Open Command, choose `followup`, and enter `And then?` - sends while streaming with followUp delivery
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";
@@ -19,14 +19,14 @@ export default function (candy: ExtensionAPI) {
 		description: "Send a user message to the agent",
 		handler: async (args, ctx) => {
 			if (!args.trim()) {
-				ctx.ui.notify("Usage: /ask <message>", "warning");
+				ctx.ui.notify("Enter a message", "warning");
 				return;
 			}
 
 			// sendUserMessage always triggers a turn when not streaming
 			// If streaming, it will throw (no deliverAs specified)
 			if (!ctx.isIdle()) {
-				ctx.ui.notify("Agent is busy. Use /steer or /followup instead.", "warning");
+				ctx.ui.notify("Agent is busy. Choose steer or followup in Command.", "warning");
 				return;
 			}
 
@@ -39,7 +39,7 @@ export default function (candy: ExtensionAPI) {
 		description: "Send a steering message (interrupts current processing)",
 		handler: async (args, ctx) => {
 			if (!args.trim()) {
-				ctx.ui.notify("Usage: /steer <message>", "warning");
+				ctx.ui.notify("Enter a message", "warning");
 				return;
 			}
 
@@ -58,7 +58,7 @@ export default function (candy: ExtensionAPI) {
 		description: "Queue a follow-up message (waits for current processing)",
 		handler: async (args, ctx) => {
 			if (!args.trim()) {
-				ctx.ui.notify("Usage: /followup <message>", "warning");
+				ctx.ui.notify("Enter a message", "warning");
 				return;
 			}
 
@@ -78,7 +78,7 @@ export default function (candy: ExtensionAPI) {
 		description: "Send a user message with structured content",
 		handler: async (args, ctx) => {
 			if (!args.trim()) {
-				ctx.ui.notify("Usage: /askwith <message>", "warning");
+				ctx.ui.notify("Enter a message", "warning");
 				return;
 			}
 

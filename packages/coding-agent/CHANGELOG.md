@@ -16,22 +16,26 @@
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
 - Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, the session name, and a context line and percentage that follow usage.
-- Added a startup splash screen: the Candy logo renders as a Sixel image on supported terminals (including Windows Terminal) or a Unicode half-block sprite otherwise. The home view shows `/resume`, `/settings`, `/hotkeys`, and one tip per session; it is dismissed when the first user message is submitted.
-- Added the footer powerbar: the model and thinking labels become anchors for inline selectors rendered in the editor's bottom border. Clicking a label (or `ctrl+l` / `/thinking`) expands a track of options around the current value with ease-out per-frame positioning: pushed items glide to their new columns and entering items are revealed underneath them; selecting collapses the track back around the new value. The track is windowed with dim `‹`/`›` edge markers, so moving past the visible edge slides the window and keeps the highlight on screen. While the model track is open, typing morphs it into a fuzzy search; left/right move the highlight, enter confirms, escape collapses, and `ctrl+s` saves the highlighted thinking level as default. New `app.powerbar.left`/`app.powerbar.right` keybindings.
+- Added a startup splash screen: the Candy logo renders as a Sixel image on supported terminals (including Windows Terminal) or a Unicode half-block sprite otherwise. The home view shows History, Command, Hotkeys, and one tip per session; it is dismissed when the first user message is submitted.
+- Added the footer Powerbar: the model and thinking labels anchor inline selectors rendered in the editor's bottom border. Clicking a label or pressing `Ctrl+L` expands a track of options around the current value. The track uses ease-out per-frame positioning, edge markers, fuzzy model search, and preview. Left/Right browse; Tab switches selectors; Up opens Sources or History; Down opens Details or Agent.
 - Added explicit Shell and Shell · No Context input modes, scoped input histories, keyboard switching between footer selectors, and configurable editor animations.
+- Added Command mode for searchable local actions, settings, extensions, prompt templates, and skills. Added Sources for provider authentication and model quick-selection scope; Details for highlighted model metadata and defaults; History for session navigation and context; and Agent for instructions, skills, tools, and behavior.
+- Added scoped-model bulk actions for whole providers and search matches, mouse focus, path completion in command arguments, and prefilled History rename and model Details numeric fields. Agent Tools now confirms saved defaults and can restore inherited default tools.
 
 ### Removed
 
 - Removed the retired author Easter-egg commands, project announcements, and model-specific automatic animation triggers.
+- Removed slash-text command matching from ordinary messages and the old editor slash-completion protocol.
 
 ### Breaking Changes
 
 - Removed Ant Ling, Baseten, and Radius from provider selection. Removed `/ir`, `/tui`, `/deslop`, `/is`, `/cl`, `/sa`, `/pr`, `/bug`, and `/share`, their bundled resources, and the issue-analysis workflow. Removed Radius relay and bug-report uploads.
 - Removed the built-in llama.cpp provider, `/llama` command, and integrated router model discovery and management. Configure compatible model endpoints in `models.json`.
-- Removed interactive model cycling and scoped model selection: the top-level `--models` flag, `enabledModels`, `/scoped-models`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use `--model`, the default model setting, `/model`, or the footer selector. `candy update --models` remains the model-catalog refresh command.
+- Removed interactive model cycling and its old scoped selection API: the top-level `--models` flag, `enabledModels`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use Sources to configure the user-level quick-selection scope and the Powerbar to choose the current model. `candy update --models` remains the model-catalog refresh command.
 - Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
 - Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
 - Removed the extension `setWorkingMessage` and `setWorkingIndicator` APIs; `setWorkingVisible` remains available.
+- Message APIs no longer interpret slash-prefixed text as commands or expand prompt templates. Use `executeCommand({ source, name, args })` in the SDK or RPC `execute_command` for explicit command execution.
 
 ### Changed
 
@@ -39,7 +43,7 @@
 - Tool activity now uses connected status nodes and compact results; shell and tool previews share the configured row limit, while errors show up to 12 rows.
 - Composer autocomplete and selectors use Candy selection markers, inline file details, and panel layouts; settings are grouped into five searchable categories with region navigation.
 - Updated image, code, table, and heading presentation; Mermaid code blocks can switch between Diagram and Source, and code blocks expose a copy action.
-- `/session`, `/hotkeys`, and changelog details use a shared reading panel. Ordinary transient notices fade after a short delay, while warnings and errors remain in the transcript.
+- Session details, Hotkeys, and changelog details use a shared reading panel. Ordinary transient notices fade after a short delay, while warnings and errors remain in the transcript.
 - Thinking levels now use progressively stronger Candy colors, a six-step meter, and level-sensitive composer and activity animations.
 - Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage appears in the top bar as an occupied line and a percentage. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
 - Connected the model and thinking labels with a border line, added frame and activity animations, and applied the selected theme to CLI output and HTML exports.

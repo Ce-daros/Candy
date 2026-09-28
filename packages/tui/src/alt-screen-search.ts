@@ -202,6 +202,7 @@ export class AltScreenSearchComponent implements Component, Focusable {
 	});
 	private readonly onQueryChange: (query: string) => void;
 	private readonly navigationButtonStyle: (text: string, hovered: boolean) => string;
+	private readonly keycapStyle: (key: string) => string;
 	private readonly onNavigate: (direction: -1 | 1) => void;
 	private inline = false;
 	private resultCount = 0;
@@ -217,10 +218,12 @@ export class AltScreenSearchComponent implements Component, Focusable {
 		onQueryChange: (query: string) => void,
 		navigationButtonStyle: (text: string, hovered: boolean) => string = (text) => text,
 		onNavigate: (direction: -1 | 1) => void = () => {},
+		keycapStyle: (key: string) => string = (key) => key,
 	) {
 		this.onQueryChange = onQueryChange;
 		this.navigationButtonStyle = navigationButtonStyle;
 		this.onNavigate = onNavigate;
+		this.keycapStyle = keycapStyle;
 	}
 
 	get focused(): boolean {
@@ -309,8 +312,8 @@ export class AltScreenSearchComponent implements Component, Focusable {
 		const inputPadding = " ".repeat(Math.max(0, inputWidth - visibleWidth(inputLine)));
 		const content = `${inputLine}${inputPadding}${resultText}`;
 
-		let previousButton = `↑ ${previousKey}`;
-		let nextButton = `↓ ${nextKey}`;
+		let previousButton = `↑ ${this.keycapStyle(previousKey)}`;
+		let nextButton = `↓ ${this.keycapStyle(nextKey)}`;
 		let separator = " · ";
 		const outerGapWidth = 1;
 		const availableControlsWidth = Math.max(0, innerWidth - outerGapWidth * 2 - 1);
@@ -359,8 +362,8 @@ export class AltScreenSearchComponent implements Component, Focusable {
 						.join("+")
 				: "Unbound";
 		const keybindings = getKeybindings();
-		let previousButton = `↑ ${formatKey(keybindings.getKeys("tui.altScreen.searchPrevious")[0])}`;
-		let nextButton = `↓ ${formatKey(keybindings.getKeys("tui.altScreen.searchNext")[0])}`;
+		let previousButton = `↑ ${this.keycapStyle(formatKey(keybindings.getKeys("tui.altScreen.searchPrevious")[0]))}`;
+		let nextButton = `↓ ${this.keycapStyle(formatKey(keybindings.getKeys("tui.altScreen.searchNext")[0]))}`;
 		let separator = " · ";
 		const availableControlsWidth = Math.max(0, width - 2);
 		let controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);

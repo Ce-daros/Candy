@@ -8,8 +8,10 @@ import { AgentSession } from "../src/core/agent-session.ts";
 import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { LoadExtensionsResult } from "../src/core/extensions/index.ts";
+import type { PromptTemplate } from "../src/core/prompt-templates.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
 import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
@@ -95,6 +97,7 @@ async function createRuntimeHost(options: {
 	responseDelayMs: number;
 	model?: Model<any>;
 	extensionsResult?: LoadExtensionsResult;
+	promptTemplates?: PromptTemplate[];
 }): Promise<{
 	runtimeHost: AgentSessionRuntime;
 	cleanup: () => Promise<void>;
@@ -140,7 +143,10 @@ async function createRuntimeHost(options: {
 		settingsManager,
 		cwd: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
-		resourceLoader: createTestResourceLoader({ extensionsResult: options.extensionsResult }),
+		resourceLoader: {
+			...createTestResourceLoader({ extensionsResult: options.extensionsResult }),
+			getPrompts: () => ({ prompts: options.promptTemplates ?? [], diagnostics: [] }),
+		},
 	});
 
 	const runtimeHost = {
@@ -218,7 +224,7 @@ describe("RPC prompt response semantics", () => {
 					command: "prompt",
 					success: false,
 					error: expect.stringContaining(
-						"No API key found for fake-provider.\n\nUse /login to log into a provider via OAuth or API key. See:",
+						"No API key found for fake-provider.\n\nOpen Sources to configure provider authentication. See:",
 					),
 				});
 			});
@@ -228,11 +234,23 @@ describe("RPC prompt response semantics", () => {
 	});
 
 	// #9098: a successful prompt may start an agent run or be consumed by an extension.
-	it("emits one started response when prompt preflight succeeds", async () => {
-		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+	it("emits one started response for literal slash text", async () => {
+		const runs: string[] = [];
+		const { lineHandler, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(candy) =>
+					candy.registerCommand("handled", {
+						handler: async (args) => {
+							runs.push(args);
+						},
+					}),
+			]),
+		});
 
 		try {
-			lineHandler(JSON.stringify({ id: "b2", type: "prompt", message: "Hello" }));
+			lineHandler(JSON.stringify({ id: "b2", type: "prompt", message: "/handled argument" }));
 
 			await vi.waitFor(() => {
 				const responses = getPromptResponses(rpcIo.outputLines, "b2");
@@ -245,18 +263,32 @@ describe("RPC prompt response semantics", () => {
 					data: { disposition: "started" },
 				});
 			});
+			expect(runs).toEqual([]);
 		} finally {
 			await cleanup();
 		}
 	});
 
-	it("reports extension commands and intercepted input as handled without starting a run", async () => {
+	it("discovers same-name commands and executes each source through RPC", async () => {
+		const runs: string[] = [];
+		const template: PromptTemplate = {
+			name: "handled",
+			description: "Handled template",
+			content: "Template $1",
+			filePath: "/virtual/handled.md",
+			sourceInfo: createSyntheticSourceInfo("/virtual/handled.md", { source: "local" }),
+		};
 		const { lineHandler, cleanup } = await startRpcMode({
-			withAuth: false,
+			withAuth: true,
 			responseDelayMs: 0,
+			promptTemplates: [template],
 			extensionsResult: await createTestExtensionsResult([
 				(candy) => {
-					candy.registerCommand("handled", { handler: async () => {} });
+					candy.registerCommand("handled", {
+						handler: async (args) => {
+							runs.push(args);
+						},
+					});
 					candy.on("input", (event) => {
 						if (event.text === "handled input") return { action: "handled" };
 					});
@@ -265,18 +297,71 @@ describe("RPC prompt response semantics", () => {
 		});
 
 		try {
-			for (const [id, message] of [
-				["command", "/handled"],
-				["input", "handled input"],
-			]) {
-				lineHandler(JSON.stringify({ id, type: "prompt", message }));
-				await vi.waitFor(() => {
-					expect(getPromptResponses(rpcIo.outputLines, id)).toEqual([
-						{ id, type: "response", command: "prompt", success: true, data: { disposition: "handled" } },
-					]);
+			lineHandler(JSON.stringify({ id: "commands", type: "get_commands" }));
+			await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((line) => line.id === "commands");
+				expect(response).toMatchObject({
+					success: true,
+					data: {
+						commands: [
+							{ source: "extension", name: "handled" },
+							{ source: "prompt", name: "handled" },
+						],
+					},
 				});
-			}
+			});
+			lineHandler(
+				JSON.stringify({
+					id: "command",
+					type: "execute_command",
+					source: "extension",
+					name: "handled",
+					args: "extension",
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "command",
+					type: "response",
+					command: "execute_command",
+					success: true,
+					data: { disposition: "handled" },
+				});
+			});
+			expect(runs).toEqual(["extension"]);
+			lineHandler(JSON.stringify({ id: "input", type: "prompt", message: "handled input" }));
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "input")).toEqual([
+					{ id: "input", type: "response", command: "prompt", success: true, data: { disposition: "handled" } },
+				]);
+			});
 			expect(parseOutputLines(rpcIo.outputLines).filter((line) => line.type === "agent_start")).toHaveLength(0);
+			lineHandler(
+				JSON.stringify({
+					id: "template",
+					type: "execute_command",
+					source: "prompt",
+					name: "handled",
+					args: "argument",
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "template",
+					type: "response",
+					command: "execute_command",
+					success: true,
+					data: { disposition: "started" },
+				});
+			});
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).some((line) => line.type === "agent_settled")).toBe(true),
+			);
+			lineHandler(JSON.stringify({ id: "messages", type: "get_messages" }));
+			await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((line) => line.id === "messages");
+				expect(JSON.stringify(response)).toContain("Template argument");
+			});
 		} finally {
 			await cleanup();
 		}

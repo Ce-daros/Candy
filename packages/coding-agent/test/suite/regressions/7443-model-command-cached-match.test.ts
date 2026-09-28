@@ -1,14 +1,9 @@
-import type { Api, Model } from "@candy/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
+import { PowerbarController, type PowerbarHost } from "../../../src/modes/interactive/components/powerbar.ts";
+import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
 import { createHarness, type Harness } from "../harness.ts";
 
-const findExactModelMatch = Reflect.get(InteractiveMode.prototype, "findExactModelMatch") as (
-	this: object,
-	searchTerm: string,
-) => Promise<Model<Api> | undefined>;
-
-describe("issue #7443 /model cached match", () => {
+describe("issue #7443 cached Powerbar models", () => {
 	let harness: Harness | undefined;
 
 	afterEach(() => {
@@ -17,30 +12,30 @@ describe("issue #7443 /model cached match", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("matches the availability snapshot without starting a catalog refresh", async () => {
+	// Regression for #7443: opening the quick selector must not wait on a catalog request.
+	it("browses the available snapshot without refreshing the catalog", async () => {
+		initTheme(undefined, false);
 		harness = await createHarness({ models: [{ id: "cached", name: "Cached" }] });
 		const refresh = vi.spyOn(harness.session.modelRuntime, "refresh").mockImplementation(() => new Promise(() => {}));
-		const context = { session: harness.session, showStatus: vi.fn(), showWarning: vi.fn() };
+		const runtime = harness.session.modelRuntime;
+		const host: PowerbarHost = {
+			requestRender() {},
+			getThinkingLevels: () => ["off"],
+			getThinkingLevel: () => "off",
+			getModels: () =>
+				runtime
+					.getAvailableSnapshot()
+					.filter((model) => model.id === "cached")
+					.map((model) => ({ model, label: model.name })),
+			getCurrentModelIndex: () => 0,
+			applyThinking() {},
+			applyModel() {},
+		};
+		const powerbar = new PowerbarController(host);
+		powerbar.render(80);
+		powerbar.openModelBrowse({ anchorWidth: 8 });
 
-		const model = await findExactModelMatch.call(context, harness.models[0].id);
-
-		expect(model?.id).toBe("cached");
+		expect(powerbar.getHighlightedModel()?.id).toBe("cached");
 		expect(refresh).not.toHaveBeenCalled();
-		expect(context.showStatus).not.toHaveBeenCalled();
-	});
-
-	it("uses a caller-owned deadline only after a cache miss", async () => {
-		harness = await createHarness({ models: [{ id: "cached", name: "Cached" }] });
-		const refresh = vi.spyOn(harness.session.modelRuntime, "refresh").mockResolvedValue({
-			aborted: true,
-			errors: new Map(),
-		});
-		const context = { session: harness.session, showStatus: vi.fn(), showWarning: vi.fn() };
-
-		await expect(findExactModelMatch.call(context, "not-cached")).resolves.toBeUndefined();
-
-		expect(refresh).toHaveBeenCalledOnce();
-		expect(refresh.mock.calls[0]?.[0]?.signal).toBeInstanceOf(AbortSignal);
-		expect(context.showStatus).toHaveBeenCalledWith("Refreshing model catalogs…");
 	});
 });

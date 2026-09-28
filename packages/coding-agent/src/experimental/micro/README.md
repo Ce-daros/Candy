@@ -25,10 +25,8 @@ processes from owning one session concurrently.
 - ordinary submit: prompt while idle, steer while a turn is active
 - configured follow-up key: queue a follow-up
 - escape: abort the active turn and compaction
-- `/compact`: start manual compaction
-- `/model` or Ctrl+L: select a model
-- Shift+Tab: cycle the current model's supported thinking levels
-- `/login`: configure provider authentication
+- `/` in an empty editor: open Command for model selection, login, thinking, and compaction
+- Ctrl+L: select a model
 - configured clear key or Ctrl+D: exit while preserving durable work for `--continue`
 
 The footer shows cumulative input/output/cache tokens, the latest cache-hit rate, total session cost,

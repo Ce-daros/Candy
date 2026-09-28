@@ -3,7 +3,7 @@
  *
  * Allows defining named presets that configure model, thinking level, tools,
  * and system prompt instructions. Presets are defined in JSON config files
- * and can be activated via CLI flag, /preset command, or Ctrl+Shift+U to cycle.
+ * and can be activated via CLI flag, the `preset` Command entry, or Ctrl+Shift+U to cycle.
  *
  * Config files (merged, project takes precedence):
  * - ~/.candy/agent/presets.json (global)
@@ -32,7 +32,7 @@
  * Usage:
  * - `candy --preset plan` - start with plan preset
  * - `/preset` - show selector to switch presets mid-session
- * - `/preset implement` - switch to implement preset directly
+ * - Open Command, choose `preset`, and enter `implement` to switch directly
  * - `Ctrl+Shift+U` - cycle through presets
  *
  * CLI flags always override preset values.
@@ -356,7 +356,7 @@ export default function presetExtension(candy: ExtensionAPI) {
 		},
 	});
 
-	// Register /preset command
+	// Register the `preset` Command entry
 	candy.registerCommand("preset", {
 		description: "Switch preset configuration",
 		handler: async (args, ctx) => {

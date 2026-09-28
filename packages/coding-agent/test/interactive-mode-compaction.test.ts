@@ -277,7 +277,6 @@ describe("InteractiveMode compaction events", () => {
 				steer: vi.fn().mockResolvedValue(undefined),
 				followUp: vi.fn().mockResolvedValue(undefined),
 			},
-			isExtensionCommand: vi.fn().mockReturnValue(false),
 			updatePendingMessagesDisplay: vi.fn(),
 			showError: vi.fn(),
 		};
@@ -292,5 +291,29 @@ describe("InteractiveMode compaction events", () => {
 		expect(fakeThis.session.prompt).toHaveBeenCalledWith("change direction", { streamingBehavior: "steer" });
 		expect(fakeThis.compactionQueuedMessages).toEqual([]);
 		expect(fakeThis.showError).not.toHaveBeenCalled();
+	});
+
+	test("flushes slash-prefixed text as an ordinary queued message", async () => {
+		const fakeThis = {
+			compactionQueuedMessages: [{ text: "/compact", mode: "followUp" as const }],
+			session: {
+				clearQueue: vi.fn(),
+				prompt: vi.fn().mockResolvedValue(undefined),
+				steer: vi.fn().mockResolvedValue(undefined),
+				followUp: vi.fn().mockResolvedValue(undefined),
+			},
+			updatePendingMessagesDisplay: vi.fn(),
+			showError: vi.fn(),
+		};
+		const flushCompactionQueue = Reflect.get(InteractiveMode.prototype, "flushCompactionQueue") as (
+			this: typeof fakeThis,
+			options?: { willRetry?: boolean },
+		) => Promise<void>;
+
+		await flushCompactionQueue.call(fakeThis, { willRetry: true });
+
+		expect(fakeThis.session.followUp).toHaveBeenCalledWith("/compact");
+		expect(fakeThis.session.prompt).not.toHaveBeenCalled();
+		expect(fakeThis.compactionQueuedMessages).toEqual([]);
 	});
 });

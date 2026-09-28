@@ -2,7 +2,7 @@
  * Extension system for lifecycle events and custom tools.
  */
 
-export type { SlashCommandInfo, SlashCommandSource } from "../slash-commands.ts";
+export type { CommandInfo, CommandInvocation, CommandSource } from "../commands.ts";
 export type { SourceInfo } from "../source-info.ts";
 export {
 	createExtensionRuntime,

@@ -4,7 +4,7 @@
  * Usage: candy --extension ./examples/extensions/doom-overlay
  *
  * Commands:
- *   /doom-overlay - Play DOOM in an overlay (Q to pause/exit)
+ *   Open Command and choose `doom-overlay` to play DOOM in an overlay (Q to pause/exit)
  *
  * This demonstrates that overlays can handle real-time game rendering at 35 FPS.
  */

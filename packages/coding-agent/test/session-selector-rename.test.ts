@@ -38,7 +38,7 @@ describe("session selector rename", () => {
 		setKeybindings(new KeybindingsManager());
 	});
 
-	it("shows rename hint in interactive /resume picker configuration", async () => {
+	it("shows rename hint in the interactive History picker", async () => {
 		const sessions = [makeSession({ id: "a" })];
 		const keybindings = new KeybindingsManager();
 		const selector = new SessionSelectorComponent(
@@ -53,7 +53,7 @@ describe("session selector rename", () => {
 		await flushPromises();
 
 		const output = selector.render(120).join("\n");
-		expect(output).toContain("ctrl+r");
+		expect(output).toContain("<Ctrl+R>");
 		expect(output).toContain("rename");
 	});
 
@@ -72,7 +72,7 @@ describe("session selector rename", () => {
 		await flushPromises();
 
 		const output = selector.render(120).join("\n");
-		expect(output).not.toContain("ctrl+r");
+		expect(output).not.toContain("<Ctrl+R>");
 		expect(output).not.toContain("rename");
 	});
 

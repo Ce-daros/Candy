@@ -13,12 +13,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, describe, expect, test } from "vitest";
 import { getAgentDir } from "../src/config.ts";
-import {
-	expandPromptTemplate,
-	loadPromptTemplates,
-	parseCommandArgs,
-	substituteArgs,
-} from "../src/core/prompt-templates.ts";
+import { loadPromptTemplates, parseCommandArgs, substituteArgs } from "../src/core/prompt-templates.ts";
 
 // ============================================================================
 // substituteArgs
@@ -425,40 +420,6 @@ describe("parseCommandArgs", () => {
 
 	test("should handle leading spaces", () => {
 		expect(parseCommandArgs("   a b c")).toEqual(["a", "b", "c"]);
-	});
-});
-
-// ============================================================================
-// Integration
-// ============================================================================
-
-describe("expandPromptTemplate", () => {
-	test("should split template arguments on unquoted newlines", () => {
-		const result = expandPromptTemplate("/arg-test label-2\n\nHere is some description #2.", [
-			{
-				name: "arg-test",
-				description: "test",
-				content: `- arg1: $1\n- rest: \${@:2}`,
-				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
-				filePath: "/tmp/arg-test.md",
-			},
-		]);
-
-		expect(result).toBe("- arg1: label-2\n- rest: Here is some description #2.");
-	});
-
-	test("should support template command separated from args by newline", () => {
-		const result = expandPromptTemplate("/arg-test\nlabel-2", [
-			{
-				name: "arg-test",
-				description: "test",
-				content: "arg1: $1",
-				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
-				filePath: "/tmp/arg-test.md",
-			},
-		]);
-
-		expect(result).toBe("arg1: label-2");
 	});
 });
 

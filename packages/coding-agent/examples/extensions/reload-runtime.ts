@@ -1,8 +1,8 @@
 /**
  * Reload Runtime Extension
  *
- * Demonstrates ctx.reload() from ExtensionCommandContext and an LLM-callable
- * tool that queues a follow-up command to trigger reload.
+ * Demonstrates ctx.reload() from ExtensionCommandContext. The tool explains
+ * how to run the command after the current turn.
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";
@@ -19,18 +19,22 @@ export default function (candy: ExtensionAPI) {
 		},
 	});
 
-	// LLM-callable tool. Tools get ExtensionContext, so they cannot call ctx.reload() directly.
-	// Instead, queue a follow-up user command that executes the command above.
+	// Tools run during an agent turn. Reload is available from the Command entry when idle.
 	candy.registerTool({
 		name: "reload_runtime",
 		label: "Reload Runtime",
-		description: "Reload extensions, skills, prompts, themes, and context files",
+		description: "Explain how to reload extensions, skills, prompts, themes, and context files",
 		parameters: Type.Object({}),
 		async execute() {
-			candy.sendUserMessage("/reload-runtime", { deliverAs: "followUp" });
 			return {
-				content: [{ type: "text", text: "Queued /reload-runtime as a follow-up command." }],
+				content: [
+					{
+						type: "text",
+						text: "Reload requires an idle session. Choose reload-runtime in Command after this turn.",
+					},
+				],
 				details: {},
+				isError: true,
 			};
 		},
 	});

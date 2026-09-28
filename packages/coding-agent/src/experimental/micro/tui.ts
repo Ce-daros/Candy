@@ -26,7 +26,7 @@ import { CustomEditor } from "../../modes/interactive/components/custom-editor.t
 import { DynamicBorder } from "../../modes/interactive/components/dynamic-border.ts";
 import { ExtensionSelectorComponent } from "../../modes/interactive/components/extension-selector.ts";
 import { formatTokens } from "../../modes/interactive/components/footer.ts";
-import { keyText } from "../../modes/interactive/components/keybinding-hints.ts";
+import { keyHint, rawKeyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { LoginDialogComponent } from "../../modes/interactive/components/login-dialog.ts";
 import {
 	type AuthSelectorProvider,
@@ -36,6 +36,7 @@ import { type StatusIndicator, WorkingStatusIndicator } from "../../modes/intera
 import { ToolExecutionComponent, type ToolRenderers } from "../../modes/interactive/components/tool-execution.ts";
 import { UserMessageComponent } from "../../modes/interactive/components/user-message.ts";
 import { getEditorTheme, initTheme, theme } from "../../modes/interactive/theme/theme.ts";
+import { CommandMenu } from "../command-menu.ts";
 import type { MicroAuthView, MicroController, MicroProviderAccount, MicroView, MicroViewSource } from "./api.ts";
 
 const SELECT_THEME: SelectListTheme = {
@@ -108,7 +109,7 @@ interface TuiHandlers {
 	abort(): void;
 	exit(): void;
 	selectModel(): void;
-	cycleThinking(): void;
+	openCommands(): void;
 }
 
 class MicroTui {
@@ -141,7 +142,11 @@ class MicroTui {
 		this.#editor.onCtrlD = handlers.exit;
 		this.#editor.onAction("app.clear", handlers.exit);
 		this.#editor.onAction("app.model.select", handlers.selectModel);
-		this.#editor.onAction("app.thinking.cycle", handlers.cycleThinking);
+		this.#editor.modeInputHandler = (data) => {
+			if (data !== "/" || this.#editor.getText().length !== 0) return false;
+			handlers.openCommands();
+			return true;
+		};
 		this.#editor.onAction("app.message.followUp", () => {
 			const text = this.#editor.getText().trim();
 			if (!text) return;
@@ -259,10 +264,7 @@ class MicroTui {
 		const model = modelRef(view.conversation.config.model);
 		const thinking = String(view.conversation.config.thinkingLevel ?? "off");
 		this.#footerHints.setText(
-			theme.fg(
-				"dim",
-				`${model ? `${model.provider}/${model.modelId}` : "no model"} · thinking:${thinking} (${keyText("app.thinking.cycle")}) · ${keyText("app.model.select")} or /model · /login · /compact · ${keyText("app.message.followUp")} follow-up · ${keyText("app.clear")} exit`,
-			),
+			`${theme.fg("dim", `${model ? `${model.provider}/${model.modelId}` : "no model"} · thinking:${thinking}`)} · ${keyHint("app.model.select", "model")} · ${rawKeyHint("/", "Command")} · ${keyHint("app.message.followUp", "follow-up")} · ${keyHint("app.clear", "exit")}`,
 		);
 	}
 
@@ -479,21 +481,44 @@ export async function runMicroTui(source: MicroViewSource, controller: MicroCont
 		);
 		view.mount(selector, selector);
 	};
+	const openCommands = (): void => {
+		const menu = new CommandMenu(
+			[
+				{ source: "local", name: "model", description: "Select model" },
+				{ source: "local", name: "login", description: "Sign in" },
+				{ source: "local", name: "compact", description: "Compact context" },
+				{ source: "local", name: "thinking", description: "Cycle thinking" },
+			],
+			(item) => {
+				if (item.name === "compact") {
+					void controller.compact();
+					return true;
+				}
+				if (item.name === "thinking") {
+					void controller.cycleThinking();
+					return true;
+				}
+				view.restoreEditor();
+				if (item.name === "model") selectModel();
+				else login();
+				return false;
+			},
+			() => view.restoreEditor(),
+		);
+		view.mount(menu, menu);
+	};
 
 	view = new MicroTui(source.current().session.cwd, {
 		submit: (text) => {
 			const trimmed = text.trim();
 			if (!trimmed) return;
-			if (trimmed === "/model") return selectModel();
-			if (trimmed === "/login") return login();
-			if (trimmed === "/compact") return void controller.compact();
 			void (source.current().conversation.turn ? controller.steer(trimmed) : controller.prompt(trimmed));
 		},
 		followUp: (text) => void controller.followUp(text),
 		abort: () => void controller.abort(),
 		exit,
 		selectModel,
-		cycleThinking: () => void controller.cycleThinking(),
+		openCommands,
 	});
 
 	let authDialog: LoginDialogComponent | undefined;

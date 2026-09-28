@@ -17,7 +17,6 @@ export {
 	type AutocompleteProvider,
 	type AutocompleteSuggestions,
 	CombinedAutocompleteProvider,
-	type SlashCommand,
 } from "./autocomplete.ts";
 // Colors and styling
 export {

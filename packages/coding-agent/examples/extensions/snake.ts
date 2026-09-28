@@ -1,5 +1,5 @@
 /**
- * Snake game extension - play snake with /snake command
+ * Snake game extension - open Command and choose `snake` to play
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";

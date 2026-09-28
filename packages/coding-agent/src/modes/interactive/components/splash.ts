@@ -10,6 +10,7 @@ import {
 	visibleWidth,
 } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
+import { keycap, keyText } from "./keybinding-hints.ts";
 import {
 	SIXEL_HEIGHT_PX,
 	SIXEL_SEQUENCE,
@@ -21,16 +22,17 @@ import {
 } from "./splash-logo.generated.ts";
 
 const TIPS = [
-	"Type @ to find a file.",
-	"Use ! to run a shell command.",
-	"Use !! to run a command outside model context.",
-	"Open /model to choose a model.",
-	"Open /thinking to choose a thinking level.",
-	"Open /tree to revisit a conversation branch.",
-	"Open /fork to continue from an earlier message.",
-	"Click an activity title to expand its details.",
-	"Open /settings to preview a different theme.",
-	"Open /session to see usage and session details.",
+	() => `${theme.fg("dim", "Type ")}${keycap("@")}${theme.fg("dim", " to find a file.")}`,
+	() => `${theme.fg("dim", "Use ")}${keycap("!")}${theme.fg("dim", " to run a shell command.")}`,
+	() => `${theme.fg("dim", "Use ")}${keycap("!!")}${theme.fg("dim", " to run a command outside model context.")}`,
+	() => `${theme.fg("dim", "Use ")}${keycap(keyText("app.model.select"))}${theme.fg("dim", " to choose a model.")}`,
+	() =>
+		`${theme.fg("dim", "Press ")}${keycap(keyText("app.powerbar.next"))}${theme.fg("dim", " in the Powerbar to choose Thinking.")}`,
+	() => theme.fg("dim", "Open History to revisit a conversation branch."),
+	() => theme.fg("dim", "Open History to fork an earlier message."),
+	() => theme.fg("dim", "Click an activity title to expand its details."),
+	() => theme.fg("dim", "Open Command to change the theme."),
+	() => theme.fg("dim", "Open History to see usage and session details."),
 ] as const;
 
 /** Unicode half-block sprite of the Candy logo for terminals without image protocols. */
@@ -130,7 +132,7 @@ class SplashActions implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const commands = ["/resume", "/settings", "/hotkeys"];
+		const commands = ["History", "Command", "Hotkeys"];
 		const text = commands.join("     ");
 		let column = Math.max(0, Math.floor((width - visibleWidth(text)) / 2));
 		const left = " ".repeat(column);
@@ -139,11 +141,11 @@ class SplashActions implements Component {
 			column += command.length + 5;
 			return region;
 		});
-		const tip = truncateToWidth(this.tip, width, "");
+		const tip = truncateToWidth(this.tip(), width, "");
 		return [
 			truncateToWidth(left + commands.map((command) => theme.fg("accent", command)).join("     "), width, ""),
 			"",
-			" ".repeat(Math.max(0, Math.floor((width - visibleWidth(tip)) / 2))) + theme.fg("dim", tip),
+			" ".repeat(Math.max(0, Math.floor((width - visibleWidth(tip)) / 2))) + tip,
 		];
 	}
 

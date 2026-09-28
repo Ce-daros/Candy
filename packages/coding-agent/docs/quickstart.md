@@ -39,19 +39,13 @@ The working folder helps candy discover relevant files, instructions, and config
 
 <p align="center"><img src="images/interactive-mode.png" alt="candy home screen with logo, shortcuts, prompt editor, and thinking level" width="750"></p>
 
-The home screen shows the Candy logo and shortcuts to resume a session, open settings, or inspect hotkeys. Your conversation appears above the prompt editor. The editor's lower border shows the model and thinking level; the top bar tracks context usage. See [Use candy in the terminal](usage.md) to learn how to add files, run commands, direct ongoing work, and manage results.
+The home screen shows the Candy logo and current controls. Your conversation appears above the prompt editor. The editor's lower border shows the model and thinking level; the top bar tracks context usage. See [Use candy in the terminal](usage.md) to learn how to add files, open Command, direct ongoing work, and manage results.
 
 ## 3. Choose a model
 
 A **model** generates candy's responses. A **provider** is the service or account candy uses to access that model.
 
-In candy, run:
-
-```text
-/login
-```
-
-Choose a provider, then follow the prompts to use a subscription or store an API key. Run `/model` afterward if you want to select a different available model.
+Press `Ctrl+L` to open Model, then `Up` for Sources. Choose a provider and connect a subscription or store an API key. Return to Model and use `Left` or `Right` to choose an available model.
 
 See [Choose a model and provider](models.md) for supported providers, environment-variable authentication, local models, and custom endpoints.
 
@@ -83,7 +77,7 @@ candy saves sessions automatically. Exit candy, then resume the most recent sess
 candy --continue
 ```
 
-Use `/resume` to choose another saved session. See [Continue or branch a session](sessions.md) for session naming, branching, compaction, export, and sharing.
+Open Thinking → History → Resume / Switch session to choose another saved session. See [Continue or branch a session](sessions.md) for session naming, branching, compaction, and export.
 
 ## Next steps
 
@@ -98,7 +92,7 @@ Start with the least powerful mechanism that meets your need:
 | Need | Start with |
 |---|---|
 | Give candy persistent instructions for a folder | [`AGENTS.md`](configuration.md#context-files) |
-| Reuse a prompt from the `/` menu | [Prompt template](prompt-templates.md) |
+| Reuse a prompt from Command | [Prompt template](prompt-templates.md) |
 | Add task-specific instructions and supporting files | [Skill](skills.md) |
 | Add executable tools, commands, or event handlers | [Extension](extensions.md) |
 | Build a custom terminal component | [Terminal UI](tui.md) |

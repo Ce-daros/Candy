@@ -1,5 +1,5 @@
 /**
- * Space Invaders game extension - play with /invaders command
+ * Space Invaders game extension - open Command and choose `invaders` to play
  * Uses Kitty keyboard protocol for smooth movement (press/release detection)
  */
 

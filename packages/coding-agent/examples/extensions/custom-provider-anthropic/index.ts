@@ -4,7 +4,7 @@
  * Demonstrates registering a custom provider with:
  * - Custom API identifier ("custom-anthropic-api")
  * - Custom streamSimple implementation
- * - OAuth support for /login
+ * - OAuth support managed from Sources
  * - API key support via environment variable
  * - Two model definitions
  *
@@ -12,13 +12,13 @@
  *   # First install dependencies
  *   cd packages/coding-agent/examples/extensions/custom-provider && npm install
  *
- *   # With OAuth (run /login custom-anthropic first)
+ *   # With OAuth, open Sources and connect custom-anthropic
  *   candy -e ./packages/coding-agent/examples/extensions/custom-provider
  *
  *   # With API key
  *   CUSTOM_ANTHROPIC_API_KEY=sk-ant-... candy -e ./packages/coding-agent/examples/extensions/custom-provider
  *
- * Then use /model to select custom-anthropic/claude-sonnet-4-5
+ * Then select custom-anthropic/claude-sonnet-4-5 in the Model selector
  */
 
 import Anthropic from "@anthropic-ai/sdk";

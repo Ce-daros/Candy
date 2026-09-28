@@ -1,12 +1,12 @@
 /**
  * Tools Extension
  *
- * Provides a /tools command to enable/disable tools interactively.
+ * Provides a `tools` Command entry to enable or disable tools interactively.
  * Tool selection persists across session reloads and respects branch navigation.
  *
  * Usage:
  * 1. Copy this file to ~/.candy/agent/extensions/ or your project's .candy/extensions/
- * 2. Use /tools to open the tool selector
+ * 2. Open Command and choose `tools` to open the tool selector
  */
 
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@candy/coding-agent";
@@ -63,12 +63,12 @@ export default function toolsExtension(candy: ExtensionAPI) {
 		}
 	}
 
-	// Register /tools command
+	// Register the `tools` Command entry
 	candy.registerCommand("tools", {
 		description: "Enable/disable tools",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
-				ctx.ui.notify("/tools requires TUI mode", "error");
+				ctx.ui.notify("Tools requires interactive mode", "error");
 				return;
 			}
 

@@ -1755,7 +1755,7 @@ export class SessionManager {
 	/**
 	 * Open a specific session file.
 	 * @param path Path to session file
-	 * @param sessionDir Optional session directory for /new or /branch. If omitted, derives from file's parent.
+	 * @param sessionDir Optional session directory for creating a session or starting a branch. If omitted, derives from file's parent.
 	 * @param cwdOverride Optional cwd override instead of the session header cwd.
 	 */
 	static open(path: string, sessionDir?: string, cwdOverride?: string): SessionManager {

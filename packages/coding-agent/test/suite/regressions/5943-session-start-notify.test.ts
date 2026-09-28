@@ -71,16 +71,17 @@ type LoadedResourcesContext = {
 	formatDisplayPath: (resourcePath: string) => string;
 	formatContextPath: (resourcePath: string) => string;
 	getCompactExtensionLabels: (extensions: Array<{ path: string }>) => string[];
-	getBuiltInCommandConflictDiagnostics: (extensionRunner: LoadedResourcesContext["session"]["extensionRunner"]) => [];
 };
 
 type RebindContext = {
 	session: object;
-	shellMode: "normal" | "shell" | "shell-no-context";
-	setShellMode(this: RebindContext, mode: RebindContext["shellMode"]): void;
+	presentation: { active: boolean; finish(): void };
+	cancelActiveLogin: () => void;
+	inputMode: "normal" | "shell" | "shell-no-context" | "command";
+	setInputMode(this: RebindContext, mode: RebindContext["inputMode"]): void;
 	defaultEditor: {
 		setHistoryScope: (scope: string) => void;
-		setShellMode: (mode: RebindContext["shellMode"]) => void;
+		setInputMode: (mode: RebindContext["inputMode"]) => void;
 		restartEntranceAnimation: () => void;
 	};
 	unsubscribe?: () => void;
@@ -141,7 +142,7 @@ type InteractiveModePrototype = {
 		this: LoadedResourcesContext,
 		options?: { extensions?: Array<{ path: string }>; force?: boolean; showDiagnosticsWhenQuiet?: boolean },
 	): void;
-	setShellMode(this: RebindContext, mode: RebindContext["shellMode"]): void;
+	setInputMode(this: RebindContext, mode: RebindContext["inputMode"]): void;
 	rebindCurrentSession(this: RebindContext, options?: { renderBeforeBind?: boolean }): Promise<void>;
 	handleReloadCommand(this: ReloadCommandContext): Promise<void>;
 };
@@ -257,7 +258,6 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 		formatDisplayPath: (resourcePath) => resourcePath,
 		formatContextPath: (resourcePath) => resourcePath.replace("/repo/", ""),
 		getCompactExtensionLabels: () => [],
-		getBuiltInCommandConflictDiagnostics: () => [],
 	};
 }
 
@@ -298,11 +298,13 @@ describe("regression #5943: session_start transient UI", () => {
 			const session = {};
 			const context: RebindContext = {
 				session,
-				shellMode: "shell-no-context",
-				setShellMode: interactiveModePrototype.setShellMode,
+				presentation: { active: false, finish: () => {} },
+				cancelActiveLogin: () => {},
+				inputMode: "shell-no-context",
+				setInputMode: interactiveModePrototype.setInputMode,
 				defaultEditor: {
 					setHistoryScope: (scope) => events.push(`history:${scope}`),
-					setShellMode: (mode) => events.push(`shell:${mode}`),
+					setInputMode: (mode) => events.push(`shell:${mode}`),
 					restartEntranceAnimation: () => events.push("editor-entrance"),
 				},
 				applyRuntimeSettings: () => events.push("apply"),
@@ -363,11 +365,13 @@ describe("regression #5943: session_start transient UI", () => {
 			const session = {};
 			const context: RebindContext = {
 				session,
-				shellMode: "shell-no-context",
-				setShellMode: interactiveModePrototype.setShellMode,
+				presentation: { active: false, finish: () => {} },
+				cancelActiveLogin: () => {},
+				inputMode: "shell-no-context",
+				setInputMode: interactiveModePrototype.setInputMode,
 				defaultEditor: {
 					setHistoryScope: () => {},
-					setShellMode: () => {},
+					setInputMode: () => {},
 					restartEntranceAnimation: () => {},
 				},
 				applyRuntimeSettings: () => {},
@@ -424,11 +428,13 @@ describe("regression #5943: session_start transient UI", () => {
 			const session = {};
 			const context: RebindContext = {
 				session,
-				shellMode: "shell-no-context",
-				setShellMode: interactiveModePrototype.setShellMode,
+				presentation: { active: false, finish: () => {} },
+				cancelActiveLogin: () => {},
+				inputMode: "shell-no-context",
+				setInputMode: interactiveModePrototype.setInputMode,
 				defaultEditor: {
 					setHistoryScope: () => {},
-					setShellMode: () => {},
+					setInputMode: () => {},
 					restartEntranceAnimation: () => {},
 				},
 				applyRuntimeSettings: () => {},

@@ -8,6 +8,7 @@ const testTheme: SettingsListTheme = {
 	description: (text) => text,
 	cursor: "> ",
 	hint: (text) => text,
+	keycap: (key) => `<${key}>`,
 };
 
 const items = [

@@ -20,7 +20,7 @@ import { KeybindingsManager } from "../../../core/keybindings.ts";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
-import { keyHint, keyText } from "./keybinding-hints.ts";
+import { keycap, keyHint, keyText } from "./keybinding-hints.ts";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
 
 type SessionScope = "current" | "all";
@@ -158,8 +158,8 @@ class SessionSelectorHeader implements Component {
 		let hintLine1: string;
 		let hintLine2: string;
 		if (this.confirmingDeletePath !== null) {
-			const confirmHint = `Delete session? ${keyHint("tui.select.confirm", "confirm")} · ${keyHint("tui.select.cancel", "cancel")}`;
-			hintLine1 = theme.fg("error", truncateToWidth(confirmHint, width, "…"));
+			const confirmHint = `${theme.fg("error", "Delete session?")} ${keyHint("tui.select.confirm", "confirm")} · ${keyHint("tui.select.cancel", "cancel")}`;
+			hintLine1 = truncateToWidth(confirmHint, width, "…");
 			hintLine2 = "";
 		} else if (this.statusMessage) {
 			const color = this.statusMessage.type === "error" ? "error" : "accent";
@@ -439,20 +439,20 @@ class SessionList implements Component, Focusable {
 		if (this.filteredSessions.length === 0) {
 			let emptyMessage: string;
 			if (this.nameFilter === "named") {
-				const toggleKey = keyText("app.session.toggleNamedFilter");
+				const toggleKey = keycap(keyText("app.session.toggleNamedFilter"));
 				if (this.showCwd) {
-					emptyMessage = `  No named sessions found. Press ${toggleKey} to show all.`;
+					emptyMessage = `${theme.fg("muted", "  No named sessions found. Press ")}${toggleKey}${theme.fg("muted", " to show all.")}`;
 				} else {
-					emptyMessage = `  No named sessions in current folder. Press ${toggleKey} to show all, or Alt+S to view all.`;
+					emptyMessage = `${theme.fg("muted", "  No named sessions in current folder. Press ")}${toggleKey}${theme.fg("muted", " to show all, or ")}${keycap(keyText("app.panel.scope"))}${theme.fg("muted", " to view all.")}`;
 				}
 			} else if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
-				emptyMessage = "  No sessions found";
+				emptyMessage = theme.fg("muted", "  No sessions found");
 			} else {
 				// "Current folder" scope - hint to try "all"
-				emptyMessage = "  No sessions in current folder. Press Alt+S to view all.";
+				emptyMessage = `${theme.fg("muted", "  No sessions in current folder. Press ")}${keycap(keyText("app.panel.scope"))}${theme.fg("muted", " to view all.")}`;
 			}
-			lines.push(theme.fg("muted", truncateToWidth(emptyMessage, width, "…")));
+			lines.push(truncateToWidth(emptyMessage, width, "…"));
 			while (lines.length < this.availableHeight - 1) lines.push("");
 			this.lastSearchRow = lines.length;
 			lines.push(...this.searchInput.render(width));
@@ -970,11 +970,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		panel.addChild(this.renameInput);
 		panel.addChild(new Spacer(1));
 		panel.addChild(
-			new Text(
-				theme.fg("muted", `${keyText("tui.select.confirm")} to save · ${keyText("tui.select.cancel")} to cancel`),
-				1,
-				0,
-			),
+			new Text(`${keyHint("tui.select.confirm", "to save")} · ${keyHint("tui.select.cancel", "to cancel")}`, 1, 0),
 		);
 
 		this.buildBaseLayout(panel, { showHeader: false });

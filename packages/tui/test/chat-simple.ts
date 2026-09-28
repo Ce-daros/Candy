@@ -20,21 +20,12 @@ const terminal = new ProcessTerminal();
 const tui: TUI = new TuiMainScreen(terminal);
 
 // Create chat container with some initial messages
-tui.addChild(
-	new Text("Welcome to Simple Chat!\n\nType your messages below. Type '/' for commands. Press Ctrl+C to exit."),
-);
+tui.addChild(new Text("Welcome to Simple Chat!\n\nType your messages below. Press Ctrl+C to exit."));
 
 // Create editor with autocomplete
 const editor = new Editor(tui, defaultEditorTheme);
 
-// Set up autocomplete provider with slash commands and file completion
-const autocompleteProvider = new CombinedAutocompleteProvider(
-	[
-		{ name: "delete", description: "Delete the last message" },
-		{ name: "clear", description: "Clear all messages" },
-	],
-	process.cwd(),
-);
+const autocompleteProvider = new CombinedAutocompleteProvider(process.cwd());
 editor.setAutocompleteProvider(autocompleteProvider);
 
 tui.addChild(editor);
@@ -53,29 +44,6 @@ editor.onSubmit = (value: string) => {
 	}
 
 	const trimmed = value.trim();
-
-	// Handle slash commands
-	if (trimmed === "/delete") {
-		const children = tui.children;
-		// Remove component before editor (if there are any besides the initial text)
-		if (children.length > 3) {
-			// children[0] = "Welcome to Simple Chat!"
-			// children[1] = "Type your messages below..."
-			// children[2...n-1] = messages
-			// children[n] = editor
-			children.splice(children.length - 2, 1);
-		}
-		tui.requestRender();
-		return;
-	}
-
-	if (trimmed === "/clear") {
-		const children = tui.children;
-		// Remove all messages but keep the welcome text and editor
-		children.splice(2, children.length - 3);
-		tui.requestRender();
-		return;
-	}
 
 	if (trimmed) {
 		isResponding = true;

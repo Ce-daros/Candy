@@ -13,7 +13,7 @@ Minimal terminal UI framework with differential rendering and synchronized outpu
 - **Theme Support**: Components accept theme interfaces for customizable styling
 - **Built-in Components**: Text, TruncatedText, Input, Editor, Markdown, Loader, SelectList, SettingsList, MouseRegion, Spacer, Image, Box, Container, VStack, HStack, ScrollView
 - **Inline Images**: Renders images in terminals that support Kitty or iTerm2 graphics protocols
-- **Autocomplete Support**: File paths and slash commands
+- **Autocomplete Support**: File paths and file references
 
 ## Quick Start
 
@@ -466,7 +466,6 @@ editor.setViewportLines(12); // Bound the editor's content height
 **Features:**
 - Click-to-position cursor and clickable autocomplete rows in alternate-screen mode
 - Multi-line editing with word wrap
-- Slash command autocomplete (type `/`)
 - File path autocomplete (press `Tab`)
 - Large paste handling (>10 lines creates `[paste #1 +50 lines]` marker)
 - Horizontal lines above/below editor
@@ -637,6 +636,7 @@ interface SettingsListTheme {
   description: (text: string) => string;
   cursor: string;
   hint: (text: string) => string;
+  keycap: (key: string) => string;
 }
 
 const settings = new SettingsList(
@@ -703,17 +703,12 @@ When `viewportRows` is provided, the preview is limited to about one third of th
 
 ### CombinedAutocompleteProvider
 
-Supports both slash commands and file paths.
+Completes file paths and file references. Command menus belong to the application using the editor.
 
 ```typescript
 import { CombinedAutocompleteProvider } from "@candy/tui";
 
 const provider = new CombinedAutocompleteProvider(
-  [
-    { name: "help", description: "Show help" },
-    { name: "clear", description: "Clear screen" },
-    { name: "delete", description: "Delete last message" },
-  ],
   process.cwd() // base path for file completion
 );
 
@@ -721,7 +716,6 @@ editor.setAutocompleteProvider(provider);
 ```
 
 **Features:**
-- Type `/` to see slash commands
 - Press `Tab` for file path completion
 - Works with `~/`, `./`, `../`, and `@` prefix
 - Filters to attachable files for `@` prefix
@@ -931,7 +925,7 @@ class CachedComponent implements Component {
 See `test/chat-simple.ts` for a complete chat interface example with:
 - Markdown messages with custom background colors
 - Loading spinner during responses
-- Editor with autocomplete and slash commands
+- Editor with file path autocomplete
 - Spacers between messages
 
 Run it:

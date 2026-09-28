@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
-import { createTestResourceLoader } from "../utilities.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 const processImage = vi.hoisted(() =>
@@ -23,6 +23,67 @@ vi.mock("../../src/utils/image-process.ts", () => ({ processImage }));
 
 const TINY_PNG_BASE64 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+
+async function createPausedCommandCompaction(
+	outcome: "success" | "cancel",
+	holdFirstCommand?: { started: () => void; released: Promise<void> },
+) {
+	let startCompaction = () => {};
+	const started = new Promise<void>((resolve) => {
+		startCompaction = resolve;
+	});
+	let releaseCompaction = () => {};
+	const released = new Promise<void>((resolve) => {
+		releaseCompaction = resolve;
+	});
+	const extensionsResult = await createTestExtensionsResult([
+		(candy) => {
+			candy.on("session_before_compact", async (event) => {
+				startCompaction();
+				await released;
+				if (outcome === "cancel") return { cancel: true };
+				return {
+					compaction: {
+						summary: "compacted",
+						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						tokensBefore: event.preparation.tokensBefore,
+						details: {},
+					},
+				};
+			});
+			if (holdFirstCommand)
+				candy.on("input", async (event) => {
+					if (event.text === "Expanded first") {
+						holdFirstCommand.started();
+						await holdFirstCommand.released;
+					}
+				});
+		},
+	]);
+	const template: PromptTemplate = {
+		name: "queued",
+		description: "Queued prompt",
+		content: "Expanded $1",
+		filePath: "/virtual/queued.md",
+		sourceInfo: createSyntheticSourceInfo("/virtual/queued.md", { source: "local" }),
+	};
+	const resourceLoader = {
+		...createTestResourceLoader({ extensionsResult }),
+		getPrompts: () => ({ prompts: [template], diagnostics: [] }),
+	};
+	const harness = await createHarness({ resourceLoader, settings: { compaction: { keepRecentTokens: 1 } } });
+	harness.setResponses([
+		fauxAssistantMessage("one"),
+		fauxAssistantMessage("two"),
+		fauxAssistantMessage("three"),
+		fauxAssistantMessage("four"),
+	]);
+	await harness.session.prompt("first");
+	await harness.session.prompt("second");
+	const compactPromise = harness.session.compact();
+	await started;
+	return { harness, compactPromise, releaseCompaction };
+}
 
 describe("AgentSession prompt characterization", () => {
 	const harnesses: Harness[] = [];
@@ -197,7 +258,7 @@ describe("AgentSession prompt characterization", () => {
 		});
 	});
 
-	it("expands skill commands before sending the prompt", async () => {
+	it("executes a skill explicitly while keeping slash text literal", async () => {
 		const tempDir = join(tmpdir(), `pi-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		tempDirs.push(tempDir);
@@ -235,16 +296,23 @@ describe("AgentSession prompt characterization", () => {
 				expandedPrompt = user ? getMessageText(user) : "";
 				return fauxAssistantMessage("ok");
 			},
+			(context) => {
+				const users = context.messages.filter((message) => message.role === "user");
+				expandedPrompt = getMessageText(users[users.length - 1]!);
+				return fauxAssistantMessage("ok");
+			},
 		]);
 
-		await harness.session.prompt("/skill:test explain this");
+		await harness.session.prompt("/test explain this");
+		expect(expandedPrompt).toBe("/test explain this");
+		await harness.session.executeCommand({ source: "skill", name: "test", args: "explain this" });
 
 		expect(expandedPrompt).toContain('<skill name="test" location="');
 		expect(expandedPrompt).toContain("Use the skill body.");
 		expect(expandedPrompt).toContain("explain this");
 	});
 
-	it("expands prompt templates before sending the prompt", async () => {
+	it("executes prompt templates explicitly", async () => {
 		const template: PromptTemplate = {
 			name: "review",
 			description: "Review template",
@@ -272,12 +340,53 @@ describe("AgentSession prompt characterization", () => {
 			},
 		]);
 
-		await harness.session.prompt("/review src/index.ts");
+		await harness.session.executeCommand({ source: "prompt", name: "review", args: "src/index.ts" });
 
 		expect(expandedPrompt).toBe("Review this code: src/index.ts");
 	});
 
-	it("sendUserMessage can opt into prompt template expansion", async () => {
+	it("uses source and name to disambiguate commands", async () => {
+		const extensionRuns: string[] = [];
+		const template: PromptTemplate = {
+			name: "review",
+			description: "Review template",
+			content: "Template: $1",
+			filePath: "/virtual/review.md",
+			sourceInfo: createSyntheticSourceInfo("/virtual/review.md", { source: "local" }),
+		};
+		const extensionsResult = await createTestExtensionsResult([
+			(candy) =>
+				candy.registerCommand("review", {
+					handler: async (args) => {
+						extensionRuns.push(args);
+					},
+				}),
+		]);
+		const resourceLoader = {
+			...createTestResourceLoader({ extensionsResult }),
+			getPrompts: () => ({ prompts: [template], diagnostics: [] }),
+		};
+		const harness = await createHarness({ resourceLoader });
+		harnesses.push(harness);
+		expect(
+			harness.session
+				.getCommands()
+				.filter((command) => command.name === "review")
+				.map((command) => command.source),
+		).toEqual(["extension", "prompt"]);
+		harness.setResponses([fauxAssistantMessage("done")]);
+		await harness.session.executeCommand({ source: "extension", name: "review", args: "extension arg" });
+		await harness.session.executeCommand({ source: "prompt", name: "review", args: "prompt-arg" });
+		expect(extensionRuns).toEqual(["extension arg"]);
+		expect(getMessageText(harness.session.messages.find((message) => message.role === "user")!)).toBe(
+			"Template: prompt-arg",
+		);
+		await expect(harness.session.executeCommand({ source: "prompt", name: "missing", args: "" })).rejects.toThrow(
+			"Unknown prompt command: missing",
+		);
+	});
+
+	it("sendUserMessage keeps a matching command literal", async () => {
 		const template: PromptTemplate = {
 			name: "review",
 			description: "Review template",
@@ -305,9 +414,9 @@ describe("AgentSession prompt characterization", () => {
 			},
 		]);
 
-		await harness.session.sendUserMessage("/review src/index.ts", { expandPromptTemplates: true });
+		await harness.session.sendUserMessage("/review src/index.ts");
 
-		expect(expandedPrompt).toBe("Review this code: src/index.ts");
+		expect(expandedPrompt).toBe("/review src/index.ts");
 	});
 
 	it("dispatches extension commands without consuming a provider response", async () => {
@@ -327,19 +436,16 @@ describe("AgentSession prompt characterization", () => {
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("should stay queued")]);
 
-		await harness.session.prompt("/testcmd hello world");
+		await harness.session.executeCommand({ source: "extension", name: "testcmd", args: "hello world" });
 
 		expect(commandRuns).toEqual(["hello world"]);
 		expect(harness.session.messages).toEqual([]);
 		expect(harness.getPendingResponseCount()).toBe(1);
 	});
 
-	it("extension sendUserMessage can opt into extension command dispatch", async () => {
+	it("extension sendUserMessage keeps command text literal", async () => {
 		let extensionApi: ExtensionAPI | undefined;
-		let resolveCommandRun: (args: string) => void = () => {};
-		const commandRun = new Promise<string>((resolve) => {
-			resolveCommandRun = resolve;
-		});
+		const commandRuns: string[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
@@ -347,7 +453,7 @@ describe("AgentSession prompt characterization", () => {
 					candy.registerCommand("testcmd", {
 						description: "Test command",
 						handler: async (args) => {
-							resolveCommandRun(args);
+							commandRuns.push(args);
 						},
 					});
 				},
@@ -355,11 +461,17 @@ describe("AgentSession prompt characterization", () => {
 		});
 		harnesses.push(harness);
 		expect(extensionApi).toBeDefined();
+		harness.setResponses([fauxAssistantMessage("ok")]);
 
-		extensionApi?.sendUserMessage("/testcmd hello world", { expandPromptTemplates: true });
+		extensionApi?.sendUserMessage("/testcmd hello world");
 
-		await expect(commandRun).resolves.toBe("hello world");
-		expect(harness.session.messages).toEqual([]);
+		await vi.waitFor(() =>
+			expect(harness.session.messages.some((message) => message.role === "assistant")).toBe(true),
+		);
+		expect(commandRuns).toEqual([]);
+		expect(getMessageText(harness.session.messages.find((message) => message.role === "user")!)).toBe(
+			"/testcmd hello world",
+		);
 		expect(harness.getPendingResponseCount()).toBe(0);
 	});
 
@@ -537,6 +649,203 @@ describe("AgentSession prompt characterization", () => {
 		} finally {
 			releaseCompaction();
 			await compactPromise;
+		}
+	});
+
+	it("executes extensions immediately and queues explicit text commands during compaction", async () => {
+		let startCompaction = () => {};
+		const compactionStarted = new Promise<void>((resolve) => {
+			startCompaction = resolve;
+		});
+		let releaseCompaction = () => {};
+		const compactionReleased = new Promise<void>((resolve) => {
+			releaseCompaction = resolve;
+		});
+		const extensionRuns: string[] = [];
+		const skillDir = join(tmpdir(), `candy-command-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(skillDir, { recursive: true });
+		tempDirs.push(skillDir);
+		const skillPath = join(skillDir, "review.md");
+		writeFileSync(skillPath, "# Review\n\nCheck this carefully.");
+		const extensionsResult = await createTestExtensionsResult([
+			(candy) => {
+				candy.registerCommand("review", {
+					handler: async (args) => {
+						extensionRuns.push(args);
+					},
+				});
+				candy.on("session_before_compact", async (event) => {
+					startCompaction();
+					await compactionReleased;
+					return {
+						compaction: {
+							summary: "compacted",
+							firstKeptEntryId: event.preparation.firstKeptEntryId,
+							tokensBefore: event.preparation.tokensBefore,
+							details: {},
+						},
+					};
+				});
+			},
+		]);
+		const template: PromptTemplate = {
+			name: "review",
+			description: "Review template",
+			content: "Template $1",
+			filePath: "/virtual/review.md",
+			sourceInfo: createSyntheticSourceInfo("/virtual/review.md", { source: "local" }),
+		};
+		const resourceLoader = {
+			...createTestResourceLoader({ extensionsResult }),
+			getPrompts: () => ({ prompts: [template], diagnostics: [] }),
+			getSkills: () => ({
+				skills: [
+					{
+						name: "review",
+						description: "Review skill",
+						filePath: skillPath,
+						disableModelInvocation: false,
+						baseDir: skillDir,
+						sourceInfo: createSyntheticSourceInfo(skillPath, { source: "local" }),
+					},
+				],
+				diagnostics: [],
+			}),
+		};
+		const harness = await createHarness({ resourceLoader, settings: { compaction: { keepRecentTokens: 1 } } });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("one"),
+			fauxAssistantMessage("two"),
+			fauxAssistantMessage("three"),
+			fauxAssistantMessage("four"),
+		]);
+		await harness.session.prompt("first");
+		await harness.session.prompt("second");
+		const compactPromise = harness.session.compact();
+		await compactionStarted;
+		const dispositions: string[] = [];
+		try {
+			await harness.session.executeCommand({ source: "extension", name: "review", args: "now" });
+			expect(extensionRuns).toEqual(["now"]);
+			const promptPromise = harness.session.executeCommand(
+				{ source: "prompt", name: "review", args: "prompt" },
+				{
+					preflightResult: (result) => {
+						dispositions.push(result);
+					},
+				},
+			);
+			const skillPromise = harness.session.executeCommand(
+				{ source: "skill", name: "review", args: "skill" },
+				{
+					preflightResult: (result) => {
+						dispositions.push(result);
+					},
+				},
+			);
+			expect(dispositions).toEqual(["queued", "queued"]);
+			expect(harness.getPendingResponseCount()).toBe(2);
+			releaseCompaction();
+			await compactPromise;
+			await Promise.all([promptPromise, skillPromise]);
+			const userMessages = harness.session.messages.filter((message) => message.role === "user").map(getMessageText);
+			expect(userMessages.slice(-2)[0]).toBe("Template prompt");
+			expect(userMessages.slice(-2)[1]).toContain("Check this carefully.\n</skill>\n\nskill");
+		} finally {
+			releaseCompaction();
+		}
+	});
+
+	it.each(["abort", "cancel"] as const)("settles queued commands after compaction %s", async (outcome) => {
+		const { harness, compactPromise, releaseCompaction } = await createPausedCommandCompaction(
+			outcome === "cancel" ? "cancel" : "success",
+		);
+		harnesses.push(harness);
+		const dispositions: string[] = [];
+		const commandPromise = harness.session.executeCommand(
+			{ source: "prompt", name: "queued", args: outcome },
+			{
+				preflightResult: (result) => {
+					dispositions.push(result);
+				},
+			},
+		);
+		expect(dispositions).toEqual(["queued"]);
+		expect(harness.session.pendingMessageCount).toBe(1);
+		try {
+			if (outcome === "abort") harness.session.abortCompaction();
+			releaseCompaction();
+			await expect(compactPromise).rejects.toThrow("Compaction cancelled");
+			await commandPromise;
+			expect(harness.session.pendingMessageCount).toBe(0);
+			expect(harness.session.messages.filter((message) => message.role === "user").map(getMessageText)).toContain(
+				`Expanded ${outcome}`,
+			);
+		} finally {
+			releaseCompaction();
+		}
+	});
+
+	it("clearQueue cancels a command accepted during compaction and returns its text", async () => {
+		const { harness, compactPromise, releaseCompaction } = await createPausedCommandCompaction("success");
+		harnesses.push(harness);
+		const commandPromise = harness.session.executeCommand(
+			{ source: "prompt", name: "queued", args: "clear" },
+			{ streamingBehavior: "steer" },
+		);
+		expect(harness.session.pendingMessageCount).toBe(1);
+		expect(harness.session.getSteeringMessages()).toEqual(["Expanded clear"]);
+		expect(harness.session.clearQueue()).toEqual({ steering: ["Expanded clear"], followUp: [] });
+		await commandPromise;
+		expect(harness.session.pendingMessageCount).toBe(0);
+		try {
+			releaseCompaction();
+			await compactPromise;
+			expect(harness.getPendingResponseCount()).toBe(2);
+		} finally {
+			releaseCompaction();
+		}
+	});
+
+	it("does not run remaining compaction commands after session disposal", async () => {
+		let markInputStarted = () => {};
+		const inputStarted = new Promise<void>((resolve) => {
+			markInputStarted = resolve;
+		});
+		let releaseInput = () => {};
+		const inputReleased = new Promise<void>((resolve) => {
+			releaseInput = resolve;
+		});
+		const { harness, compactPromise, releaseCompaction } = await createPausedCommandCompaction("success", {
+			started: markInputStarted,
+			released: inputReleased,
+		});
+		harnesses.push(harness);
+		const first = harness.session.executeCommand({ source: "prompt", name: "queued", args: "first" });
+		const second = harness.session.executeCommand({ source: "prompt", name: "queued", args: "second" });
+		const firstResult = first.then(
+			() => "ran",
+			(error: Error) => error.message,
+		);
+		const secondResult = second.then(
+			() => "ran",
+			(error: Error) => error.message,
+		);
+		try {
+			releaseCompaction();
+			await compactPromise;
+			await inputStarted;
+			harness.session.dispose();
+			releaseInput();
+			expect(await firstResult).toContain("disposed");
+			expect(await secondResult).toContain("disposed");
+			expect(
+				harness.session.messages.filter((message) => message.role === "user").map(getMessageText),
+			).not.toContain("Expanded second");
+		} finally {
+			releaseCompaction();
+			releaseInput();
 		}
 	});
 

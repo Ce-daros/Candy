@@ -97,8 +97,9 @@ when the entry-id prefix diverges, which is what compaction and navigation do.
 
 ## What it is not
 
-No slash-command system, extensions, skills, hooks, themes beyond the shared one, session picker, or
-tree navigation. Interactive login and model selection exist because they proved the awkward
+The empty editor opens a local Command menu with `/`. It has model selection, login, and compaction;
+ordinary messages beginning with `/` remain text. There are no extensions, skills, hooks, themes beyond
+the shared one, session picker, or tree navigation. Interactive login and model selection exist because they proved the awkward
 directions of the protocol: server-to-client requests, and identity-based configuration.
 
 Two known shortcuts: the server broadcasts a worker's events to every attached presentation, so with

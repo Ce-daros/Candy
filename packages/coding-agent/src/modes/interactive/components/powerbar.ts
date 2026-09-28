@@ -4,22 +4,15 @@ import { fuzzyFilter, sliceByColumn, visibleWidth } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";
 import { theme } from "../theme/theme.ts";
-import { thinkingMeter } from "./frame-motion.ts";
 
-/**
- * Slot separator. Each item owns `labelWidth + SLOT_SEPARATOR` columns and the
- * highlighted item renders `‹ label ›` inside its slot, so moving the
- * highlight never shifts neighboring text.
- */
-const SLOT_SEPARATOR = "    ";
-const SEP = visibleWidth(SLOT_SEPARATOR);
+const PREFIX_GAP = 2;
 
 /**
  * Slot width bounds. Labels longer than `SLOT_MAX_WIDTH - 4` columns are
  * middle-truncated so one long model name cannot squeeze out its neighbors;
  * very short labels pad up to `SLOT_MIN_WIDTH` so the track keeps a rhythm.
  */
-const SLOT_MIN_WIDTH = 10;
+const SLOT_MIN_WIDTH = 7;
 const SLOT_MAX_WIDTH = 28;
 
 /** Cursor shown after the search query. */
@@ -70,12 +63,23 @@ export interface PowerbarHost {
 	/** Index of the current model in `getModels()`. */
 	getCurrentModelIndex(): number;
 	/** Apply a thinking level selection. Throws on failure. */
-	applyThinking(level: ThinkingLevel, persist: boolean): void;
+	applyThinking(level: ThinkingLevel): void;
 	/** Apply a model selection. Errors are reported by the host. */
 	applyModel(model: PowerbarModelRef): void;
 }
 
 type PowerbarMode = "normal" | "thinking" | "model-browse" | "model-search";
+
+export type PowerbarSelector = "model" | "thinking";
+
+export interface PowerbarSnapshot {
+	readonly selector: PowerbarSelector;
+	readonly query: string;
+	readonly selectedKey: string | undefined;
+	readonly selectedIndex: number;
+	readonly windowStartKey: string | undefined;
+	readonly windowStart: number;
+}
 
 interface TrackItem {
 	readonly kind: "level" | "model";
@@ -214,6 +218,104 @@ export class PowerbarController {
 		return this.mode === "normal";
 	}
 
+	getSelector(): PowerbarSelector | undefined {
+		if (this.mode === "normal") return undefined;
+		return this.mode === "thinking" ? "thinking" : "model";
+	}
+
+	getHighlightedModel(): PowerbarModelRef | undefined {
+		if (this.mode !== "model-browse" && this.mode !== "model-search") return undefined;
+		return this.items[this.selectedIndex]?.model?.model;
+	}
+
+	private itemKey(item: TrackItem | undefined): string | undefined {
+		if (item?.level !== undefined) return item.level;
+		if (item?.model) return `${item.model.model.provider}/${item.model.model.id}`;
+		return undefined;
+	}
+
+	capture(): PowerbarSnapshot | undefined {
+		if (this.mode === "normal") return undefined;
+		while (this.transition) this.snapTransition();
+		const selector = this.getSelector();
+		if (!selector) return undefined;
+		return {
+			selector,
+			query: this.query,
+			selectedKey: this.itemKey(this.items[this.selectedIndex]),
+			selectedIndex: this.selectedIndex,
+			windowStartKey: this.itemKey(this.items[this.windowStart]),
+			windowStart: this.windowStart,
+		};
+	}
+
+	suspend(): PowerbarSnapshot | undefined {
+		const snapshot = this.capture();
+		if (!snapshot) return undefined;
+		this.stopTimer();
+		this.transition = undefined;
+		if (snapshot.selector === "thinking") this.onThinkingPreview?.(this.host.getThinkingLevel());
+		this.mode = "normal";
+		this.collapsing = false;
+		this.items = [];
+		this.lastRegions = [];
+		this.host.requestRender();
+		return snapshot;
+	}
+
+	restore(
+		snapshot: PowerbarSnapshot,
+		options: {
+			modelAnchorWidth: number;
+			thinkingAnchorWidth: number;
+			thinkingPrefix: PowerbarPrefixSpan;
+			thinkingLevels?: ThinkingLevel[];
+		},
+	): void {
+		if (snapshot.selector === "thinking") {
+			this.openThinking({
+				anchorWidth: options.thinkingAnchorWidth,
+				prefix: options.thinkingPrefix,
+				levels: options.thinkingLevels,
+			});
+		} else {
+			this.openModelBrowse({ anchorWidth: options.modelAnchorWidth });
+			if (snapshot.query) {
+				this.mode = "model-search";
+				this.query = snapshot.query;
+				this.searchPrefixWidth = this.computeSearchPrefixWidth();
+				this.items = this.makeModelItems(this.filteredModels());
+				this.anchorIndex = 0;
+			}
+		}
+		this.stopTimer();
+		this.transition = undefined;
+		const selected = this.items.findIndex((item) => this.itemKey(item) === snapshot.selectedKey);
+		this.selectedIndex = selected >= 0 ? selected : clampIndex(snapshot.selectedIndex, this.items.length);
+		const start = this.items.findIndex((item) => this.itemKey(item) === snapshot.windowStartKey);
+		this.fitWindow(Math.max(0, this.selectedIndex), this.trackMaxWidth());
+		if (start >= 0 && start <= this.selectedIndex) {
+			let end = start - 1;
+			let used = 0;
+			const maxWidth = Math.max(1, this.lastMaxWidth - this.prefixReserve() - 2 * INDICATOR_WIDTH);
+			for (let index = start; index < this.items.length; index++) {
+				const width = this.slotWidth(index);
+				if (used + width > maxWidth) break;
+				used += width;
+				end = index;
+			}
+			if (end >= this.selectedIndex) {
+				this.windowStart = start;
+				this.windowEnd = end;
+				this.leftIndicator = start > 0;
+				this.rightIndicator = end < this.items.length - 1;
+			}
+		}
+		const level = this.items[this.selectedIndex]?.level;
+		if (level) this.onThinkingPreview?.(level);
+		this.host.requestRender();
+	}
+
 	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
 		this.animationsEnabled = enabled;
 		this.animationIntensity = intensity;
@@ -233,17 +335,17 @@ export class PowerbarController {
 	// =========================================================================
 
 	/** Expand the thinking level track out of the effort label. */
-	openThinking(options: { anchorWidth: number; prefix: PowerbarPrefixSpan }): void {
+	openThinking(options: { anchorWidth: number; prefix: PowerbarPrefixSpan; levels?: ThinkingLevel[] }): void {
 		this.stopTimer();
 		this.collapsing = false;
 		this.mode = "thinking";
 		this.modelPrefix = options.prefix;
 		this.leftIndicator = false;
 		this.rightIndicator = false;
-		const levels = this.host.getThinkingLevels();
+		const levels = options.levels ?? this.host.getThinkingLevels();
 		const current = this.host.getThinkingLevel();
 		this.items = levels.map((level) => {
-			const label = `${level.charAt(0).toUpperCase() + level.slice(1)} ${thinkingMeter(level)}`;
+			const label = level.charAt(0).toUpperCase() + level.slice(1);
 			return { kind: "level" as const, level, label, width: visibleWidth(label) };
 		});
 		this.anchorIndex = clampIndex(levels.indexOf(current), this.items.length);
@@ -378,7 +480,7 @@ export class PowerbarController {
 	}
 
 	/** Confirm the highlighted item and collapse around it. */
-	confirm(persist = false): void {
+	confirm(): void {
 		if (this.mode === "normal" || this.collapsing) return;
 		const item = this.items[this.selectedIndex];
 		if (!item) {
@@ -387,12 +489,8 @@ export class PowerbarController {
 		}
 		this.snapTransition();
 		if (item.kind === "level" && item.level !== undefined) {
-			try {
-				this.host.applyThinking(item.level, persist);
-				this.onThinkingCommit?.(item.level);
-			} catch {
-				// The host reports the failure; still collapse back to a sane state.
-			}
+			this.host.applyThinking(item.level);
+			this.onThinkingCommit?.(item.level);
 		} else if (item.kind === "model" && item.model !== undefined) {
 			this.host.applyModel(item.model.model);
 		}
@@ -559,7 +657,7 @@ export class PowerbarController {
 		if (newStart < 0 || newEnd > this.items.length - 1) return;
 
 		const outgoing = direction === 1 ? oldStart : oldEnd;
-		const shift = (this.slotWidth(outgoing) + SEP) * (direction === 1 ? 1 : -1);
+		const shift = this.slotWidth(outgoing) * (direction === 1 ? 1 : -1);
 		const oldLeft = this.trackLeft();
 		this.windowStart = newStart;
 		this.windowEnd = newEnd;
@@ -602,8 +700,8 @@ export class PowerbarController {
 	/** Column of `index` when the window starts at `start` (slots packed from `left`). */
 	private cumulativeCol(index: number, start: number, left: number): number {
 		const prefixWidth = this.currentPrefixSpan().width;
-		let col = left + (prefixWidth > 0 ? prefixWidth + SEP : 0);
-		for (let i = start; i < index; i++) col += this.slotWidth(i) + SEP;
+		let col = left + (prefixWidth > 0 ? prefixWidth + PREFIX_GAP : 0);
+		for (let i = start; i < index; i++) col += this.slotWidth(i);
 		return col;
 	}
 
@@ -643,7 +741,7 @@ export class PowerbarController {
 
 	private prefixReserve(): number {
 		const width = this.currentPrefixSpan().width;
-		return width > 0 ? width + SEP : 0;
+		return width > 0 ? width + PREFIX_GAP : 0;
 	}
 
 	private currentPrefixSpan(): PowerbarPrefixSpan {
@@ -683,7 +781,7 @@ export class PowerbarController {
 			start = clampIndex(center, this.items.length);
 			end = start;
 			for (const idx of order) {
-				const w = this.slotWidth(idx) + (used > 0 ? SEP : 0);
+				const w = this.slotWidth(idx);
 				if (used + w > maxW) break;
 				used += w;
 				start = Math.min(start, idx);
@@ -726,7 +824,7 @@ export class PowerbarController {
 				const width = Math.round(entry.wFrom + (entry.wTo - entry.wFrom) * easeOutCubic(progress));
 				if (width <= 0) continue;
 				spans.push({ index: entry.index, label: entry.label, selected: entry.selected, col: running, width });
-				running += width + SEP;
+				running += width + (entry.index === -1 ? PREFIX_GAP : 0);
 			}
 		} else if (transition?.kind === "slide") {
 			const progress = easeOutCubic(transition.tick / SLIDE_FRAMES);
@@ -743,7 +841,7 @@ export class PowerbarController {
 			if (prefix.width > 0) {
 				spans.push({ index: -1, label: prefix.text, selected: false, col: left, width: prefix.width });
 			}
-			let running = left + (prefix.width > 0 ? prefix.width + SEP : 0);
+			let running = left + (prefix.width > 0 ? prefix.width + PREFIX_GAP : 0);
 			for (let idx = this.windowStart; idx <= this.windowEnd; idx++) {
 				const item = this.items[idx];
 				if (!item) continue;
@@ -754,7 +852,7 @@ export class PowerbarController {
 					col: running,
 					width: this.slotWidth(idx),
 				});
-				running += this.slotWidth(idx) + SEP;
+				running += this.slotWidth(idx);
 			}
 		}
 
@@ -841,7 +939,7 @@ export class PowerbarController {
 			return;
 		}
 		this.selectedIndex = index;
-		this.confirm(false);
+		this.confirm();
 	}
 
 	// =========================================================================

@@ -265,11 +265,6 @@ export interface EditorOptions {
 	rightGutter?: string;
 }
 
-const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
-	minPrimaryColumnWidth: 12,
-	maxPrimaryColumnWidth: 32,
-};
-
 const ATTACHMENT_AUTOCOMPLETE_DEBOUNCE_MS = 20;
 const DEFAULT_AUTOCOMPLETE_TRIGGER_CHARACTERS = ["@", "#"];
 // Unquoted completions end at whitespace or CJK punctuation; quoted paths may contain either.
@@ -681,7 +676,7 @@ export class Editor implements Component, Focusable {
 		// Render each visible layout line
 		// Emit hardware cursor marker when focused so TUI can position the
 		// hardware cursor for IME candidate-window placement even while
-		// autocomplete (e.g. slash-command menu) is visible.
+		// autocomplete is visible.
 		const emitCursorMarker = this.focused;
 
 		const totalFrameRows = this.getFrameRowCount();
@@ -972,14 +967,9 @@ export class Editor implements Component, Focusable {
 					this.state.cursorLine = result.cursorLine;
 					this.setCursorCol(result.cursorCol);
 
-					if (this.autocompletePrefix.startsWith("/")) {
-						this.cancelAutocomplete();
-						// Fall through to submit
-					} else {
-						this.cancelAutocomplete();
-						if (this.onChange) this.onChange(this.getText());
-						return;
-					}
+					this.cancelAutocomplete();
+					if (this.onChange) this.onChange(this.getText());
+					return;
 				}
 			}
 		}
@@ -1411,28 +1401,19 @@ export class Editor implements Component, Focusable {
 
 		// Check if we should trigger or update autocomplete
 		if (!this.autocompleteState) {
-			// Auto-trigger for "/" at the start of a line (slash commands)
-			if (char === "/" && this.isAtStartOfMessage()) {
-				this.tryTriggerAutocomplete();
-			}
 			// Auto-trigger for symbol-based completion like @, #, or provider triggers at token boundaries
-			else if (this.autocompleteTriggerCharacters.includes(char)) {
+			if (this.autocompleteTriggerCharacters.includes(char)) {
 				const currentLine = this.state.lines[this.state.cursorLine] || "";
 				const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
 				if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
 					this.tryTriggerAutocomplete();
 				}
 			}
-			// Also auto-trigger when typing letters in a slash command or symbol completion context
+			// Also auto-trigger when typing letters in a symbol completion context
 			else if (/[a-zA-Z0-9.\-_]/.test(char) || cjkBreakRegex.test(char)) {
 				const currentLine = this.state.lines[this.state.cursorLine] || "";
 				const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-				// Check if we're in a slash command (with or without space for arguments)
-				if (this.isInSlashCommandContext(textBeforeCursor)) {
-					this.tryTriggerAutocomplete();
-				}
-				// Check if we're in a symbol-based completion context like @, #, or provider triggers
-				else if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
+				if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
 					this.tryTriggerAutocomplete();
 				}
 			}
@@ -1635,12 +1616,8 @@ export class Editor implements Component, Focusable {
 			// If autocomplete was cancelled (no matches), re-trigger if we're in a completable context
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-			// Slash command context
-			if (this.isInSlashCommandContext(textBeforeCursor)) {
-				this.tryTriggerAutocomplete();
-			}
 			// Symbol-based completion context like @, #, or provider triggers
-			else if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
+			if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
 				this.tryTriggerAutocomplete();
 			}
 		}
@@ -1999,12 +1976,8 @@ export class Editor implements Component, Focusable {
 		} else {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-			// Slash command context
-			if (this.isInSlashCommandContext(textBeforeCursor)) {
-				this.tryTriggerAutocomplete();
-			}
 			// Symbol-based completion context like @, #, or provider triggers
-			else if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
+			if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
 				this.tryTriggerAutocomplete();
 			}
 		}
@@ -2128,11 +2101,7 @@ export class Editor implements Component, Focusable {
 		// Keep an open autocomplete picker in sync with the new cursor
 		// position: cursor movement changes the text before the cursor, so a
 		// picker computed for the old position is stale. Re-query so it
-		// refreshes — or closes when the new position yields no suggestions —
-		// mirroring insertCharacter()/handleBackspace(). Without this, arrowing
-		// left from `/cmd ` back into the command name leaves the argument
-		// picker showing against a `/cmd` prefix (and a Tab there would
-		// concatenate the stale suggestion onto the partial command name).
+		// refreshes — or closes when the new position yields no suggestions.
 		if (this.autocompleteState) {
 			this.updateAutocomplete();
 		}
@@ -2370,23 +2339,6 @@ export class Editor implements Component, Focusable {
 		);
 	}
 
-	// Slash menu only allowed on the first line of the editor
-	private isSlashMenuAllowed(): boolean {
-		return this.state.cursorLine === 0;
-	}
-
-	// Helper method to check if cursor is at start of message (for slash command detection)
-	private isAtStartOfMessage(): boolean {
-		if (!this.isSlashMenuAllowed()) return false;
-		const currentLine = this.state.lines[this.state.cursorLine] || "";
-		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
-		return beforeCursor.trim() === "" || beforeCursor.trim() === "/";
-	}
-
-	private isInSlashCommandContext(textBeforeCursor: string): boolean {
-		return this.isSlashMenuAllowed() && textBeforeCursor.trimStart().startsWith("/");
-	}
-
 	// Autocomplete methods
 	/**
 	 * Find the best autocomplete item index for the given prefix.
@@ -2417,19 +2369,14 @@ export class Editor implements Component, Focusable {
 		return firstPrefixIndex;
 	}
 
-	private createAutocompleteList(
-		prefix: string,
-		items: Array<{ value: string; label: string; description?: string }>,
-	): SelectList {
-		const layout: SelectListLayoutOptions = prefix.startsWith("/")
-			? SLASH_COMMAND_SELECT_LIST_LAYOUT
-			: {
-					minPrimaryColumnWidth: 16,
-					maxPrimaryColumnWidth: 40,
-					descriptionAlign: "right",
-					selectedDetail: (item) =>
-						item.value.startsWith("@") ? item.value.slice(1).replace(/^"|"$/g, "") : item.description,
-				};
+	private createAutocompleteList(items: Array<{ value: string; label: string; description?: string }>): SelectList {
+		const layout: SelectListLayoutOptions = {
+			minPrimaryColumnWidth: 16,
+			maxPrimaryColumnWidth: 40,
+			descriptionAlign: "right",
+			selectedDetail: (item) =>
+				item.value.startsWith("@") ? item.value.slice(1).replace(/^"|"$/g, "") : item.description,
+		};
 		const list = new SelectList(items, this.autocompleteMaxVisible, this.theme.selectList, layout);
 		list.onSelect = (selected) => {
 			if (!this.autocompleteProvider) return;
@@ -2457,19 +2404,7 @@ export class Editor implements Component, Focusable {
 
 	private handleTabCompletion(): void {
 		if (!this.autocompleteProvider) return;
-
-		const currentLine = this.state.lines[this.state.cursorLine] || "";
-		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
-
-		if (this.isInSlashCommandContext(beforeCursor) && !beforeCursor.trimStart().includes(" ")) {
-			this.handleSlashCommandCompletion();
-		} else {
-			this.forceFileAutocomplete(true);
-		}
-	}
-
-	private handleSlashCommandCompletion(): void {
-		this.requestAutocomplete({ force: false, explicitTab: true });
+		this.forceFileAutocomplete(true);
 	}
 
 	private forceFileAutocomplete(explicitTab: boolean = false): void {
@@ -2623,7 +2558,7 @@ export class Editor implements Component, Focusable {
 
 	private applyAutocompleteSuggestions(suggestions: AutocompleteSuggestions, state: "regular" | "force"): void {
 		this.autocompletePrefix = suggestions.prefix;
-		this.autocompleteList = this.createAutocompleteList(suggestions.prefix, suggestions.items);
+		this.autocompleteList = this.createAutocompleteList(suggestions.items);
 
 		const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
 		if (bestMatchIndex >= 0) {

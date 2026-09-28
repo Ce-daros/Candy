@@ -1,5 +1,5 @@
 import { setKeybindings } from "@candy/tui";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
 import {
 	type SettingsCallbacks,
@@ -8,18 +8,11 @@ import {
 } from "../src/modes/interactive/components/settings-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
-import { createHarness, type Harness } from "./suite/harness.ts";
 
 describe("SettingsSelectorComponent", () => {
-	let harness: Harness | undefined;
 	beforeAll(() => {
 		initTheme("dark");
 		setKeybindings(new KeybindingsManager());
-	});
-
-	afterEach(() => {
-		harness?.cleanup();
-		harness = undefined;
 	});
 
 	it("cycles through fullscreen settings", () => {
@@ -31,10 +24,6 @@ describe("SettingsSelectorComponent", () => {
 			fullscreenScrollbar: "auto",
 			fullscreenCopyOnSelect: true,
 			warnings: {},
-			defaultModel: "not set",
-			availableDefaultModels: [],
-			availableThinkingLevels: [],
-			modelThinkingLevels: {},
 			availableThemes: [],
 		} as unknown as SettingsConfig;
 		const callbacks = {
@@ -59,9 +48,6 @@ describe("SettingsSelectorComponent", () => {
 
 	it("keeps the configured fixed theme marked while browsing", () => {
 		const config = {
-			defaultModel: "not set",
-			availableDefaultModels: [],
-			modelThinkingLevels: {},
 			currentTheme: "dark",
 			terminalTheme: "dark",
 			availableThemes: ["dark", "light"],
@@ -87,9 +73,6 @@ describe("SettingsSelectorComponent", () => {
 
 	it("keeps a configured automatic theme marked while browsing", () => {
 		const config = {
-			defaultModel: "not set",
-			availableDefaultModels: [],
-			modelThinkingLevels: {},
 			currentTheme: "light/dark",
 			terminalTheme: "dark",
 			availableThemes: ["dark", "light"],
@@ -110,40 +93,24 @@ describe("SettingsSelectorComponent", () => {
 		expect(output).toContain("♦   dark");
 	});
 
-	it("keeps the configured per-model thinking level marked while browsing", async () => {
-		harness = await createHarness({
-			models: [{ id: "thinking-model", reasoning: true }],
-		});
-		const model = harness.getModel("thinking-model")!;
-		const modelKey = `${model.provider}/${model.id}`;
-		const config = {
-			defaultModel: modelKey,
-			availableDefaultModels: [model],
-			thinkingLevel: "high",
-			modelThinkingLevels: { [modelKey]: "medium" },
-		} as unknown as SettingsConfig;
-		const callbacks = { onCancel: () => {} } as unknown as SettingsCallbacks;
-		const list = new SettingsSelectorComponent(config, callbacks).getSettingsList();
-
-		list.selectItem("model-thinking");
-		list.handleInput("\r");
-		list.handleInput("\r");
-
-		let output = stripAnsi(list.render(120).join("\n"));
-		expect(output).toContain("♦ ✓ medium");
-		expect(output).toContain("    (clear override)");
-
-		list.handleInput("\x1b[B");
-		output = stripAnsi(list.render(120).join("\n"));
-		expect(output).toContain("  ✓ medium");
-		expect(output).toContain("♦   high");
+	it("shares the global thinking setting with a dedicated control", () => {
+		const onDefaultThinkingLevelChange = vi.fn();
+		const selector = new SettingsSelectorComponent(
+			{ thinkingLevel: "medium", warnings: {} } as unknown as SettingsConfig,
+			{ onDefaultThinkingLevelChange, onCancel: () => {} } as unknown as SettingsCallbacks,
+		);
+		expect(selector.getSettingItems().find((item) => item.id === "default-thinking-level")?.currentValue).toBe(
+			"medium",
+		);
+		expect(selector.getSettingItems().some((item) => item.id === "model-thinking")).toBe(false);
+		const control = selector.createSettingControl("default-thinking-level", () => {});
+		control.handleInput?.("\r");
+		expect(onDefaultThinkingLevelChange).toHaveBeenCalledWith("high");
 	});
 
 	it("navigates five categories and searches settings from the bottom input", () => {
 		const config: SettingsConfig = {
 			autoCompact: true,
-			defaultModel: "not set",
-			availableDefaultModels: [],
 			showImages: false,
 			imageWidthCells: 80,
 			autoResizeImages: true,
@@ -155,8 +122,6 @@ describe("SettingsSelectorComponent", () => {
 			httpIdleTimeoutMs: 300_000,
 			cacheWarmingMode: "off",
 			thinkingLevel: "medium",
-			availableThinkingLevels: ["off", "medium"],
-			modelThinkingLevels: {},
 			availableThemes: ["dark", "light"],
 			currentTheme: "dark",
 			uiAnimations: true,
@@ -226,32 +191,5 @@ describe("SettingsSelectorComponent", () => {
 		expect(selectedLine()).not.toBe(first);
 		searched.handleInput("\x1b[A");
 		expect(selectedLine()).toBe(first);
-	});
-
-	it("keeps the selected model visible while navigating a long settings submenu", () => {
-		const models = Array.from({ length: 15 }, (_, index) => ({
-			provider: "test",
-			id: `model-${String(index).padStart(2, "0")}`,
-		})) as unknown as SettingsConfig["availableDefaultModels"];
-		const config = {
-			defaultModel: "not set",
-			availableDefaultModels: models,
-			modelThinkingLevels: {},
-			warnings: {},
-		} as unknown as SettingsConfig;
-		const selector = new SettingsSelectorComponent(config, { onCancel: () => {} } as unknown as SettingsCallbacks);
-		selector.setAvailableHeight(17);
-		for (const character of "Default thinking level per model") selector.handleInput(character);
-		expect(stripAnsi(selector.render(76).join("\n"))).toContain("Default thinking level per model");
-		selector.handleInput("\r");
-		for (let index = 0; index < 12; index++) {
-			selector.handleInput("\x1b[B");
-			selector.render(76);
-		}
-		let visible = stripAnsi(selector.render(76).join("\n"));
-		expect(visible).toContain("♦ model-12");
-		selector.handleInput("\x1b[A");
-		visible = stripAnsi(selector.render(76).join("\n"));
-		expect(visible).toContain("♦ model-11");
 	});
 });

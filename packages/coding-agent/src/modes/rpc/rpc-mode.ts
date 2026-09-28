@@ -34,7 +34,6 @@ import type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
-	RpcSlashCommand,
 } from "./rpc-types.ts";
 
 // Re-export types for consumers
@@ -404,6 +403,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return undefined;
 			}
 
+			case "execute_command": {
+				let preflightSucceeded = false;
+				void session
+					.executeCommand(
+						{ source: command.source, name: command.name, args: command.args },
+						{
+							streamingBehavior: command.streamingBehavior,
+							source: "rpc",
+							preflightResult: (disposition) => {
+								preflightSucceeded = true;
+								output(success(id, "execute_command", { disposition }));
+							},
+						},
+					)
+					.catch((e) => {
+						if (!preflightSucceeded) output(error(id, "execute_command", e.message));
+					});
+				return undefined;
+			}
+
 			case "steer": {
 				const disposition = await session.steer(command.message, command.images, { source: "rpc" });
 				return success(id, "steer", { disposition });
@@ -657,40 +676,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			// =================================================================
-			// Commands (available for invocation via prompt)
+			// Commands
 			// =================================================================
 
 			case "get_commands": {
-				const commands: RpcSlashCommand[] = [];
-
-				for (const command of session.extensionRunner.getRegisteredCommands()) {
-					commands.push({
-						name: command.invocationName,
-						description: command.description,
-						source: "extension",
-						sourceInfo: command.sourceInfo,
-					});
-				}
-
-				for (const template of session.promptTemplates) {
-					commands.push({
-						name: template.name,
-						description: template.description,
-						source: "prompt",
-						sourceInfo: template.sourceInfo,
-					});
-				}
-
-				for (const skill of session.resourceLoader.getSkills().skills) {
-					commands.push({
-						name: `skill:${skill.name}`,
-						description: skill.description,
-						source: "skill",
-						sourceInfo: skill.sourceInfo,
-					});
-				}
-
-				return success(id, "get_commands", { commands });
+				return success(id, "get_commands", { commands: session.getCommands() });
 			}
 
 			default: {

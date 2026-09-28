@@ -181,6 +181,8 @@ export interface TuiAltScreenOptions {
 	searchCurrentMatchStyle?: (text: string) => string;
 	/** Style a transcript search navigation button. */
 	searchNavigationButtonStyle?: (text: string, hovered: boolean) => string;
+	/** Style a transcript search navigation shortcut. */
+	searchKeycapStyle?: (key: string) => string;
 	/**
 	 * Render a clickable jump-to-end label. It is centered on the last row of a follow-end
 	 * primary scroll view while that view is scrolled away from its end.
@@ -249,6 +251,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private readonly searchMatchStyle: (text: string) => string;
 	private readonly searchCurrentMatchStyle: (text: string) => string;
 	private readonly searchNavigationButtonStyle: (text: string, hovered: boolean) => string;
+	private readonly searchKeycapStyle: (key: string) => string;
 	private readonly scrollToEndIndicator?: () => string;
 	private readonly openUrl?: (url: string) => void;
 	private readonly onRightClickPaste?: () => void;
@@ -276,6 +279,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.searchMatchStyle = options.searchMatchStyle ?? ((text) => `\x1b[4m${text}\x1b[24m`);
 		this.searchCurrentMatchStyle = options.searchCurrentMatchStyle ?? ((text) => `\x1b[1;7m${text}\x1b[22;27m`);
 		this.searchNavigationButtonStyle = options.searchNavigationButtonStyle ?? ((text) => text);
+		this.searchKeycapStyle = options.searchKeycapStyle ?? ((key) => key);
 		this.scrollToEndIndicator = options.scrollToEndIndicator;
 		this.openUrl = options.openUrl;
 		this.onRightClickPaste = options.onRightClickPaste;
@@ -521,6 +525,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			(query) => this.updateSearchQuery(query),
 			this.searchNavigationButtonStyle,
 			(direction) => this.navigateSearch(direction),
+			this.searchKeycapStyle,
 		);
 		const search: ActiveSearch = {
 			component,

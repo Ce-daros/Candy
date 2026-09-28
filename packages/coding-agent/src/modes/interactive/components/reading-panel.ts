@@ -8,8 +8,10 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@candy/tui";
+import { stripAnsi } from "../../../utils/ansi.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
 export interface ReadingPanelRow {
 	category: string;
@@ -69,7 +71,9 @@ export class ReadingPanelComponent implements Focusable {
 		if (!this.rows) return;
 		const query = this.searchInput.getValue().trim().toLocaleLowerCase();
 		this.filteredRows = query
-			? this.rows.filter((row) => `${row.category} ${row.label} ${row.value}`.toLocaleLowerCase().includes(query))
+			? this.rows.filter((row) =>
+					`${row.category} ${row.label} ${stripAnsi(row.value)}`.toLocaleLowerCase().includes(query),
+				)
 			: this.rows;
 		this.selectedIndex = 0;
 		this.offset = 0;
@@ -86,9 +90,9 @@ export class ReadingPanelComponent implements Focusable {
 		if (this.rows) {
 			const body: string[] = [];
 			let previousCategory = "";
-			const keyWidth = Math.min(26, Math.max(12, Math.floor(width * 0.3)));
 			for (let index = 0; index < this.filteredRows.length; index++) {
 				const row = this.filteredRows[index];
+				const keyWidth = Math.min(visibleWidth(row.value), Math.max(1, width - 24));
 				if (row.category !== previousCategory) {
 					body.push(theme.fg("muted", row.category));
 					previousCategory = row.category;
@@ -131,7 +135,9 @@ export class ReadingPanelComponent implements Focusable {
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			this.lastSearchRow = lines.length;
 			lines.push(...this.searchInput.render(width));
-			lines.push(theme.fg("dim", `${this.filteredRows.length} actions · Tab search · Esc close`));
+			lines.push(
+				`${theme.fg("muted", `${this.filteredRows.length} actions`)} · ${keyHint("app.panel.focusNext", "search")} · ${keyHint("tui.select.cancel", "close")}`,
+			);
 		} else {
 			const body = this.markdown.render(width);
 			this.offset = Math.max(0, Math.min(this.offset, Math.max(0, body.length - this.visibleRows)));
@@ -139,10 +145,7 @@ export class ReadingPanelComponent implements Focusable {
 			while (lines.length < this.firstBodyRow + this.visibleRows) lines.push("");
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			lines.push(
-				theme.fg(
-					"dim",
-					`${Math.min(this.offset + 1, body.length)}–${Math.min(this.offset + this.visibleRows, body.length)} / ${body.length} · ↑↓ scroll · Esc close`,
-				),
+				`${theme.fg("muted", `${Math.min(this.offset + 1, body.length)}–${Math.min(this.offset + this.visibleRows, body.length)} / ${body.length}`)} · ${rawKeyHint("↑↓", "scroll")} · ${keyHint("tui.select.cancel", "close")}`,
 			);
 		}
 		return lines;

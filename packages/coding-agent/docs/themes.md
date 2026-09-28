@@ -6,7 +6,7 @@ Themes control the colors candy uses in interactive mode, CLI output, and HTML e
 
 ## Choose a theme
 
-Open `/settings` and select **Theme**. The picker previews six semantic colors and a short conversation and diff sample. Moving through the themes previews each one; `Enter` applies it and `Escape` restores the previous theme. You can use one theme for every terminal appearance or choose separate themes for light and dark terminals.
+Open Command and select **Theme**. The picker previews six semantic colors and a short conversation and diff sample. Moving through the themes previews each one; `Enter` applies it and `Escape` restores the previous theme. You can use one theme for every terminal appearance or choose separate themes for light and dark terminals.
 
 The selection is saved as the `theme` [setting](settings.md#terminal-and-display):
 
@@ -42,9 +42,9 @@ Copy one of the [built-in themes](https://github.com/earendil-works/pi/tree/main
 1. Save the file as `<agent-dir>/themes/my-theme.json`. The agent directory defaults to `~/.candy/agent`.
 2. Set its `name` to `my-theme`.
 3. Change values in `vars` and `colors`.
-4. Select `my-theme` through `/settings`.
+4. Select `my-theme` through **Theme** in Command.
 
-Use the theme name as the filename. candy hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Run `/reload` after adding or changing a theme from any other source.
+Use the theme name as the filename. candy hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Run **Reload** in Command after adding or changing a theme from any other source.
 
 ## Understand the theme file
 
@@ -73,7 +73,7 @@ candy resolves chained variable references. A missing variable or circular refer
 
 Use the [theme JSON schema](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json) for the exact properties, required colors, and accepted value types.
 
-candy reports invalid theme files during startup and `/reload`.
+candy reports invalid theme files during startup and **Reload**.
 
 ## Find the color to change
 

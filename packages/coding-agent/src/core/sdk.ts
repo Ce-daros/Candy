@@ -101,13 +101,14 @@ export interface CreateAgentSessionResult {
 
 export * from "./agent-session-runtime.ts";
 export type {
+	CommandInfo,
+	CommandInvocation,
+	CommandSource,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionFactory,
 	InlineExtension,
-	SlashCommandInfo,
-	SlashCommandSource,
 	ToolDefinition,
 } from "./extensions/index.ts";
 export type { PromptTemplate } from "./prompt-templates.ts";

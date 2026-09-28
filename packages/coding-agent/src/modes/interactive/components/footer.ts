@@ -4,7 +4,13 @@ import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { theme } from "../theme/theme.ts";
 import type { EditorBottomStatus } from "./custom-editor.ts";
 import { type FrameMotion, thinkingMeter } from "./frame-motion.ts";
-import { PowerbarController, type PowerbarHost } from "./powerbar.ts";
+import {
+	PowerbarController,
+	type PowerbarHost,
+	type PowerbarModelRef,
+	type PowerbarSelector,
+	type PowerbarSnapshot,
+} from "./powerbar.ts";
 
 /** Frame corner that opens the merged bottom border. */
 const BOTTOM_BORDER_CORNER = "╰── ";
@@ -152,12 +158,12 @@ export class FooterComponent implements EditorBottomStatus {
 	openPowerbarThinking(): boolean {
 		if (!this.powerbar) return false;
 		const model = this.session.state.model;
-		if (!model?.reasoning) return false;
 		const modelName = model ? modelDisplayName(model) : "no-model";
-		const thinkingLevel = this.session.state.thinkingLevel || "off";
+		const thinkingLevel = model?.reasoning ? this.session.state.thinkingLevel : "off";
 		const anchorLabel = thinkingLevel.charAt(0).toUpperCase() + thinkingLevel.slice(1);
 		this.powerbar.openThinking({
 			anchorWidth: visibleWidth(anchorLabel),
+			levels: model?.reasoning ? undefined : ["off"],
 			prefix: {
 				text: modelName,
 				width: visibleWidth(modelName),
@@ -180,25 +186,48 @@ export class FooterComponent implements EditorBottomStatus {
 		this.powerbar?.collapse();
 	}
 
-	/** Confirm the highlighted item; persist=true also saves it as the default. */
-	confirmPowerbar(persist = false): void {
-		this.powerbar?.confirm(persist);
+	/** Confirm the highlighted item. */
+	confirmPowerbar(): void {
+		this.powerbar?.confirm();
 	}
 
 	movePowerbar(delta: number): void {
 		this.powerbar?.move(delta);
 	}
 
-	switchPowerbar(direction: 1 | -1): boolean {
+	switchPowerbar(): boolean {
 		if (!this.powerbar || this.powerbar.isIdle()) return false;
-		if (direction === 1) {
-			// Tab wraps between the two selectors: model → thinking → model.
-			if (this.powerbar.mode === "thinking") return this.openPowerbarModelBrowse();
-			if (this.session.state.model?.reasoning) return this.openPowerbarThinking();
-			return true;
-		}
 		if (this.powerbar.mode === "thinking") return this.openPowerbarModelBrowse();
-		return true;
+		return this.openPowerbarThinking();
+	}
+
+	getPowerbarSelector(): PowerbarSelector | undefined {
+		return this.powerbar?.getSelector();
+	}
+
+	getHighlightedModel(): PowerbarModelRef | undefined {
+		return this.powerbar?.getHighlightedModel();
+	}
+
+	capturePowerbar(): PowerbarSnapshot | undefined {
+		return this.powerbar?.capture();
+	}
+
+	suspendPowerbar(): PowerbarSnapshot | undefined {
+		return this.powerbar?.suspend();
+	}
+
+	restorePowerbar(snapshot: PowerbarSnapshot): void {
+		const model = this.session.state.model;
+		const modelName = model ? modelDisplayName(model) : "no-model";
+		const level = model?.reasoning ? this.session.state.thinkingLevel : "off";
+		const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
+		this.powerbar?.restore(snapshot, {
+			modelAnchorWidth: visibleWidth(modelName),
+			thinkingAnchorWidth: visibleWidth(levelLabel),
+			thinkingPrefix: { text: modelName, width: visibleWidth(modelName) },
+			thinkingLevels: model?.reasoning ? undefined : ["off"],
+		});
 	}
 
 	powerbarInputChar(char: string): void {
@@ -241,11 +270,10 @@ export class FooterComponent implements EditorBottomStatus {
 		return theme.fg("accent", name);
 	}
 
-	/** Thinking level, only for models that support reasoning. */
-	private thinkingLabel(): string | undefined {
+	/** Thinking level, including Off for models without reasoning. */
+	private thinkingLabel(): string {
 		const model = this.session.state.model;
-		if (!model?.reasoning) return undefined;
-		const level = this.frameMotion?.getThinking() ?? this.session.state.thinkingLevel;
+		const level = model?.reasoning ? (this.frameMotion?.getThinking() ?? this.session.state.thinkingLevel) : "off";
 		const label = `${level.charAt(0).toUpperCase() + level.slice(1)} ${thinkingMeter(level)}`;
 		if (this.frameMotion) return this.frameMotion.paintThinking(label);
 		return theme.getThinkingBorderColor(level)(label);

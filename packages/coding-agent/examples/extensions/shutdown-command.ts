@@ -1,7 +1,7 @@
 /**
  * Shutdown Command Extension
  *
- * Adds a /quit command that allows extensions to trigger clean shutdown.
+ * Adds a `quit` Command entry that allows extensions to trigger clean shutdown.
  * Demonstrates how extensions can use ctx.shutdown() to exit candy cleanly.
  */
 
@@ -9,7 +9,7 @@ import type { ExtensionAPI } from "@candy/coding-agent";
 import { Type } from "typebox";
 
 export default function (candy: ExtensionAPI) {
-	// Register a /quit command that cleanly exits candy
+	// Register a `quit` Command entry that cleanly exits candy
 	candy.registerCommand("quit", {
 		description: "Exit candy cleanly",
 		handler: async (_args, ctx) => {

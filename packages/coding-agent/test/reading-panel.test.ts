@@ -1,5 +1,6 @@
-import type { TuiMouseEvent } from "@candy/tui";
+import { type TuiMouseEvent, visibleWidth } from "@candy/tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { keycap } from "../src/modes/interactive/components/keybinding-hints.ts";
 import { ReadingPanelComponent } from "../src/modes/interactive/components/reading-panel.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -45,6 +46,18 @@ describe("ReadingPanelComponent", () => {
 		const panel = new ReadingPanelComponent("Session", "Details", onClose);
 		panel.handleInput("\x1b");
 		expect(onClose).toHaveBeenCalledOnce();
+	});
+
+	it("shows complete keycap alternatives at 80 terminal columns and searches visible text", () => {
+		const value = keycap("shift+enter/ctrl+shift+g");
+		const panel = new ReadingPanelComponent("Hotkeys", "", vi.fn(), [
+			{ category: "Conversation", label: "Select the previous search match", value },
+		]);
+		const lines = panel.render(76);
+		expect(lines.some((line) => line.includes(value))).toBe(true);
+		expect(lines.every((line) => visibleWidth(line) <= 76)).toBe(true);
+		panel.handleInput("38;");
+		expect(stripAnsi(panel.render(76).join("\n"))).toContain("No matching actions");
 	});
 
 	it("copies original code from a scrolled Markdown header", () => {

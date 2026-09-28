@@ -1,7 +1,7 @@
 /**
  * Tic-Tac-Toe extension - demonstrates executionMode: "sequential" on tools.
  *
- * The user plays via /tic-tac-toe (arrow keys + Enter).
+ * The user opens Command and chooses `tic-tac-toe` to play (arrow keys + Enter).
  * The agent plays via a single tool `tic_tac_toe` that takes ONE atomic action
  * per call. To play at (r, c) from its cursor (r0, c0) the agent must emit the
  * required move_* and a final `play` as SEPARATE tool_use blocks inside ONE
@@ -773,7 +773,7 @@ Decide the target cell first, then dump every action for the turn in one go.
 	});
 
 	// -----------------------------------------------------------------------
-	// /tic-tac-toe command
+	// The `tic-tac-toe` Command entry
 	// -----------------------------------------------------------------------
 	candy.registerCommand("tic-tac-toe", {
 		description: "Play tic-tac-toe against the agent",

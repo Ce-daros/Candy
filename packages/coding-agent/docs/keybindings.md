@@ -2,7 +2,7 @@
 
 candy exposes named actions, such as `app.session.new`, that can be assigned keybindings. You can change default assignments or bind unassigned actions in candy's [user configuration](configuration.md#agent-directory).
 
-Run `/hotkeys` to see the active shortcuts for the main editor and application.
+Open **Hotkeys** in Command to see the active shortcuts for the main editor and application.
 
 ## Assign keybindings
 
@@ -25,7 +25,7 @@ A configured value replaces the default for that action. Use an empty list to di
 }
 ```
 
-After editing the file, run `/reload` to apply the changes to the active session.
+After editing the file, run **Reload** in Command to apply the changes to the active session.
 
 ## Key syntax
 
@@ -123,6 +123,8 @@ In fullscreen mode, these actions control the transcript and take precedence ove
 | `app.interrupt` | `escape` | Cancel / abort |
 | `app.clear` | `ctrl+c` | Clear editor (first) / exit (second) |
 | `app.shell.enter` | `!` | Enter Shell, then Shell · No Context, when the editor is empty |
+| `app.command.enter` | `/` | Open Command when the ordinary editor is empty |
+| `app.command.arguments` | `right` | Open the highlighted resource command's optional arguments |
 | `app.exit` | `ctrl+d` | Exit (when editor empty) |
 | `app.suspend` | `ctrl+z` (None on Windows) | Suspend to background |
 | `app.editor.external` | `ctrl+g` | Open in external editor (`externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere) |
@@ -146,10 +148,10 @@ These keys move focus between the category, list, detail, and search regions in 
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.session.new` | None | Start a new session (`/new`) |
-| `app.session.tree` | None | Open session tree navigator (`/tree`) |
-| `app.session.fork` | None | Fork current session (`/fork`) |
-| `app.session.resume` | None | Open session resume picker (`/resume`) |
+| `app.session.new` | None | Start a new session |
+| `app.session.tree` | None | Open History → Tree |
+| `app.session.fork` | None | Open History → Fork |
+| `app.session.resume` | None | Open History → Resume / Switch session |
 | `app.session.togglePath` | `ctrl+p` | Toggle path display |
 | `app.session.toggleSort` | `ctrl+s` | Toggle sort mode |
 | `app.session.toggleNamedFilter` | `ctrl+n` | Toggle named-only filter |
@@ -161,15 +163,13 @@ These keys move focus between the category, list, detail, and search regions in 
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.model.select` | `ctrl+l` | Open the inline model selector in the footer powerbar |
-| `app.models.save` | `ctrl+s` | Save the selected model as the default |
-| `app.thinking.cycle` | `shift+tab` | Cycle thinking level |
-| `app.thinking.save` | `ctrl+s` | Save current thinking level to settings |
+| `app.model.select` | `ctrl+l` | Open Model in the Powerbar |
 | `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
 | `app.powerbar.left` | `left` | Move the powerbar selection left (while a selector is open) |
 | `app.powerbar.right` | `right` | Move the powerbar selection right (while a selector is open) |
 | `app.powerbar.next` | `tab` | Move between the model and thinking level selectors (wraps) |
-| `app.powerbar.previous` | `shift+tab` | Move from thinking level to the model selector |
+| `app.powerbar.up` | `up` | Open Sources from Model or History from Thinking |
+| `app.powerbar.down` | `down` | Open Details from Model or Agent from Thinking |
 
 While a powerbar selector is open, `enter` confirms the highlighted item, `escape` collapses it, and typing filters the model track. The model and thinking labels in the footer are also clickable.
 
@@ -178,7 +178,7 @@ While a powerbar selector is open, `enter` confirms the highlighted item, `escap
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
 | `app.tools.expand` | `ctrl+o` | Collapse or expand tool output |
-| `app.message.copy` | `ctrl+x` | Copy the selected message in `/tree`; in fullscreen mode, copy the active selection when `fullscreenCopyOnSelect` is `false`; otherwise copy the last assistant message |
+| `app.message.copy` | `ctrl+x` | Copy the selected message in History → Tree; in fullscreen mode, copy the active selection when `fullscreenCopyOnSelect` is `false`; otherwise copy the last assistant message |
 | `app.message.followUp` | `alt+enter` (`ctrl+q` on Windows and WSL) | Queue follow-up message |
 | `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | Restore queued messages to editor |
 

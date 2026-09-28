@@ -1,19 +1,34 @@
 ---
 name: interactive-testing
-description: Test and debug pi's interactive mode in a controlled tmux terminal. Use for TUI behavior checks and interactive release smoke tests.
+description: Test Candy's interactive mode in a real terminal with isolated faux models and sessions.
 ---
 
-# Testing pi Interactive Mode with tmux
+# Interactive testing
 
-Run the TUI in a controlled terminal (from the repo root, two directories above this skill):
+The source smoke launcher builds the current TypeScript checkout with esbuild and starts Candy with two faux models, a session tree, and an isolated home, workspace, temp directory, auth store, and session directory. It blocks network requests. Run it from the repository root after dependencies are installed.
 
-```bash
-tmux new-session -d -s pi-test -x 80 -y 24
-tmux send-keys -t pi-test "./pi-test.sh" Enter
-sleep 3 && tmux capture-pane -t pi-test -p     # capture after startup
-tmux send-keys -t pi-test "your prompt here" Enter
-tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl+o, etc.)
-tmux kill-session -t pi-test
+On Windows, use a real PowerShell or Windows Terminal PTY:
+
+```powershell
+node scripts/interactive-smoke.mjs --no-animations
 ```
 
-For release smoke tests, start the tmux session with `-c /tmp` and replace `./pi-test.sh` with the absolute path to the release binary. Test both Node and Bun binaries separately, submit a prompt, and wait for the model reply; startup alone is not a passing smoke test.
+Check Ctrl+L, both selectors, their four directions, Tab, Command (`/` on an empty input), paste, Chinese input, History, and Agent. Press Ctrl+D to exit. Omit `--no-animations` to check motion. Resize the terminal between 80 columns and a wider layout.
+
+On Linux, use tmux to send real keys and capture the display:
+
+```bash
+tmux new-session -d -s candy-smoke -x 80 -y 24 -c "$PWD"
+tmux send-keys -t candy-smoke 'node scripts/interactive-smoke.mjs --no-animations' Enter
+sleep 2
+tmux capture-pane -t candy-smoke -p
+tmux send-keys -t candy-smoke C-l
+tmux send-keys -t candy-smoke Up
+tmux capture-pane -t candy-smoke -p
+tmux resize-window -t candy-smoke -x 120 -y 36
+tmux capture-pane -t candy-smoke -p
+tmux send-keys -t candy-smoke C-d
+tmux kill-session -t candy-smoke
+```
+
+Repeat without `--no-animations` to inspect transitions. For release smoke tests, start the release binary in a separate tmux session outside the checkout, test Node and Bun binaries separately, submit a prompt, and wait for the model reply; startup alone is insufficient.

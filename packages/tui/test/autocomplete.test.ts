@@ -57,7 +57,7 @@ const getSuggestions = (
 describe("CombinedAutocompleteProvider", () => {
 	describe("extractPathPrefix", () => {
 		it("extracts / from 'hey /' when forced", async () => {
-			const provider = new CombinedAutocompleteProvider([], "/tmp");
+			const provider = new CombinedAutocompleteProvider("/tmp");
 			const lines = ["hey /"];
 			const cursorLine = 0;
 			const cursorCol = 5; // After the "/"
@@ -71,14 +71,13 @@ describe("CombinedAutocompleteProvider", () => {
 		});
 
 		it("extracts /A from '/A' when forced", async () => {
-			const provider = new CombinedAutocompleteProvider([], "/tmp");
+			const provider = new CombinedAutocompleteProvider("/tmp");
 			const lines = ["/A"];
 			const cursorLine = 0;
 			const cursorCol = 2; // After the "A"
 
 			const result = await getSuggestions(provider, lines, cursorLine, cursorCol, true);
 
-			console.log("Result:", result);
 			// This might return null if /A doesn't match anything, which is fine
 			// We're mainly testing that the prefix extraction works
 			if (result) {
@@ -86,30 +85,17 @@ describe("CombinedAutocompleteProvider", () => {
 			}
 		});
 
-		it("does not trigger for slash commands", async () => {
-			const provider = new CombinedAutocompleteProvider([], "/tmp");
-			const lines = ["/model"];
+		it("triggers for absolute paths after ordinary text", async () => {
+			const provider = new CombinedAutocompleteProvider("/tmp");
+			const lines = ["open /"];
 			const cursorLine = 0;
-			const cursorCol = 6; // After "model"
+			const cursorCol = lines[0]!.length;
 
 			const result = await getSuggestions(provider, lines, cursorLine, cursorCol, true);
 
-			console.log("Result:", result);
-			assert.strictEqual(result, null, "Should not trigger for slash commands");
-		});
-
-		it("triggers for absolute paths after slash command argument", async () => {
-			const provider = new CombinedAutocompleteProvider([], "/tmp");
-			const lines = ["/command /"];
-			const cursorLine = 0;
-			const cursorCol = 10; // After the second "/"
-
-			const result = await getSuggestions(provider, lines, cursorLine, cursorCol, true);
-
-			console.log("Result:", result);
-			assert.notEqual(result, null, "Should trigger for absolute paths in command arguments");
+			assert.notEqual(result, null);
 			if (result) {
-				assert.strictEqual(result.prefix, "/", "Prefix should be '/'");
+				assert.strictEqual(result.prefix, "/");
 			}
 		});
 	});
@@ -139,7 +125,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -149,7 +135,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("recognizes @ after CJK punctuation without consuming the preceding text", async () => {
 			setupFolder(baseDir, { files: { "README.md": "readme" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			for (const before of ["查看，", "\u3000", ..."，．：；！？（）［］｛｝“”‘’…—。、「」『』《》【】"]) {
 				for (const force of [false, true]) {
 					const line = `${before}@REA`;
@@ -169,7 +155,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("recognizes @ after opening wrappers like ( and backticks", async () => {
 			setupFolder(baseDir, { files: { "README.md": "readme" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			for (const before of ["(", "see (", "[", "`", "<", "{"]) {
 				const line = `${before}@REA`;
 				const result = await getSuggestions(provider, [line], 0, line.length);
@@ -186,7 +172,7 @@ describe("CombinedAutocompleteProvider", () => {
 			setupFolder(baseDir, {
 				files: { "文档/说明.md": "text", "文档@备份/说明.md": "backup" },
 			});
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			for (const before of ["", "查看，"]) {
 				for (const directory of ["文档", "文档@备份"]) {
 					const prefix = `@${directory}/说`;
@@ -203,7 +189,7 @@ describe("CombinedAutocompleteProvider", () => {
 		});
 
 		test("completes quoted CJK attachments after prose without losing path segments or quotes", async () => {
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			for (const separator of [" ", "\u3000", "，", "。"]) {
 				const directory = `我的${separator}文档`;
 				setupFolder(baseDir, {
@@ -226,7 +212,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("does not interpret email addresses or @ after ASCII or CJK letters as attachment prefixes", async () => {
 			setupFolder(baseDir, { files: { "README.md": "readme", "example.com": "text" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			for (const before of ["user", "查看", "あ", "カ", "한", "ㄅ", "𠮷", "か\u3099", "禰\u{e0100}", "々", "Ａ"]) {
 				for (const name of ["REA", "example.com"]) {
 					const line = `${before}@${name}`;
@@ -242,7 +228,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@file.txt";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -258,7 +244,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@re";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -274,7 +260,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@src";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -291,7 +277,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@index";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -307,7 +293,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@tui/src/auto";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -324,7 +310,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@components/";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -342,7 +328,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@../outside/a";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -357,7 +343,7 @@ describe("CombinedAutocompleteProvider", () => {
 				dirs: ["scope/aaa/venv/lib/python3.12/site-packages/pkg/core/profile", "scope/projects"],
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@scope/pro";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -376,7 +362,7 @@ describe("CombinedAutocompleteProvider", () => {
 				dirs: ["scope/projects", ...floodedDirs],
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@scope/pro";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -389,7 +375,7 @@ describe("CombinedAutocompleteProvider", () => {
 		});
 
 		test("quotes paths containing whitespace or CJK punctuation for @ suggestions", async () => {
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			for (const separator of [" ", "\u3000", "，", "。"]) {
 				const directory = `my${separator}folder`;
 				setupFolder(baseDir, { files: { [`${directory}/test.txt`]: "content" } });
@@ -415,7 +401,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -425,7 +411,7 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(!values.some((value) => value === "@.git" || value.startsWith("@.git/")));
 		});
 
-		test("follows symlinked directories for fuzzy @ search", async () => {
+		test("follows symlinked directories for fuzzy @ search", { skip: process.platform === "win32" }, async () => {
 			setupFolder(baseDir, {
 				files: {
 					"dir/some_file.txt": "real",
@@ -438,7 +424,7 @@ describe("CombinedAutocompleteProvider", () => {
 			});
 			symlinkSync("../outside", join(baseDir, "symlinked_dir"));
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@some";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -447,23 +433,27 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values.includes("@symlinked_dir/some_file.txt"));
 		});
 
-		test("returns symlinked directories when matching their name", async () => {
-			setupFolder(outsideDir, {
-				files: {
-					"nested/file.txt": "symlinked",
-				},
-			});
-			symlinkSync("../outside", join(baseDir, "symlinked_dir"));
+		test(
+			"returns symlinked directories when matching their name",
+			{ skip: process.platform === "win32" },
+			async () => {
+				setupFolder(outsideDir, {
+					files: {
+						"nested/file.txt": "symlinked",
+					},
+				});
+				symlinkSync("../outside", join(baseDir, "symlinked_dir"));
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
-			const line = "@symlinked";
-			const result = await getSuggestions(provider, [line], 0, line.length);
+				const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
+				const line = "@symlinked";
+				const result = await getSuggestions(provider, [line], 0, line.length);
 
-			const values = result?.items.map((item) => item.value) ?? [];
-			assert.ok(values.includes("@symlinked_dir/"));
-		});
+				const values = result?.items.map((item) => item.value) ?? [];
+				assert.ok(values.includes("@symlinked_dir/"));
+			},
+		);
 
-		test("returns symlinked files without requiring type l", async () => {
+		test("returns symlinked files without requiring type l", { skip: process.platform === "win32" }, async () => {
 			setupFolder(baseDir, {
 				files: {
 					"original.txt": "content",
@@ -472,7 +462,7 @@ describe("CombinedAutocompleteProvider", () => {
 			const linkPath = join(baseDir, "link.txt");
 			symlinkSync("original.txt", linkPath);
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = "@link";
 			const result = await getSuggestions(provider, [line], 0, line.length);
 
@@ -497,8 +487,8 @@ describe("CombinedAutocompleteProvider", () => {
 			setupFolder(queryInPathBaseDir, structure);
 
 			const query = "@plan";
-			const normalProvider = new CombinedAutocompleteProvider([], normalBaseDir, requireFdPath());
-			const queryInPathProvider = new CombinedAutocompleteProvider([], queryInPathBaseDir, requireFdPath());
+			const normalProvider = new CombinedAutocompleteProvider(normalBaseDir, requireFdPath());
+			const queryInPathProvider = new CombinedAutocompleteProvider(queryInPathBaseDir, requireFdPath());
 
 			const normalResult = await getSuggestions(normalProvider, [query], 0, query.length);
 			const queryInPathResult = await getSuggestions(queryInPathProvider, [query], 0, query.length);
@@ -521,7 +511,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = '@"my folder/"';
 			const result = await getSuggestions(provider, [line], 0, line.length - 1);
 
@@ -538,7 +528,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
 			const line = '@"my folder/te"';
 			const cursorCol = line.length - 1;
 			const result = await getSuggestions(provider, [line], 0, cursorCol);
@@ -565,7 +555,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("completes Chinese path prefixes after whitespace or CJK punctuation on Tab", async () => {
 			setupFolder(baseDir, { files: { "说明.md": "file", "文档/说明.md": "nested file" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const completions = [
 				{ prefix: "说", value: "说明.md" },
 				{ prefix: "文", value: "文档/" },
@@ -596,7 +586,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("treats unquoted separators as boundaries even when a matching literal path exists", async () => {
 			setupFolder(baseDir, { files: { "归档/说明.md": "other" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			for (const separator of [" ", "\u3000", "，", "。"]) {
 				const directory = `资料${separator}归档`;
 				setupFolder(baseDir, { files: { [`${directory}/说明.md`]: "archive" } });
@@ -628,7 +618,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("handles an empty prefix after whitespace or CJK punctuation consistently", async () => {
 			setupFolder(baseDir, { files: { "说明.md": "text" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			for (const separator of [" ", "\t", "\u3000", "，", "。"]) {
 				for (const force of [false, true]) {
 					const line = `查看${separator}`;
@@ -646,7 +636,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("completes paths after opening wrappers like ( [ { < and backticks", async () => {
 			setupFolder(baseDir, { files: { "src/main.ts": "x" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			for (const wrapper of ["(", "[", "{", "<", "`", "((", "(`"]) {
 				for (const prefix of ["src/ma", "./src/ma"]) {
 					const before = `see ${wrapper}`;
@@ -667,7 +657,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("completes quoted paths after opening wrappers", async () => {
 			setupFolder(baseDir, { files: { "my dir/main.ts": "x" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const line = 'see ("my dir/ma';
 			const result = await getSuggestions(provider, [line], 0, line.length, true);
 			assert.ok(result);
@@ -680,7 +670,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("keeps wrappers that are closed inside the path", async () => {
 			setupFolder(baseDir, { files: { "[slug]/page.tsx": "x", "(group)/layout.tsx": "x" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			for (const [prefix, value] of [
 				["[slug]/pa", "[slug]/page.tsx"],
 				["(group)/la", "(group)/layout.tsx"],
@@ -699,7 +689,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("preserves CJK characters in unprefixed Tab completions", async () => {
 			setupFolder(baseDir, { files: { "文档/说明.md": "text" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const line = "文档/说";
 			const result = await getSuggestions(provider, [line], 0, line.length, true);
 			assert.ok(result);
@@ -718,7 +708,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const line = "./up";
 			const result = await getSuggestions(provider, [line], 0, line.length, true);
 
@@ -735,7 +725,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const line = "./sr";
 			const result = await getSuggestions(provider, [line], 0, line.length, true);
 
@@ -757,7 +747,7 @@ describe("CombinedAutocompleteProvider", () => {
 		});
 
 		test("quotes paths containing whitespace or CJK punctuation for direct completion", async () => {
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			for (const separator of [" ", "\u3000", "，", "。"]) {
 				const directory = `my${separator}folder`;
 				setupFolder(baseDir, { files: { [`${directory}/test.txt`]: "content" } });
@@ -778,7 +768,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("keeps quoted directories before files", async () => {
 			setupFolder(baseDir, { dirs: ["z folder", "z，folder"], files: { "a.txt": "text" } });
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const result = await getSuggestions(provider, [""], 0, 0, true);
 			assert.ok(result);
 			assert.deepStrictEqual(
@@ -795,7 +785,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const line = '"my folder/"';
 			const result = await getSuggestions(provider, [line], 0, line.length - 1, true);
 
@@ -812,7 +802,7 @@ describe("CombinedAutocompleteProvider", () => {
 				},
 			});
 
-			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const provider = new CombinedAutocompleteProvider(baseDir);
 			const line = '"my folder/te"';
 			const cursorCol = line.length - 1;
 			const result = await getSuggestions(provider, [line], 0, cursorCol, true);

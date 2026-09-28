@@ -7,6 +7,7 @@ import {
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
+import { keyHint } from "./keybinding-hints.ts";
 
 interface UserMessageItem {
 	id: string;
@@ -90,7 +91,9 @@ class UserMessageList implements Component {
 					)
 				: "",
 		);
-		lines.push(theme.fg("dim", "Tab list / preview · Enter fork · Esc close"));
+		lines.push(
+			`${keyHint("app.panel.focusNext", "list / preview")} · ${keyHint("tui.select.confirm", "fork")} · ${keyHint("tui.select.cancel", "close")}`,
+		);
 		return lines;
 	}
 

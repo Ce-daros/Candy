@@ -5,7 +5,7 @@
  * to the LLM. Custom entries are stored in the session via candy.appendEntry() and
  * rendered in interactive mode via candy.registerEntryRenderer().
  *
- * Usage: /status-card [message]
+ * Usage: open Command and choose `status-card`, then enter an optional message.
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";

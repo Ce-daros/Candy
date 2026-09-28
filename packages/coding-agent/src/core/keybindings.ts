@@ -16,13 +16,14 @@ export interface AppKeybindings {
 	"app.clear": true;
 	"app.exit": true;
 	"app.suspend": true;
-	"app.thinking.cycle": true;
-	"app.thinking.save": true;
+	"app.command.enter": true;
+	"app.command.arguments": true;
 	"app.shell.enter": true;
 	"app.powerbar.left": true;
 	"app.powerbar.right": true;
 	"app.powerbar.next": true;
-	"app.powerbar.previous": true;
+	"app.powerbar.up": true;
+	"app.powerbar.down": true;
 	"app.panel.focusNext": true;
 	"app.panel.focusPrevious": true;
 	"app.panel.scope": true;
@@ -48,7 +49,9 @@ export interface AppKeybindings {
 	"app.session.rename": true;
 	"app.session.delete": true;
 	"app.session.deleteNoninvasive": true;
-	"app.models.save": true;
+	"app.models.toggle": true;
+	"app.models.selectAll": true;
+	"app.models.clearSelection": true;
 	"app.tree.filter.default": true;
 	"app.tree.filter.noTools": true;
 	"app.tree.filter.userOnly": true;
@@ -98,14 +101,8 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
 		description: "Suspend to background",
 	},
-	"app.thinking.cycle": {
-		defaultKeys: "shift+tab",
-		description: "Cycle thinking level",
-	},
-	"app.thinking.save": {
-		defaultKeys: "ctrl+s",
-		description: "Save thinking level",
-	},
+	"app.command.enter": { defaultKeys: "/", description: "Enter Command mode when the editor is empty" },
+	"app.command.arguments": { defaultKeys: "right", description: "Enter command arguments" },
 	"app.shell.enter": { defaultKeys: "!", description: "Enter Shell mode when the editor is empty" },
 	"app.powerbar.left": {
 		defaultKeys: "left",
@@ -119,7 +116,8 @@ export const KEYBINDINGS = {
 		defaultKeys: "tab",
 		description: "Focus next powerbar selector, wrapping back to the model selector",
 	},
-	"app.powerbar.previous": { defaultKeys: "shift+tab", description: "Focus previous powerbar selector" },
+	"app.powerbar.up": { defaultKeys: "up", description: "Open Sources or History" },
+	"app.powerbar.down": { defaultKeys: "down", description: "Open Details or Agent" },
 	"app.panel.focusNext": { defaultKeys: "tab", description: "Focus next panel region" },
 	"app.panel.focusPrevious": { defaultKeys: "shift+tab", description: "Focus previous panel region" },
 	"app.panel.scope": { defaultKeys: "alt+s", description: "Switch directory or configuration scope" },
@@ -193,10 +191,9 @@ export const KEYBINDINGS = {
 		defaultKeys: "ctrl+backspace",
 		description: "Delete session when query is empty",
 	},
-	"app.models.save": {
-		defaultKeys: "ctrl+s",
-		description: "Save model selection",
-	},
+	"app.models.toggle": { defaultKeys: "space", description: "Toggle highlighted model" },
+	"app.models.selectAll": { defaultKeys: "ctrl+a", description: "Select matching models" },
+	"app.models.clearSelection": { defaultKeys: "ctrl+d", description: "Clear matching models" },
 	"app.tree.filter.default": {
 		defaultKeys: "ctrl+d",
 		description: "Tree filter: default view",
@@ -263,7 +260,6 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	clear: "app.clear",
 	exit: "app.exit",
 	suspend: "app.suspend",
-	cycleThinkingLevel: "app.thinking.cycle",
 	selectModel: "app.model.select",
 	expandTools: "app.tools.expand",
 	toggleThinking: "app.thinking.toggle",

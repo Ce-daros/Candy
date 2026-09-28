@@ -1,7 +1,7 @@
 import { type Component, Loader, type TUI, truncateToWidth } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
-import { keyText } from "./keybinding-hints.ts";
+import { keyHint } from "./keybinding-hints.ts";
 
 export type StatusIndicatorKind = "working" | "retry" | "compaction" | "branchSummary";
 
@@ -50,12 +50,12 @@ export class RetryStatusIndicator extends StatusIndicator {
 
 	constructor(ui: TUI, attempt: number, maxAttempts: number, delayMs: number) {
 		const retryMessage = (seconds: number) =>
-			`Retrying (${attempt}/${maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
+			`${theme.fg("muted", `Retrying (${attempt}/${maxAttempts}) in ${seconds}s... (`)}${keyHint("app.interrupt", "to cancel")}${theme.fg("muted", ")")}`;
 		super(
 			"retry",
 			ui,
 			(spinner) => theme.fg("warning", spinner),
-			(text) => theme.fg("muted", text),
+			(text) => text,
 			retryMessage(Math.ceil(delayMs / 1000)),
 		);
 		this.countdown = new CountdownTimer(
@@ -81,16 +81,16 @@ export type CompactionStatusReason = "manual" | "threshold" | "overflow";
 
 export class CompactionStatusIndicator extends StatusIndicator {
 	constructor(ui: TUI, reason: CompactionStatusReason) {
-		const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
+		const cancelHint = `${theme.fg("muted", "(")}${keyHint("app.interrupt", "to cancel")}${theme.fg("muted", ")")}`;
 		const label =
 			reason === "manual"
-				? `Compacting context... ${cancelHint}`
-				: `${reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
+				? `${theme.fg("muted", "Compacting context... ")}${cancelHint}`
+				: `${theme.fg("muted", `${reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... `)}${cancelHint}`;
 		super(
 			"compaction",
 			ui,
 			(spinner) => theme.fg("accent", spinner),
-			(text) => theme.fg("muted", text),
+			(text) => text,
 			label,
 		);
 	}
@@ -102,8 +102,8 @@ export class BranchSummaryStatusIndicator extends StatusIndicator {
 			"branchSummary",
 			ui,
 			(spinner) => theme.fg("accent", spinner),
-			(text) => theme.fg("muted", text),
-			`Summarizing branch... (${keyText("app.interrupt")} to cancel)`,
+			(text) => text,
+			`${theme.fg("muted", "Summarizing branch... (")}${keyHint("app.interrupt", "to cancel")}${theme.fg("muted", ")")}`,
 		);
 	}
 }

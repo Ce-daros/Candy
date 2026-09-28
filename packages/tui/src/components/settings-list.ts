@@ -30,6 +30,7 @@ export interface SettingsListTheme {
 	cursor: string;
 	selectedSuffix?: string;
 	hint: (text: string) => string;
+	keycap: (key: string) => string;
 }
 
 export interface SettingsListOptions {
@@ -337,14 +338,13 @@ export class SettingsList implements Component {
 	}
 
 	private addHintLine(lines: string[], width: number): void {
+		const bindings = getKeybindings();
+		const confirm = this.theme.keycap(bindings.getKeys("tui.select.confirm").join("/"));
+		const cancel = this.theme.keycap(bindings.getKeys("tui.select.cancel").join("/"));
 		lines.push("");
 		lines.push(
 			truncateToWidth(
-				this.theme.hint(
-					this.searchEnabled
-						? "  Type to search · Enter/Space to change · Esc to cancel"
-						: "  Enter/Space to change · Esc to cancel",
-				),
+				`${this.theme.hint(this.searchEnabled ? "  Type to search · " : "  ")}${confirm}/${this.theme.keycap("space")}${this.theme.hint(" to change · ")}${cancel}${this.theme.hint(" to cancel")}`,
 				width,
 			),
 		);

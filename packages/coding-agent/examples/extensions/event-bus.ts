@@ -4,7 +4,7 @@
  * Shows candy.events for communication between extensions. One extension
  * can emit events that other extensions listen to.
  *
- * Usage: /emit [event-name] [data] - emit an event on the bus
+ * Usage: open Command and choose `emit`, then enter the event name and data.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@candy/coding-agent";
@@ -25,10 +25,10 @@ export default function (candy: ExtensionAPI) {
 
 	// Command to emit events (emits "my:notification" which the listener above receives)
 	candy.registerCommand("emit", {
-		description: "Emit my:notification event (usage: /emit message)",
+		description: "Emit a notification event",
 		handler: async (args, _ctx) => {
 			const message = args.trim() || "hello";
-			candy.events.emit("my:notification", { message, from: "/emit command" });
+			candy.events.emit("my:notification", { message, from: "emit command" });
 			// Listener above will show the notification
 		},
 	});

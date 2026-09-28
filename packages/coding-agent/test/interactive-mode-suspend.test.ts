@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
 type FakeUi = {
@@ -24,7 +24,14 @@ function callHandleCtrlZ(context: HandleCtrlZThis): void {
 const interactiveModePrototype = InteractiveMode.prototype as unknown;
 
 describe("InteractiveMode.handleCtrlZ", () => {
+	const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
+
+	beforeEach(() => {
+		Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
+	});
+
 	afterEach(() => {
+		Object.defineProperty(process, "platform", platformDescriptor);
 		vi.restoreAllMocks();
 	});
 

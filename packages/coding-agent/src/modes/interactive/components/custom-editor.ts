@@ -2,10 +2,9 @@ import type { ThinkingLevel } from "@candy/agent-core";
 import { Editor, type EditorOptions, type EditorTheme, type TUI, truncateToWidth, visibleWidth } from "@candy/tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
-import { stripAnsi } from "../../../utils/ansi.ts";
 import { theme } from "../theme/theme.ts";
-import { FrameMotion, type ShellMode } from "./frame-motion.ts";
-import { PanelTransition } from "./panel-transition.ts";
+import { FrameMotion, type InputMode } from "./frame-motion.ts";
+import { PanelTransition, panelPhase, panelRowVisible } from "./panel-transition.ts";
 import type { StatusIndicator } from "./status-indicator.ts";
 
 export type CustomEditorOptions = EditorOptions & {
@@ -29,9 +28,11 @@ const DEFAULT_LEFT_GUTTER = "│   ";
 const PROMPT_GLYPH_NORMAL = "◆";
 /** Prompt glyph on the first input line: a chevron in Shell modes. */
 const PROMPT_GLYPH_SHELL = "❯";
+const PROMPT_GLYPH_COMMAND = "/";
 /** Gutter on the first input line: border, space, prompt glyph, then one column before the text. */
 const PROMPT_LEFT_GUTTER_NORMAL = `│ ${PROMPT_GLYPH_NORMAL} `;
 const PROMPT_LEFT_GUTTER_SHELL = `│ ${PROMPT_GLYPH_SHELL} `;
+const PROMPT_LEFT_GUTTER_COMMAND = `│ ${PROMPT_GLYPH_COMMAND} `;
 
 /**
  * Custom editor that handles app-level keybindings for coding-agent.
@@ -51,7 +52,7 @@ export class CustomEditor extends Editor {
 	 * Called before all other handling; returns true when the key was consumed.
 	 */
 	public powerbarHandler?: (data: string) => boolean;
-	public shellInputHandler?: (data: string) => boolean;
+	public modeInputHandler?: (data: string) => boolean;
 	/** Left click on the bottom border row (Powerbar labels). Returns true when handled. */
 	public onBottomBorderClick?: (x: number) => boolean;
 
@@ -92,9 +93,15 @@ export class CustomEditor extends Editor {
 		status?.setFrameMotion?.(this.frameMotion);
 	}
 
-	setShellMode(mode: ShellMode): void {
+	setInputMode(mode: InputMode): void {
 		this.frameMotion.setMode(mode);
-		this.setFirstLineGutter(mode === "normal" ? PROMPT_LEFT_GUTTER_NORMAL : PROMPT_LEFT_GUTTER_SHELL);
+		this.setFirstLineGutter(
+			mode === "normal"
+				? PROMPT_LEFT_GUTTER_NORMAL
+				: mode === "command"
+					? PROMPT_LEFT_GUTTER_COMMAND
+					: PROMPT_LEFT_GUTTER_SHELL,
+		);
 	}
 
 	setThinkingLevel(level: ThinkingLevel): void {
@@ -127,12 +134,12 @@ export class CustomEditor extends Editor {
 		if (lines.length > 0) this.autocompleteLines = lines;
 		const progress = this.autocompleteMotion.value();
 		if (progress === 0) return [];
-		const growth = Math.max(0, Math.min(1, (progress - 0.12) / 0.55));
+		const { growth } = panelPhase(progress);
 		const height = Math.ceil(this.autocompleteLines.length * growth);
 		return this.autocompleteLines
 			.slice(0, height)
 			.map((line, index) =>
-				progress >= 0.72 + (index / Math.max(1, this.autocompleteLines.length)) * 0.25
+				panelRowVisible(progress, index, this.autocompleteLines.length, 0.72)
 					? truncateToWidth(line, width, "")
 					: "",
 			);
@@ -151,7 +158,8 @@ export class CustomEditor extends Editor {
 	protected override colorSideBorder(text: string, side: "left" | "right", row: number, _totalRows: number): string {
 		if (side === "left") {
 			const mode = this.frameMotion.getMode();
-			const glyph = mode === "normal" ? PROMPT_GLYPH_NORMAL : PROMPT_GLYPH_SHELL;
+			const glyph =
+				mode === "normal" ? PROMPT_GLYPH_NORMAL : mode === "command" ? PROMPT_GLYPH_COMMAND : PROMPT_GLYPH_SHELL;
 			const index = text.indexOf(glyph);
 			if (index !== -1) {
 				// The border cell keeps the animated frame color; only the prompt glyph takes its own color.
@@ -159,7 +167,7 @@ export class CustomEditor extends Editor {
 				const after = text.slice(index + glyph.length);
 				return (
 					this.frameMotion.paintBorder(before, 0, row) +
-					theme.fg(mode === "normal" ? "editorPrompt" : "bashMode", glyph) +
+					theme.fg(mode === "normal" ? "editorPrompt" : mode === "command" ? "accent" : "bashMode", glyph) +
 					(after ? this.frameMotion.paintBorder(after, index + glyph.length, row) : "")
 				);
 			}
@@ -185,9 +193,7 @@ export class CustomEditor extends Editor {
 		this.frameMotion.beginFrame();
 		if (width < 2) return this.frameMotion.paintBorder("─".repeat(Math.max(0, width)), 0, 0);
 		const panelProgress = this.autocompleteMotion.value();
-		const expanded = panelProgress > 0.12;
-		const topReveal =
-			panelProgress < 0.12 ? 1 - panelProgress / 0.12 : Math.min(1, Math.max(0, (panelProgress - 0.65) / 0.08));
+		const { expanded, topReveal } = panelPhase(panelProgress);
 		const side = Math.min(Math.floor((width - 2) / 2), Math.ceil(((width - 2) / 2) * topReveal));
 		const middle =
 			topReveal >= 1
@@ -199,11 +205,10 @@ export class CustomEditor extends Editor {
 			status === "working" && !this.frameMotion.isEnabled()
 				? "Working"
 				: status && status !== "working"
-					? stripAnsi(this.statusIndicator?.renderInBorder(Math.max(1, width - 24)) ?? "").trim()
+					? (this.statusIndicator?.renderInBorder(Math.max(1, width - 24)) ?? "").trim()
 					: "";
-		const shellTitle = this.frameMotion.getShellTitle();
-		// Shell titles get one half-width space of padding on each side.
-		const caption = [shellTitle, statusWord].filter(Boolean).join(" · ");
+		const modeTitle = this.frameMotion.getModeTitle();
+		const caption = [modeTitle, statusWord].filter(Boolean).join(" · ");
 		const title = caption ? ` ${caption} ` : "";
 		const titleStart = 7;
 		const titleWidth = Math.min(visibleWidth(title), Math.max(0, width - titleStart - 2));
@@ -245,7 +250,7 @@ export class CustomEditor extends Editor {
 		if (this.powerbarHandler?.(data)) {
 			return;
 		}
-		if (this.shellInputHandler?.(data)) {
+		if (this.modeInputHandler?.(data)) {
 			return;
 		}
 

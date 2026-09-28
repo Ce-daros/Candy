@@ -1,10 +1,19 @@
 import type { ThinkingLevel } from "@candy/agent-core";
-import { type Color, colorToOklch, foregroundAnsi, mixColors, oklchColor, type TUI, visibleWidth } from "@candy/tui";
+import {
+	type Color,
+	colorToOklch,
+	foregroundAnsi,
+	mixColors,
+	oklchColor,
+	type TUI,
+	truncateToWidth,
+	visibleWidth,
+} from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { type ThemeColor, theme } from "../theme/theme.ts";
 import type { StatusIndicatorKind } from "./status-indicator.ts";
 
-export type ShellMode = "normal" | "shell" | "shell-no-context";
+export type InputMode = "normal" | "shell" | "shell-no-context" | "command";
 
 const TIMING: Record<AnimationIntensity, { entrance: number; transition: number; frame: number; status: number }> = {
 	conservative: { entrance: 700, transition: 480, frame: 45, status: 150 },
@@ -36,20 +45,36 @@ function smoothstep(value: number): number {
 }
 
 interface Transition {
-	from: ShellMode;
-	to: ShellMode;
+	from: InputMode;
+	to: InputMode;
 	start: number;
 	previous?: { transition: Transition; at: number };
 }
 
 type Ink = "hidden" | "base" | "dim" | number;
 
+const MODE_STEPS = RAMP_STEPS * 2;
+
+function modeStep(mode: InputMode): number {
+	return mode === "normal" ? 0 : mode === "command" ? MODE_STEPS : RAMP_STEPS;
+}
+
+function modeTitle(mode: InputMode): string {
+	return mode === "shell-no-context"
+		? "Shell · No Context"
+		: mode === "shell"
+			? "Shell"
+			: mode === "command"
+				? "Command"
+				: "";
+}
+
 /** The border's geometry, mode color, and activity highlights share one clock. */
 export class FrameMotion {
 	private readonly ui: TUI;
 	private enabled = true;
 	private intensity: AnimationIntensity = "moderate";
-	private mode: ShellMode = "normal";
+	private mode: InputMode = "normal";
 	private transition: Transition | undefined;
 	private entranceStart: number | undefined;
 	private entrancePending = true;
@@ -61,7 +86,7 @@ export class FrameMotion {
 	private paletteKey = "";
 	private borderRamp: string[] = [];
 	private statusRamps: string[][] = [];
-	private titleRamp: string[] = [];
+	private titleRamps: Record<"shell" | "command", string[]> = { shell: [], command: [] };
 	private labelRamps: Record<"text" | "muted" | "accent", string[]> = { text: [], muted: [], accent: [] };
 	private width = 80;
 	private rows = 4;
@@ -98,7 +123,7 @@ export class FrameMotion {
 		this.ui.requestRender();
 	}
 
-	setMode(mode: ShellMode): void {
+	setMode(mode: InputMode): void {
 		if (this.mode === mode) return;
 		const from = this.mode;
 		this.mode = mode;
@@ -115,16 +140,16 @@ export class FrameMotion {
 		this.ui.requestRender();
 	}
 
-	getMode(): ShellMode {
+	getMode(): InputMode {
 		return this.mode;
 	}
 
-	getShellTitle(): string {
+	getModeTitle(): string {
 		const mode =
 			this.mode === "normal" || (this.mode === "shell" && this.transition?.from === "shell-no-context")
-				? this.transition?.from
+				? (this.transition?.from ?? this.mode)
 				: this.mode;
-		return mode === "shell-no-context" ? "Shell · No Context" : mode === "shell" ? "Shell" : "";
+		return modeTitle(mode);
 	}
 
 	getBottomRow(): number {
@@ -166,7 +191,7 @@ export class FrameMotion {
 		this.refreshPalette();
 		const now = performance.now();
 		return `${Array.from(text, (char, index) => {
-			const color = this.gradientAt(this.rightAnchor + index, this.rows - 1, now) * (RAMP_STEPS + 1);
+			const color = this.gradientAt(this.rightAnchor + index, this.rows - 1, now) * (MODE_STEPS + 1);
 			return `${this.borderRamp[color]}${char}`;
 		}).join("")}\x1b[39m`;
 	}
@@ -208,7 +233,7 @@ export class FrameMotion {
 		};
 		for (let offset = 0; offset < text.length; offset++) {
 			const column = startColumn + offset;
-			const color = this.gradientAt(column, row, now) * (RAMP_STEPS + 1) + this.colorAt(column, row, now);
+			const color = this.gradientAt(column, row, now) * (MODE_STEPS + 1) + this.colorAt(column, row, now);
 			const ink = this.inkAt(column, row, now);
 			if (ink !== current || color !== currentColor) {
 				flush();
@@ -222,21 +247,25 @@ export class FrameMotion {
 	}
 
 	paintTitle(text: string): string {
-		if (!this.enabled) return theme.fg(this.mode === "normal" ? "border" : "bashMode", text);
+		if (!this.enabled)
+			return theme.fg(this.mode === "normal" ? "border" : this.mode === "command" ? "accent" : "bashMode", text);
 		this.refreshPalette();
 		const progress = this.getTitleProgress();
-		const exiting = this.mode === "normal" && this.transition?.from !== "normal";
+		const exiting = this.mode === "normal" && this.transition !== undefined && this.transition.from !== "normal";
+		const width = visibleWidth(text);
 		const visible = exiting
-			? Math.ceil(text.length * (1 - progress))
+			? Math.ceil(width * (1 - progress))
 			: this.transition?.from === "shell-no-context" && this.mode === "shell"
-				? Math.max(5, Math.ceil(text.length * (1 - progress)))
+				? Math.min(width, Math.max(5, Math.ceil(width * (1 - progress))))
 				: this.transition?.from === "shell" && this.mode === "shell-no-context"
-					? Math.max(5, Math.ceil(text.length * progress))
-					: text.length;
-		const shown = text.slice(0, visible);
-		const rest = " ".repeat(text.length - visible);
+					? Math.min(width, Math.max(5, Math.ceil(width * progress)))
+					: width;
+		const shown = truncateToWidth(text, visible, "");
+		const rest = " ".repeat(width - visibleWidth(shown));
 		const titleStep = Math.max(1, Math.round((exiting ? 1 - progress : progress) * RAMP_STEPS));
-		return `${this.titleRamp[titleStep]}${shown}\x1b[39m${rest}`;
+		const titleMode = exiting ? this.transition!.from : this.mode;
+		const ramp = titleMode === "command" ? this.titleRamps.command : this.titleRamps.shell;
+		return `${ramp[titleStep]}${shown}\x1b[39m${rest}`;
 	}
 
 	dispose(): void {
@@ -272,28 +301,26 @@ export class FrameMotion {
 
 	private colorAt(column: number, row: number, now: number): number {
 		const transition = this.transition;
-		if (!transition) return this.mode === "normal" ? 0 : RAMP_STEPS;
+		if (!transition) return modeStep(this.mode);
 		return this.transitionColorAt(transition, column, row, now);
 	}
 
 	private transitionColorAt(transition: Transition, column: number, row: number, now: number): number {
 		const progress = smoothstep((now - transition.start) / TIMING[this.intensity].transition);
-		const shellBefore = transition.from !== "normal";
-		const shellAfter = transition.to !== "normal";
-		if (shellBefore === shellAfter) return shellAfter ? RAMP_STEPS : 0;
+		const before = modeStep(transition.from);
+		const after = modeStep(transition.to);
+		if (before === after) return after;
 		const initial = transition.previous
 			? this.transitionColorAt(transition.previous.transition, column, row, transition.previous.at)
-			: shellBefore
-				? RAMP_STEPS
-				: 0;
-		if (shellAfter) {
+			: before;
+		if (after > before) {
 			const distance = this.distanceFromTitle(column, row, transition.to);
 			const maximum = this.width / 2 + this.rows + this.width / 2;
 			const reveal = smoothstep((progress - (distance / maximum) * 0.5) / 0.5);
-			return Math.round(initial + (RAMP_STEPS - initial) * reveal);
+			return Math.round(initial + (after - initial) * reveal);
 		}
 		const retract = smoothstep((progress - this.exitFraction(column, row, transition.from) * 0.5) / 0.5);
-		return Math.round(initial * (1 - retract));
+		return Math.round(initial + (after - initial) * retract);
 	}
 
 	private inkAt(column: number, row: number, now: number): Ink {
@@ -372,9 +399,8 @@ export class FrameMotion {
 		return advance < 0 ? "hidden" : advance < 3 ? "dim" : "base";
 	}
 
-	private distanceFromTitle(column: number, row: number, mode: ShellMode): number {
-		// Shell titles render with one space of padding on each side, so the title text starts one column later.
-		const center = 8 + Math.floor((mode === "shell-no-context" ? 18 : 5) / 2);
+	private distanceFromTitle(column: number, row: number, mode: InputMode): number {
+		const center = 8 + Math.floor(modeTitle(mode).length / 2);
 		if (row === 0) return Math.abs(column - center);
 		if (column === 0) return center + row;
 		if (column === this.width - 1) return this.width - 1 - center + row;
@@ -384,9 +410,9 @@ export class FrameMotion {
 		);
 	}
 
-	private exitFraction(column: number, row: number, from: ShellMode): number {
+	private exitFraction(column: number, row: number, from: InputMode): number {
 		const bottom = this.rows - 1;
-		const titleEnd = Math.min(this.width - 1, 9 + (from === "shell-no-context" ? 18 : 5));
+		const titleEnd = Math.min(this.width - 1, 9 + modeTitle(from).length);
 		const leftLength = Math.max(1, this.leftAnchor + bottom + Math.min(7, titleEnd));
 		const rightLength = Math.max(1, this.width - 1 - this.rightAnchor + bottom + this.width - 1 - titleEnd);
 		if (row === bottom && column > this.leftAnchor && column < this.rightAnchor) {
@@ -466,11 +492,14 @@ export class FrameMotion {
 			const target = colorToOklch(base).l;
 			return oklchColor(light ? Math.min(l, target) : Math.max(l, target), c, h);
 		});
-		const palette = gradient.flatMap((color) =>
-			Array.from({ length: RAMP_STEPS + 1 }, (_, index) =>
+		const palette = gradient.flatMap((color) => [
+			...Array.from({ length: RAMP_STEPS + 1 }, (_, index) =>
 				mixColors(color, colors.bashMode, index / RAMP_STEPS, "srgb"),
 			),
-		);
+			...Array.from({ length: RAMP_STEPS }, (_, index) =>
+				mixColors(colors.bashMode, colors.accent, (index + 1) / RAMP_STEPS, "srgb"),
+			),
+		]);
 		this.borderRamp = palette.map((color) => foregroundAnsi(color, mode));
 		this.statusRamps = palette.map((color) => {
 			const { l, c, h } = colorToOklch(color);
@@ -479,7 +508,7 @@ export class FrameMotion {
 				foregroundAnsi(oklchColor(l + ((high - l) * brightness) / RAMP_STEPS, c * (1 - brightness / 16), h), mode),
 			);
 		});
-		this.titleRamp = ramp(colors.dim, colors.bashMode);
+		this.titleRamps = { shell: ramp(colors.dim, colors.bashMode), command: ramp(colors.dim, colors.accent) };
 		this.labelRamps = {
 			text: ramp(colors.dim, colors.text),
 			muted: ramp(colors.dim, colors.muted),

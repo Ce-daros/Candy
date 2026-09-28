@@ -4,7 +4,7 @@
  * Shows how to use registerMessageRenderer to control how custom messages
  * appear in the TUI, with colors, formatting, and expandable details.
  *
- * Usage: /status [message] - sends a status message with custom rendering
+ * Usage: open Command and choose `status`; enter an optional message to send it with custom rendering.
  */
 
 import type { ExtensionAPI } from "@candy/coding-agent";
@@ -36,7 +36,7 @@ export default function (candy: ExtensionAPI) {
 
 	// Command to send status messages
 	candy.registerCommand("status", {
-		description: "Send a status message (usage: /status [warn|error] message)",
+		description: "Send a status message; optionally prefix it with warn or error",
 		handler: async (args, _ctx) => {
 			const parts = args.trim().split(/\s+/);
 			let level = "info";

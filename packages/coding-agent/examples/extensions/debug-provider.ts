@@ -1,7 +1,7 @@
 /**
  * Raw provider event viewer.
  *
- * Usage: /debug-provider [on|off]
+ * Usage: open Command and choose `debug-provider`, then enter `on` or `off`.
  * With no argument, the command toggles capture. Captured events are persisted
  * as expandable custom entries.
  */
@@ -49,7 +49,7 @@ export default function (candy: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const requestedState = args.trim().toLowerCase();
 			if (requestedState !== "" && requestedState !== "on" && requestedState !== "off") {
-				ctx.ui.notify("Usage: /debug-provider [on|off]", "warning");
+				ctx.ui.notify("Enter on or off", "warning");
 				return;
 			}
 

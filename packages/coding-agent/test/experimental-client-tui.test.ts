@@ -372,8 +372,8 @@ describe("experimental client TUI", () => {
 				expect(component.render(80).join("\n")).not.toContain("Working...");
 				expect(component.render(80).join("\n")).not.toContain("Operation run-1 completed");
 
-				component.handleInput("/reload");
-				component.handleInput("\u001b");
+				component.handleInput("/");
+				component.handleInput("reload");
 				component.handleInput("\r");
 				await vi.waitFor(() => {
 					expect(reloadPresentationPlugins).toHaveBeenCalledOnce();
@@ -400,8 +400,9 @@ describe("experimental client TUI", () => {
 				publishReplacement(attachment, { status: "attached", sessionId });
 				await vi.waitFor(() => expect(component.render(80).join("\n")).not.toContain("Reattaching"));
 
-				component.handleInput("/model");
-				component.handleInput("\u001b");
+				component.handleInput("/");
+				component.handleInput("model");
+				component.handleInput("\r");
 				component.handleInput("\r");
 				await vi.waitFor(() => expect(component.render(80).join("\n")).toContain("Select model:"));
 				component.handleInput("\u001b[B");
@@ -412,14 +413,19 @@ describe("experimental client TUI", () => {
 				expect(modelsState.value.configuration.model).toEqual({ provider: "test", modelId: "two" });
 				await vi.waitFor(() => expect(component.render(80).join("\n")).not.toContain("Select model:"));
 
-				component.handleInput("/thinking");
-				component.handleInput("\u001b");
+				component.handleInput("/");
+				component.handleInput("thinking");
+				component.handleInput("\r");
 				component.handleInput("\r");
 				await vi.waitFor(() => expect(component.render(80).join("\n")).toContain("Select thinking level:"));
 				component.handleInput("\u001b[B");
 				component.handleInput("\r");
 				await vi.waitFor(() => expect(selectThinking).toHaveBeenCalledWith("high", expect.anything()));
 				expect(modelsState.value.configuration.thinkingLevel).toBe("high");
+
+				component.handleInput("/literal");
+				component.handleInput("\r");
+				await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith("/literal", undefined, BACKGROUND_CONTEXT));
 
 				component.handleInput("\u0003");
 				await vi.waitFor(() => expect(finished).toBe(true));

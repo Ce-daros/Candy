@@ -57,6 +57,7 @@ import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import type { CacheWarmer, CacheWarmingStatus } from "./cache-warmer.ts";
+import type { CommandInfo, CommandInvocation } from "./commands.ts";
 import {
 	type CompactionPreparation,
 	type CompactionResult,
@@ -106,7 +107,7 @@ import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
-import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
+import { type PromptTemplate, parseCommandArgs, substituteArgs } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import { exportSessionToJsonl } from "./session-export.ts";
 import {
@@ -118,7 +119,6 @@ import {
 	SessionManager,
 } from "./session-manager.ts";
 import type { CacheWarmingMode, SettingsManager } from "./settings-manager.ts";
-import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import {
 	buildSystemPrompt,
@@ -262,8 +262,6 @@ export type PromptDisposition = QueuedInputDisposition | "started";
 
 /** Options for AgentSession.prompt() */
 export interface PromptOptions {
-	/** Whether to dispatch extension commands and expand skill commands and prompt templates (default: true) */
-	expandPromptTemplates?: boolean;
 	/** Image attachments */
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
@@ -280,7 +278,7 @@ export interface ModelMutationOptions {
 	persist?: boolean;
 }
 
-/** Session statistics for /session command */
+/** Session statistics for the History details view. */
 export interface SessionStats {
 	sessionFile: string | undefined;
 	sessionId: string;
@@ -342,6 +340,15 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
+	private _pendingCompactionCommands: Array<{
+		text: string;
+		mode: "steer" | "followUp";
+		options?: PromptOptions;
+		resolve: () => void;
+		reject: (error: unknown) => void;
+	}> = [];
+	private _drainingCompactionCommands = false;
+	private _disposed = false;
 	private _overflowRecoveryAttempted = false;
 
 	// Branch summarization state
@@ -472,7 +479,7 @@ export class AgentSession {
 			throw new Error(
 				`Authentication failed for "${model.provider}". ` +
 					`Credentials may have expired or network is unavailable. ` +
-					`Run '/login ${model.provider}' to re-authenticate.`,
+					`Open Sources to re-authenticate ${model.provider}.`,
 			);
 		}
 		throw new Error(formatNoApiKeyFoundMessage(model.provider));
@@ -826,8 +833,8 @@ export class AgentSession {
 	private _emitQueueUpdate(): void {
 		this._emit({
 			type: "queue_update",
-			steering: [...this._steeringMessages],
-			followUp: [...this._followUpMessages],
+			steering: this.getSteeringMessages(),
+			followUp: this.getFollowUpMessages(),
 		});
 	}
 
@@ -1158,6 +1165,10 @@ export class AgentSession {
 	 * Call this when completely done with the session.
 	 */
 	dispose(): void {
+		this._disposed = true;
+		for (const item of this._pendingCompactionCommands.splice(0)) {
+			item.reject(new Error("Session was disposed before the command could run"));
+		}
 		try {
 			this.abortRetry();
 			this.abortCompaction();
@@ -1576,30 +1587,18 @@ export class AgentSession {
 
 	/**
 	 * Send a prompt to the agent.
-	 * - Handles extension commands (registered via candy.registerCommand) immediately, even during streaming
-	 * - Expands file-based prompt templates by default
 	 * - During streaming, queues via steer() or followUp() based on streamingBehavior option
 	 * - Validates model and API key before sending (when not streaming)
 	 * @throws Error if streaming and no streamingBehavior specified
 	 * @throws Error if no model selected or no API key available (when not streaming)
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		if (this._disposed) throw new Error("Session was disposed before the prompt could run");
 		if (this._isEmittingAgentSettled) {
 			this._deferredSettledActions.push(async () => await this.prompt(text, options));
 			return;
 		}
-		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
-		// Handle extension commands first (execute immediately, even during streaming)
-		// Extension commands manage their own LLM interaction via candy.sendMessage()
-		if (expandPromptTemplates && text.startsWith("/")) {
-			const handled = await this._tryExecuteExtensionCommand(text);
-			if (handled) {
-				// Extension command executed, no prompt to send
-				preflightResult?.("handled");
-				return;
-			}
-		}
 
 		if (this._compactionAbortController !== undefined) {
 			throw new Error(
@@ -1607,25 +1606,19 @@ export class AgentSession {
 			);
 		}
 
-		// Emit input event for extension interception (before skill/template expansion)
+		// Emit input event for extension interception.
 		const processedInput = await this._runInputHandlers(
 			text,
 			options?.images,
 			options?.source ?? "interactive",
 			this.isStreaming ? options?.streamingBehavior : undefined,
 		);
+		if (this._disposed) throw new Error("Session was disposed before the prompt could run");
 		if (!processedInput) {
 			preflightResult?.("handled");
 			return;
 		}
 		const { text: currentText, images: currentImages } = processedInput;
-
-		// Expand skill commands (/skill:name args) and prompt templates (/template args)
-		let expandedText = currentText;
-		if (expandPromptTemplates) {
-			expandedText = this._expandSkillCommand(expandedText);
-			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-		}
 
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
@@ -1635,9 +1628,9 @@ export class AgentSession {
 				);
 			}
 			if (options.streamingBehavior === "followUp") {
-				await this._queueFollowUp(expandedText, currentImages);
+				await this._queueFollowUp(currentText, currentImages);
 			} else {
-				await this._queueSteer(expandedText, currentImages);
+				await this._queueSteer(currentText, currentImages);
 			}
 			preflightResult?.("queued");
 			return;
@@ -1661,7 +1654,7 @@ export class AgentSession {
 				throw new Error(
 					`Authentication failed for "${this.model.provider}". ` +
 						`Credentials may have expired or network is unavailable. ` +
-						`Run '/login ${this.model.provider}' to re-authenticate.`,
+						`Open Sources to re-authenticate ${this.model.provider}.`,
 				);
 			}
 			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
@@ -1678,7 +1671,7 @@ export class AgentSession {
 		// selection determines the resize profile used for the request and history.
 		const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
 		const result = await this._extensionRunner.emitBeforeAgentStart(
-			expandedText,
+			currentText,
 			currentImages,
 			this._baseSystemPromptOptions,
 		);
@@ -1691,7 +1684,7 @@ export class AgentSession {
 		if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
 
 		const normalized = await this._normalizePromptImages(currentImages);
-		const userText = normalized.hints.length > 0 ? `${expandedText}\n\n${normalized.hints.join("\n")}` : expandedText;
+		const userText = normalized.hints.length > 0 ? `${currentText}\n\n${normalized.hints.join("\n")}` : currentText;
 
 		// Build messages only after hooks and image normalization have completed.
 		const messages: AgentMessage[] = [];
@@ -1724,67 +1717,106 @@ export class AgentSession {
 		this._runSystemPromptOptions = result.systemPromptOptions;
 		if (updateMessage) messages.unshift(updateMessage);
 
+		if (this._disposed) throw new Error("Session was disposed before the prompt could run");
 		preflightResult?.("started");
 		await this._runAgentPrompt(messages);
 	}
 
-	/**
-	 * Try to execute an extension command. Returns true if command was found and executed.
-	 */
-	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
-		// Parse command name and args
-		const spaceIndex = text.indexOf(" ");
-		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
-
-		const command = this._extensionRunner.getCommand(commandName);
-		if (!command) return false;
-
-		// Get command context from extension runner (includes session control methods)
-		const ctx = this._extensionRunner.createCommandContext();
-
-		try {
-			await command.handler(args, ctx);
-			return true;
-		} catch (err) {
-			// Emit error via extension runner
-			this._extensionRunner.emitError({
-				extensionPath: `command:${commandName}`,
-				event: "command",
-				error: err instanceof Error ? err.message : String(err),
-			});
-			return true;
-		}
+	getCommands(): CommandInfo[] {
+		const extensions: CommandInfo[] = this._extensionRunner.getRegisteredCommands().map((command) => ({
+			source: "extension",
+			name: command.invocationName,
+			description: command.description,
+			sourceInfo: command.sourceInfo,
+		}));
+		const prompts: CommandInfo[] = this.promptTemplates.map((template) => ({
+			source: "prompt",
+			name: template.name,
+			description: template.description,
+			argumentHint: template.argumentHint,
+			sourceInfo: template.sourceInfo,
+		}));
+		const skills: CommandInfo[] = this._resourceLoader.getSkills().skills.map((skill) => ({
+			source: "skill",
+			name: skill.name,
+			description: skill.description,
+			sourceInfo: skill.sourceInfo,
+		}));
+		return [...extensions, ...prompts, ...skills];
 	}
 
-	/**
-	 * Expand skill commands (/skill:name args) to their full content.
-	 * Returns the expanded text, or the original text if not a skill command or skill not found.
-	 * Emits errors via extension runner if file read fails.
-	 */
-	private _expandSkillCommand(text: string): string {
-		if (!text.startsWith("/skill:")) return text;
-
-		const spaceIndex = text.indexOf(" ");
-		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
-		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
-
-		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
-		if (!skill) return text; // Unknown skill, pass through
-
-		try {
-			const content = readFileSync(skill.filePath, "utf-8");
-			const body = stripFrontmatter(content).trim();
+	async executeCommand(invocation: CommandInvocation, options?: PromptOptions): Promise<void> {
+		if (this._disposed) throw new Error("Session was disposed before the command could run");
+		const { source, name, args } = invocation;
+		if (source === "extension") {
+			const command = this._extensionRunner.getCommand(name);
+			if (!command) throw new Error(`Unknown extension command: ${name}`);
+			try {
+				await command.handler(args, this._extensionRunner.createCommandContext());
+			} catch (error) {
+				this._extensionRunner.emitError({
+					extensionPath: command.sourceInfo.path,
+					event: "command",
+					error: error instanceof Error ? error.message : String(error),
+				});
+				throw error;
+			}
+			options?.preflightResult?.("handled");
+			return;
+		}
+		let text: string;
+		if (source === "prompt") {
+			const template = this.promptTemplates.find((item) => item.name === name);
+			if (!template) throw new Error(`Unknown prompt command: ${name}`);
+			text = substituteArgs(template.content, parseCommandArgs(args));
+		} else {
+			if (source !== "skill") throw new Error(`Unknown command source: ${source}`);
+			const skill = this.resourceLoader.getSkills().skills.find((item) => item.name === name);
+			if (!skill) throw new Error(`Unknown skill command: ${name}`);
+			const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
 			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-			return args ? `${skillBlock}\n\n${args}` : skillBlock;
-		} catch (err) {
-			// Emit error like extension commands do
-			this._extensionRunner.emitError({
-				extensionPath: skill.filePath,
-				event: "skill_expansion",
-				error: err instanceof Error ? err.message : String(err),
+			text = args.trim() ? `${skillBlock}\n\n${args.trim()}` : skillBlock;
+		}
+		if (this._compactionAbortController) {
+			options?.preflightResult?.("queued");
+			return new Promise<void>((resolve, reject) => {
+				this._pendingCompactionCommands.push({
+					text,
+					mode: options?.streamingBehavior ?? "followUp",
+					options,
+					resolve,
+					reject,
+				});
+				this._emitQueueUpdate();
 			});
-			return text; // Return original on error
+		}
+		await this.prompt(text, {
+			...options,
+			streamingBehavior:
+				options?.streamingBehavior ?? (this._autoCompactionAbortController ? "followUp" : undefined),
+		});
+	}
+
+	private async _drainPendingCompactionCommands(): Promise<void> {
+		if (this._drainingCompactionCommands) return;
+		this._drainingCompactionCommands = true;
+		try {
+			while (!this._disposed && !this._compactionAbortController && this._pendingCompactionCommands.length > 0) {
+				const item = this._pendingCompactionCommands.shift()!;
+				this._emitQueueUpdate();
+				try {
+					await this.prompt(item.text, {
+						...item.options,
+						streamingBehavior: item.mode,
+						preflightResult: undefined,
+					});
+					item.resolve();
+				} catch (error) {
+					item.reject(error);
+				}
+			}
+		} finally {
+			this._drainingCompactionCommands = false;
 		}
 	}
 
@@ -1794,10 +1826,6 @@ export class AgentSession {
 		behavior: "steer" | "followUp",
 		source: InputSource,
 	): Promise<QueuedInputDisposition> {
-		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
-		}
-
 		const processedInput = await this._runInputHandlers(
 			text,
 			images,
@@ -1806,13 +1834,10 @@ export class AgentSession {
 		);
 		if (!processedInput) return "handled";
 
-		let expandedText = this._expandSkillCommand(processedInput.text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-
 		if (behavior === "steer") {
-			await this._queueSteer(expandedText, processedInput.images);
+			await this._queueSteer(processedInput.text, processedInput.images);
 		} else {
-			await this._queueFollowUp(expandedText, processedInput.images);
+			await this._queueFollowUp(processedInput.text, processedInput.images);
 		}
 		return "queued";
 	}
@@ -1821,10 +1846,8 @@ export class AgentSession {
 	 * Queue a steering message while the agent is running.
 	 * Delivered after the current assistant turn finishes executing its tool calls,
 	 * before the next LLM call.
-	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @param images Optional image attachments to include with the message
 	 * @param options Input source; defaults to interactive
-	 * @throws Error if text is an extension command
 	 */
 	async steer(
 		text: string,
@@ -1837,10 +1860,8 @@ export class AgentSession {
 	/**
 	 * Queue a follow-up message to be processed after the agent finishes.
 	 * Delivered only when agent has no more tool calls or steering messages.
-	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @param images Optional image attachments to include with the message
 	 * @param options Input source; defaults to interactive
-	 * @throws Error if text is an extension command
 	 */
 	async followUp(
 		text: string,
@@ -1851,7 +1872,7 @@ export class AgentSession {
 	}
 
 	/**
-	 * Internal: Queue a steering message (already expanded, no extension command check).
+	 * Internal: Queue a steering message.
 	 */
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
 		this._steeringMessages.push(text);
@@ -1868,7 +1889,7 @@ export class AgentSession {
 	}
 
 	/**
-	 * Internal: Queue a follow-up message (already expanded, no extension command check).
+	 * Internal: Queue a follow-up message.
 	 */
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
 		this._followUpMessages.push(text);
@@ -1878,21 +1899,6 @@ export class AgentSession {
 			content.push(...images);
 		}
 		this.agent.followUp({ role: "user", content, timestamp: Date.now() });
-	}
-
-	/**
-	 * Throw an error if the text is an extension command.
-	 */
-	private _throwIfExtensionCommand(text: string): void {
-		const spaceIndex = text.indexOf(" ");
-		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		const command = this._extensionRunner.getCommand(commandName);
-
-		if (command) {
-			throw new Error(
-				`Extension command "/${commandName}" cannot be queued. Use prompt() or execute the command when not streaming.`,
-			);
-		}
 	}
 
 	/**
@@ -1978,11 +1984,10 @@ export class AgentSession {
 	 *
 	 * @param content User message content (string or content array)
 	 * @param options.deliverAs Delivery mode when streaming: "steer" or "followUp"
-	 * @param options.expandPromptTemplates Whether to dispatch extension commands and expand skill commands and prompt templates. Default: false.
 	 */
 	async sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
-		options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
+		options?: { deliverAs?: "steer" | "followUp" },
 	): Promise<void> {
 		// Normalize content to text string + optional images
 		let text: string;
@@ -2005,7 +2010,6 @@ export class AgentSession {
 		}
 
 		await this.prompt(text, {
-			expandPromptTemplates: options?.expandPromptTemplates ?? false,
 			streamingBehavior: options?.deliverAs,
 			images,
 			source: "extension",
@@ -2018,10 +2022,11 @@ export class AgentSession {
 	 * @returns Object with steering and followUp arrays
 	 */
 	clearQueue(): { steering: string[]; followUp: string[] } {
-		const steering = [...this._steeringMessages];
-		const followUp = [...this._followUpMessages];
+		const steering = [...this.getSteeringMessages()];
+		const followUp = [...this.getFollowUpMessages()];
 		this._steeringMessages = [];
 		this._followUpMessages = [];
+		for (const item of this._pendingCompactionCommands.splice(0)) item.resolve();
 		this.agent.clearAllQueues();
 		this._emitQueueUpdate();
 		return { steering, followUp };
@@ -2029,17 +2034,23 @@ export class AgentSession {
 
 	/** Number of pending messages (includes both steering and follow-up) */
 	get pendingMessageCount(): number {
-		return this._steeringMessages.length + this._followUpMessages.length;
+		return this._steeringMessages.length + this._followUpMessages.length + this._pendingCompactionCommands.length;
 	}
 
 	/** Get pending steering messages (read-only) */
 	getSteeringMessages(): readonly string[] {
-		return this._steeringMessages;
+		return [
+			...this._steeringMessages,
+			...this._pendingCompactionCommands.filter((item) => item.mode === "steer").map((item) => item.text),
+		];
 	}
 
 	/** Get pending follow-up messages (read-only) */
 	getFollowUpMessages(): readonly string[] {
-		return this._followUpMessages;
+		return [
+			...this._followUpMessages,
+			...this._pendingCompactionCommands.filter((item) => item.mode === "followUp").map((item) => item.text),
+		];
 	}
 
 	get resourceLoader(): ResourceLoader {
@@ -2264,7 +2275,7 @@ export class AgentSession {
 	/**
 	 * Manually compact the session context.
 	 *
-	 * This is the manual entry point used by `/compact`, RPC, and extensions. It is
+	 * This is the manual entry point used by History, RPC, and extensions. It is
 	 * separate from automatic threshold/overflow compaction, which enters through
 	 * `_checkCompaction()` and `_runAutoCompaction()`. After preparation and the
 	 * `session_before_compact` hook, both paths call the lower-level `compact()`
@@ -2406,6 +2417,7 @@ export class AgentSession {
 				aborted: false,
 				willRetry: false,
 			});
+			void this._drainPendingCompactionCommands();
 			return compactionResult;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -2427,6 +2439,7 @@ export class AgentSession {
 				willRetry: false,
 				fromExtension,
 			});
+			void this._drainPendingCompactionCommands();
 			throw error;
 		} finally {
 			this._clearManualCompactionState();
@@ -2891,31 +2904,6 @@ export class AgentSession {
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
-		const getCommands = (): SlashCommandInfo[] => {
-			const extensionCommands: SlashCommandInfo[] = runner.getRegisteredCommands().map((command) => ({
-				name: command.invocationName,
-				description: command.description,
-				source: "extension",
-				sourceInfo: command.sourceInfo,
-			}));
-
-			const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
-				name: template.name,
-				description: template.description,
-				source: "prompt",
-				sourceInfo: template.sourceInfo,
-			}));
-
-			const skills: SlashCommandInfo[] = this._resourceLoader.getSkills().skills.map((skill) => ({
-				name: `skill:${skill.name}`,
-				description: skill.description,
-				source: "skill",
-				sourceInfo: skill.sourceInfo,
-			}));
-
-			return [...extensionCommands, ...templates, ...skills];
-		};
-
 		runner.bindCore(
 			{
 				sendMessage: (message, options) => {
@@ -2956,7 +2944,7 @@ export class AgentSession {
 				getAllTools: () => this.getAllTools(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
-				getCommands,
+				getCommands: () => this.getCommands(),
 				setModel: async (model) => {
 					if (!this._modelRuntime.hasConfiguredAuth(model.provider)) return false;
 					await this.setModel(model);
@@ -3813,7 +3801,7 @@ export class AgentSession {
 
 	/**
 	 * Get text content of last assistant message.
-	 * Useful for /copy command.
+	 * Useful for the Copy action.
 	 * @returns Text content, or undefined if no assistant message exists
 	 */
 	getLastAssistantText(): string | undefined {

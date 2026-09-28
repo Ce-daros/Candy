@@ -9,9 +9,9 @@ import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
 import type { ImageContent, Model } from "@candy/ai";
 import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
+import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
-import type { SourceInfo } from "../../core/source-info.ts";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -22,6 +22,7 @@ export type RpcCommand =
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
+	| ({ id?: string; type: "execute_command"; streamingBehavior?: "steer" | "followUp" } & CommandInvocation)
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "clear_queue" }
 	| { id?: string; type: "new_session"; parentSession?: string }
@@ -69,24 +70,8 @@ export type RpcCommand =
 	// Messages
 	| { id?: string; type: "get_messages" }
 
-	// Commands (available for invocation via prompt)
+	// Commands
 	| { id?: string; type: "get_commands" };
-
-// ============================================================================
-// RPC Slash Command (for get_commands response)
-// ============================================================================
-
-/** A command available for invocation via prompt */
-export interface RpcSlashCommand {
-	/** Command name (without leading slash) */
-	name: string;
-	/** Human-readable description */
-	description?: string;
-	/** What kind of command this is */
-	source: "extension" | "prompt" | "skill";
-	/** Source metadata for the owning resource */
-	sourceInfo: SourceInfo;
-}
 
 // ============================================================================
 // RPC State
@@ -115,6 +100,13 @@ export interface RpcSessionState {
 export type RpcResponse =
 	// Prompting
 	| { id?: string; type: "response"; command: "prompt"; success: true; data: { disposition: PromptDisposition } }
+	| {
+			id?: string;
+			type: "response";
+			command: "execute_command";
+			success: true;
+			data: { disposition: PromptDisposition };
+	  }
 	| { id?: string; type: "response"; command: "steer"; success: true; data: { disposition: QueuedInputDisposition } }
 	| {
 			id?: string;
@@ -230,7 +222,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_commands";
 			success: true;
-			data: { commands: RpcSlashCommand[] };
+			data: { commands: CommandInfo[] };
 	  }
 
 	// Error response (any command can fail)

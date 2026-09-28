@@ -5,15 +5,15 @@ Most hosted providers support one or both of these authentication methods:
 - Sign in through a browser or device flow backed by OAuth.
 - Provide an API key.
 
-Use `/login [provider]` to see the methods supported by a provider. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
+Open Model → Sources and select a provider to see its available authentication methods. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
 
 ## Authenticate interactively
 
-Run `/login` and select a provider. candy guides you through its OAuth or API-key flow and saves the resulting credential in [`auth.json`](configuration.md#agent-directory).
+Open Model → Sources, select a provider, and choose Connect. candy guides you through its OAuth or API-key flow and saves the resulting credential in [`auth.json`](configuration.md#agent-directory).
 
 On a remote or headless machine, an OAuth callback may not reach the local process. When prompted, paste the final redirect URL or authorization code back into candy. The sign-in panel keeps the provider, URL, and verification code visible while the flow is pending. API-key input is masked and the submitted key is not echoed.
 
-Run `/logout` and select a provider to remove its stored credential. This does not unset environment variables, remove authentication from `models.json`, or revoke the credential at the provider.
+Choose Remove saved credentials on the provider page to remove its stored credential. This does not unset environment variables, remove authentication from `models.json`, or revoke the credential at the provider.
 
 `auth.json` can contain API keys and OAuth tokens. Keep it private and do not commit it.
 

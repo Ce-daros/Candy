@@ -1,7 +1,7 @@
 /**
  * Git Checkpoint Extension
  *
- * Creates git stash checkpoints at each turn so /fork can restore code state.
+ * Creates git stash checkpoints at each turn so History's Fork action can restore code state.
  * When forking, offers to restore code to that point in history.
  */
 

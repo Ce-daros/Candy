@@ -6,7 +6,7 @@
  *
  * Usage:
  *   candy -e ./packages/coding-agent/examples/extensions/custom-provider-gitlab-duo
- *   # Then /login gitlab-duo, or set GITLAB_TOKEN=glpat-...
+ *   # Then connect gitlab-duo from Sources, or set GITLAB_TOKEN=glpat-...
  */
 
 import {
@@ -314,7 +314,8 @@ export function streamGitLabDuo(
 	(async () => {
 		try {
 			const gitlabAccessToken = options?.apiKey;
-			if (!gitlabAccessToken) throw new Error("No GitLab access token. Run /login gitlab-duo or set GITLAB_TOKEN");
+			if (!gitlabAccessToken)
+				throw new Error("No GitLab access token. Connect GitLab Duo in Sources or set GITLAB_TOKEN");
 
 			const cfg = MODEL_MAP.get(model.id);
 			if (!cfg) throw new Error(`Unknown model: ${model.id}`);

@@ -1,5 +1,21 @@
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 
+function clamp(value: number): number {
+	return Math.max(0, Math.min(1, value));
+}
+
+export function panelPhase(progress: number): { expanded: boolean; growth: number; topReveal: number } {
+	return {
+		expanded: progress > 0.12,
+		growth: clamp((progress - 0.12) / 0.55),
+		topReveal: progress < 0.12 ? 1 - progress / 0.12 : clamp((progress - 0.65) / 0.08),
+	};
+}
+
+export function panelRowVisible(progress: number, row: number, total: number, revealStart: number): boolean {
+	return progress >= revealStart + (row / Math.max(1, total)) * 0.25;
+}
+
 export class PanelTransition {
 	private from = 0;
 	private target = 0;
@@ -30,7 +46,13 @@ export class PanelTransition {
 
 	setOpen(open: boolean, onComplete?: () => void): void {
 		const target = open ? 1 : 0;
-		if (target === this.target) return;
+		if (target === this.target) {
+			if (onComplete) {
+				if (this.duration === 0) onComplete();
+				else this.onComplete = onComplete;
+			}
+			return;
+		}
 		this.from = this.value();
 		this.target = target;
 		this.started = performance.now();

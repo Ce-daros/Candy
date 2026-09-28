@@ -6,4 +6,4 @@ disable-model-invocation: true
 
 # Manual Only Skill
 
-This skill can only be invoked via /skill:disable-model-invocation.
+Invoke this skill explicitly by selecting disable-model-invocation in Command.

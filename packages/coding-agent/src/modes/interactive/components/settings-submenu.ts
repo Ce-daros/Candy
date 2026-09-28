@@ -10,6 +10,7 @@ import {
 	Text,
 } from "@candy/tui";
 import { getSelectListTheme, theme } from "../theme/theme.ts";
+import { keyHint } from "./keybinding-hints.ts";
 
 const SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 24,
@@ -90,10 +91,8 @@ export class SelectSubmenu extends Container {
 
 		// Hint
 		this.addChild(new Spacer(1));
-		const hint = submenuOptions?.searchable
-			? "  Type to filter \u00b7 Enter to select \u00b7 Esc to go back"
-			: "  Enter to select \u00b7 Esc to go back";
-		this.addChild(new Text(theme.fg("dim", hint), 0, 0));
+		const hint = `${submenuOptions?.searchable ? `${theme.fg("muted", "Type to filter")} · ` : ""}${keyHint("tui.select.confirm", "select")} · ${keyHint("tui.select.cancel", "go back")}`;
+		this.addChild(new Text(`  ${hint}`, 0, 0));
 	}
 
 	private buildSelectList(options: SelectItem[], preselect: string): SelectList {

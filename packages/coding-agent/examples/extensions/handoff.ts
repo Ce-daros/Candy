@@ -5,9 +5,9 @@
  * for your next task and creates a new session with a generated prompt.
  *
  * Usage:
- *   /handoff now implement this for teams as well
- *   /handoff execute phase one of the plan
- *   /handoff check other places that need this fix
+ *   Open Command, choose `handoff`, and enter `now implement this for teams as well`
+ *   Open Command, choose `handoff`, and enter `execute phase one of the plan`
+ *   Open Command, choose `handoff`, and enter `check other places that need this fix`
  *
  * The generated prompt appears as a draft in the editor for review/editing.
  */
@@ -93,7 +93,7 @@ export default function (candy: ExtensionAPI) {
 
 			const goal = args.trim();
 			if (!goal) {
-				ctx.ui.notify("Usage: /handoff <goal for new thread>", "error");
+				ctx.ui.notify("Enter a goal for the new thread", "error");
 				return;
 			}
 

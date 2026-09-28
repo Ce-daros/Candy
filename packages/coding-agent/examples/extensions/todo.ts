@@ -3,7 +3,7 @@
  *
  * This extension:
  * - Registers a `todo` tool for the LLM to manage todos
- * - Registers a `/todos` command for users to view the list
+ * - Registers a `todos` Command entry for users to view the list
  *
  * State is stored in tool result details (not external files), which allows
  * proper branching - when you branch, the todo state is automatically
@@ -35,7 +35,7 @@ const TodoParams = Type.Object({
 });
 
 /**
- * UI component for the /todos command
+ * UI component for the `todos` Command entry
  */
 class TodoListComponent {
 	private todos: Todo[];
@@ -280,12 +280,12 @@ export default function (candy: ExtensionAPI) {
 		},
 	});
 
-	// Register the /todos command for users
+	// Register the `todos` Command entry for users
 	candy.registerCommand("todos", {
 		description: "Show all todos on the current branch",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
-				ctx.ui.notify("/todos requires interactive mode", "error");
+				ctx.ui.notify("Todos requires interactive mode", "error");
 				return;
 			}
 

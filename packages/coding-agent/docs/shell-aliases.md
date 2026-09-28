@@ -33,7 +33,7 @@ On Windows, use forward slashes or escape backslashes:
 }
 ```
 
-Run `/reload` after changing the setting. See [Run candy on Windows](windows.md) for the native Windows defaults.
+Run **Reload** in Command after changing the setting. See [Run candy on Windows](windows.md) for the native Windows defaults.
 
 ## Run setup before every Bash command
 
@@ -66,7 +66,7 @@ Then configure candy to enable alias expansion and load the file:
 }
 ```
 
-Run `/reload`, then verify the alias through candy:
+Run **Reload** in Command, then verify the alias through candy:
 
 ```text
 ll

@@ -31,17 +31,15 @@ import { InteractiveThemeController } from "../modes/interactive/theme/theme-con
 import { createInteractiveTui } from "../modes/interactive/tui-renderer.ts";
 import { type OpenClientRuntimeOptions, openClientRuntime } from "./client-runtime.ts";
 import { ExperimentalChatView } from "./client-tui-chat.ts";
+import { CommandMenu } from "./command-menu.ts";
 import { createPresentationFacetLoaders } from "./plugins/bundled.ts";
 import { AgentController, type AgentOperationResponse, type AgentQueueResponse } from "./services/agent-controller.ts";
+import { Commands } from "./services/commands.ts";
+import { createBuiltInCommandsFacet, createCommandsRuntimeFacet } from "./services/commands-provider.ts";
 import type { ServerServiceSource, SessionServiceSource } from "./services/connection.ts";
 import { PresentationPlugins } from "./services/plugins.ts";
 import { PresentationUI } from "./services/presentation-ui.ts";
 import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
-import { SlashCommands } from "./services/slash-commands.ts";
-import {
-	createBuiltInSlashCommandsFacet,
-	createSlashCommandsRuntimeFacet,
-} from "./services/slash-commands-provider.ts";
 import { Transcript, type Transcript as TranscriptService } from "./services/transcript.ts";
 
 export interface RunClientTuiOptions extends OpenClientRuntimeOptions {
@@ -99,12 +97,13 @@ export class ExperimentalClientTui implements Component {
 	#facetHost: FacetHost | undefined;
 	#facetReloadTail = Promise.resolve();
 	#session: SessionFeature | undefined;
-	#slashCommands: SlashCommands | undefined;
+	#commands: Commands | undefined;
 	#controller: AgentController | undefined;
 	readonly #chatInput: CustomEditor;
 	#selectList: SelectList | undefined;
 	#selection: PendingSelection | undefined;
-	#screen: "select" | "chat" = "chat";
+	#commandMenu: CommandMenu | undefined;
+	#screen: "select" | "chat" | "command" = "chat";
 	#selectedServerId: string | undefined;
 	#sessionId: string | undefined;
 	#status = "Starting Session…";
@@ -112,6 +111,10 @@ export class ExperimentalClientTui implements Component {
 	#closed = false;
 	#closePromise: Promise<void> | undefined;
 	#laneUnsubscribe: (() => void) | undefined;
+	#connectionUnsubscribe: (() => void) | undefined;
+	#attachmentUnsubscribe: (() => void) | undefined;
+	#connectivityStatus = "";
+	#serverConnected = false;
 	#chatView: ExperimentalChatView | undefined;
 
 	private constructor(ui: TUI, requestRender: () => void, finish: () => void, loadedFacets: LoadedFacets) {
@@ -121,11 +124,17 @@ export class ExperimentalClientTui implements Component {
 		this.#sharedFacets = loadedFacets;
 		setKeybindings(this.#keybindings);
 		this.#chatInput = new CustomEditor(ui, getEditorTheme(), this.#keybindings, { paddingX: 1 });
+		this.#chatInput.setAutocompleteProvider(new CombinedAutocompleteProvider(process.cwd()));
 		this.#chatInput.onSubmit = (message) => void this.#runPrompt(message);
 		this.#chatInput.onEscape = () => this.#interrupt();
 		this.#chatInput.onCtrlD = finish;
 		this.#chatInput.onAction("app.clear", finish);
-		this.#chatInput.onAction("app.model.select", () => void this.#executeSlashCommand("model", ""));
+		this.#chatInput.onAction("app.model.select", () => void this.#executeCommand("local", "model", ""));
+		this.#chatInput.modeInputHandler = (data) => {
+			if (data !== "/" || this.#chatInput.getText().length !== 0) return false;
+			this.#showCommandMenu();
+			return true;
+		};
 		this.#chatInput.onAction("app.message.followUp", () => {
 			const text = this.#chatInput.getText().trim();
 			if (text.length === 0) return;
@@ -201,6 +210,11 @@ export class ExperimentalClientTui implements Component {
 			this.#requestRender();
 			return;
 		}
+		if (this.#screen === "command") {
+			this.#commandMenu?.handleInput(data);
+			this.#requestRender();
+			return;
+		}
 		this.#selectList?.handleInput(data);
 	}
 
@@ -271,7 +285,7 @@ export class ExperimentalClientTui implements Component {
 						this.#rebuild();
 					},
 				});
-				const commands = env.use(SlashCommands);
+				const commands = env.use(Commands);
 				const controller = env.use(AgentController);
 				const transcript = env.use(Transcript);
 				const sessionFeature: SessionFeature = {
@@ -280,26 +294,26 @@ export class ExperimentalClientTui implements Component {
 					transcript,
 				};
 				env.onActivate(() => {
-					if (this.#session !== undefined || this.#slashCommands !== undefined || this.#controller !== undefined) {
+					if (this.#session !== undefined || this.#commands !== undefined || this.#controller !== undefined) {
 						throw new Error("Presentation services are already active");
 					}
 					this.#session = sessionFeature;
-					this.#slashCommands = commands;
+					this.#commands = commands;
 					this.#controller = controller;
 					env.own(() => {
 						if (this.#session === sessionFeature) this.#session = undefined;
-						if (this.#slashCommands === commands) this.#slashCommands = undefined;
+						if (this.#commands === commands) this.#commands = undefined;
 						if (this.#controller === controller) this.#controller = undefined;
 					});
-					env.own(commands.subscribe(() => this.#updateAutocomplete()));
+					env.own(commands.subscribe(() => this.#requestRender()));
 				});
 			},
 		});
 		facetHost = await createFacetHost({
 			facets: [
-				createSlashCommandsRuntimeFacet(),
+				createCommandsRuntimeFacet(),
 				presentationBridgeFacet,
-				createBuiltInSlashCommandsFacet({ reloadPresentationPlugins }),
+				createBuiltInCommandsFacet({ reloadPresentationPlugins }),
 				...this.#sharedFacets.facets,
 				...presentationFacets.facets,
 			],
@@ -314,7 +328,25 @@ export class ExperimentalClientTui implements Component {
 		await feature.session.whenAttached(prepared.summary.sessionId, BACKGROUND_CONTEXT);
 		this.#selectedServerId = feature.serverId;
 		this.#sessionId = prepared.summary.sessionId;
-		this.#updateAutocomplete();
+		this.#connectionUnsubscribe = prepared.server.server.connection.subscribe((state) => {
+			this.#serverConnected = state.status === "connected";
+			this.#connectivityStatus =
+				state.status === "connected"
+					? ""
+					: state.status === "connecting"
+						? "Connecting…"
+						: "Disconnected; retrying…";
+			this.#rebuild();
+		});
+		this.#attachmentUnsubscribe = prepared.server.session.attachment.subscribe((state) => {
+			if (state.status === "attaching" || state.status === "degraded") {
+				this.#connectivityStatus = "Reattaching…";
+				this.#rebuild();
+			} else if (state.status === "attached" && this.#serverConnected) {
+				this.#connectivityStatus = "";
+				this.#rebuild();
+			}
+		});
 		await this.#openLane(feature);
 		this.#screen = "chat";
 		this.#status = "";
@@ -323,6 +355,10 @@ export class ExperimentalClientTui implements Component {
 
 	async #close(): Promise<void> {
 		this.#closed = true;
+		this.#connectionUnsubscribe?.();
+		this.#connectionUnsubscribe = undefined;
+		this.#attachmentUnsubscribe?.();
+		this.#attachmentUnsubscribe = undefined;
 		this.#completeSelection(undefined);
 		const errors: unknown[] = [];
 		try {
@@ -359,6 +395,9 @@ export class ExperimentalClientTui implements Component {
 		if (this.#status.length > 0) {
 			this.#statusContainer.addChild(new Text(theme.fg("dim", this.#status), 1, 0));
 		}
+		if (this.#connectivityStatus.length > 0) {
+			this.#statusContainer.addChild(new Text(theme.fg("warning", this.#connectivityStatus), 1, 0));
+		}
 		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
 		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
 		this.#editorContainer.clear();
@@ -374,6 +413,11 @@ export class ExperimentalClientTui implements Component {
 			this.#selectList.onCancel = () => this.#completeSelection(undefined);
 			selector.addChild(this.#selectList);
 			this.#editorContainer.addChild(selector);
+		} else if (this.#screen === "command" && this.#commandMenu !== undefined) {
+			this.#selectList = undefined;
+			this.#chatInput.focused = false;
+			this.#commandMenu.focused = !this.#busy;
+			this.#editorContainer.addChild(this.#commandMenu);
 		} else {
 			this.#selectList = undefined;
 			this.#chatInput.focused = !this.#busy;
@@ -384,7 +428,7 @@ export class ExperimentalClientTui implements Component {
 	}
 
 	#select(title: string, items: readonly SelectItem[], selectedValue?: string): Promise<string | undefined> {
-		if (this.#selection !== undefined) throw new Error("A slash command selector is already active");
+		if (this.#selection !== undefined) throw new Error("A command selector is already active");
 		return new Promise((resolve) => {
 			this.#selection = { title, items, ...(selectedValue === undefined ? {} : { selectedValue }), resolve };
 			this.#screen = "select";
@@ -396,36 +440,35 @@ export class ExperimentalClientTui implements Component {
 		const selection = this.#selection;
 		if (selection === undefined) return;
 		this.#selection = undefined;
-		this.#screen = "chat";
+		this.#screen = this.#commandMenu === undefined ? "chat" : "command";
 		selection.resolve(value);
 		if (!this.#closed) this.#rebuild();
 	}
 
-	#updateAutocomplete(): void {
-		const commands = this.#selectedSlashCommands()?.list() ?? [];
-		this.#chatInput.setAutocompleteProvider(
-			new CombinedAutocompleteProvider(
-				commands.map((command) => ({
-					name: command.name,
-					description: command.description,
-					...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
-					...(command.getArgumentCompletions === undefined
-						? {}
-						: {
-								getArgumentCompletions: async (prefix: string) => {
-									const items = await command.getArgumentCompletions!(prefix);
-									return items === null ? null : [...items];
-								},
-							}),
-				})),
-				process.cwd(),
-			),
+	#showCommandMenu(): void {
+		const commands = this.#selectedCommands()?.list() ?? [];
+		const menu = new CommandMenu(
+			commands.map((command) => ({
+				name: command.name,
+				source: command.source ?? "local",
+				...(command.description === undefined ? {} : { description: command.description }),
+				...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
+			})),
+			(item, args) => this.#executeCommand(item.source, item.name, args),
+			() => {
+				if (this.#commandMenu !== menu) return;
+				this.#commandMenu = undefined;
+				this.#screen = "chat";
+				this.#rebuild();
+			},
 		);
-		this.#requestRender();
+		this.#commandMenu = menu;
+		this.#screen = "command";
+		this.#rebuild();
 	}
 
-	#selectedSlashCommands(): SlashCommands | undefined {
-		return this.#slashCommands;
+	#selectedCommands(): Commands | undefined {
+		return this.#commands;
 	}
 
 	async #openLane(feature: SessionFeature): Promise<void> {
@@ -459,13 +502,6 @@ export class ExperimentalClientTui implements Component {
 	async #runPrompt(messageText: string): Promise<void> {
 		const prompt = messageText.trim();
 		if (prompt.length === 0) return;
-		if (prompt.startsWith("/")) {
-			const separator = prompt.indexOf(" ");
-			const name = prompt.slice(1, separator === -1 ? undefined : separator);
-			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
-			await this.#executeSlashCommand(name, args);
-			return;
-		}
 		this.#chatInput.setText("");
 		try {
 			await this.#submitPrompt(prompt);
@@ -475,15 +511,14 @@ export class ExperimentalClientTui implements Component {
 		}
 	}
 
-	async #executeSlashCommand(name: string, args: string): Promise<void> {
-		const command = this.#selectedSlashCommands()
+	async #executeCommand(source: string, name: string, args: string): Promise<boolean> {
+		const command = this.#selectedCommands()
 			?.list()
-			.find((candidate) => candidate.name === name);
-		this.#chatInput.setText("");
+			.find((candidate) => (candidate.source ?? "local") === source && candidate.name === name);
 		if (command === undefined) {
-			this.#status = `Unknown slash command: /${name}`;
+			this.#status = `Unknown command: ${name}`;
 			this.#rebuild();
-			return;
+			return false;
 		}
 		try {
 			const result = await command.run(args, BACKGROUND_CONTEXT);
@@ -491,9 +526,11 @@ export class ExperimentalClientTui implements Component {
 				if ("entryId" in result) this.#reportQueue(result);
 				else this.#reportOperation(result);
 			}
+			return true;
 		} catch (error) {
 			this.#status = `Error: ${message(error)}`;
 			this.#rebuild();
+			return false;
 		}
 	}
 
@@ -558,8 +595,8 @@ export class ExperimentalClientTui implements Component {
 
 	#footer(): string {
 		const snapshot = this.#laneSnapshot();
-		if (!snapshot) return "/model · /thinking · /compact · /reload";
-		return `${snapshot.configuration.model.provider}/${snapshot.configuration.model.modelId} · thinking:${snapshot.configuration.thinkingLevel} · ${snapshot.stats.messageCount} messages · /model · /thinking · /compact · /reload`;
+		if (!snapshot) return "Command /";
+		return `${snapshot.configuration.model.provider}/${snapshot.configuration.model.modelId} · thinking:${snapshot.configuration.thinkingLevel} · ${snapshot.stats.messageCount} messages · Command /`;
 	}
 }
 

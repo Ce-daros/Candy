@@ -33,7 +33,7 @@ import { AssistantMessageComponent } from "../../../modes/interactive/components
 import { CustomEditor } from "../../../modes/interactive/components/custom-editor.ts";
 import { DynamicBorder } from "../../../modes/interactive/components/dynamic-border.ts";
 import { ExtensionSelectorComponent } from "../../../modes/interactive/components/extension-selector.ts";
-import { keyText } from "../../../modes/interactive/components/keybinding-hints.ts";
+import { keyHint, rawKeyHint } from "../../../modes/interactive/components/keybinding-hints.ts";
 import { LoginDialogComponent } from "../../../modes/interactive/components/login-dialog.ts";
 import {
 	type AuthSelectorProvider,
@@ -46,6 +46,7 @@ import {
 import { ToolExecutionComponent, type ToolRenderers } from "../../../modes/interactive/components/tool-execution.ts";
 import { UserMessageComponent } from "../../../modes/interactive/components/user-message.ts";
 import { getEditorTheme, initTheme, theme } from "../../../modes/interactive/theme/theme.ts";
+import { CommandMenu } from "../../command-menu.ts";
 import type { AuthPromptRequest, CommandResult, ProviderAccount } from "../shared/protocol.ts";
 import type { AttachedSession } from "./session.ts";
 
@@ -134,6 +135,7 @@ interface MiniTuiHandlers {
 	interrupt(): void;
 	exit(): void;
 	selectModel(): void;
+	openCommands(): void;
 }
 
 /** Alt-screen chat surface. Rendering is a function of the replicated snapshot. */
@@ -165,6 +167,11 @@ class MiniTui {
 		this.#editor.onCtrlD = handlers.exit;
 		this.#editor.onAction("app.clear", handlers.exit);
 		this.#editor.onAction("app.model.select", handlers.selectModel);
+		this.#editor.modeInputHandler = (data) => {
+			if (data !== "/" || this.#editor.getText().length !== 0) return false;
+			handlers.openCommands();
+			return true;
+		};
 		this.#editor.onAction("app.message.followUp", () => {
 			const text = this.#editor.getText().trim();
 			if (text.length === 0) return;
@@ -219,7 +226,7 @@ class MiniTui {
 	}
 
 	setFooter(text: string): void {
-		this.#footer.setText(theme.fg("dim", text));
+		this.#footer.setText(text);
 		this.render();
 	}
 
@@ -514,17 +521,32 @@ export async function runView(client: AttachedSession): Promise<void> {
 		);
 		view.mount(selector, selector);
 	};
+	const openCommands = (): void => {
+		const menu = new CommandMenu(
+			[
+				{ source: "local", name: "model", description: "Select model" },
+				{ source: "local", name: "login", description: "Sign in" },
+				{ source: "local", name: "compact", description: "Compact context" },
+			],
+			(item) => {
+				if (item.name === "compact") {
+					void client.lane.compact().then(report);
+					return true;
+				}
+				view.restoreEditor();
+				if (item.name === "model") selectModel();
+				else login();
+				return false;
+			},
+			() => view.restoreEditor(),
+		);
+		view.mount(menu, menu);
+	};
 
 	view = new MiniTui(client.state().cwd, {
 		submit: (text) => {
 			const trimmed = text.trim();
 			if (trimmed.length === 0) return;
-			if (trimmed === "/model") return selectModel();
-			if (trimmed === "/login") return login();
-			if (trimmed === "/compact") {
-				void client.lane.compact().then(report);
-				return;
-			}
 			// A submission during an active run steers it; alt+enter queues a follow-up instead.
 			const busy = client.state().lane.operation !== null;
 			void (busy ? client.lane.steer(trimmed) : client.lane.prompt(trimmed)).then(report);
@@ -534,6 +556,7 @@ export async function runView(client: AttachedSession): Promise<void> {
 		interrupt: () => void client.lane.abort().then(report),
 		exit,
 		selectModel: () => selectModel(),
+		openCommands,
 	});
 
 	const render = (): void => {
@@ -541,7 +564,7 @@ export async function runView(client: AttachedSession): Promise<void> {
 		view.apply(snapshot.lane);
 		const { model, thinkingLevel } = snapshot.lane.configuration;
 		view.setFooter(
-			`${model.provider}/${model.modelId} · thinking:${thinkingLevel} · ${keyText("app.model.select")} or /model · /login · /compact · ${keyText("app.message.followUp")} follow-up · ${keyText("app.clear")} exit`,
+			`${theme.fg("dim", `${model.provider}/${model.modelId} · thinking:${thinkingLevel}`)} · ${keyHint("app.model.select", "model")} · ${rawKeyHint("/", "Command")} · ${keyHint("app.message.followUp", "follow-up")} · ${keyHint("app.clear", "exit")}`,
 		);
 	};
 	const unsubscribe = client.subscribe(render);
