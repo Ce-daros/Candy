@@ -276,7 +276,8 @@ function defaultAutomaticThemes(
 }
 
 class ThemeSubmenu extends Container {
-	private inputComponent: Component | undefined;
+	private inputComponent: (Component & { setAvailableHeight?(height: number): void }) | undefined;
+	private availableHeight = 20;
 	private readonly callbacks: SettingsCallbacks;
 	private readonly availableThemes: string[];
 	private readonly terminalTheme: TerminalTheme;
@@ -323,10 +324,19 @@ class ThemeSubmenu extends Container {
 		this.inputComponent?.handleInput?.(data);
 	}
 
-	private setContent(renderComponent: Component, inputComponent: Component = renderComponent): void {
+	setAvailableHeight(height: number): void {
+		this.availableHeight = height;
+		this.inputComponent?.setAvailableHeight?.(height - (this.mode === "automatic" ? 5 : 0));
+	}
+
+	private setContent(
+		renderComponent: Component,
+		inputComponent: Component & { setAvailableHeight?(height: number): void },
+	): void {
 		this.clear();
 		this.addChild(renderComponent);
 		this.inputComponent = inputComponent;
+		this.setAvailableHeight(this.availableHeight);
 	}
 
 	private showSingleMenu(): void {
@@ -356,7 +366,7 @@ class ThemeSubmenu extends Container {
 					themeSample(value === AUTOMATIC_THEME_VALUE ? this.getActiveAutomaticTheme() : value, width),
 			},
 		);
-		this.setContent(menu);
+		this.setContent(menu, menu);
 	}
 
 	private showAutomaticMenu(): void {
@@ -1123,9 +1133,14 @@ export class SettingsSelectorComponent implements Focusable {
 		this.lastListStart = wide ? 2 : 4;
 		const mainWidth = wide ? width - categoryWidth - 3 : width;
 		const list = this.getActiveList();
+		if (list.isSubmenuOpen()) {
+			list.setAvailableHeight(this.availableHeight);
+			return list.render(width).slice(0, this.availableHeight);
+		}
 		const searchLines = this.searchInput.render(width);
 		const bodyHeight = Math.max(3, this.availableHeight - (wide ? 2 : 4) - 1 - searchLines.length - 1);
 		list.setMaxVisible(Math.max(2, bodyHeight - 4));
+		list.setAvailableHeight(bodyHeight);
 		const mainLines = list.render(mainWidth).slice(0, bodyHeight);
 		const lines = [theme.bold(theme.fg("accent", "Settings")), ""];
 		const categoryLine = (index: number): string => {
@@ -1171,6 +1186,8 @@ export class SettingsSelectorComponent implements Focusable {
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "press" && event.type !== "click" && event.type !== "wheel") return undefined;
+		const list = this.getActiveList();
+		if (list.isSubmenuOpen()) return list.handleMouse(event);
 		if (event.y === this.lastSearchRow) {
 			this.region = "search";
 			this.searchInput.focused = this._focused;
@@ -1189,7 +1206,7 @@ export class SettingsSelectorComponent implements Focusable {
 			(!this.lastWide || event.x > this.lastCategoryWidth + 1)
 		) {
 			this.region = "settings";
-			return this.getActiveList().handleMouse?.({
+			return list.handleMouse({
 				...event,
 				x: this.lastWide ? event.x - this.lastCategoryWidth - 3 : event.x,
 				y: event.y - this.lastListStart,
@@ -1206,7 +1223,7 @@ export class SettingsSelectorComponent implements Focusable {
 			return;
 		}
 		if (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious")) {
-			const regions = ["categories", "settings", "search"] as const;
+			const regions = ["settings", "categories", "search"] as const;
 			const delta = kb.matches(data, "app.panel.focusNext") ? 1 : -1;
 			this.region = regions[(regions.indexOf(this.region) + delta + regions.length) % regions.length];
 			this.searchInput.focused = this._focused && this.region === "search";
@@ -1226,11 +1243,11 @@ export class SettingsSelectorComponent implements Focusable {
 				this.searchList = undefined;
 			} else this.onCancel();
 		} else if (
-			this.region === "settings" &&
+			this.region !== "categories" &&
 			(kb.matches(data, "tui.select.up") ||
 				kb.matches(data, "tui.select.down") ||
 				kb.matches(data, "tui.select.confirm") ||
-				data === " ")
+				(data === " " && this.region === "settings"))
 		) {
 			list.handleInput(data);
 		} else {

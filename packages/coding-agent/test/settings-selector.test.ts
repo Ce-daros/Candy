@@ -197,7 +197,6 @@ describe("SettingsSelectorComponent", () => {
 			expect(output).toContain(category);
 		}
 		selector.handleInput("\t");
-		selector.handleInput("\t");
 		selector.handleInput("\x1b[B");
 		output = stripAnsi(selector.render(120).join("\n"));
 		expect(output).toContain("♦ Conversation & Input ♦");
@@ -215,5 +214,44 @@ describe("SettingsSelectorComponent", () => {
 		expect(output).toContain("Tool preview lines");
 		selector.handleInput("\x1b");
 		expect(onCancel).not.toHaveBeenCalled();
+
+		const searched = new SettingsSelectorComponent(config, { onCancel } as unknown as SettingsCallbacks);
+		for (const character of "e") searched.handleInput(character);
+		const selectedLine = () =>
+			stripAnsi(searched.render(120).join("\n"))
+				.split("\n")
+				.find((line) => line.includes("‹ ") && line.includes(" ›"));
+		const first = selectedLine();
+		searched.handleInput("\x1b[B");
+		expect(selectedLine()).not.toBe(first);
+		searched.handleInput("\x1b[A");
+		expect(selectedLine()).toBe(first);
+	});
+
+	it("keeps the selected model visible while navigating a long settings submenu", () => {
+		const models = Array.from({ length: 15 }, (_, index) => ({
+			provider: "test",
+			id: `model-${String(index).padStart(2, "0")}`,
+		})) as unknown as SettingsConfig["availableDefaultModels"];
+		const config = {
+			defaultModel: "not set",
+			availableDefaultModels: models,
+			modelThinkingLevels: {},
+			warnings: {},
+		} as unknown as SettingsConfig;
+		const selector = new SettingsSelectorComponent(config, { onCancel: () => {} } as unknown as SettingsCallbacks);
+		selector.setAvailableHeight(17);
+		for (const character of "Default thinking level per model") selector.handleInput(character);
+		expect(stripAnsi(selector.render(76).join("\n"))).toContain("Default thinking level per model");
+		selector.handleInput("\r");
+		for (let index = 0; index < 12; index++) {
+			selector.handleInput("\x1b[B");
+			selector.render(76);
+		}
+		let visible = stripAnsi(selector.render(76).join("\n"));
+		expect(visible).toContain("♦ model-12");
+		selector.handleInput("\x1b[A");
+		visible = stripAnsi(selector.render(76).join("\n"));
+		expect(visible).toContain("♦ model-11");
 	});
 });

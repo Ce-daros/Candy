@@ -1,5 +1,4 @@
 import {
-	type Component,
 	Container,
 	fuzzyFilter,
 	getKeybindings,
@@ -40,6 +39,7 @@ export class SelectSubmenu extends Container {
 	private onSelectionChangeCb?: (value: string) => void;
 	private preview?: (value: string, width: number) => string[];
 	private currentSelection: string;
+	private availableHeight = 20;
 
 	constructor(
 		title: string,
@@ -129,7 +129,15 @@ export class SelectSubmenu extends Container {
 		this.selectList = newList;
 	}
 
+	setAvailableHeight(height: number): void {
+		this.availableHeight = height;
+	}
+
 	render(width: number): string[] {
+		const precedingLines = this.children
+			.slice(0, this.listChildIndex)
+			.reduce((count, child) => count + child.render(width).length, 0);
+		this.selectList.setMaxVisible(Math.min(10, Math.max(1, this.availableHeight - precedingLines - 3)));
 		const lines = super.render(width);
 		if (this.preview && this.currentSelection) {
 			lines.push("");
@@ -201,8 +209,9 @@ export class SteppedSubmenu extends Container {
 	private readonly onComplete: (context: Record<string, string>) => void;
 	private readonly onCancel: () => void;
 	private readonly opts: SteppedSubmenuOptions;
-	private activeComponent: Component;
+	private activeComponent: SelectSubmenu;
 	private context: Record<string, string>;
+	private availableHeight = 20;
 
 	constructor(
 		steps: SteppedSubmenuStep[],
@@ -219,7 +228,7 @@ export class SteppedSubmenu extends Container {
 		this.activeComponent = this.buildStep(opts.startAtStep ?? 0);
 	}
 
-	private buildStep(stepIndex: number): Component {
+	private buildStep(stepIndex: number): SelectSubmenu {
 		const step = this.steps[stepIndex];
 		const total = this.steps.length;
 		const stepLabel = total > 1 ? `Step ${stepIndex + 1}/${total} \u00b7 ` : "";
@@ -229,7 +238,7 @@ export class SteppedSubmenu extends Container {
 		const items = step.options(this.context);
 		const preselect = step.preselect?.(this.context) ?? "";
 
-		return new SelectSubmenu(
+		const submenu = new SelectSubmenu(
 			title,
 			`${stepLabel}${desc}`,
 			items,
@@ -263,6 +272,13 @@ export class SteppedSubmenu extends Container {
 			undefined,
 			step.searchable || step.layout ? { searchable: step.searchable, layout: step.layout } : undefined,
 		);
+		submenu.setAvailableHeight(this.availableHeight);
+		return submenu;
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = height;
+		this.activeComponent.setAvailableHeight(height);
 	}
 
 	render(width: number): string[] {

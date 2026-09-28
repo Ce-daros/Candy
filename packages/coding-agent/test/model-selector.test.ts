@@ -1,6 +1,7 @@
-import { setKeybindings, type TUI } from "@candy/tui";
+import { setKeybindings, type TUI, type TuiMouseEvent } from "@candy/tui";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
+import type { ModelRuntime } from "../src/core/model-runtime.ts";
 import { ModelSelectorComponent } from "../src/modes/interactive/components/model-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -124,6 +125,50 @@ describe("model selector", () => {
 		output = stripAnsi(selector.render(80).join("\n"));
 		expect(output).toContain("Alpha · alpha-two");
 		expect(output).not.toContain("Alpha · alpha-one");
+		selector.dispose();
+	});
+
+	it("keeps the selected provider visible in wide and narrow layouts", () => {
+		const models = Array.from({ length: 18 }, (_, index) => ({
+			provider: `provider-${String(index).padStart(2, "0")}`,
+			id: "model",
+			name: "Model",
+			contextWindow: 1000,
+			maxTokens: 100,
+			reasoning: false,
+		}));
+		const runtime = {
+			getAvailableSnapshot: () => models,
+			refresh: () => new Promise<never>(() => {}),
+		} as unknown as ModelRuntime;
+		const selector = new ModelSelectorComponent(
+			createFakeTui(),
+			undefined,
+			runtime,
+			() => {},
+			() => {},
+		);
+		selector.setAvailableHeight(17);
+		selector.handleInput("\x1b[Z");
+		for (let index = 0; index < 12; index++) selector.handleInput("\x1b[B");
+		expect(stripAnsi(selector.render(120).join("\n"))).toContain("♦ provider-11 ♦");
+		expect(stripAnsi(selector.render(70).join("\n"))).toContain("♦ provider-11 ♦");
+		selector.render(120);
+		const click: TuiMouseEvent = {
+			type: "press",
+			button: "left",
+			x: 3,
+			y: 2,
+			screenX: 3,
+			screenY: 2,
+			width: 120,
+			height: 17,
+			shift: false,
+			alt: false,
+			ctrl: false,
+		};
+		selector.handleMouse(click);
+		expect(stripAnsi(selector.render(120).join("\n"))).toContain("♦ provider-07 ♦");
 		selector.dispose();
 	});
 });

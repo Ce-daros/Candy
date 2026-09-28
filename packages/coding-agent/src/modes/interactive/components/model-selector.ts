@@ -57,6 +57,7 @@ export class ModelSelectorComponent implements Focusable {
 	private lastPaneWidth = 0;
 	private lastModelStart = 0;
 	private lastSearchRow = 0;
+	private lastProviderStart = 0;
 	private lastVisibleStart = 0;
 	private lastVisibleRows = 0;
 
@@ -217,8 +218,13 @@ export class ModelSelectorComponent implements Focusable {
 		const bodyWidth = wide ? width - paneWidth - 3 : width;
 		const rows = Math.max(3, this.availableHeight - 8 - (wide ? 0 : 2));
 		const start = Math.max(0, Math.min(this.selectedIndex - Math.floor(rows / 2), this.filteredModels.length - rows));
+		const providerStart = Math.max(
+			0,
+			Math.min(this.providerIndex - Math.floor(rows / 2), this.providers.length - rows),
+		);
 		this.lastWide = wide;
 		this.lastPaneWidth = paneWidth;
+		this.lastProviderStart = providerStart;
 		this.lastModelStart = wide ? 2 : 4;
 		this.lastVisibleStart = start;
 		this.lastVisibleRows = rows;
@@ -253,14 +259,21 @@ export class ModelSelectorComponent implements Focusable {
 		const lines = [theme.bold(theme.fg("accent", "Model")), ""];
 		if (wide) {
 			for (let row = 0; row < rows; row++) {
-				const left = row < this.providers.length ? providerLine(row) : "";
+				const providerIndex = providerStart + row;
+				const left = providerIndex < this.providers.length ? providerLine(providerIndex) : "";
 				const right = start + row < this.filteredModels.length ? modelLine(start + row) : "";
 				lines.push(
 					`${left}${" ".repeat(Math.max(0, paneWidth - visibleWidth(left)))} ${theme.fg("borderMuted", "│")} ${right}`,
 				);
 			}
 		} else {
-			lines.push(truncateToWidth(this.providers.map((_, index) => providerLine(index)).join("  "), width));
+			let strip = this.providerIndex > 0 ? theme.fg("muted", "‹ ") : "";
+			for (let index = this.providerIndex; index < this.providers.length; index++) {
+				const next = `${strip}${index > this.providerIndex ? "  " : ""}${providerLine(index)}`;
+				if (visibleWidth(next) > width) break;
+				strip = next;
+			}
+			lines.push(truncateToWidth(strip, width));
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			for (let row = 0; row < rows; row++) lines.push(modelLine(start + row));
 		}
@@ -309,8 +322,10 @@ export class ModelSelectorComponent implements Focusable {
 			this.region = "search";
 			return this.searchInput.handleMouse?.({ ...event, y: 0 });
 		}
-		if (this.lastWide && event.x < this.lastPaneWidth && event.y >= 2 && event.y < 2 + this.providers.length) {
-			this.providerIndex = event.y - 2;
+		if (this.lastWide && event.x < this.lastPaneWidth && event.y >= 2 && event.y < 2 + this.lastVisibleRows) {
+			const index = this.lastProviderStart + event.y - 2;
+			if (index >= this.providers.length) return undefined;
+			this.providerIndex = index;
 			this.selectedIndex = 0;
 			this.filterModels(this.searchInput.getValue());
 			this.region = "providers";

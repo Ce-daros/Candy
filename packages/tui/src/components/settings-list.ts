@@ -20,7 +20,7 @@ export interface SettingItem {
 	submenu?: (
 		currentValue: string,
 		done: (selectedValue?: string, options?: { navigateTo?: string }) => void,
-	) => Component;
+	) => Component & { setAvailableHeight?(height: number): void };
 }
 
 export interface SettingsListTheme {
@@ -49,7 +49,8 @@ export class SettingsList implements Component {
 	private searchEnabled: boolean;
 
 	// Submenu state
-	private submenuComponent: Component | null = null;
+	private submenuComponent: (Component & { setAvailableHeight?(height: number): void }) | null = null;
+	private availableHeight = 20;
 	private submenuItemIndex: number | null = null;
 	private navigateAfterClose: string | null = null;
 
@@ -83,6 +84,11 @@ export class SettingsList implements Component {
 
 	setMaxVisible(count: number): void {
 		this.maxVisible = Math.max(1, count);
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = height;
+		this.submenuComponent?.setAvailableHeight?.(height);
 	}
 
 	updateValue(id: string, newValue: string): void {
@@ -298,6 +304,7 @@ export class SettingsList implements Component {
 					this.closeSubmenu();
 				},
 			);
+			this.submenuComponent.setAvailableHeight?.(this.availableHeight);
 		} else if (item.values && item.values.length > 0) {
 			// Cycle through values
 			const currentIndex = item.values.indexOf(item.currentValue);
