@@ -55,19 +55,18 @@ test("selects the newest catalog a Pi version supports", () => {
 	assert.equal(selectModelCatalog(index, undefined)?.revision, mixedApiRevision);
 });
 
-test("redirects Pi user agents to an explicit catalog version", () => {
-	// Regression test for #9099: released clients identify themselves only by User-Agent.
+test("redirects Candy user agents to an explicit catalog version", () => {
 	assert.deepEqual(
 		parseModelCatalogRequest(
 			"https://pi.dev/api/models/providers/openrouter?types=chat%2Cimage",
-			"pi/0.84.4 (linux; node/v22.0.0; x64)",
+			"candy/0.84.4 (linux; node/v22.0.0; x64)",
 		),
 		{
 			kind: "redirect",
 			location: "https://pi.dev/api/models/providers/openrouter?types=chat%2Cimage&pi-version=0.84.4",
 		},
 	);
-	assert.deepEqual(parseModelCatalogRequest("https://pi.dev/api/models", "pi/0.84.4"), {
+	assert.deepEqual(parseModelCatalogRequest("https://pi.dev/api/models", "candy/0.84.4"), {
 		kind: "redirect",
 		location: "https://pi.dev/api/models?pi-version=0.84.4",
 	});
@@ -75,7 +74,10 @@ test("redirects Pi user agents to an explicit catalog version", () => {
 
 test("serves explicit and unversioned catalog requests without redirecting", () => {
 	assert.deepEqual(
-		parseModelCatalogRequest("https://pi.dev/api/models?pi-version=0.83.0", "pi/0.85.1 (linux; node/v22.0.0; x64)"),
+		parseModelCatalogRequest(
+			"https://pi.dev/api/models?pi-version=0.83.0",
+			"candy/0.85.1 (linux; node/v22.0.0; x64)",
+		),
 		{ kind: "catalog", piVersion: "0.83.0", representation: "legacy" },
 	);
 	assert.deepEqual(parseModelCatalogRequest("https://pi.dev/api/models?types=chat", "curl/8.0.0"), {
@@ -95,7 +97,7 @@ test("rejects invalid catalog request parameters", () => {
 		kind: "invalid",
 		error: "Invalid Pi version.",
 	});
-	assert.deepEqual(parseModelCatalogRequest("https://pi.dev/api/models?types=", "pi/0.84.4"), {
+	assert.deepEqual(parseModelCatalogRequest("https://pi.dev/api/models?types=", "candy/0.84.4"), {
 		kind: "invalid",
 		error: "Invalid model types.",
 	});

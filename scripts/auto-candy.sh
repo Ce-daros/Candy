@@ -2,8 +2,7 @@
 set -euo pipefail
 
 # Developer wrapper that runs candy from this checkout's latest `npm run build`.
-# Development invocations use CANDY_EXPERIMENTAL=1 by default. Pass --stable to use
-# the next candy executable on PATH; `candy update` also uses stable so self-update
+# Pass --stable to use the next candy executable on PATH; `candy update` also uses stable so self-update
 # works.
 #
 # From the repository root, install with:
@@ -71,5 +70,4 @@ if [[ ! -x "$dev_pi" ]]; then
 	exit 1
 fi
 
-export CANDY_EXPERIMENTAL="${CANDY_EXPERIMENTAL:-1}"
 exec "$dev_pi" ${args[@]+"${args[@]}"}

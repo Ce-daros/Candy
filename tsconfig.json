@@ -5,55 +5,27 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"@candy/chord": ["./packages/chord/src/index.ts"],
-			"@candy/chord/bundler": ["./packages/chord/src/bundler.ts"],
-			"@candy/chord/context": ["./packages/chord/src/context/index.ts"],
-			"@candy/chord/delta": ["./packages/chord/src/delta/index.ts"],
-			"@candy/chord/node": ["./packages/chord/src/node.ts"],
 			"@candy/telemetry": ["./packages/telemetry/src/index.ts"],
 			"@candy/telemetry/testing": ["./packages/telemetry/src/testing/index.ts"],
 			"@candy/ai": ["./packages/ai/src/index.ts"],
 			"@candy/ai/oauth": ["./packages/ai/src/oauth.ts"],
 			"@candy/ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
 			"@candy/ai/dist/*": ["./packages/ai/src/*"],
-			"@candy/durable": ["./packages/durable/src/index.ts"],
-			"@candy/durable/testing": ["./packages/durable/src/testing/index.ts"],
-			"@candy/durable/*": ["./packages/durable/src/*"],
 			"@candy/agent-core": ["./packages/agent/src/index.ts"],
-			"@candy/agent-core/harness/session/testing": [
-				"./packages/agent/src/harness/session/testing/index.ts"
-			],
-			"@candy/agent-core/experimental/pico3": [
-				"./packages/agent/src/harness/pico3/index.ts"
-			],
-			"@candy/agent-core/node": ["./packages/agent/src/node.ts"],
 			"@candy/agent-core/*": [
 				"./packages/agent/src/*.ts",
 				"./packages/agent/src/*/index.ts",
 				"./packages/agent/src/*"
 			],
-			"@candy/session-backend-sqlite-node": ["./packages/session-backends/sqlite-node/src/index.ts"],
 			"@candy/coding-agent": ["./packages/coding-agent/src/index.ts"],
-			"@candy/coding-agent/experimental/plugin": [
-				"./packages/coding-agent/src/experimental/plugin.ts"
-			],
+			"@candy/coding-agent/extension-host-modules": ["./packages/coding-agent/src/presentation/extensions/virtual-modules.ts"],
 			"@candy/coding-agent/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
 			"@candy/coding-agent/*": ["./packages/coding-agent/src/*"],
-			"@candy/protocol": ["./packages/protocol/src/index.ts"],
-			"@candy/protocol/*": ["./packages/protocol/src/*"],
-			"@candy/client": ["./packages/client/src/index.ts"],
-			"@candy/client/unix": ["./packages/client/src/unix.ts"],
-			"@candy/client/*": ["./packages/client/src/*"],
-			"@candy/server": ["./packages/server/src/index.ts"],
-			"@candy/server/unix": ["./packages/server/src/transports/unix/index.ts"],
-			"@candy/server/*": ["./packages/server/src/*"],
 			"typebox": ["./node_modules/typebox"],
 			"@candy/tui": ["./packages/tui/src/index.ts"],
-			"@candy/tui/*": ["./packages/tui/src/*"],
-			"@earendil-works/pi-agent-old": ["./packages/agent-old/src/index.ts"],
-			"@earendil-works/pi-agent-old/*": ["./packages/agent-old/src/*"]
+			"@candy/tui/*": ["./packages/tui/src/*"]
 		}
 	},
-	"include": ["scripts/model-catalog-protocol.ts", "scripts/model-catalog-protocol.test.ts", "packages/*/src/**/*", "packages/*/test/**/*", "packages/session-backends/*/src/**/*", "packages/session-backends/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"include": ["scripts/model-catalog-protocol.ts", "scripts/model-catalog-protocol.test.ts", "packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
 	"exclude": ["**/dist/**", "packages/coding-agent/examples/extensions/gondolin/**"]
 }

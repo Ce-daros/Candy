@@ -97,10 +97,9 @@ export function parseModelCatalogRepresentation(
 /**
  * Decide how to answer a catalog request from its URL and User-Agent.
  *
- * Released clients do not send `pi-version`. Responses are cached by URL, so
- * instead of varying the response on the User-Agent, clients that identify
- * as Pi are redirected to the equivalent URL with an explicit `pi-version`.
- * Requests without a Pi User-Agent receive the default catalog.
+ * Candy clients do not send `pi-version`. Responses are cached by URL, so
+ * clients identified by User-Agent are redirected to the equivalent URL with
+ * an explicit `pi-version`. Other requests receive the default catalog.
  */
 export function parseModelCatalogRequest(url: string | URL, userAgent: string | null | undefined): ModelCatalogRequest {
 	const requestUrl = new URL(url);

@@ -54,3 +54,12 @@ Candy is an independent agent harness, originally forked from pi. Evaluate and c
 - Never use `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, `git add -A`, `git add .`, `git commit --no-verify`, or force-push.
 - Review PRs through diffs and refs without switching the shared checkout. Resolve rebase conflicts only in files you changed; abort and ask when another contributor's files conflict.
 - Respect the lockfile commit guard. Set `CANDY_ALLOW_LOCKFILE_CHANGE=1` only when the user wants the lockfile change committed.
+- DO NOT USE SUBAGENTS UNLESS USER ORDERED
+
+## Architecture direction
+
+- Prefer the active product architecture over compatibility with superseded APIs. Breaking internal and extension APIs is acceptable when it simplifies the system; migrate repository consumers and document the change.
+- Keep one production runtime and persistence path. Remove experimental or unused parallel implementations together with their exports, dependencies, tests, examples, and documentation.
+- Put business state and operations in runtime modules; keep terminal presentation and input handling in the interactive layer. Depend on narrow interfaces between these boundaries.
+- Preserve user configuration and session data. Any persistence-format change must include an explicit migration and focused coverage.
+- Optimize for useful behavior, performance, and a clear codebase. Split modules by real ownership and behavior, not by arbitrary file length.

@@ -8,7 +8,13 @@ export default mergeConfig(
 			include: ["test/**/*.test.ts"],
 		},
 		resolve: {
-			alias: [{ find: /^@earendil-works\/coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex }],
+			alias: [
+				{ find: /^@candy\/coding-agent$/, replacement: workspaceSourcePaths.codingAgentIndex },
+				{
+					find: /^@candy\/coding-agent\/extension-host-modules$/,
+					replacement: workspaceSourcePaths.codingAgentExtensionHostModules,
+				},
+			],
 		},
 	}),
 );

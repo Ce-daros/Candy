@@ -12,11 +12,9 @@ const rootLockfilePath = join(repoRoot, "package-lock.json");
 const outputPackageJsonPath = join(outputDir, "package.json");
 const outputLockfilePath = join(outputDir, "package-lock.json");
 const internalPackagePrefix = "@candy/";
-const internalPackageNames = new Set(["@candy/chord"]);
 const installPackageName = "@candy/coding-agent-install";
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@2.21.0", "preinstall is a no-op in the published package"],
-	["esbuild@0.28.2", "postinstall selects and verifies the platform-specific esbuild binary"],
 	["protobufjs@7.6.6", "postinstall only warns about protobufjs version scheme mismatches"],
 ]);
 
@@ -145,7 +143,7 @@ function getInternalWorkspaces(lockPackages) {
 		if (!lockPath.startsWith("packages/") || lockPath.includes("/node_modules/") || !entry.name || !entry.version) {
 			continue;
 		}
-		if (!entry.name.startsWith(internalPackagePrefix) && !internalPackageNames.has(entry.name)) {
+		if (!entry.name.startsWith(internalPackagePrefix)) {
 			continue;
 		}
 
@@ -312,7 +310,7 @@ function validateGeneratedFiles(installerPackageJson, installLock, internalNames
 		}
 		if (
 			packageName !== undefined &&
-			(packageName.startsWith(internalPackagePrefix) || internalPackageNames.has(packageName)) &&
+			packageName.startsWith(internalPackagePrefix) &&
 			entry.version !== installerPackageJson.version
 		) {
 			errors.push(`${lockPath} internal package version ${entry.version} does not match ${installerPackageJson.version}`);
@@ -362,12 +360,6 @@ function validateGeneratedFiles(installerPackageJson, installLock, internalNames
 				);
 			}
 		}
-	}
-
-	const platformPackageCount = Object.values(installLock.packages).filter((entry) => entry.os || entry.cpu || entry.libc)
-		.length;
-	if (platformPackageCount === 0) {
-		errors.push("no platform-specific optional dependency entries found");
 	}
 
 	if (errors.length > 0) {

@@ -2,7 +2,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -14,6 +14,13 @@ const temporary = mkdtempSync(join(temporaryRoot, "candy-interactive-smoke-"));
 const isolationBase = process.platform === "win32" ? process.env.PUBLIC : tmpdir();
 if (!isolationBase) throw new Error("PUBLIC is required for an isolated Windows smoke run");
 const isolation = mkdtempSync(join(isolationBase, "candy-interactive-smoke-"));
+function removeSmokeDirectory(directory, parent) {
+	const absolute = resolve(directory);
+	if (dirname(absolute) !== resolve(parent) || !basename(absolute).startsWith("candy-interactive-smoke-")) {
+		throw new Error(`Refusing to remove unexpected smoke directory: ${absolute}`);
+	}
+	rmSync(absolute, { recursive: true, force: true });
+}
 const isolatedHome = join(isolation, "home");
 const isolatedWorkspace = join(isolation, "workspace");
 const isolatedTemp = join(isolation, "temp");
@@ -23,22 +30,11 @@ mkdirSync(join(isolatedTemp, ".git"));
 const packageDir = join(root, "packages", "coding-agent");
 const source = (name, file) => join(root, "packages", name, "src", file);
 const aliases = new Map([
-	["@candy/chord", source("chord", "index.ts")],
-	["@candy/chord/context", source("chord", "context/index.ts")],
-	["@candy/chord/delta", source("chord", "delta/index.ts")],
-	["@candy/chord/bundler", source("chord", "bundler.ts")],
-	["@candy/chord/node", source("chord", "node.ts")],
 	["@candy/telemetry", source("telemetry", "index.ts")],
 	["@candy/ai", source("ai", "index.ts")],
-	["@candy/ai/compat", source("ai", "compat.ts")],
 	["@candy/ai/oauth", source("ai", "oauth.ts")],
 	["@candy/agent-core", source("agent", "index.ts")],
 	["@candy/agent-core/node", source("agent", "node.ts")],
-	["@candy/protocol", source("protocol", "index.ts")],
-	["@candy/client", source("client", "index.ts")],
-	["@candy/client/unix", source("client", "unix.ts")],
-	["@candy/server", source("server", "index.ts")],
-	["@candy/server/unix", source("server", "transports/unix/index.ts")],
 	["@candy/tui", source("tui", "index.ts")],
 ]);
 
@@ -48,7 +44,7 @@ const aliasesPlugin = {
 		builder.onResolve({ filter: /^@candy\// }, ({ path }) => {
 			const exact = aliases.get(path);
 			if (exact) return { path: exact };
-			const aiSubpath = /^@candy\/ai\/(providers|utils)\/(.+)$/.exec(path);
+			const aiSubpath = /^@candy\/ai\/(api|providers|utils)\/(.+)$/.exec(path);
 			if (aiSubpath) return { path: source("ai", `${aiSubpath[1]}/${aiSubpath[2]}.ts`) };
 			throw new Error(`Missing smoke alias for ${path}`);
 		});
@@ -106,6 +102,6 @@ try {
 	});
 	process.exitCode = exitCode;
 } finally {
-	rmSync(temporary, { recursive: true, force: true });
-	rmSync(isolation, { recursive: true, force: true });
+	removeSmokeDirectory(temporary, temporaryRoot);
+	removeSmokeDirectory(isolation, isolationBase);
 }

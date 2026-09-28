@@ -6,90 +6,56 @@ import test from "node:test";
 import { installCodingAgentConsumer, packReleasePackages, smokeTestCodingAgentConsumer } from "./coding-agent-consumer.mjs";
 
 const codingAgentName = "@candy/coding-agent";
-const devPackages = ["client", "protocol", "server"].map((name) => `@candy/${name}`);
 
-function createFixture(t, { importServer = false, declareServer = false } = {}) {
-	const root = mkdtempSync(join(tmpdir(), "pi-consumer-test-"));
+function createFixture(t, { importMissing = false, includeExperimental = false } = {}) {
+	const root = mkdtempSync(join(tmpdir(), "candy-consumer-test-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
-	const packages = [codingAgentName, "@candy/chord", ...devPackages].map((name) => ({
-		name,
-		directory: join(root, "packages", name.split("/")[1]),
-	}));
-	for (const pkg of packages) {
-		const isAgent = pkg.name === codingAgentName;
-		const manifest = {
-			name: pkg.name,
-			version: "1.0.0",
-			type: "module",
-			exports: isAgent ? {
-				".": "./dist/index.js",
-				"./client": { source: "./src/client/index.ts" },
-				"./experimental/plugin": { source: "./src/experimental/plugin.ts" },
-			} : "./dist/index.js",
-			...(isAgent ? {
-				bin: { pi: "dist/bundle/cli.js" },
-				dependencies: {
-					"@candy/chord": "1.0.0",
-					...(declareServer ? { "@candy/server": "1.0.0" } : {}),
-				},
-				devDependencies: Object.fromEntries(devPackages.map((name) => [name, "1.0.0"])),
-			} : {}),
-		};
-		const files = {
-			"package.json": JSON.stringify(manifest),
-			"dist/index.js": isAgent ? `
-${importServer ? 'import "@candy/server";' : ""}
-import { marker } from "@candy/chord";
-if (marker !== "local tarball") throw new Error("Wrong Chord artifact");
-export function createAgentSession() {}
-export class SessionManager { static inMemory() {} }
-export class ModelRuntime { static create() {} }
-` : 'export const marker = "local tarball";',
-			...(isAgent ? {
-				"dist/cli.js": 'console.log("1.0.0");',
-				"dist/bundle/cli.js": 'console.log("1.0.0");',
-			} : {}),
-		};
-		for (const [path, content] of Object.entries(files)) {
-			mkdirSync(dirname(join(pkg.directory, path)), { recursive: true });
-			writeFileSync(join(pkg.directory, path), content);
-		}
+	const packageDirectory = join(root, "packages", "coding-agent");
+	const manifest = {
+		name: codingAgentName,
+		version: "1.0.0",
+		type: "module",
+		bin: { candy: "dist/bundle/cli.js" },
+		main: "./dist/index.js",
+		exports: {
+			".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+			"./rpc-entry": { import: "./dist/bundle/rpc-entry.js" },
+		},
+	};
+	const files = {
+		"package.json": JSON.stringify(manifest),
+		"dist/index.js": `${importMissing ? 'import "@candy/missing";\n' : ""}export function createAgentSession() {}\nexport class SessionManager { static inMemory() {} }\nexport class ModelRuntime { static create() {} }\n`,
+		"dist/cli.js": 'console.log("1.0.0");',
+		"dist/bundle/cli.js": 'console.log("1.0.0");',
+	};
+	if (includeExperimental) files["dist/experimental/obsolete.js"] = "export {};";
+	for (const [path, content] of Object.entries(files)) {
+		mkdirSync(dirname(join(packageDirectory, path)), { recursive: true });
+		writeFileSync(join(packageDirectory, path), content);
 	}
-	const tarballs = packReleasePackages(packages, join(root, "tarballs"));
+	const tarballs = packReleasePackages([{ directory: packageDirectory, name: codingAgentName }], join(root, "tarballs"));
 	const directory = join(root, "consumer");
 	installCodingAgentConsumer(directory, tarballs);
 	return directory;
 }
 
-// #9132: installing every tarball directly hid undeclared runtime imports.
-test("installs only coding-agent directly and uses overrides only for declared runtime dependencies", (t) => {
+test("installs and runs the SDK and CLI from the published package", (t) => {
 	const directory = createFixture(t);
-	const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
-	assert.deepEqual(Object.keys(manifest.dependencies), [codingAgentName]);
-	for (const name of devPackages) {
-		assert.ok(manifest.overrides[name]);
-		assert.equal(existsSync(join(directory, "node_modules", name)), false);
-	}
+	const manifest = JSON.parse(readFileSync(join(directory, "node_modules", codingAgentName, "package.json"), "utf8"));
+	assert.deepEqual(Object.keys(manifest.dependencies ?? {}), []);
 	smokeTestCodingAgentConsumer(directory);
+	for (const subpath of ["/client", "/experimental/plugin"]) {
+		assert.throws(() => import.meta.resolve(`${codingAgentName}${subpath}`), /not exported|not defined/);
+	}
+});
 
-	const nested = join(directory, "node_modules", codingAgentName, "node_modules/@candy/server");
-	mkdirSync(nested, { recursive: true });
-	writeFileSync(join(nested, "package.json"), JSON.stringify({ name: "@candy/server", version: "1.0.0" }));
-	assert.throws(() => smokeTestCodingAgentConsumer(directory), /pi-server must not be installed/);
-	rmSync(nested, { recursive: true });
+test("fails when the SDK imports an undeclared package", (t) => {
+	const directory = createFixture(t, { importMissing: true });
+	assert.throws(() => smokeTestCodingAgentConsumer(directory), /Cannot find package '@candy\/missing'/);
+});
 
-	const experimental = join(directory, "node_modules", codingAgentName, "dist/experimental");
-	mkdirSync(experimental);
+test("rejects experimental files from the published package", (t) => {
+	const directory = createFixture(t, { includeExperimental: true });
+	assert.ok(existsSync(join(directory, "node_modules", codingAgentName, "dist/experimental")));
 	assert.throws(() => smokeTestCodingAgentConsumer(directory), /contains development-only code/);
-});
-
-// #9132: smoke-test the public SDK, not just a bundled CLI that hides missing imports.
-test("fails when the SDK imports an undeclared server despite a working CLI", (t) => {
-	const directory = createFixture(t, { importServer: true });
-	assert.throws(() => smokeTestCodingAgentConsumer(directory), /Cannot find package '@candy\/server'/);
-});
-
-test("fails if a development-only dependency is added back to the published dependency tree", (t) => {
-	const directory = createFixture(t, { declareServer: true });
-	assert.throws(() => smokeTestCodingAgentConsumer(directory), /pi-server must not be installed/);
 });

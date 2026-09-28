@@ -12,16 +12,14 @@
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Workspace package name -> its source root, so cross-package imports are followed. */
 const WORKSPACE = {
-	"@candy/chord": "packages/chord/src",
 	"@candy/ai": "packages/ai/src",
-	"@candy/durable": "packages/durable/src",
 	"@candy/agent-core": "packages/agent/src",
 	"@candy/telemetry": "packages/telemetry/src",
 	"@candy/tui": "packages/tui/src",
@@ -34,12 +32,6 @@ const WORKSPACE = {
 const BUDGETS = {
 	"packages/ai": {
 		"./utils/*": { maxFiles: 3, forbid: ["providers/", "api/", "index.ts"] },
-	},
-	"packages/agent": {
-		"./harness/runtime/reducer": { maxFiles: 1 },
-		"./harness/context": { maxFiles: 6, forbid: ["harness/runtime/", "harness/execution/", "packages/ai/"] },
-		"./harness/env/nodejs": { maxFiles: 5, forbid: ["packages/ai/", "harness/runtime/"] },
-		"./harness/session": { maxFiles: 25, forbid: ["harness/runtime/", "harness/execution/", "packages/ai/src/index.ts"] },
 	},
 };
 
@@ -81,7 +73,7 @@ function walk(entryFile) {
 	return seen;
 }
 
-/** `./dist/harness/context.js` in the exports map is `src/harness/context.ts` on disk. */
+/** Resolve a package export's build path to its source module. */
 function sourceFor(pkgDir, distPath) {
 	const rel = distPath.replace(/^\.\/dist\//, "").replace(/\.js$/, ".ts");
 	const file = resolve(ROOT, pkgDir, "src", rel);
@@ -115,7 +107,7 @@ for (const [pkgDir, budgets] of Object.entries(BUDGETS)) {
 				failures += 1;
 				continue;
 			}
-			const graph = [...walk(source)].map((file) => relative(ROOT, file));
+			const graph = [...walk(source)].map((file) => relative(ROOT, file).split(sep).join("/"));
 			if (graph.length > budget.maxFiles) {
 				console.error(
 					`${pkgDir} export "${name}" reaches ${graph.length} files, budget ${budget.maxFiles}\n` +

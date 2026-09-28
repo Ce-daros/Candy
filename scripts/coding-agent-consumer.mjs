@@ -1,20 +1,19 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPublicWorkspacePackages } from "./release-packages.mjs";
 
 const codingAgentName = "@candy/coding-agent";
-const developmentPackages = new Set(["client", "protocol", "server"].map((name) => `@candy/${name}`));
 
 function run(command, args, options = {}) {
 	console.log(`$ ${[command, ...args].join(" ")}`);
 	const result = spawnSync(command, args, {
 		encoding: "utf8",
-		shell: process.platform === "win32",
+		shell: process.platform === "win32" && command === "npm",
 		timeout: 300_000,
 		...options,
 	});
@@ -57,26 +56,7 @@ export function installCodingAgentConsumer(directory, tarballs, packageManager =
 	run(packageManager, ["install", "--ignore-scripts", ...installArgs], { cwd: directory });
 }
 
-function checkInstalledPackages(nodeModules, seen = new Set()) {
-	if (!existsSync(nodeModules)) return;
-	const directories = readdirSync(nodeModules)
-		.filter((name) => !name.startsWith("."))
-		.flatMap((name) => name.startsWith("@")
-			? readdirSync(join(nodeModules, name)).map((child) => join(nodeModules, name, child))
-			: [join(nodeModules, name)]);
-	for (const directory of directories) {
-		if (!existsSync(join(directory, "package.json"))) continue;
-		const path = realpathSync(directory);
-		if (seen.has(path)) continue;
-		seen.add(path);
-		const manifest = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
-		if (developmentPackages.has(manifest.name)) throw new Error(`${manifest.name} must not be installed: ${path}`);
-		checkInstalledPackages(join(path, "node_modules"), seen);
-	}
-}
-
 export function smokeTestCodingAgentConsumer(directory, runtime = process.execPath) {
-	checkInstalledPackages(join(directory, "node_modules"));
 	const packageDir = join(directory, "node_modules", codingAgentName);
 	const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
 	for (const path of ["dist/client", "dist/experimental", "dist/cli/experimental", "dist/bundle/client.js", "dist/bundle/coordinator.js"]) {
@@ -105,9 +85,6 @@ import { createAgentSession, SessionManager, ModelRuntime } from "${codingAgentN
 assert.equal(typeof createAgentSession, "function");
 assert.equal(typeof SessionManager.inMemory, "function");
 assert.equal(typeof ModelRuntime.create, "function");
-for (const name of ["client", "protocol", "server"]) {
-  assert.throws(() => import.meta.resolve("@candy/" + name), /Cannot find|cannot find/, name + " must not be installed");
-}
 for (const subpath of ["/client", "/experimental/plugin"]) {
   assert.throws(() => import.meta.resolve("${codingAgentName}" + subpath), /not exported|not defined|Cannot find|cannot find/);
 }

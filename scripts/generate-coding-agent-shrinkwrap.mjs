@@ -10,10 +10,8 @@ const codingAgentDir = join(repoRoot, "packages/coding-agent");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const shrinkwrapPath = join(codingAgentDir, "npm-shrinkwrap.json");
 const internalPackagePrefix = "@candy/";
-const internalPackageNames = new Set(["@candy/chord"]);
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@2.21.0", "preinstall is a no-op in the published package"],
-	["esbuild@0.28.2", "postinstall selects and verifies the platform-specific esbuild binary"],
 	["protobufjs@7.6.6", "postinstall only warns about protobufjs version scheme mismatches"],
 ]);
 
@@ -138,7 +136,7 @@ function getInternalWorkspaces(lockPackages) {
 		if (!lockPath.startsWith("packages/") || lockPath.includes("/node_modules/") || !entry.name || !entry.version) {
 			continue;
 		}
-		if (!entry.name.startsWith(internalPackagePrefix) && !internalPackageNames.has(entry.name)) {
+		if (!entry.name.startsWith(internalPackagePrefix)) {
 			continue;
 		}
 
@@ -291,11 +289,6 @@ function validateShrinkwrap(shrinkwrap, internalNames) {
 				errors.push(`${lockPath || "root"} dependency ${dependencyName} is missing`);
 			}
 		}
-	}
-
-	const platformPackageCount = Object.values(shrinkwrap.packages).filter((entry) => entry.os || entry.cpu || entry.libc).length;
-	if (platformPackageCount === 0) {
-		errors.push("no platform-specific optional dependency entries found");
 	}
 
 	if (errors.length > 0) {

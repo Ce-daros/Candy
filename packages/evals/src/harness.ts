@@ -16,8 +16,10 @@ import {
 	type InlineExtension,
 	ModelRuntime,
 	readStoredCredential,
+	resourceThemeAdapter,
 	SessionManager,
 } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 import {
 	attachHarnessRunToError,
 	createHarness,
@@ -262,7 +264,7 @@ export function verifySystemPrompt(
 	if (!systemPrompt.includes("\n<rules>\n")) {
 		throw new Error(`candy system prompt lost its rules in the ${options.name} eval variant.`);
 	}
-	const hasDocumentation = systemPrompt.includes("\n<docs>\nPi documentation (read only");
+	const hasDocumentation = systemPrompt.includes("\n<docs>\ncandy documentation (read only");
 	if (hasDocumentation !== options.expectedCandyDocumentation) {
 		throw new Error(`candy system prompt does not match the ${options.name} eval variant.`);
 	}
@@ -335,6 +337,8 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		}
 
 		const services = await createAgentSessionServices({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: workspace,
 			modelRuntime,
 			resourceLoaderOptions: { extensionFactories },
