@@ -402,13 +402,13 @@ export function getPackageDir(): string {
 
 /**
  * Get path to built-in themes directory (shipped with package)
- * - For Bun binary: theme/ next to executable
+ * - For Bun binary: modes/interactive/theme/ next to executable
  * - For Node.js (dist/): dist/modes/interactive/theme/
  * - For source (src/): src/modes/interactive/theme/
  */
 export function getThemesDir(): string {
 	if (isBunBinary) {
-		return join(getPackageDir(), "theme");
+		return join(getPackageDir(), "modes", "interactive", "theme");
 	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
 	const packageDir = getPackageDir();
@@ -418,13 +418,13 @@ export function getThemesDir(): string {
 
 /**
  * Get path to HTML export template directory (shipped with package)
- * - For Bun binary: export-html/ next to executable
+ * - For Bun binary: presentation/export-html/ next to executable
  * - For Node.js (dist/): dist/presentation/export-html/
  * - For source (src/): src/presentation/export-html/
  */
 export function getExportTemplateDir(): string {
 	if (isBunBinary) {
-		return join(getPackageDir(), "export-html");
+		return join(getPackageDir(), "presentation", "export-html");
 	}
 	const packageDir = getPackageDir();
 	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";

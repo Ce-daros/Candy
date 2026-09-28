@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- `npm run build` no longer regenerates model data from the models.dev API. The build only validates the committed data under `src/providers/data`; run `npm run generate-models` (or `hydrate-model-data`) explicitly when refreshing the catalog.
+
 - Removed the unused deprecated `image-models.ts` catalog wrapper. Use the typed `getBuiltinImageModel()` and related accessors from `@candy/ai/providers/all`.
 - Removed the deprecated `@candy/ai/compat` entrypoint and its global stream/provider registry aliases. Use explicit provider factories with `Models`, or import a specific API implementation from `@candy/ai/api/*`.
 - Removed deprecated provider-specific `stream*` and `streamSimple*` aliases. Use the matching API implementation or a `Models` provider collection.

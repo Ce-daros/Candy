@@ -355,13 +355,13 @@ try {
 	if (checkOnly) {
 		if (!existsSync(shrinkwrapPath)) {
 			console.error("packages/coding-agent/npm-shrinkwrap.json is missing.");
-			console.error("Run: npm run shrinkwrap:coding-agent");
+			console.error("Run: npm --prefix packages/coding-agent run shrinkwrap");
 			process.exit(1);
 		}
 		const current = readFileSync(shrinkwrapPath, "utf8");
 		if (current !== content) {
 			console.error("packages/coding-agent/npm-shrinkwrap.json is out of date.");
-			console.error("Run: npm run shrinkwrap:coding-agent");
+			console.error("Run: npm --prefix packages/coding-agent run shrinkwrap");
 			process.exit(1);
 		}
 		console.log("packages/coding-agent/npm-shrinkwrap.json is up to date.");
