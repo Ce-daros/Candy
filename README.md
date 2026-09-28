@@ -1,8 +1,12 @@
 
 # Candy Agent Harness
 
-This is the home of the candy agent harness project.
+Candy is an agent harness for daily work in the terminal, with a colorful interface, direct controls, and explicit model, session, and command operations.
 
-It is a fork of pi. It won't sync with upstream. Just cherry-pick.
+Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated and cherry-picked individually.
 
-（其余文档尚未编写）
+- [Development philosophy and contributing](CONTRIBUTING.md)
+- [Product and interaction design](DESIGN.md)
+- [Development rules](AGENTS.md)
+- [Terminal guide](packages/coding-agent/docs/usage.md)
+- [Coding agent](packages/coding-agent/README.md)

@@ -1,131 +1,56 @@
-# Development Rules
+# Working on Candy
 
-## Main
+Candy is an independent agent harness, originally forked from pi. Evaluate and cherry-pick useful upstream changes individually. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development philosophy and [DESIGN.md](DESIGN.md) for product design.
 
-This is the home of the candy agent harness project.
+## Working style
 
-It is a fork of pi, but it's a independent project now. It won't sync with upstream. Just cherry-pick.
+- Work toward the complete user goal. Make coordinated changes across modules, interfaces, tests, and documentation when the task requires them. Do not stop at a plan, a shortcut, or a partial implementation.
+- Offer product and architecture judgments with concrete reasons. Discuss important tradeoffs, unclear goals, and changes outside the agreed scope with the user. Make routine implementation decisions yourself.
+- Carry agreed decisions forward. Do not repeatedly ask for permission already given. An authorized refactor includes removing the implementations, entry points, and references it replaces; ask before removing unrelated working capabilities.
+- Read enough of the implementation to understand behavior, callers, state ownership, and effects. Read key modules for broad changes; cover the affected paths for local changes. Search snippets alone are not an understanding of the system.
+- Use the product yourself when changing interaction. Fix directly related usability gaps discovered along the way. Raise larger discoveries for discussion without abandoning the current goal.
+- Answer questions directly. When responding to feedback, state your judgment and its reasons. Keep progress updates concise and explain meaningful decisions, evidence, and remaining uncertainty.
+- Use concrete technical prose. Avoid filler, promotional claims, and emojis in commits, issues, PR comments, and code.
 
-## Conversational Style
+## Product and architecture
 
-- Keep answers short and concise
-- No emojis in commits, issues, PR comments, or code
-- No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!")
-- Technical prose only, be direct
-- Use concise, clear, simple language. Define unavoidable jargon before using it.
-- Explain non-trivial designs and problems as: problem, concrete example or short trace, then solution. State why the solution is necessary and distinguish it from optional complexity.
-- Prefer concrete behavior and small illustrations over abstract summaries, dense terminology, or unexplained lists of changes.
-- When the user asks a question, answer it first before making edits or running implementation commands.
-- When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
+- Finish the whole workflow: discovery, input, selection, applying, cancelling, returning, and failure recovery. Follow the spatial model and visual rules in [DESIGN.md](DESIGN.md).
+- Give product behavior a clear owner. Presentation owns navigation and focus; runtime owns business operations; shared TUI components own reusable rendering and input behavior.
+- Reuse mature behavior and extract shared mechanisms when real callers need them. Avoid parallel implementations, speculative frameworks, and universal registries for a small set of concrete flows.
+- Keep preview, active state, and saved defaults distinct. Preserve drafts, search, selection, and position; tie async callbacks and resources to their page and session lifetime.
+- Do not hide errors with silent fallbacks, broad catches, guessed conversions, or speculative compatibility. Boundary validation, cancellation, and lifetime management should express real constraints.
+- Remove obsolete code, comments, exports, and documentation as part of the change. Add backward compatibility only when explicitly required.
+- Visible copy should name the action, value, or problem. Keep implementation explanations out of the product. Comment only non-obvious logic and decisions.
 
-## Code Quality
+## Code constraints
 
-- Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
-- No `any` unless absolutely necessary.
-- Inline single-line helpers that have only one call site.
-- Check node_modules for external API types; don't guess.
-- **No inline imports** (`await import()`, `import("pkg").Type`, dynamic type imports). Top-level imports only.
-- In `packages/coding-agent`, resolve package assets through helpers in `src/config.ts`. Do not use `__dirname` directly; the helpers account for source checkouts, npm installations, and standalone binaries.
-- Never remove or downgrade code to fix type errors from outdated deps; upgrade the dep instead.
-- Use only erasable TypeScript syntax (Node strip-only mode) in code checked by the root config (`packages/*/src`, `packages/*/test`, `packages/coding-agent/examples`): no parameter properties, `enum`, `namespace`/`module`, `import =`, `export =`, or other constructs needing JS emit. Use explicit fields with constructor assignments.
-- Always ask before removing functionality or code that appears intentional.
-- Do not preserve backward compatibility unless the user asks for it.
-- Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
+- Use precise types; avoid `any` unless necessary. Check installed dependency types instead of guessing APIs.
+- Use top-level imports. No dynamic imports or inline imported types.
+- Code covered by the root TypeScript config uses Node strip-only syntax: no enums, parameter properties, namespaces, or other constructs requiring JS emit.
+- In `packages/coding-agent`, resolve package assets through `src/config.ts` helpers rather than `__dirname`.
+- Keep shortcuts configurable through `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`.
+- Never hand-edit `packages/ai/src/models.generated.ts`. Update the generator and regenerate; resulting catalog changes may be included.
+- Fix outdated dependencies rather than deleting working behavior to satisfy their types. Pin direct external dependencies to exact versions and review dependency and lockfile diffs.
+- Use `npm install --ignore-scripts` or `npm ci --ignore-scripts`; run lifecycle scripts only when authorized. Follow the [dependency maintenance notes](CONTRIBUTING.md#dependency-maintenance).
+- Write ad-hoc scripts to temporary files, run them, and remove them afterward.
 
-## Commands
+## Validation and delivery
 
-- After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
-- Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. Otherwise run specific tests from the package root:
-  - Vitest: `node "$(git rev-parse --show-toplevel)/node_modules/vitest/dist/cli.js" --run test/specific.test.ts`
-  - `packages/tui` (`node:test`): `node --test test/specific.test.ts`
-- If you create or modify a test file, run it and iterate on test or implementation until it passes.
-- For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
-- When regressions tests for fixing a github issue, add a comment with the github issue number next to the test.
-- For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
-- Never commit unless the user asks.
+- Choose tests for the behavior and boundaries affected. Run every new or modified test and resolve failures. Use `test/suite/harness.ts` and the faux provider for coding-agent suite tests; do not use real credentials or paid model calls.
+- Run focused tests from the package directory:
+  - Vitest: `node <repo-root>/node_modules/vitest/dist/cli.js --run test/specific.test.ts`
+  - TUI: `node --test test/specific.test.ts`
+- Use `./test.sh` when broader non-e2e coverage is warranted. Do not run the full Vitest suite directly, or `npm test` / `npm run build` without a user request.
+- At the end of code changes, run `npm run check`, retain its full output, and fix errors, warnings, and infos. It does not run tests. Avoid rerunning it after every small step.
+- Once relevant tests and required checks pass, finish the task. Expand or repeat verification only for new changes, failures, or concrete unresolved concerns.
+- For terminal input, focus, layout, or motion changes, follow the [interactive testing guide](.candy/skills/interactive-testing.md), including Windows PTY and Linux/tmux as appropriate to the affected behavior. Report what was actually exercised.
+- Documentation-only changes need a factual, link, and diff review. Update affected package Unreleased entries using the [changelog notes](CONTRIBUTING.md#changelogs).
+- Report the result, relevant validation, and material limitations. Never claim a behavior was verified without evidence. Follow the [release skill](.candy/skills/release.md) for release work.
 
-## Dependency and Install Security
+## Workspace safety
 
-- Treat npm dep and lockfile changes as reviewed code. Direct external deps stay pinned to exact versions.
-- When updating `undici`, you MUST read its changelog/release notes for the target version and evaluate whether any changes may affect functionality before applying the update.
-- Hydrate/update locally with `npm install --ignore-scripts`; clean/CI-style with `npm ci --ignore-scripts`. Don't run lifecycle scripts unless the user asks.
-- If dep metadata changes, refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts`.
-- If `packages/coding-agent/npm-shrinkwrap.json` needs regen, run `node scripts/generate-coding-agent-shrinkwrap.mjs` (verify with `--check` or `npm run check`). New deps with lifecycle scripts require review and an explicit allowlist entry in that script; never add one silently.
-- Pre-commit blocks lockfile commits unless `CANDY_ALLOW_LOCKFILE_CHANGE=1`. Don't bypass unless the user wants the lockfile change committed.
-
-## Git
-
-Multiple pi sessions may be running in this cwd at the same time, each modifying different files. Git operations that touch unstaged, staged, or untracked files outside your own changes will stomp on other sessions' work. Follow these rules:
-
-Committing:
-
-- Only commit files YOU changed in THIS session.
-- Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
-- Before committing, run `git status` and verify you are only staging your files.
-- `packages/ai/src/models.generated.ts` may always be included alongside your files.
-- Message format: `{feat,fix,docs}[(ai,tui,agent,coding-agent)]: <commit message> (optionally multiple lines)`. Message is informative and concise.
-
-Never run (destroys other agents' work or bypasses checks):
-
-- `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, `git add -A`, `git add .`, `git commit --no-verify`.
-
-If rebase conflicts occur:
-
-- Resolve conflicts only in files you modified.
-- If a conflict is in a file you did not modify, abort and ask the user.
-- Never force push.
-
-## Issues and PRs
-
-See `CONTRIBUTING.md` for the contributor gate (auto-close workflows, `lgtm`/`lgtmi`, quality bar).
-
-When reviewing PRs:
-
-- Do not run `gh pr checkout`, `git switch`, or otherwise move the worktree to the PR branch unless the user explicitly asks.
-- Use `gh pr view`, `gh pr diff`, `gh api`, and local `git show`/`git diff` against fetched refs to inspect PR metadata, commits, and patches without changing branches.
-- If you need PR file contents, fetch/read them into temporary files or use `git show <ref>:<path>` without switching branches.
-
-When creating issues:
-
-- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
-
-When posting issue/PR comments:
-
-- Write the comment to a temp file and post with `gh issue/pr comment --body-file` (never multi-line markdown via `--body`).
-- Keep comments concise, technical, in the user's tone.
-- End every AI-posted comment with the AI-generated disclaimer line specified by the originating prompt (e.g. `This comment is AI-generated by `/wr``).
-
-When closing issues via commit:
-
-- Include `fixes #<number>` or `closes #<number>` in the message so merging auto-closes the issue. For multiple issues, repeat the keyword per issue (`closes #1, closes #2`); a shared keyword (`closes #1, #2`) only closes the first.
-
-## Testing pi Interactive Mode with tmux
-
-For testing pi's interactive mode, load and follow [.candy/skills/interactive-testing.md](.candy/skills/interactive-testing.md).
-
-## Changelog
-
-Location: `packages/*/CHANGELOG.md` (one per package).
-
-Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
-
-Rules:
-
-- All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
-- Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
-- Do not create changelog entries when working on a branch other than `main` or pull request
-
-Attribution:
-
-- Internal (from issues): `Fixed foo bar ([#123](https://github.com/earendil-works/pi/issues/123))`
-- External contributions: `Added feature X ([#456](https://github.com/earendil-works/pi/pull/456) by [@username](https://github.com/username))`
-
-## Releasing
-
-For release preparation, publishing, verification, or recovery, load and follow [.candy/skills/release.md](.candy/skills/release.md).
-
-## User Override
-
-If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overriding. Only then execute their instructions.
+- Other agents may be editing this checkout. Preserve their staged, unstaged, and untracked work. Do not overwrite changes you do not own.
+- Commit only when the user asks. Stage explicit paths, inspect `git status` and the staged diff, and include only your work. Use concise `feat`, `fix`, or `docs` messages with an optional package scope.
+- Never use `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, `git add -A`, `git add .`, `git commit --no-verify`, or force-push.
+- Review PRs through diffs and refs without switching the shared checkout. Resolve rebase conflicts only in files you changed; abort and ask when another contributor's files conflict.
+- Respect the lockfile commit guard. Set `CANDY_ALLOW_LOCKFILE_CHANGE=1` only when the user wants the lockfile change committed.
