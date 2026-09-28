@@ -1,5 +1,11 @@
 # Development Rules
 
+## Main
+
+This is the home of the candy agent harness project.
+
+It is a fork of pi, but it's a independent project now. It won't sync with upstream. Just cherry-pick.
+
 ## Conversational Style
 
 - Keep answers short and concise
