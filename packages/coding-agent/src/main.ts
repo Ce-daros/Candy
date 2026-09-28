@@ -60,7 +60,6 @@ import { collectSettingsDiagnostics, deduplicateDiagnostics } from "./core/setti
 import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
-import { builtInExtensions } from "./extensions/index.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import {
@@ -545,7 +544,7 @@ export async function main(args: string[], options?: MainOptions) {
 	const agentDir = getAgentDir();
 	const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 	initTheme(resolveThemeSetting(bootstrapSettingsManager.getThemeSetting(), getDefaultTheme()));
-	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
+	const extensionFactories = options?.extensionFactories ?? [];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.CANDY_OFFLINE);
 	if (offlineMode) {
 		process.env.CANDY_OFFLINE = "1";

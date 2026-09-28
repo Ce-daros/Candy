@@ -8,7 +8,7 @@ For a built-in provider, start with `/login`, then choose a model with `/model`.
 |---|---|
 | A supported subscription | Sign in through `/login` |
 | A provider API key | Store it through `/login` or set its environment variable |
-| A local GGUF model | Connect candy to the llama.cpp router |
+| A local GGUF model | Configure its server as a compatible endpoint in `models.json` |
 | An OpenAI-, Anthropic-, or Google-compatible endpoint | Add it to `models.json` |
 | A provider with a custom protocol or authentication flow | Build or install a provider extension |
 
@@ -34,15 +34,15 @@ A session records model and thinking-level changes. Resuming the session restore
 
 ## Connect local models
 
-candy integrates directly with the llama.cpp router. The router discovers GGUF files and loads models on demand. candy's `/llama` command manages the router, while `/model` selects one of its loaded models.
-
-Follow [Local Models with llama.cpp](llama-cpp.md) for server startup, model layout, downloads, and connection troubleshooting.
+Configure a local model server in [`models.json`](configuration.md#agent-directory) when it exposes an API candy supports. See [Configure a compatible endpoint](#configure-a-compatible-endpoint) for an example.
 
 For Ollama, LM Studio, vLLM, SGLang, and other compatible servers, [configure a compatible endpoint](#configure-a-compatible-endpoint) in `models.json`.
 
 ## Configure a compatible endpoint
 
 Use [`models.json`](configuration.md#agent-directory) when an endpoint speaks an API candy already supports. This includes most Ollama, LM Studio, vLLM, SGLang, and proxy deployments.
+
+A custom backend that implements Candy's `pi-messages` protocol can set `api` to `"pi-messages"` in its provider entry.
 
 ```json
 {
@@ -106,7 +106,7 @@ Use an extension when the provider needs custom streaming, model discovery, or a
 
 ### A model does not appear
 
-Confirm that its provider has usable authentication. Custom models can load from `models.json` but remain unavailable in `/model` until candy can resolve credentials. For llama.cpp, only models currently loaded by the router appear.
+Confirm that its provider has usable authentication. Custom models can load from `models.json` but remain unavailable in `/model` until candy can resolve credentials.
 
 ### Authentication works in one shell only
 

@@ -44,10 +44,6 @@
               "path": "containerization.md"
             },
             {
-              "title": "Run Local Models",
-              "path": "llama-cpp.md"
-            },
-            {
               "title": "Configure Your Terminal",
               "path": "terminal-setup.md"
             },
