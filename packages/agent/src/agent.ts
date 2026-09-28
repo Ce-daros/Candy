@@ -54,19 +54,6 @@ const EMPTY_USAGE = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-const DEFAULT_MODEL = {
-	id: "unknown",
-	name: "unknown",
-	api: "unknown",
-	provider: "unknown",
-	baseUrl: "",
-	reasoning: false,
-	input: [],
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	contextWindow: 0,
-	maxTokens: 0,
-} satisfies Model<any>;
-
 type MutableAgentState = Omit<AgentState, "isStreaming" | "streamingMessage" | "pendingToolCalls" | "errorMessage"> & {
 	isStreaming: boolean;
 	streamingMessage?: AgentMessage;
@@ -89,7 +76,7 @@ function createMutableAgentState(initialState?: AgentInitialState): MutableAgent
 		get systemPrompt() {
 			return getCurrentSystemPrompt(messages);
 		},
-		model: initialState?.model ?? DEFAULT_MODEL,
+		model: initialState?.model,
 		thinkingLevel: initialState?.thinkingLevel ?? "off",
 		get tools() {
 			return tools;
@@ -376,6 +363,7 @@ export class Agent {
 				"Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.",
 			);
 		}
+		this.requireModel();
 		const messages = this.normalizePromptInput(input, images);
 		await this.runPromptMessages(messages);
 	}
@@ -385,6 +373,7 @@ export class Agent {
 		if (this.activeRun) {
 			throw new Error("Agent is already processing. Wait for completion before continuing.");
 		}
+		this.requireModel();
 
 		const lastMessage = this._state.messages[this._state.messages.length - 1];
 		if (!lastMessage || this._state.messages.every((message) => message.role === "system")) {
@@ -433,11 +422,12 @@ export class Agent {
 		messages: AgentMessage[],
 		options: { skipInitialSteeringPoll?: boolean } = {},
 	): Promise<void> {
+		const model = this.requireModel();
 		await this.runWithLifecycle(async (signal) => {
 			await runAgentLoop(
 				messages,
 				this.createContextSnapshot(),
-				this.createLoopConfig(options),
+				this.createLoopConfig(options, model),
 				(event) => this.processEvents(event),
 				signal,
 				this.streamFunction,
@@ -446,10 +436,11 @@ export class Agent {
 	}
 
 	private async runContinuation(): Promise<void> {
+		const model = this.requireModel();
 		await this.runWithLifecycle(async (signal) => {
 			await runAgentLoopContinue(
 				this.createContextSnapshot(),
-				this.createLoopConfig(),
+				this.createLoopConfig({}, model),
 				(event) => this.processEvents(event),
 				signal,
 				this.streamFunction,
@@ -464,10 +455,10 @@ export class Agent {
 		};
 	}
 
-	private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
+	private createLoopConfig(options: { skipInitialSteeringPoll?: boolean }, model: Model<any>): AgentLoopConfig {
 		let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
 		return {
-			model: this._state.model,
+			model,
 			reasoning: this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel,
 			sessionId: this.sessionId,
 			onPayload: this.onPayload,
@@ -504,6 +495,18 @@ export class Agent {
 		};
 	}
 
+	private requireModel(): Model<any> {
+		const model = this._state.model;
+		if (!model) throw new Error("No model selected. Select a model before sending a prompt.");
+		return model;
+	}
+
+	/** Clear the active model without changing the transcript or saved defaults. */
+	clearModel(): void {
+		if (this.activeRun) throw new Error("Cannot clear the model while the agent is processing.");
+		this._state.model = undefined;
+	}
+
 	private async runWithLifecycle(executor: (signal: AbortSignal) => Promise<void>): Promise<void> {
 		if (this.activeRun) {
 			throw new Error("Agent is already processing.");
@@ -523,19 +526,19 @@ export class Agent {
 		try {
 			await executor(abortController.signal);
 		} catch (error) {
-			await this.handleRunFailure(error, abortController.signal.aborted);
+			await this.handleRunFailure(error, abortController.signal.aborted, this.requireModel());
 		} finally {
 			this.finishRun();
 		}
 	}
 
-	private async handleRunFailure(error: unknown, aborted: boolean): Promise<void> {
+	private async handleRunFailure(error: unknown, aborted: boolean, model: Model<any>): Promise<void> {
 		const failureMessage = {
 			role: "assistant",
 			content: [{ type: "text", text: "" }],
-			api: this._state.model.api,
-			provider: this._state.model.provider,
-			model: this._state.model.id,
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
 			usage: EMPTY_USAGE,
 			stopReason: aborted ? "aborted" : "error",
 			errorMessage: error instanceof Error ? error.message : String(error),

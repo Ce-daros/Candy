@@ -6,6 +6,11 @@
 
 - Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.
 
+### Breaking Changes
+
+- Renamed `@earendil-works/pi-agent-core` to `@candy/agent-core`. Update package dependencies and imports.
+- `AgentState.model` is now optional, and `Agent.clearModel()` removes the active model without changing conversation state. Check that `agent.state.model` exists before using it; `prompt()` and `continue()` reject when no model is selected. Code that assumed a model was always present must select one or handle the empty state.
+
 ## [0.87.1] - 2026-09-22
 
 ## [0.87.0] - 2026-09-21

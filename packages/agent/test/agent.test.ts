@@ -92,6 +92,13 @@ const unusedStreamFunction: StreamFn = () => {
 	throw new Error("Unexpected stream call");
 };
 
+function createAgent(options: ConstructorParameters<typeof Agent>[0]): Agent {
+	return new Agent({
+		...options,
+		initialState: { model: getModel("openai", "gpt-4o-mini"), ...options.initialState },
+	});
+}
+
 function createDeferred(): {
 	promise: Promise<void>;
 	resolve: () => void;
@@ -117,7 +124,9 @@ describe("Agent", () => {
 		});
 
 		try {
-			const agent = Reflect.construct(Agent, [{}]) as Agent;
+			const agent = Reflect.construct(Agent, [
+				{ initialState: { model: getModel("openai", "gpt-4o-mini") } },
+			]) as Agent;
 			await agent.prompt("Hello");
 			expect(calls).toBe(1);
 		} finally {
@@ -129,7 +138,7 @@ describe("Agent", () => {
 		const agent = new Agent({ streamFn: unusedStreamFunction });
 
 		expect(agent.state).toBeDefined();
-		expect(agent.state.model).toBeDefined();
+		expect(agent.state.model).toBeUndefined();
 		expect(agent.state.thinkingLevel).toBe("off");
 		expect(agent.state.tools).toEqual([]);
 		expect(agent.state.messages).toEqual([]);
@@ -139,9 +148,17 @@ describe("Agent", () => {
 		expect(agent.state.errorMessage).toBeUndefined();
 	});
 
+	it("rejects prompts and continuations when no model is selected", async () => {
+		const agent = new Agent({ streamFn: unusedStreamFunction });
+
+		await expect(agent.prompt("Hello")).rejects.toThrow("No model selected");
+		await expect(agent.continue()).rejects.toThrow("No model selected");
+		expect(agent.state.messages).toEqual([]);
+	});
+
 	it("should create an agent instance with custom initial state", () => {
 		const customModel = getModel("openai", "gpt-4o-mini");
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: unusedStreamFunction,
 			initialState: {
 				systemPrompt: "You are a helpful assistant.",
@@ -163,7 +180,7 @@ describe("Agent", () => {
 			parameters: Type.Object({}),
 			execute: async () => ({ content: [{ type: "text", text: "echo" }], details: {} }),
 		};
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { systemPrompt: "You are helpful.", tools: [tool] },
 			streamFn: unusedStreamFunction,
 		});
@@ -179,7 +196,7 @@ describe("Agent", () => {
 		const first = createTool("first");
 		const second = createTool("second");
 		const requests: string[][] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { systemPrompt: "You are helpful.", tools: [first] },
 			streamFn: (_model, context) => {
 				requests.push(
@@ -231,7 +248,7 @@ describe("Agent", () => {
 			parameters: Type.Object({}),
 			execute: async () => ({ content: [{ type: "text", text: "echo" }], details: {} }),
 		};
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { systemPrompt: "You are helpful." },
 			streamFn: (_model, context) => {
 				expect(context.messages.filter((message) => message.role === "system")).toHaveLength(2);
@@ -259,7 +276,7 @@ describe("Agent", () => {
 	});
 
 	it("rewrites pending tool declarations to match the executable set", async () => {
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { systemPrompt: "You are helpful.", tools: [createTool("first")] },
 			streamFn: () => {
 				const stream = new MockAssistantStream();
@@ -301,7 +318,7 @@ describe("Agent", () => {
 			parameters: Type.Object({}),
 			execute: async () => ({ content: [{ type: "text", text: "echo" }], details: {} }),
 		};
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: {
 				systemPrompt: "You are helpful.",
 				tools: [tool],
@@ -321,7 +338,7 @@ describe("Agent", () => {
 	});
 
 	it("should subscribe to events", () => {
-		const agent = new Agent({ streamFn: unusedStreamFunction });
+		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		let eventCount = 0;
 		const unsubscribe = agent.subscribe((_event) => {
@@ -343,7 +360,7 @@ describe("Agent", () => {
 	});
 
 	it("emits full lifecycle events for thrown run failures", async () => {
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: () => {
 				throw new Error("provider exploded");
 			},
@@ -375,7 +392,7 @@ describe("Agent", () => {
 
 	it("should await async subscribers before prompt resolves", async () => {
 		const barrier = createDeferred();
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: () => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
@@ -413,7 +430,7 @@ describe("Agent", () => {
 
 	it("waitForIdle should wait for async subscribers", async () => {
 		const barrier = createDeferred();
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: () => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
@@ -448,7 +465,7 @@ describe("Agent", () => {
 
 	it("should pass the active abort signal to subscribers", async () => {
 		let receivedSignal: AbortSignal | undefined;
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: (_model, _context, options) => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
@@ -510,7 +527,7 @@ describe("Agent", () => {
 				};
 			},
 		};
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { tools: [tool] },
 			streamFn: () => {
 				const stream = new MockAssistantStream();
@@ -585,7 +602,7 @@ describe("Agent", () => {
 				};
 			},
 		};
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { tools: [settledTool, slowTool] },
 			streamFn: () => {
 				const stream = new MockAssistantStream();
@@ -626,7 +643,7 @@ describe("Agent", () => {
 	});
 
 	it("should update state with mutators", () => {
-		const agent = new Agent({ streamFn: unusedStreamFunction });
+		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		// Test setModel
 		const newModel = getModel("google", "gemini-2.5-flash");
@@ -661,7 +678,7 @@ describe("Agent", () => {
 	});
 
 	it("should support steering message queue", async () => {
-		const agent = new Agent({ streamFn: unusedStreamFunction });
+		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		const message = { role: "user" as const, content: "Steering message", timestamp: Date.now() };
 		agent.steer(message);
@@ -671,7 +688,7 @@ describe("Agent", () => {
 	});
 
 	it("should support follow-up message queue", async () => {
-		const agent = new Agent({ streamFn: unusedStreamFunction });
+		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		const message = { role: "user" as const, content: "Follow-up message", timestamp: Date.now() };
 		agent.followUp(message);
@@ -681,7 +698,7 @@ describe("Agent", () => {
 	});
 
 	it("should handle abort controller", () => {
-		const agent = new Agent({ streamFn: unusedStreamFunction });
+		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		// Should not throw even if nothing is running
 		expect(() => agent.abort()).not.toThrow();
@@ -690,7 +707,7 @@ describe("Agent", () => {
 	it("should reject reset while processing without corrupting the transcript", async () => {
 		const streamStarted = createDeferred();
 		const releaseResponse = createDeferred();
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: () => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(async () => {
@@ -723,7 +740,7 @@ describe("Agent", () => {
 
 	it("should throw when prompt() called while streaming", async () => {
 		let abortSignal: AbortSignal | undefined;
-		const agent = new Agent({
+		const agent = createAgent({
 			// Use a stream function that responds to abort
 			streamFn: (_model, _context, options) => {
 				abortSignal = options?.signal;
@@ -763,7 +780,7 @@ describe("Agent", () => {
 
 	it("should throw when continue() called while streaming", async () => {
 		let abortSignal: AbortSignal | undefined;
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: (_model, _context, options) => {
 				abortSignal = options?.signal;
 				const stream = new MockAssistantStream();
@@ -798,7 +815,7 @@ describe("Agent", () => {
 	});
 
 	it("continue() should process queued follow-up messages after an assistant turn", async () => {
-		const agent = new Agent({
+		const agent = createAgent({
 			streamFn: () => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
@@ -840,7 +857,7 @@ describe("Agent", () => {
 		{ mode: "all" as const, expectedRequests: 1 },
 	])("continue() keeps $mode steering semantics for assistant-tail fallback", async ({ mode, expectedRequests }) => {
 		const requests: string[][] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			steeringMode: mode,
 			streamFn: (_model, context) => {
 				requests.push(
@@ -882,7 +899,7 @@ describe("Agent", () => {
 		};
 		let requestCount = 0;
 		let sawAbortSignal = false;
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { tools: [tool] },
 			prepareNextTurn: async (signal) => {
 				sawAbortSignal = signal instanceof AbortSignal;
@@ -924,7 +941,7 @@ describe("Agent", () => {
 		let requestCount = 0;
 		let sawAbortSignal = false;
 		let callbackContextRoles: string[] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { tools: [tool] },
 			finishTurn: (context, signal) => {
 				sawAbortSignal = signal instanceof AbortSignal;
@@ -960,7 +977,7 @@ describe("Agent", () => {
 		{ name: "empty", messages: [] },
 		{ name: "system-only", messages: [{ role: "system" as const, content: "system only", timestamp: 1 }] },
 	])("rejects a queued continuation from $name context without draining queues", async ({ messages }) => {
-		const agent = new Agent({ initialState: { messages }, streamFn: unusedStreamFunction });
+		const agent = createAgent({ initialState: { messages }, streamFn: unusedStreamFunction });
 		const steering = createUserMessage("steering");
 		const followUp = createUserMessage("follow-up");
 		agent.steer(steering);
@@ -994,7 +1011,7 @@ describe("Agent", () => {
 		},
 	])("defers follow-up input on the first continuation request from a $name tail", async ({ messages }) => {
 		const requests: string[][] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { messages },
 			streamFn: (_model, context) => {
 				requests.push(
@@ -1023,7 +1040,7 @@ describe("Agent", () => {
 		{ mode: "all" as const, expectedRequests: 1 },
 	])("polls $mode steering at continuation startup", async ({ mode, expectedRequests }) => {
 		const requests: string[][] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { messages: [createUserMessage("existing")] },
 			steeringMode: mode,
 			streamFn: (_model, context) => {
@@ -1056,7 +1073,7 @@ describe("Agent", () => {
 
 	it("keeps steering ahead of follow-up from a non-assistant continuation tail", async () => {
 		const requests: string[][] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			initialState: { messages: [createUserMessage("existing")] },
 			streamFn: (_model, context) => {
 				requests.push(
@@ -1087,7 +1104,7 @@ describe("Agent", () => {
 		async (stopReason) => {
 			const queuedDuringResponse = createUserMessage("steering");
 			const followUp = createUserMessage("follow-up");
-			const agent = new Agent({
+			const agent = createAgent({
 				finishTurn: () => ({ action: "continue" }),
 				streamFn: () => {
 					const stream = new MockAssistantStream();
@@ -1123,7 +1140,7 @@ describe("Agent", () => {
 	it("keeps queues when finishTurn ends the run", async () => {
 		const queuedDuringResponse = createUserMessage("steering");
 		const followUp = createUserMessage("follow-up");
-		const agent = new Agent({
+		const agent = createAgent({
 			finishTurn: () => ({ action: "end" }),
 			streamFn: () => {
 				const stream = new MockAssistantStream();
@@ -1148,7 +1165,7 @@ describe("Agent", () => {
 	});
 
 	it("previews the next selected queued messages without consuming them", () => {
-		const agent = new Agent({
+		const agent = createAgent({
 			steeringMode: "one-at-a-time",
 			followUpMode: "all",
 			streamFn: () => new MockAssistantStream(),
@@ -1168,7 +1185,7 @@ describe("Agent", () => {
 
 	it("forwards provider stream event observers through AgentOptions", async () => {
 		const providerEvents: unknown[] = [];
-		const agent = new Agent({
+		const agent = createAgent({
 			onProviderStreamEvent: (data) => {
 				providerEvents.push(data);
 			},
@@ -1190,7 +1207,7 @@ describe("Agent", () => {
 
 	it("forwards sessionId to streamFunction options", async () => {
 		let receivedSessionId: string | undefined;
-		const agent = new Agent({
+		const agent = createAgent({
 			sessionId: "session-abc",
 			streamFn: (_model, _context, options) => {
 				receivedSessionId = options?.sessionId;

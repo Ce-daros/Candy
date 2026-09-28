@@ -384,7 +384,7 @@ export interface AgentState {
 	 */
 	readonly systemPrompt: string;
 	/** Active model used for future turns. */
-	model: Model<any>;
+	model?: Model<any>;
 	/** Requested reasoning level for future turns. */
 	thinkingLevel: ThinkingLevel;
 	/**
