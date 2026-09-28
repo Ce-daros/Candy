@@ -20,7 +20,7 @@ import {
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
 import { KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
-import { theme } from "../theme/theme.ts";
+import { selectionCursor, theme } from "../theme/theme.ts";
 import { keycap, keyHint, keyText } from "./keybinding-hints.ts";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
 
@@ -497,7 +497,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Cursor
-			const cursor = isSelected ? theme.fg("thinkingHigh", "♦ ") : "  ";
+			const cursor = selectionCursor(isSelected);
 
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);

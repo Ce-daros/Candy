@@ -1170,6 +1170,28 @@ export function getSelectListTheme(): SelectListTheme {
 	};
 }
 
+/**
+ * Selection marker shared by every hand-rendered transcript list. Swap the
+ * glyph pair here (e.g. "‹ " / " ›") to restyle all selected rows at once;
+ * prefix and suffix must keep the same visible width.
+ */
+export const selectionMarker = { prefix: "♦ ", suffix: " ♦" };
+
+/** Cursor column for a row: the marker when selected, blank width-matched spaces otherwise. */
+export function selectionCursor(selected: boolean): string {
+	return selected ? theme.fg("borderAccent", selectionMarker.prefix) : "  ";
+}
+
+/** Trailing marker for the selected row; empty for unselected rows. */
+export function selectionMarkerSuffix(selected: boolean): string {
+	return selected ? theme.fg("borderAccent", selectionMarker.suffix) : "";
+}
+
+/** Row label styling: bold accent for the selection, plain text otherwise. */
+export function selectedRowLabel(text: string, selected: boolean): string {
+	return selected ? theme.bold(theme.fg("accent", text)) : theme.fg("text", text);
+}
+
 export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),

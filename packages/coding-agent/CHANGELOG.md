@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- Selection markers across transcript panels (session, tree, config, trust, oauth, reading panel, powerbar tracks) now come from one shared `selectionMarker`/`selectionCursor`/`selectedRowLabel` theme helper in `theme.ts`. Trust and session selectors previously used a cyan chevron dialect; the marker glyph is replaceable in one place.
+
 - Thinking blocks now fold by rendered cell width (CJK counts as two cells) against a three-line budget of the current viewport width, so long unwrapped paragraphs fold while short thoughts stay visible; resizing the terminal re-evaluates the fold.
 
 - Command panel section titles (Commands, Settings, History groups) now render flush-left in the palette warning color instead of muted, indented like list items.

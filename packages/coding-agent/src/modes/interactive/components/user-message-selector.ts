@@ -8,7 +8,7 @@ import {
 	truncateToWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 interface UserMessageItem {
@@ -63,8 +63,8 @@ class UserMessageList implements Component {
 				2,
 			);
 			const first = selected
-				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", summary[0] ?? ""))}${theme.fg("borderAccent", " ♦")}`
-				: `  ${summary[0] ?? ""}`;
+				? `${selectionCursor(true)}${selectedRowLabel(summary[0] ?? "", true)}${selectionMarkerSuffix(true)}`
+				: `${selectionCursor(false)}${selectedRowLabel(summary[0] ?? "", false)}`;
 			lines.push(truncateToWidth(first, width));
 			lines.push(
 				truncateToWidth(

@@ -4,7 +4,7 @@ import {
 	type ProjectTrustOption,
 	type ProjectTrustStoreEntry,
 } from "../../../core/trust-manager.ts";
-import { theme } from "../theme/theme.ts";
+import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
 export type TrustSelection = Pick<ProjectTrustOption, "trusted" | "updates">;
@@ -103,10 +103,13 @@ export class TrustSelectorComponent extends Container {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = this.isSavedOption(option);
 			const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
-			const prefix = isSelected ? theme.fg("thinkingHigh", "‹ ") : "  ";
-			const label = isSelected ? theme.bold(theme.fg("accent", option.label)) : theme.fg("text", option.label);
+			const label = selectedRowLabel(option.label, isSelected);
 			this.listContainer.addChild(
-				new Text(`${prefix}${currentMarker}${label}${isSelected ? theme.fg("thinkingHigh", " ›") : ""}`, 1, 0),
+				new Text(
+					`${selectionCursor(isSelected)}${currentMarker}${label}${selectionMarkerSuffix(isSelected)}`,
+					1,
+					0,
+				),
 			);
 			const savedPaths = option.updates.filter((update) => update.decision !== null).map((update) => update.path);
 			const detail = savedPaths.length === 0 ? "This session only · not saved" : `${savedPaths.join(", ")} · saved`;

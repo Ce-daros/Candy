@@ -1,6 +1,6 @@
 import type { ApiKeyAuth, AuthCheck, OAuthAuth } from "@candy/ai";
 import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, TruncatedText } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -121,11 +121,12 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 				: "";
 			let line = "";
 			if (isSelected) {
-				const text = theme.bold(theme.fg("accent", `♦ ${provider.name} ♦`));
-				line = text + authTypeLabel + statusIndicator;
+				line =
+					`${selectionCursor(true)}${selectedRowLabel(provider.name, true)}${selectionMarkerSuffix(true)}` +
+					authTypeLabel +
+					statusIndicator;
 			} else {
-				const text = `  ${theme.fg("text", provider.name)}`;
-				line = text + authTypeLabel + statusIndicator;
+				line = `${selectionCursor(false)}${selectedRowLabel(provider.name, false)}${authTypeLabel}${statusIndicator}`;
 			}
 
 			this.listContainer.addChild(new TruncatedText(line, 1, 0));

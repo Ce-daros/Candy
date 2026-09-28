@@ -4,7 +4,7 @@
  */
 
 import { Container, getKeybindings, Spacer, Text, type TUI } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
@@ -102,8 +102,8 @@ export class ExtensionSelectorComponent extends Container {
 					this.options
 						.map((option, index) =>
 							index === this.selectedIndex
-								? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", option))}${theme.fg("borderAccent", " ♦")}`
-								: theme.fg("muted", `  ${option}  `),
+								? `${selectionCursor(true)}${selectedRowLabel(option, true)}${selectionMarkerSuffix(true)}`
+								: `${selectionCursor(false)}${theme.fg("muted", `${option}  `)}`,
 						)
 						.join("   "),
 					1,
@@ -120,8 +120,8 @@ export class ExtensionSelectorComponent extends Container {
 		for (let i = start; i < Math.min(this.options.length, start + maxVisible); i++) {
 			const isSelected = i === this.selectedIndex;
 			const text = isSelected
-				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", this.options[i]))}${theme.fg("borderAccent", " ♦")}`
-				: `  ${theme.fg("text", this.options[i])}`;
+				? `${selectionCursor(true)}${selectedRowLabel(this.options[i], true)}${selectionMarkerSuffix(true)}`
+				: `${selectionCursor(false)}${theme.fg("text", this.options[i])}`;
 			this.listContainer.addChild(new Text(text, 1, 0));
 		}
 		if (start > 0 || start + maxVisible < this.options.length) {

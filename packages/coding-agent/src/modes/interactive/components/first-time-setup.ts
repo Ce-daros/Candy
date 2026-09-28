@@ -1,5 +1,5 @@
 import { Container, getKeybindings, Spacer, Text } from "@candy/tui";
-import { type TerminalTheme, theme } from "../theme/theme.ts";
+import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, type TerminalTheme, theme } from "../theme/theme.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 import { SplashLogoComponent } from "./splash.ts";
 
@@ -111,8 +111,8 @@ export class FirstTimeSetupComponent extends Container {
 		for (let i = 0; i < labels.length; i++) {
 			const isSelected = i === selectedIndex;
 			const label = isSelected
-				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", labels[i]))}${theme.fg("borderAccent", " ♦")}`
-				: theme.fg("text", `  ${labels[i]}`);
+				? `${selectionCursor(true)}${selectedRowLabel(labels[i], true)}${selectionMarkerSuffix(true)}`
+				: `${selectionCursor(false)}${theme.fg("text", labels[i])}`;
 			this.addChild(new Text(label, 1, 0));
 		}
 	}
