@@ -13,7 +13,6 @@ Extensions, prompt templates, and skills can add commands. The command menu in c
 | `/thinking [level]` | Set the thinking level |
 | `/login [provider]` | Add provider authentication |
 | `/logout` | Remove provider authentication |
-| `/llama` | Manage models on the configured llama.cpp router |
 
 ## Sessions and context
 
@@ -29,16 +28,14 @@ Extensions, prompt templates, and skills can add commands. The command menu in c
 | `/compact [instructions]` | Compact the current context, optionally with custom instructions |
 | `/import <path>` | Import and resume a JSONL session |
 
-## Export and share
+## Export
 
 | Command | Description |
 |---|---|
 | `/copy` | Copy the last assistant message |
 | `/export [path]` | Export the session as HTML or JSONL |
-| `/share` | Upload the session and return a viewer link |
-| `/bug [description]` | Prepare a private bug report for the candy developers |
 
-Review a session before exporting or sharing it. Sessions can contain prompts, tool arguments, command output, file contents, and credentials exposed during the conversation.
+Review a session before exporting it. Sessions can contain prompts, tool arguments, command output, file contents, and credentials exposed during the conversation.
 
 ## Runtime and project
 

@@ -85,11 +85,9 @@ Press `!` again while the Shell editor is empty to enter Shell · No Context. Co
 
 Shell commands appear as their own activity segment. The output preview keeps the most recent rows; expand the entry to read the full result.
 
-## Copy, export, or share results
+## Copy or export results
 
 Press `Ctrl+X` or run `/copy` to copy the last assistant response. Use `/export` to save the session as HTML or JSONL.
-
-Use `/share` to upload the session and get a viewer link. With Radius authentication, the artifact is visible to your Radius organization. Otherwise, candy creates a private GitHub gist through the GitHub CLI. Review the session first because it can contain prompts, tool output, file contents, and credentials exposed during the conversation.
 
 ## Adjust the terminal
 

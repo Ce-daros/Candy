@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { findExtensionStackMatches } from "../src/core/crash-log.ts";
+import { findExtensionStackMatches } from "../src/core/extensions/stack-matches.ts";
 
 type StackExtension = Parameters<typeof findExtensionStackMatches>[1][number];
 
@@ -19,7 +19,7 @@ function packageExtension(source: string, baseDir: string, entry = "extensions/i
 	};
 }
 
-describe("extension crash attribution", () => {
+describe("extension stack attribution", () => {
 	test("matches stack frames beneath loaded package roots", () => {
 		const memory = packageExtension(
 			"npm:pi-observational-memory",
