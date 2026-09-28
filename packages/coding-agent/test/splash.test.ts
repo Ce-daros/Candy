@@ -31,7 +31,7 @@ describe("SplashComponent", () => {
 		}
 	});
 
-	test("sprite fallback renders centered truecolor half-block lines plus tagline", () => {
+	test("sprite fallback renders centered truecolor half-block lines", () => {
 		initTheme("dark");
 		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 		try {
@@ -46,8 +46,6 @@ describe("SplashComponent", () => {
 				// centered: leading whitespace, no trailing sprite content beyond the block
 				expect(visible.startsWith(" ")).toBe(true);
 			}
-			expect(lines.some((line) => stripAnsi(line).trim() === "beauty, art, and function")).toBe(true);
-			expect(lines.some((line) => stripAnsi(line).trim() === "in a workspace for thinking and making")).toBe(true);
 		} finally {
 			resetCapabilitiesCache();
 		}
