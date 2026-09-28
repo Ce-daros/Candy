@@ -42,7 +42,9 @@ test("synchronizes private dependencies without touching registry aliases, gener
 			private: true,
 			dependencies: {
 				"@candy/coding-agent": "^1.0.0",
-				"@candy/ai": "npm:@candy/ai@1.0.0",
+				// Workspace names resolve through the version map; only aliases to
+				// non-workspace packages must be left untouched.
+				"@acme/ai": "npm:@acme/ai@1.0.0",
 			},
 		});
 		await writeManifest(root, "packages/coding-agent/install-lock", {
@@ -59,7 +61,7 @@ test("synchronizes private dependencies without touching registry aliases, gener
 
 		const evalsManifest = await readManifest(root, "packages/evals");
 		assert.equal(evalsManifest.dependencies["@candy/coding-agent"], "^2.0.0");
-		assert.equal(evalsManifest.dependencies["@candy/ai"], "npm:@candy/ai@1.0.0");
+		assert.equal(evalsManifest.dependencies["@acme/ai"], "npm:@acme/ai@1.0.0");
 		const generatedManifest = await readManifest(root, "packages/coding-agent/install-lock");
 		assert.equal(generatedManifest.dependencies["@candy/coding-agent"], "^1.0.0");
 
