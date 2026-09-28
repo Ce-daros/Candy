@@ -1192,6 +1192,16 @@ export function selectedRowLabel(text: string, selected: boolean): string {
 	return selected ? theme.bold(theme.fg("accent", text)) : theme.fg("text", text);
 }
 
+/** Dialog and panel title styling; override the token where a panel deliberately differs. */
+export function dialogTitle(text: string, color: ThemeColor = "accent"): string {
+	return theme.bold(theme.fg(color, text));
+}
+
+/** Explanatory body text under a dialog title. */
+export function dialogBody(text: string): string {
+	return theme.fg("muted", text);
+}
+
 export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),

@@ -3,7 +3,7 @@
  */
 
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { dialogTitle, theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
@@ -45,7 +45,7 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		this.onCancelCallback = onCancel;
 		this.baseTitle = title;
 
-		this.titleText = new Text(theme.bold(theme.fg("accent", title)), 1, 0);
+		this.titleText = new Text(dialogTitle(title), 1, 0);
 		this.addChild(this.titleText);
 		if (opts?.description) {
 			this.addChild(new Spacer(1));

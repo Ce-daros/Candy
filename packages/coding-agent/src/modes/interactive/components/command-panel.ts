@@ -13,7 +13,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import { getSelectListTheme, theme } from "../theme/theme.ts";
+import { dialogTitle, getSelectListTheme, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 export interface CommandPanelAction {
@@ -171,7 +171,7 @@ export class CommandPanel implements Component, Focusable {
 			this.activeAction && !this.inlineEditing
 				? `${this.options.title ?? "Command"} · ${this.activeAction.name}`
 				: (this.options.title ?? "Command");
-		const lines = new Text(theme.bold(theme.fg("accent", title)), 0, 0).render(width);
+		const lines = new Text(dialogTitle(title), 0, 0).render(width);
 		if (this.description) {
 			const descriptionLines = new Text(theme.fg("muted", this.description), 0, 0).render(width);
 			lines.push(...descriptionLines.slice(0, Math.max(0, this.availableHeight - 5)));

@@ -4,6 +4,10 @@
 
 ### Breaking Changes
 
+- Project trust prompting now uses the dedicated trust selector everywhere (startup, session resume, package manager). The multi-line prompt rendered as an all-accent title via generic `ui.select` is gone; the selector shows the title, path, and consequence paragraph with proper title/body color semantics.
+
+- Dialog and panel titles come from one shared `dialogTitle`/`dialogBody` theme helper in `theme.ts` instead of inline `bold(accent(...))` copies; the Help panel keeps its cyan title via the helper's color parameter.
+
 - Selection markers across transcript panels (session, tree, config, trust, oauth, reading panel, powerbar tracks) now come from one shared `selectionMarker`/`selectionCursor`/`selectedRowLabel` theme helper in `theme.ts`. Trust and session selectors previously used a cyan chevron dialect; the marker glyph is replaceable in one place.
 
 - Thinking blocks now fold by rendered cell width (CJK counts as two cells) against a three-line budget of the current viewport width, so long unwrapped paragraphs fold while short thoughts stay visible; resizing the terminal re-evaluates the fold.

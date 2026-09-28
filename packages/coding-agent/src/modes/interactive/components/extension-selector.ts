@@ -4,7 +4,14 @@
  */
 
 import { Container, getKeybindings, Spacer, Text, type TUI } from "@candy/tui";
-import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import {
+	dialogBody,
+	dialogTitle,
+	selectedRowLabel,
+	selectionCursor,
+	selectionMarkerSuffix,
+	theme,
+} from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
@@ -49,8 +56,13 @@ export class ExtensionSelectorComponent extends Container {
 		this.getAvailableHeight = opts?.getAvailableHeight;
 		if (this.getAvailableHeight) this.availableHeight = this.getAvailableHeight();
 
-		this.titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
+		const [titleLine, ...bodyLines] = title.split("\n");
+		this.titleText = new Text(dialogTitle(titleLine), 1, 0);
 		this.addChild(this.titleText);
+		const body = bodyLines.join("\n").trim();
+		if (body) {
+			this.addChild(new Text(dialogBody(body), 1, 0));
+		}
 		if (opts?.description) {
 			this.addChild(new Spacer(1));
 			this.addChild(new Text(theme.fg("text", opts.description), 1, 0));
@@ -61,7 +73,7 @@ export class ExtensionSelectorComponent extends Container {
 			this.countdown = new CountdownTimer(
 				opts.timeout,
 				opts.tui,
-				(s) => this.titleText.setText(theme.fg("accent", theme.bold(`${this.baseTitle} (${s}s)`))),
+				(s) => this.titleText.setText(dialogTitle(`${this.baseTitle} (${s}s)`)),
 				() => this.onCancelCallback(),
 			);
 		}

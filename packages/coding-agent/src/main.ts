@@ -742,6 +742,7 @@ export async function main(args: string[], options?: MainOptions) {
 										mode: isInitialRuntime ? trustPromptMode : appMode,
 										settingsManager: startupSettingsManager,
 										hasUI: isInitialRuntime && trustPromptMode === "interactive",
+										trustStore,
 									}),
 								onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
 							});

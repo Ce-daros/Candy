@@ -1,11 +1,9 @@
-import { APP_NAME, CONFIG_DIR_NAME } from "../config.ts";
 import { emitProjectTrustEvent } from "./extensions/runner.ts";
 import type { LoadExtensionsResult, ProjectTrustContext } from "./extensions/types.ts";
 import type { DefaultProjectTrust } from "./settings-manager.ts";
 import {
-	getProjectTrustOptions,
 	hasTrustRequiringProjectResources,
-	type ProjectTrustOption,
+	type ProjectTrustSelection,
 	type ProjectTrustStore,
 } from "./trust-manager.ts";
 
@@ -21,23 +19,7 @@ export interface ResolveProjectTrustedOptions {
 	onExtensionError?: (message: string) => void;
 }
 
-function formatProjectTrustPrompt(cwd: string): string {
-	return `Trust project folder?\n${cwd}\n\nThis allows ${APP_NAME} to load ${CONFIG_DIR_NAME} settings and resources, install missing project packages, and execute project extensions.`;
-}
-
-async function selectProjectTrustOption(
-	cwd: string,
-	ctx: ProjectTrustContext,
-): Promise<ProjectTrustOption | undefined> {
-	const options = getProjectTrustOptions(cwd, { includeSessionOnly: true });
-	const selected = await ctx.ui.select(
-		formatProjectTrustPrompt(cwd),
-		options.map((option) => option.label),
-	);
-	return options.find((option) => option.label === selected);
-}
-
-function saveProjectTrustPromptResult(trustStore: ProjectTrustStore, result: ProjectTrustOption): void {
+function saveProjectTrustPromptResult(trustStore: ProjectTrustStore, result: ProjectTrustSelection): void {
 	if (result.updates.length > 0) {
 		trustStore.setMany(result.updates);
 	}
@@ -87,10 +69,10 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
 		return false;
 	}
 
-	const selected = await selectProjectTrustOption(options.cwd, options.projectTrustContext);
-	if (selected !== undefined) {
-		saveProjectTrustPromptResult(options.trustStore, selected);
-		return selected.trusted;
+	const selection = await options.projectTrustContext.selectTrust?.(options.cwd);
+	if (selection !== undefined) {
+		saveProjectTrustPromptResult(options.trustStore, selection);
+		return selection.trusted;
 	}
 	return false;
 }

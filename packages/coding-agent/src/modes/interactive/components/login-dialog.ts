@@ -1,7 +1,7 @@
 import type { AuthInfoLink, OAuthDeviceCodeInfo } from "@candy/ai";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@candy/tui";
 import { openBrowser } from "../../../utils/open-browser.ts";
-import { theme } from "../theme/theme.ts";
+import { dialogTitle, theme } from "../theme/theme.ts";
 import { keycap, keyHint } from "./keybinding-hints.ts";
 
 /**
@@ -48,7 +48,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		const title = titleOverride ?? `Login to ${providerName}`;
 
 		// Title
-		this.titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
+		this.titleText = new Text(dialogTitle(title), 1, 0);
 		this.addChild(this.titleText);
 
 		// Dynamic content area

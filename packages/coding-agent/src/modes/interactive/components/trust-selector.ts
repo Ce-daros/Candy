@@ -1,10 +1,18 @@
 import { Container, getKeybindings, Spacer, Text } from "@candy/tui";
+import { APP_NAME, CONFIG_DIR_NAME } from "../../../config.ts";
 import {
 	getProjectTrustOptions,
 	type ProjectTrustOption,
 	type ProjectTrustStoreEntry,
 } from "../../../core/trust-manager.ts";
-import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import {
+	dialogBody,
+	dialogTitle,
+	selectedRowLabel,
+	selectionCursor,
+	selectionMarkerSuffix,
+	theme,
+} from "../theme/theme.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
 export type TrustSelection = Pick<ProjectTrustOption, "trusted" | "updates">;
@@ -41,7 +49,9 @@ export class TrustSelectorComponent extends Container {
 		super();
 
 		this.savedDecision = options.savedDecision;
-		this.trustOptions = getProjectTrustOptions(options.cwd, { includeSessionOnly: options.includeSessionOnly });
+		this.trustOptions = getProjectTrustOptions(options.cwd, {
+			includeSessionOnly: options.includeSessionOnly ?? true,
+		});
 		this.selectedIndex = Math.max(
 			0,
 			this.trustOptions.findIndex((option) => this.isSavedOption(option)),
@@ -49,8 +59,18 @@ export class TrustSelectorComponent extends Container {
 		this.onSelectCallback = options.onSelect;
 		this.onCancelCallback = options.onCancel;
 
-		this.addChild(new Text(theme.fg("accent", theme.bold("Project trust")), 1, 0));
+		this.addChild(new Text(dialogTitle("Project trust"), 1, 0));
 		this.addChild(new Text(theme.fg("muted", options.cwd), 1, 0));
+		this.addChild(new Spacer(1));
+		this.addChild(
+			new Text(
+				dialogBody(
+					`This allows ${APP_NAME} to load ${CONFIG_DIR_NAME} settings and resources, install missing project packages, and execute project extensions.`,
+				),
+				1,
+				0,
+			),
+		);
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(

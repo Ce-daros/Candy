@@ -92,7 +92,11 @@ import { type FullscreenExitOutput, SettingsManager } from "../../core/settings-
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
-import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
+import {
+	hasTrustRequiringProjectResources,
+	ProjectTrustStore,
+	type ProjectTrustStoreEntry,
+} from "../../core/trust-manager.ts";
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
 import { type AppKeybinding, KEYBINDINGS, KeybindingsManager } from "../../presentation/keybindings.ts";
 import { exportSessionHtml } from "../../presentation/session-html-export.ts";
@@ -151,7 +155,7 @@ import { TranscriptContainer } from "./components/transcript-container.ts";
 import { TranscriptNotice } from "./components/transcript-notice.ts";
 import { TransientNotification } from "./components/transient-notification.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
-import { TrustSelectorComponent } from "./components/trust-selector.ts";
+import { type TrustSelection, TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { ExtensionWidgetAdapter } from "./extension-widget-adapter.ts";
@@ -2143,6 +2147,12 @@ export class InteractiveMode {
 				input: ui.input,
 				notify: ui.notify,
 			},
+			selectTrust: (trustCwd) =>
+				this.promptProjectTrust(
+					trustCwd,
+					new ProjectTrustStore(this.runtimeHost.services.agentDir).getEntry(trustCwd),
+					false,
+				),
 		};
 	}
 
@@ -4640,29 +4650,45 @@ export class InteractiveMode {
 		}
 	}
 
+	private promptProjectTrust(
+		cwd: string,
+		savedDecision: ProjectTrustStoreEntry | null,
+		projectTrusted: boolean,
+	): Promise<TrustSelection | undefined> {
+		const trustStore = new ProjectTrustStore(this.runtimeHost.services.agentDir);
+		return new Promise((resolve) => {
+			this.pageController.showSelector((done) => {
+				const selector = new TrustSelectorComponent({
+					cwd,
+					savedDecision,
+					projectTrusted,
+					onSelect: (selection) => {
+						trustStore.setMany(selection.updates);
+						done();
+						resolve(selection);
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+						resolve(undefined);
+					},
+				});
+				return { component: selector, focus: selector };
+			}, true);
+		});
+	}
+
 	private showTrustSelector(): void {
 		const cwd = this.sessionManager.getCwd();
 		const trustStore = new ProjectTrustStore(this.runtimeHost.services.agentDir);
-		const savedDecision = trustStore.getEntry(cwd);
-		this.pageController.showSelector((done) => {
-			const selector = new TrustSelectorComponent({
-				cwd,
-				savedDecision,
-				projectTrusted: this.settingsManager.isProjectTrusted(),
-				onSelect: (selection) => {
-					trustStore.setMany(selection.updates);
-					done();
-					this.showStatus(
-						`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart ${APP_NAME} for this to take effect.`,
-					);
-				},
-				onCancel: () => {
-					done();
-					this.ui.requestRender();
-				},
-			});
-			return { component: selector, focus: selector };
-		}, true);
+		void this.promptProjectTrust(cwd, trustStore.getEntry(cwd), this.settingsManager.isProjectTrusted()).then(
+			(selection) => {
+				if (!selection) return;
+				this.showStatus(
+					`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart ${APP_NAME} for this to take effect.`,
+				);
+			},
+		);
 	}
 
 	private showUserMessageSelector(): void {

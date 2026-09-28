@@ -25,6 +25,9 @@ export interface ProjectTrustOption {
 	savedPath?: string;
 }
 
+/** A trust decision made through a UI, with the store updates it implies. */
+export type ProjectTrustSelection = Pick<ProjectTrustOption, "trusted" | "updates">;
+
 type TrustFile = Record<string, boolean | null | undefined>;
 
 const TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES = [

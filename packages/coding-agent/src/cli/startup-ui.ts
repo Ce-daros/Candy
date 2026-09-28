@@ -3,12 +3,14 @@ import { existsSync } from "fs";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.ts";
 import { DefaultPackageManager, type ResolvedResource } from "../core/package-manager.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
+import type { ProjectTrustSelection, ProjectTrustStoreEntry } from "../core/trust-manager.ts";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.ts";
 import {
 	FirstTimeSetupComponent,
 	type FirstTimeSetupResult,
 } from "../modes/interactive/components/first-time-setup.ts";
+import { TrustSelectorComponent } from "../modes/interactive/components/trust-selector.ts";
 import {
 	detectTerminalBackgroundFromEnv,
 	detectTerminalThemeForAuto,
@@ -152,6 +154,38 @@ export async function showStartupSelector<T>(
 			() => void finish(undefined),
 			{ tui: ui, getAvailableHeight: () => Math.floor(ui.terminal.rows * 0.8) },
 		);
+		ui.addChild(selector);
+		ui.setFocus(selector);
+		startStartupTui(ui, settingsManager);
+	});
+}
+
+/** Show the project trust selector on a startup TUI; resolves with the decision, or undefined on cancel. */
+export async function showStartupTrustSelector(
+	settingsManager: SettingsManager,
+	cwd: string,
+	savedDecision: ProjectTrustStoreEntry | null,
+): Promise<ProjectTrustSelection | undefined> {
+	const ui = await createStartupTui(settingsManager);
+	return new Promise((resolve) => {
+		let settled = false;
+		const finish = async (result: ProjectTrustSelection | undefined) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			await clearStartupTui(ui);
+			ui.stop();
+			resolve(result);
+		};
+
+		const selector = new TrustSelectorComponent({
+			cwd,
+			savedDecision,
+			projectTrusted: false,
+			onSelect: (selection) => void finish(selection),
+			onCancel: () => void finish(undefined),
+		});
 		ui.addChild(selector);
 		ui.setFocus(selector);
 		startStartupTui(ui, settingsManager);

@@ -1,6 +1,6 @@
 import type { ApiKeyAuth, AuthCheck, OAuthAuth } from "@candy/ai";
 import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, TruncatedText } from "@candy/tui";
-import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import { dialogTitle, selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -58,7 +58,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 
 		// Add title
 		const title = mode === "login" ? "Choose a provider" : "Choose a provider to sign out";
-		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
+		this.addChild(new TruncatedText(dialogTitle(title), 1, 0));
 		this.addChild(new Spacer(1));
 
 		this.searchInput = new Input();

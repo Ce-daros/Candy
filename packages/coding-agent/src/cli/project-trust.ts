@@ -1,14 +1,16 @@
 import type { ProjectTrustContext } from "../core/extensions/types.ts";
 import type { AppMode } from "../core/project-trust.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
+import type { ProjectTrustStore, ProjectTrustStoreEntry } from "../core/trust-manager.ts";
 import { cliThemeColor } from "../modes/interactive/theme/theme.ts";
-import { showStartupInput, showStartupSelector } from "./startup-ui.ts";
+import { showStartupInput, showStartupSelector, showStartupTrustSelector } from "./startup-ui.ts";
 
 export function createProjectTrustContext(options: {
 	cwd: string;
 	mode: AppMode;
 	settingsManager: SettingsManager;
 	hasUI: boolean;
+	trustStore: ProjectTrustStore;
 }): ProjectTrustContext {
 	return {
 		cwd: options.cwd,
@@ -58,6 +60,13 @@ export function createProjectTrustContext(options: {
 					console.error(color(message));
 				}
 			},
+		},
+		selectTrust: async (trustCwd) => {
+			if (!options.hasUI || options.mode !== "interactive") {
+				return undefined;
+			}
+			const savedDecision: ProjectTrustStoreEntry | null = options.trustStore.getEntry(trustCwd);
+			return showStartupTrustSelector(options.settingsManager, trustCwd, savedDecision);
 		},
 	};
 }
