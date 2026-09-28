@@ -1,6 +1,6 @@
 # Commands
 
-Type `/` in an empty ordinary editor to open Command. Type to search commands and settings. A pasted `/` and `/` inside a message remain text. Press `Enter` to run a resource command without arguments, or to open a required local argument. Press `Right` on a resource command to enter optional arguments. The argument input preserves the full text you type. `Backspace` from an empty argument returns to the list, and `Backspace` from an empty search closes Command. `Escape` goes back one level.
+Type `/` in an empty ordinary editor to open Command. Type to search commands and settings. Type `?` in an empty editor to open Help, where you can search Hotkeys and Changelog. Pasted prefixes and prefixes inside a message remain text. Press `Enter` to run a resource command without arguments, or to open a required local argument. Press `Right` on a resource command to enter optional arguments. The argument input preserves the full text you type. `Backspace` from an empty argument returns to the list, and `Backspace` from an empty search closes the panel. `Escape` goes back one level.
 
 ## Powerbar pages
 
@@ -16,22 +16,17 @@ Closing a page returns to its source selector. Details uses the highlighted mode
 In Sources, `Space` toggles a model in quick selection. Select or clear an entire provider from its row. `Ctrl+A` includes every model matching the current search, `Ctrl+D` clears the matches, and `Tab` switches between search and the list.
 If the search has no matches, the bulk actions leave the scope unchanged. Mouse selection moves focus to the clicked item.
 
-## Command actions
+## Local actions
 
-Command includes individual settings and the following local actions:
+History includes these session actions:
 
 | Action | Purpose |
 |---|---|
-| New | Start a new session |
+| New session | Start a new session |
 | Import | Import and resume a JSONL session |
-| Copy | Copy the last assistant message |
 | Export | Export the session as HTML or JSONL |
-| Trust | Save a project trust decision |
-| Reload | Reload keybindings, extensions, skills, templates, themes, and instructions |
-| Hotkeys | Show active shortcuts |
-| Changelog | Show update notes |
-| Debug | Write diagnostic output |
-| Quit | Quit candy |
+
+Project trust is available in Command under Privacy & Trust. `Ctrl+R` reloads keybindings, extensions, skills, templates, themes, and instructions. `Ctrl+X` copies the selection or the last assistant message. Command retains Debug for diagnostic output. Press `Ctrl+C` twice to quit, or `Ctrl+D` when the editor is empty.
 
 Import, Export, and resource command argument inputs complete file paths. Cancelling the import confirmation keeps the path in the argument input.
 

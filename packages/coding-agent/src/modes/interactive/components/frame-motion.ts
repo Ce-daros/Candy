@@ -13,7 +13,7 @@ import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { type ThemeColor, theme } from "../theme/theme.ts";
 import type { StatusIndicatorKind } from "./status-indicator.ts";
 
-export type InputMode = "normal" | "shell" | "shell-no-context" | "command";
+export type InputMode = "normal" | "shell" | "shell-no-context" | "command" | "help";
 
 const TIMING: Record<AnimationIntensity, { entrance: number; transition: number; frame: number; status: number }> = {
 	conservative: { entrance: 700, transition: 480, frame: 45, status: 150 },
@@ -56,7 +56,7 @@ type Ink = "hidden" | "base" | "dim" | number;
 const MODE_STEPS = RAMP_STEPS * 2;
 
 function modeStep(mode: InputMode): number {
-	return mode === "normal" ? 0 : mode === "command" ? MODE_STEPS : RAMP_STEPS;
+	return mode === "normal" ? 0 : mode === "command" || mode === "help" ? MODE_STEPS : RAMP_STEPS;
 }
 
 function modeTitle(mode: InputMode): string {
@@ -66,7 +66,9 @@ function modeTitle(mode: InputMode): string {
 			? "Shell"
 			: mode === "command"
 				? "Command"
-				: "";
+				: mode === "help"
+					? "Help"
+					: "";
 }
 
 /** The border's geometry, mode color, and activity highlights share one clock. */
@@ -248,7 +250,10 @@ export class FrameMotion {
 
 	paintTitle(text: string): string {
 		if (!this.enabled)
-			return theme.fg(this.mode === "normal" ? "border" : this.mode === "command" ? "accent" : "bashMode", text);
+			return theme.fg(
+				this.mode === "normal" ? "border" : this.mode === "command" || this.mode === "help" ? "accent" : "bashMode",
+				text,
+			);
 		this.refreshPalette();
 		const progress = this.getTitleProgress();
 		const exiting = this.mode === "normal" && this.transition !== undefined && this.transition.from !== "normal";
@@ -264,7 +269,7 @@ export class FrameMotion {
 		const rest = " ".repeat(width - visibleWidth(shown));
 		const titleStep = Math.max(1, Math.round((exiting ? 1 - progress : progress) * RAMP_STEPS));
 		const titleMode = exiting ? this.transition!.from : this.mode;
-		const ramp = titleMode === "command" ? this.titleRamps.command : this.titleRamps.shell;
+		const ramp = titleMode === "command" || titleMode === "help" ? this.titleRamps.command : this.titleRamps.shell;
 		return `${ramp[titleStep]}${shown}\x1b[39m${rest}`;
 	}
 

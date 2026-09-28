@@ -8,6 +8,11 @@ import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 describe("InteractiveMode local Command and History actions", () => {
+	it("keeps only Debug in Command", () => {
+		const getActions = Reflect.get(InteractiveMode.prototype, "getLocalCommandActions") as () => CommandPanelAction[];
+		expect(getActions().map((action) => action.name)).toEqual(["debug"]);
+	});
+
 	it("exports JSONL and HTML from explicit path arguments", async () => {
 		initTheme("dark");
 		const context = {
@@ -98,12 +103,12 @@ describe("InteractiveMode local Command and History actions", () => {
 				handleExportCommand: vi.fn(async (_path?: string) => {}),
 				handleImportCommand: vi.fn(async (_path: string) => "edit" as const),
 			};
-			const getActions = Reflect.get(InteractiveMode.prototype, "getLocalCommandActions") as (
+			const getActions = Reflect.get(InteractiveMode.prototype, "getHistoryCommandActions") as (
 				this: typeof context,
 			) => CommandPanelAction[];
 			const actions = getActions.call(context);
-			const exportAction = actions.find((action) => action.name === "export")!;
-			const importAction = actions.find((action) => action.name === "import")!;
+			const exportAction = actions.find((action) => action.name === "Export")!;
+			const importAction = actions.find((action) => action.name === "Import")!;
 			const signal = new AbortController().signal;
 			const fullLine = await context.completeCommandArguments("before suffix", signal, true);
 			expect(fullLine).toContainEqual({ value: 'before "suffix target.jsonl"', label: "suffix target.jsonl" });

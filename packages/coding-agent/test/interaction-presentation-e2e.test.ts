@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { createInteractiveSmoke, type InteractiveSmoke } from "./fixtures/interactive-smoke.ts";
@@ -50,6 +50,66 @@ describe("interactive presentation from terminal input", () => {
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
 		expect(state.pendingUserInputs).toContain("/tree");
+	});
+
+	it("opens Help from a standalone question mark and keeps pasted questions literal", async () => {
+		const { state, terminal } = await start();
+		terminal.sendInput("?");
+		await terminal.waitForRender();
+		expect(state.inputMode).toBe("help");
+		expect(state.presentation.surface).toBe("help");
+		const help = terminal.getViewport().join("\n");
+		expect(help).toContain("Hotkeys");
+		expect(help).toContain("Changelog");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.inputMode).toBe("normal");
+		terminal.sendInput("\x1b[200~? what happened\x1b[201~");
+		await terminal.waitForRender();
+		expect(state.defaultEditor.getText()).toBe("? what happened");
+		expect(state.presentation.surface).toBeUndefined();
+	});
+
+	it("shows session actions in History and project trust in Command", async () => {
+		const { state, terminal } = await start();
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\t");
+		terminal.sendInput("\x1b[A");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("history");
+		const history = terminal.getViewport().join("\n");
+		expect(history).toContain("New session");
+		expect(history).toContain("Import");
+		expect(history).toContain("Export");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("/");
+		terminal.sendInput("Project trust");
+		await terminal.waitForRender();
+		expect(terminal.getViewport().join("\n")).toContain("Privacy & Trust");
+		terminal.sendInput("\r");
+		await terminal.waitForRender();
+		expect(terminal.getViewport().join("\n")).toContain("Saved decision:");
+	});
+
+	it("reloads configuration with Ctrl+R from the editor", async () => {
+		const { terminal } = await start();
+		terminal.sendInput("\x12");
+		await vi.waitFor(() => expect(terminal.getViewport().join("\n")).toContain("Reloaded keybindings"));
+	});
+
+	it("starts a new session from History and returns to the composer", async () => {
+		const { state, terminal } = await start();
+		const previousSession = smoke!.runtime.session.sessionFile;
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\t");
+		terminal.sendInput("\x1b[A");
+		terminal.sendInput("New session");
+		terminal.sendInput("\r");
+		await vi.waitFor(() => expect(smoke!.runtime.session.sessionFile).not.toBe(previousSession));
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBeUndefined();
+		expect(state.defaultEditor.getText()).toBe("");
 	});
 
 	it("routes both selector directions and restores the highlighted model", async () => {

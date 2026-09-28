@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `?` Help mode for Hotkeys and Changelog.
 - Exposed optional tool cancellation metadata in the `tool_execution_end` extension event so transcript views can distinguish an aborted tool from an ordinary error after reloading a session.
 - Added `toolPreviewLines` (`5`, `10`, or `20`, default `5`) to control the visible row limit for `bash` and tool previews; extension tool renderers receive the limit as `previewLines`.
 - Redesigned the interactive UI around Candy's semantic palette across transcripts, composer, settings, selectors, session navigation, login and trust flows, extension dialogs, resources, notifications, and startup surfaces.
@@ -39,6 +40,7 @@
 
 ### Changed
 
+- Moved New session, Import, and Export to History and Project trust to Settings. Reload now uses `Ctrl+R`; Command retains Debug and no longer lists Copy or Quit.
 - Thinking blocks now collapse to a labeled excerpt by default. Mermaid diagrams render after their code block is complete, and changelog entries stay collapsed by default. Explicit saved settings continue to control each behavior.
 - Tool activity now uses connected status nodes and compact results; shell and tool previews share the configured row limit, while errors show up to 12 rows.
 - Composer autocomplete and selectors use Candy selection markers, inline file details, and panel layouts; settings are grouped into five searchable categories with region navigation.

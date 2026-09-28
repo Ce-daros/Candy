@@ -39,6 +39,8 @@ describe("interactive presentation", () => {
 			skills: vi.fn(async () => {}),
 			settingsActions: () => [],
 			localCommands: () => [],
+			historyCommands: () => [],
+			helpCommands: () => [],
 			historyAction: vi.fn(async () => {}),
 		};
 		presentation = new InteractivePresentation(host);

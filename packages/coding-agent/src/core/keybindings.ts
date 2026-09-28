@@ -17,6 +17,8 @@ export interface AppKeybindings {
 	"app.exit": true;
 	"app.suspend": true;
 	"app.command.enter": true;
+	"app.help.enter": true;
+	"app.reload": true;
 	"app.command.arguments": true;
 	"app.shell.enter": true;
 	"app.powerbar.left": true;
@@ -102,6 +104,8 @@ export const KEYBINDINGS = {
 		description: "Suspend to background",
 	},
 	"app.command.enter": { defaultKeys: "/", description: "Enter Command mode when the editor is empty" },
+	"app.help.enter": { defaultKeys: "?", description: "Open Help when the editor is empty" },
+	"app.reload": { defaultKeys: "ctrl+r", description: "Reload configuration and resources" },
 	"app.command.arguments": { defaultKeys: "right", description: "Enter command arguments" },
 	"app.shell.enter": { defaultKeys: "!", description: "Enter Shell mode when the editor is empty" },
 	"app.powerbar.left": {

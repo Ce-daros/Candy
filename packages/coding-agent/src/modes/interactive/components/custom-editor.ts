@@ -29,10 +29,12 @@ const PROMPT_GLYPH_NORMAL = "◆";
 /** Prompt glyph on the first input line: a chevron in Shell modes. */
 const PROMPT_GLYPH_SHELL = "❯";
 const PROMPT_GLYPH_COMMAND = "/";
+const PROMPT_GLYPH_HELP = "?";
 /** Gutter on the first input line: border, space, prompt glyph, then one column before the text. */
 const PROMPT_LEFT_GUTTER_NORMAL = `│ ${PROMPT_GLYPH_NORMAL} `;
 const PROMPT_LEFT_GUTTER_SHELL = `│ ${PROMPT_GLYPH_SHELL} `;
 const PROMPT_LEFT_GUTTER_COMMAND = `│ ${PROMPT_GLYPH_COMMAND} `;
+const PROMPT_LEFT_GUTTER_HELP = `│ ${PROMPT_GLYPH_HELP} `;
 
 /**
  * Custom editor that handles app-level keybindings for coding-agent.
@@ -100,7 +102,9 @@ export class CustomEditor extends Editor {
 				? PROMPT_LEFT_GUTTER_NORMAL
 				: mode === "command"
 					? PROMPT_LEFT_GUTTER_COMMAND
-					: PROMPT_LEFT_GUTTER_SHELL,
+					: mode === "help"
+						? PROMPT_LEFT_GUTTER_HELP
+						: PROMPT_LEFT_GUTTER_SHELL,
 		);
 	}
 
@@ -159,7 +163,13 @@ export class CustomEditor extends Editor {
 		if (side === "left") {
 			const mode = this.frameMotion.getMode();
 			const glyph =
-				mode === "normal" ? PROMPT_GLYPH_NORMAL : mode === "command" ? PROMPT_GLYPH_COMMAND : PROMPT_GLYPH_SHELL;
+				mode === "normal"
+					? PROMPT_GLYPH_NORMAL
+					: mode === "command"
+						? PROMPT_GLYPH_COMMAND
+						: mode === "help"
+							? PROMPT_GLYPH_HELP
+							: PROMPT_GLYPH_SHELL;
 			const index = text.indexOf(glyph);
 			if (index !== -1) {
 				// The border cell keeps the animated frame color; only the prompt glyph takes its own color.
@@ -167,7 +177,10 @@ export class CustomEditor extends Editor {
 				const after = text.slice(index + glyph.length);
 				return (
 					this.frameMotion.paintBorder(before, 0, row) +
-					theme.fg(mode === "normal" ? "editorPrompt" : mode === "command" ? "accent" : "bashMode", glyph) +
+					theme.fg(
+						mode === "normal" ? "editorPrompt" : mode === "command" || mode === "help" ? "accent" : "bashMode",
+						glyph,
+					) +
 					(after ? this.frameMotion.paintBorder(after, index + glyph.length, row) : "")
 				);
 			}

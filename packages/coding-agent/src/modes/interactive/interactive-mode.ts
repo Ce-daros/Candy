@@ -621,8 +621,8 @@ export class InteractiveMode {
 	private openPresentation(surface: PresentationSurface, model?: Model<any>): void {
 		this.cancelActiveLogin();
 		this.disposeActiveSelector();
-		if (surface === "command") {
-			this.setInputMode("command");
+		if (surface === "command" || surface === "help") {
+			this.setInputMode(surface);
 		} else {
 			if (this.footer.isPowerbarIdle()) {
 				if (surface === "history" || surface === "agent") this.footer.openPowerbarThinking();
@@ -663,20 +663,44 @@ export class InteractiveMode {
 			skills: () => this.showSkillConfiguration(),
 			settingsActions: () => {
 				const selector = this.createSettingsSelector(() => this.closePanel());
-				return selector.getSettingItems().map((item) => ({
-					id: `setting:${item.id}`,
-					name: item.label,
-					description: item.currentValue,
-					source: "Settings",
-					argumentMode: "none",
-					execute: async () =>
-						this.showSelector((done) => {
-							const control = this.createSettingsSelector(done).createSettingControl(item.id, done);
-							return { component: control, focus: control };
-						}),
-				}));
+				return [
+					...selector.getSettingItems().map((item) => ({
+						id: `setting:${item.id}`,
+						name: item.label,
+						description: item.currentValue,
+						source: "Settings",
+						argumentMode: "none" as const,
+						execute: async () =>
+							this.showSelector((done) => {
+								const control = this.createSettingsSelector(done).createSettingControl(item.id, done);
+								return { component: control, focus: control };
+							}),
+					})),
+					{
+						id: "setting:project-trust",
+						name: "Project trust",
+						source: "Settings · Privacy & Trust",
+						argumentMode: "none",
+						execute: async () => this.showTrustSelector(),
+					},
+				];
 			},
 			localCommands: () => this.getLocalCommandActions(),
+			historyCommands: () => this.getHistoryCommandActions(),
+			helpCommands: () => [
+				{
+					id: "help:hotkeys",
+					name: "Hotkeys",
+					argumentMode: "none" as const,
+					execute: async () => this.handleHotkeysCommand(),
+				},
+				{
+					id: "help:changelog",
+					name: "Changelog",
+					argumentMode: "none",
+					execute: async () => this.handleChangelogCommand(),
+				},
+			],
 			completeArguments: (input, signal, force) => this.completeCommandArguments(input, signal, force),
 			historyAction: async (action, args) => {
 				switch (action) {
@@ -706,7 +730,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private getLocalCommandActions(): CommandPanelAction[] {
+	private getHistoryCommandActions(): CommandPanelAction[] {
 		const resolveArgument = (args: string): string | undefined => {
 			const parsed = parsePathCommandArgument(args);
 			return parsed === undefined ? undefined : resolvePath(parsed, this.sessionManager.getCwd());
@@ -744,31 +768,33 @@ export class InteractiveMode {
 			},
 		});
 		return [
+			command("New session", () => this.handleClearCommand()),
 			command(
-				"export",
+				"Export",
 				(args) => this.handleExportCommand(resolveArgument(args)),
 				"single",
 				"Output path (.html or .jsonl)",
 				pathCompletions,
 			),
 			command(
-				"import",
+				"Import",
 				(args) => this.handleImportCommand(resolveArgument(args) ?? ""),
 				"single",
 				"Session JSONL path",
 				pathCompletions,
 			),
-			command("copy", () => this.handleCopyCommand()),
-			command("changelog", () => this.handleChangelogCommand()),
-			command("hotkeys", () => this.handleHotkeysCommand()),
-			command("trust", () => this.showTrustSelector()),
-			command("new", () => this.handleClearCommand()),
-			command("reload", async () => {
-				await this.handleReloadCommand();
-				this.presentation.resume();
-			}),
-			command("debug", () => this.handleDebugCommand()),
-			command("quit", () => this.shutdown()),
+		];
+	}
+
+	private getLocalCommandActions(): CommandPanelAction[] {
+		return [
+			{
+				id: "local:debug",
+				name: "debug",
+				source: "Candy",
+				argumentMode: "none",
+				execute: async () => this.handleDebugCommand(),
+			},
 		];
 	}
 
@@ -949,6 +975,7 @@ export class InteractiveMode {
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
+				rawKeyHint("?", "for help"),
 				rawKeyHint("!", "to run bash"),
 				rawKeyHint("!!", "to run bash (no context)"),
 				hint("app.message.followUp", "to queue follow-up"),
@@ -2737,6 +2764,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
+		this.defaultEditor.onAction("app.reload", () => void this.handleReloadCommand());
 		this.defaultEditor.onAction(
 			"app.message.copy",
 			() => void this.handleCopyCommand({ flashConfirmation: true, preferSelection: true }),
@@ -2777,6 +2805,10 @@ export class InteractiveMode {
 		if (this.editor !== this.defaultEditor || this.editor.getText().length !== 0) return false;
 		if (this.inputMode === "normal" && this.keybindings.matches(data, "app.command.enter")) {
 			this.openPresentation("command");
+			return true;
+		}
+		if (this.inputMode === "normal" && this.keybindings.matches(data, "app.help.enter")) {
+			this.openPresentation("help");
 			return true;
 		}
 		if (
