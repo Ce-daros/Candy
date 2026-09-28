@@ -117,12 +117,23 @@ describe("SelectList", () => {
 	it("keeps right-aligned directories stable when selection moves", () => {
 		const list = new SelectList(
 			[
-				{ value: "first.ts", label: "first.ts", description: "src/components/" },
-				{ value: "second.ts", label: "second.ts", description: "src/components/" },
+				{
+					value: "first.ts",
+					label: "first.ts",
+					description: "src/components/",
+				},
+				{
+					value: "second.ts",
+					label: "second.ts",
+					description: "src/components/",
+				},
 			],
 			5,
 			testTheme,
-			{ descriptionAlign: "right", selectedDetail: (item) => `src/components/${item.value}` },
+			{
+				descriptionAlign: "right",
+				selectedDetail: (item) => `src/components/${item.value}`,
+			},
 		);
 		const before = list.render(80);
 		list.setSelectedIndex(1);
@@ -147,6 +158,23 @@ describe("SelectList", () => {
 		assert.equal(list.getSelectedItem()?.value, "first");
 		list.handleInput("\x1b[B");
 		assert.equal(list.getSelectedItem()?.value, "second");
+	});
+
+	it("renders headers flush-left while selectable items keep a two-space indent", () => {
+		const list = new SelectList(
+			[
+				{ value: "group", label: "Settings", header: true, selectable: false },
+				{ value: "first", label: "Auto-compact" },
+				{ value: "second", label: "Show images" },
+			],
+			5,
+			testTheme,
+		);
+		list.setSelectedIndex(2);
+		const lines = list.render(80);
+		assert.equal(lines[0], "Settings");
+		assert.ok(lines[1].startsWith("  Auto-compact"));
+		assert.ok(lines[2].startsWith("♦ Show images"));
 	});
 
 	it("preserves ANSI styling already present in inline descriptions", () => {

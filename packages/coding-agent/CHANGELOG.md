@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- Command panel section titles (Commands, Settings, History groups) now render flush-left in the palette warning color instead of muted, indented like list items.
+
 - Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.
 - Model changes with `{ persist: true }` now await the default-setting write before changing the active session. `setThinkingLevel()` and `cycleThinkingLevel()` only change the active session; save the default separately with `SettingsManager.mutateAndPersist()`.
 - AgentSession behavior-setting methods now return promises and report save failures before applying their runtime side effects.

@@ -21,10 +21,26 @@ describe("CommandPanel", () => {
 		const runPrompt = vi.fn(async () => "message" as const);
 		const onMessage = vi.fn();
 		const actions: CommandPanelAction[] = [
-			{ id: "prompt:plan", name: "plan", source: "Prompt", argumentMode: "none", execute: runPrompt },
-			{ id: "skill:plan", name: "plan", source: "Skill", argumentMode: "none", execute: runSkill },
+			{
+				id: "prompt:plan",
+				name: "plan",
+				source: "Prompt",
+				argumentMode: "none",
+				execute: runPrompt,
+			},
+			{
+				id: "skill:plan",
+				name: "plan",
+				source: "Skill",
+				argumentMode: "none",
+				execute: runSkill,
+			},
 		];
-		const panel = new CommandPanel(actions, { onCancel: vi.fn(), onMessage, requestRender: vi.fn() });
+		const panel = new CommandPanel(actions, {
+			onCancel: vi.fn(),
+			onMessage,
+			requestRender: vi.fn(),
+		});
 		for (const char of "skill") panel.handleInput(char);
 		expect(panel.getQuery()).toBe("skill");
 		expect(panel.getSelectedId()).toBe("skill:plan");
@@ -42,7 +58,15 @@ describe("CommandPanel", () => {
 			return "stay" as const;
 		});
 		const panel = new CommandPanel(
-			[{ id: "import", name: "Import", argumentMode: "multiple", argumentHint: "Path and options", execute }],
+			[
+				{
+					id: "import",
+					name: "Import",
+					argumentMode: "multiple",
+					argumentHint: "Path and options",
+					execute,
+				},
+			],
 			{ onCancel, onMessage: vi.fn(), requestRender: vi.fn() },
 		);
 		panel.handleInput("\r");
@@ -81,7 +105,12 @@ describe("CommandPanel", () => {
 	});
 
 	it("preserves search selection when actions refresh", () => {
-		const first: CommandPanelAction = { id: "first", name: "First", argumentMode: "none", execute: async () => {} };
+		const first: CommandPanelAction = {
+			id: "first",
+			name: "First",
+			argumentMode: "none",
+			execute: async () => {},
+		};
 		const second: CommandPanelAction = {
 			id: "second",
 			name: "Second",
@@ -108,7 +137,14 @@ describe("CommandPanel", () => {
 			reject = fail;
 		});
 		const panel = new CommandPanel(
-			[{ id: "import", name: "Import", argumentMode: "single", execute: () => pending }],
+			[
+				{
+					id: "import",
+					name: "Import",
+					argumentMode: "single",
+					execute: () => pending,
+				},
+			],
 			{
 				onCancel: vi.fn(),
 				onMessage: vi.fn(),
@@ -128,11 +164,21 @@ describe("CommandPanel", () => {
 
 	it("runs optional commands directly and opens arguments with Right", async () => {
 		const execute = vi.fn(async () => {});
-		const panel = new CommandPanel([{ id: "skill:review", name: "review", argumentMode: "optional", execute }], {
-			onCancel: vi.fn(),
-			onMessage: vi.fn(),
-			requestRender: vi.fn(),
-		});
+		const panel = new CommandPanel(
+			[
+				{
+					id: "skill:review",
+					name: "review",
+					argumentMode: "optional",
+					execute,
+				},
+			],
+			{
+				onCancel: vi.fn(),
+				onMessage: vi.fn(),
+				requestRender: vi.fn(),
+			},
+		);
 		panel.handleInput("review");
 		panel.handleInput("\r");
 		await flush();
@@ -150,10 +196,27 @@ describe("CommandPanel", () => {
 		const selection = vi.fn();
 		const panel = new CommandPanel(
 			[
-				{ id: "first", name: "First model", checked: false, argumentMode: "none", execute: toggle },
-				{ id: "second", name: "Second model", checked: true, argumentMode: "none", execute: toggle },
+				{
+					id: "first",
+					name: "First model",
+					checked: false,
+					argumentMode: "none",
+					execute: toggle,
+				},
+				{
+					id: "second",
+					name: "Second model",
+					checked: true,
+					argumentMode: "none",
+					execute: toggle,
+				},
 			],
-			{ onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn(), onSelectionChange: selection },
+			{
+				onCancel: vi.fn(),
+				onMessage: vi.fn(),
+				requestRender: vi.fn(),
+				onSelectionChange: selection,
+			},
 		);
 		panel.handleInput(" ");
 		await flush();
@@ -173,7 +236,14 @@ describe("CommandPanel", () => {
 
 	it("retains arguments when a child action is cancelled", async () => {
 		const panel = new CommandPanel(
-			[{ id: "import", name: "Import", argumentMode: "single", execute: async () => "edit" as const }],
+			[
+				{
+					id: "import",
+					name: "Import",
+					argumentMode: "single",
+					execute: async () => "edit" as const,
+				},
+			],
 			{
 				onCancel: vi.fn(),
 				onMessage: vi.fn(),
@@ -190,7 +260,15 @@ describe("CommandPanel", () => {
 	it("moves focus between checkbox rows and search with the mouse", async () => {
 		const toggle = vi.fn(async () => {});
 		const panel = new CommandPanel(
-			[{ id: "model", name: "Model", checked: true, argumentMode: "none", execute: toggle }],
+			[
+				{
+					id: "model",
+					name: "Model",
+					checked: true,
+					argumentMode: "none",
+					execute: toggle,
+				},
+			],
 			{
 				onCancel: vi.fn(),
 				onMessage: vi.fn(),
@@ -244,10 +322,21 @@ describe("CommandPanel", () => {
 					execute: vi.fn(),
 				},
 			],
-			{ title: "Settings", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+			{
+				title: "Settings",
+				searchable: false,
+				onCancel: vi.fn(),
+				onMessage: vi.fn(),
+				requestRender: vi.fn(),
+			},
 		);
-		const output = stripAnsi(panel.render(80).join("\n"));
-		expect(output).toContain("Connection");
+		const rendered = panel.render(80);
+		const headerLine = rendered.find((line) => stripAnsi(line).startsWith("Connection"));
+		expect(headerLine).toBeDefined();
+		// Group headers are styled (theme "warning" token = palette yellow), flush-left via SelectItem.header.
+		expect(headerLine).toMatch(/\u001b\[/);
+		const output = stripAnsi(rendered.join("\n"));
+		expect(output).toContain("Not connected");
 		expect(output).toContain("Not connected");
 		expect(output).not.toContain("Search:");
 		panel.handleInput("\x1b[C");
@@ -261,8 +350,23 @@ describe("CommandPanel", () => {
 	it("edits inline arguments on the selected row and preserves selection on cancel", () => {
 		const execute = vi.fn(async () => "stay" as const);
 		const panel = new CommandPanel(
-			[{ id: "timeout", name: "Timeout", inline: true, initialArgs: "5", argumentMode: "single", execute }],
-			{ title: "Settings", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+			[
+				{
+					id: "timeout",
+					name: "Timeout",
+					inline: true,
+					initialArgs: "5",
+					argumentMode: "single",
+					execute,
+				},
+			],
+			{
+				title: "Settings",
+				searchable: false,
+				onCancel: vi.fn(),
+				onMessage: vi.fn(),
+				requestRender: vi.fn(),
+			},
 		);
 		panel.handleInput("\r");
 		expect(stripAnsi(panel.render(80).join("\n"))).toContain("Timeout");
@@ -284,12 +388,23 @@ describe("CommandPanel", () => {
 
 	it("cycles settings from the selected row while search remains available", async () => {
 		const cycle = vi.fn(async (_direction: 1 | -1) => {});
-		const panel = new CommandPanel([{ id: "mode", name: "Mode", cycle, argumentMode: "none", execute: vi.fn() }], {
-			title: "Settings",
-			onCancel: vi.fn(),
-			onMessage: vi.fn(),
-			requestRender: vi.fn(),
-		});
+		const panel = new CommandPanel(
+			[
+				{
+					id: "mode",
+					name: "Mode",
+					cycle,
+					argumentMode: "none",
+					execute: vi.fn(),
+				},
+			],
+			{
+				title: "Settings",
+				onCancel: vi.fn(),
+				onMessage: vi.fn(),
+				requestRender: vi.fn(),
+			},
+		);
 		panel.handleInput("\x1b[B");
 		panel.handleInput("\x1b[C");
 		await flush();
@@ -328,7 +443,13 @@ describe("CommandPanel", () => {
 					execute: vi.fn(),
 				},
 			],
-			{ title: "Details", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+			{
+				title: "Details",
+				searchable: false,
+				onCancel: vi.fn(),
+				onMessage: vi.fn(),
+				requestRender: vi.fn(),
+			},
 		);
 		for (const width of [80, 100]) expect(stripAnsi(panel.render(width).join("\n"))).toContain("Keep recent tokens");
 	});

@@ -24,7 +24,11 @@ export interface CommandPanelAction {
 	searchText?: string;
 	checked?: boolean;
 	group?: string;
-	status?: { text: string; tone: "muted" | "success" | "error"; detail?: string };
+	status?: {
+		text: string;
+		tone: "muted" | "success" | "error";
+		detail?: string;
+	};
 	inline?: boolean;
 	reset?: () => Promise<void>;
 	cycle?: (direction: 1 | -1) => Promise<void>;
@@ -431,7 +435,12 @@ export class CommandPanel implements Component, Focusable {
 		for (const [index, action] of actions.entries()) {
 			const group = query ? undefined : action.group;
 			if (group && group !== previousGroup) {
-				items.push({ value: `__group:${index}`, label: theme.bold(theme.fg("muted", group)), selectable: false });
+				items.push({
+					value: `__group:${index}`,
+					label: theme.bold(theme.fg("warning", group)),
+					header: true,
+					selectable: false,
+				});
 				previousGroup = group;
 			} else if (!group) previousGroup = undefined;
 			const tone = action.status?.tone ?? "muted";

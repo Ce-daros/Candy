@@ -14,6 +14,8 @@ export interface SelectItem {
 	label: string;
 	description?: string;
 	selectable?: boolean;
+	/** Render flush-left as a section title; selectable items keep the two-space indent. */
+	header?: boolean;
 }
 
 export interface SelectListTheme {
@@ -215,6 +217,10 @@ export class SelectList implements Component {
 		descriptionSingleLine: string | undefined,
 		primaryColumnWidth: number,
 	): string {
+		if (item.header) {
+			return truncateToWidth(item.label || item.value, width);
+		}
+
 		const prefix = isSelected ? this.theme.selectedPrefix("♦ ") : "  ";
 		const suffix = isSelected ? this.theme.selectedPrefix(" ♦") : "";
 		const prefixWidth = visibleWidth(prefix);

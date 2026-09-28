@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- `SelectItem` supports an optional `header` flag; header rows render flush-left without the selection cursor while selectable items keep the two-space indent.
+
 - Removed slash-command and `skill:` autocomplete from the generic editor. Applications can provide command navigation separately; editor text beginning with `/` is submitted literally.
 - `SettingsListTheme` now requires a `keycap` renderer for shortcut hints.
 - Renamed `@earendil-works/pi-tui` to `@candy/tui`. Update imports and use `CANDY_IMAGE_PROTOCOL`, `CANDY_TRUE_COLOR`, and `CANDY_HYPERLINKS` for terminal capability overrides.
