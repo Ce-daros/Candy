@@ -49,8 +49,10 @@
 
 ### Changed
 
+- Assistant replies use quieter text and breathing activity markers, with connected, independently collapsible thinking runs and a short reply entrance. The first prompt has two extra rows below the header.
+
 - Moved New session, Import, and Export to History and Project trust to Settings. Reload now uses `Ctrl+R`; Command retains Debug and no longer lists Copy or Quit.
-- Thinking blocks now collapse to a labeled excerpt by default. Mermaid diagrams render after their code block is complete, and changelog entries stay collapsed by default. Explicit saved settings continue to control each behavior.
+- Thinking blocks longer than three lines collapse to a labeled excerpt by default. Mermaid diagrams render after their code block is complete, and changelog entries stay collapsed by default. Explicit saved settings continue to control each behavior.
 - Tool activity now uses connected status nodes and compact results; shell and tool previews share the configured row limit, while errors show up to 12 rows.
 - Composer autocomplete and selectors use Candy selection markers, inline file details, and panel layouts; settings are grouped into five searchable categories with region navigation.
 - Updated image, code, table, and heading presentation; Mermaid code blocks can switch between Diagram and Source, and code blocks expose a copy action.
@@ -74,6 +76,8 @@
 - The reload-runtime example now rejects reload attempts from tools and directs users to explicit reload.
 
 ### Fixed
+
+- Project TPS statistics are hidden by default, expand when clicking a completed reply’s star, and remain available after session reload.
 
 - Fixed working-state border trails being nearly invisible in terminals that do not visibly render bold box-drawing characters; the trails now use moving color-lightness steps and stop when work ends or animations are disabled.
 - Fixed X11 clipboard text being misidentified as an image when the clipboard owner accepts unadvertised image targets ([#9786](https://github.com/earendil-works/pi/issues/9786)).

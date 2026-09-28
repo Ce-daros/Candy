@@ -147,6 +147,7 @@ import {
 } from "./components/status-indicator.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TopBarComponent } from "./components/top-bar.ts";
+import { TranscriptContainer } from "./components/transcript-container.ts";
 import { TranscriptNotice } from "./components/transcript-notice.ts";
 import { TransientNotification } from "./components/transient-notification.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
@@ -336,7 +337,7 @@ export class InteractiveMode {
 	private renderer: TuiAltScreen;
 	private ui: TUI;
 	private loadedResourcesContainer: Container;
-	private chatContainer: Container;
+	private chatContainer: TranscriptContainer;
 	private splashComponent: SplashComponent | undefined;
 	private documentContainer: Container;
 	private transcriptScrollView: TuiLayouts.ScrollView | undefined;
@@ -501,7 +502,7 @@ export class InteractiveMode {
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
-		this.chatContainer = new Container();
+		this.chatContainer = new TranscriptContainer();
 		this.documentContainer = new Container();
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
@@ -3063,6 +3064,11 @@ export class InteractiveMode {
 						this.getMarkdownTransformers(),
 						this.mermaidCodeBlockView,
 					);
+					this.streamingComponent.setAnimationOptions(
+						this.settingsManager.getUiAnimations(),
+						this.settingsManager.getAnimationIntensity(),
+						() => this.ui.requestRender(),
+					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(this.streamingMessage, true);
@@ -3073,7 +3079,7 @@ export class InteractiveMode {
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
-					this.streamingComponent.updateContent(this.streamingMessage, true);
+					this.streamingComponent.updateContent(this.streamingMessage, true, event.assistantMessageEvent);
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
@@ -3364,6 +3370,12 @@ export class InteractiveMode {
 	}
 
 	private addCustomEntryToChat(entry: Extract<SessionEntry, { type: "custom" }>): void {
+		if (entry.customType === "tps") {
+			if (typeof entry.data !== "string") throw new Error("TPS entry must contain a text summary");
+			const assistant = this.chatContainer.children.findLast((child) => child instanceof AssistantMessageComponent);
+			if (assistant instanceof AssistantMessageComponent) assistant.setStats(entry.data);
+			return;
+		}
 		const renderer = this.session.extensionRunner.getEntryRenderer(entry.customType);
 		if (!renderer) {
 			return;
@@ -3383,6 +3395,17 @@ export class InteractiveMode {
 		}
 
 		this.chatContainer.addChild(component);
+	}
+
+	private updateTranscriptAnimationOptions(): void {
+		for (const child of this.chatContainer.children) {
+			if (child instanceof AssistantMessageComponent)
+				child.setAnimationOptions(
+					this.settingsManager.getUiAnimations(),
+					this.settingsManager.getAnimationIntensity(),
+					() => this.ui.requestRender(),
+				);
+		}
 	}
 
 	private addToolToChat(component: ToolExecutionComponent): void {
@@ -3457,9 +3480,7 @@ export class InteractiveMode {
 					textContent ||
 					(typeof message.content !== "string" && message.content.some((part) => part.type === "image"))
 				) {
-					if (this.chatContainer.children.length > 0) {
-						this.chatContainer.addChild(new Spacer(1));
-					}
+					this.chatContainer.addChild(new Spacer(this.chatContainer.children.length === 0 ? 2 : 1));
 					const skillBlock = parseSkillBlock(textContent);
 					if (skillBlock) {
 						// Render skill block (collapsible)
@@ -4478,6 +4499,7 @@ export class InteractiveMode {
 					this.helpPanel?.setOptions(enabled, this.settingsManager.getAnimationIntensity());
 					this.topBar.setAnimations(enabled);
 					this.footer.setAnimationOptions(enabled, this.settingsManager.getAnimationIntensity());
+					this.updateTranscriptAnimationOptions();
 				},
 				onAnimationIntensityChange: (intensity) => {
 					this.settingsManager.setAnimationIntensity(intensity);
@@ -4485,6 +4507,7 @@ export class InteractiveMode {
 					this.composerPanel.setOptions(this.settingsManager.getUiAnimations(), intensity);
 					this.helpPanel?.setOptions(this.settingsManager.getUiAnimations(), intensity);
 					this.footer.setAnimationOptions(this.settingsManager.getUiAnimations(), intensity);
+					this.updateTranscriptAnimationOptions();
 				},
 				onHideThinkingBlockChange: (hidden) => {
 					this.hideThinkingBlock = hidden;
@@ -6129,6 +6152,7 @@ export class InteractiveMode {
 		this.helpPanel?.dispose();
 		this.topBar.dispose();
 		this.notification.dispose();
+		this.chatContainer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();

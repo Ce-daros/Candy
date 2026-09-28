@@ -25,6 +25,7 @@ if (process.argv.includes("--probe-isolation")) {
 		empty: process.argv.includes("--empty"),
 		theme: process.argv.includes("--light") ? "light" : "dark",
 		longModelName: process.argv.includes("--long-model-name"),
+		transcript: process.argv.includes("--transcript"),
 	});
 	process.once("exit", () => rmSync(smoke.harness.tempDir, { recursive: true, force: true }));
 	await smoke.mode.run();

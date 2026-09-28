@@ -42,6 +42,7 @@ type RenderSessionContextThis = {
 	settingsManager: {
 		getShowImages(): boolean;
 		getImageWidthCells(): number;
+		getToolPreviewLines(): 5;
 		getShowCacheMissNotices(): boolean;
 	};
 	sessionManager: { getCwd(): string; getEntries(): SessionEntry[] };
@@ -52,6 +53,7 @@ type RenderSessionContextThis = {
 	getRegisteredToolDefinition(toolName: string): undefined;
 	maybeShowAssistantDiagnostics(message: AssistantMessage): void;
 	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void;
+	addToolToChat(component: ToolExecutionComponent): void;
 	renderSessionItems: RenderSessionItems;
 };
 
@@ -74,6 +76,7 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		settingsManager: {
 			getShowImages: () => false,
 			getImageWidthCells: () => 60,
+			getToolPreviewLines: () => 5,
 			getShowCacheMissNotices: () => false,
 		},
 		sessionManager: { getCwd: () => process.cwd(), getEntries: () => [] },
@@ -87,6 +90,9 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 			.renderSessionItems,
 		addMessageToChat(message: AgentMessage) {
 			chatContainer.addChild(new Text(message.role, 0, 0));
+		},
+		addToolToChat(component) {
+			chatContainer.addChild(component);
 		},
 	};
 }

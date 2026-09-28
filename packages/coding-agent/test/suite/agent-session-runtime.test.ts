@@ -138,7 +138,9 @@ describe("AgentSessionRuntime characterization", () => {
 		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
 		const originalSession = runtime.session;
 		const rebound: unknown[] = [];
-		runtime.setRebindSession(async (session) => rebound.push(session));
+		runtime.setRebindSession(async (session) => {
+			rebound.push(session);
+		});
 		failNextRuntimeCreation();
 
 		await expect(runtime.newSession()).rejects.toThrow("runtime factory failed");
@@ -152,7 +154,9 @@ describe("AgentSessionRuntime characterization", () => {
 		const { runtime } = await createRuntimeForTest(() => {});
 		const originalSession = runtime.session;
 		const rebound: unknown[] = [];
-		runtime.setRebindSession(async (session) => rebound.push(session));
+		runtime.setRebindSession(async (session) => {
+			rebound.push(session);
+		});
 
 		await expect(
 			runtime.newSession({
@@ -355,7 +359,9 @@ describe("AgentSessionRuntime characterization", () => {
 		const originalSession = runtime.session;
 		const originalSessionFile = runtime.session.sessionFile;
 		const rebound: unknown[] = [];
-		runtime.setRebindSession(async (session) => rebound.push(session));
+		runtime.setRebindSession(async (session) => {
+			rebound.push(session);
+		});
 
 		cancelReason = "new";
 		const newResult = await runtime.newSession();

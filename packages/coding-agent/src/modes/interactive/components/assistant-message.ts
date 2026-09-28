@@ -1,18 +1,24 @@
-import type { AssistantMessage } from "@candy/ai";
+import type { AssistantMessage, AssistantMessageEvent } from "@candy/ai";
 import {
 	type Component,
 	Container,
+	colorToOklch,
 	Markdown,
 	type MarkdownTheme,
 	MouseRegion,
+	oklchColor,
 	Spacer,
+	Text,
 	type TuiMouseEvent,
 	truncateToWidth,
 } from "@candy/tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
+import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { activityInk, activityRail } from "./activity-rail.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
+import { PanelTransition } from "./panel-transition.ts";
 import { TranscriptNotice } from "./transcript-notice.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -22,13 +28,17 @@ const PROSE_WIDTH = 110;
 
 class ThinkingRail implements Component {
 	private readonly content: Markdown;
+	private readonly padding: number;
 
-	constructor(content: Markdown) {
+	constructor(content: Markdown, padding: number) {
 		this.content = content;
+		this.padding = padding;
 	}
 
 	render(width: number): string[] {
-		return this.content.render(Math.max(1, width - 3)).map((line) => `${theme.fg("mdQuoteBorder", "│")}  ${line}`);
+		return this.content
+			.render(Math.max(1, width - this.padding - 2))
+			.map((line) => `${activityRail(this.padding)} ${line}`);
 	}
 
 	invalidate(): void {
@@ -36,8 +46,9 @@ class ThinkingRail implements Component {
 	}
 
 	handleMouse(event: TuiMouseEvent) {
-		if (event.x < 3) return undefined;
-		return this.content.handleMouse({ ...event, x: event.x - 3, width: Math.max(1, event.width - 3) });
+		const indent = this.padding + 2;
+		if (event.x < indent) return undefined;
+		return this.content.handleMouse({ ...event, x: event.x - indent, width: Math.max(1, event.width - indent) });
 	}
 }
 
@@ -64,6 +75,48 @@ export class AssistantMessageComponent extends Container {
 	private thinkingVisibilityOverrides = new Map<number, boolean>();
 	private notices: TranscriptNotice[] = [];
 	private expanded = false;
+	private animations = false;
+	private intensity: AnimationIntensity = "moderate";
+	private requestRender: (() => void) | undefined;
+	private breathingTimer: NodeJS.Timeout | undefined;
+	private completedBlocks = new Set<number>();
+	private entrances = new Map<number, PanelTransition>();
+	private seenTextBlocks = new Set<number>();
+	private stats: string | undefined;
+	private statsExpanded = false;
+
+	setStats(text: string): void {
+		this.stats = text;
+	}
+
+	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity, requestRender: () => void): void {
+		this.animations = enabled;
+		this.intensity = intensity;
+		this.requestRender = requestRender;
+		for (const transition of this.entrances.values()) transition.setOptions(enabled, intensity);
+		this.syncBreathing();
+	}
+
+	private syncBreathing(): void {
+		if (this.breathingTimer) clearInterval(this.breathingTimer);
+		this.breathingTimer = undefined;
+		if (!this.animations || !this.isStreaming) return;
+		this.breathingTimer = setInterval(() => this.requestRender?.(), 40);
+		this.breathingTimer.unref();
+	}
+
+	dispose(): void {
+		if (this.breathingTimer) clearInterval(this.breathingTimer);
+		this.breathingTimer = undefined;
+		for (const transition of this.entrances.values()) transition.dispose();
+		this.entrances.clear();
+	}
+
+	private marker(active: boolean, color: "text" | "thinkingText", entrance = 1): string {
+		const period = this.intensity === "conservative" ? 1800 : this.intensity === "aggressive" ? 1000 : 1400;
+		const wave = active && this.animations ? (1 - Math.cos((performance.now() / period) * Math.PI * 2)) / 2 : 1;
+		return activityInk(color, active && (!this.animations || wave < 0.5) ? "✧" : "✦", entrance * (0.5 + wave * 0.5));
+	}
 
 	constructor(
 		message?: AssistantMessage,
@@ -92,6 +145,13 @@ export class AssistantMessageComponent extends Container {
 		// Container for text/thinking content
 		this.contentContainer = new Container();
 		this.addChild(this.contentContainer);
+		this.addChild({
+			render: (width) =>
+				this.statsExpanded && this.stats
+					? new Text(theme.fg("dim", this.stats), this.outputPad + 2, 0).render(width)
+					: [],
+			invalidate: () => {},
+		});
 
 		if (message) {
 			this.updateContent(message);
@@ -143,9 +203,12 @@ export class AssistantMessageComponent extends Container {
 		return lines;
 	}
 
-	updateContent(message: AssistantMessage, isStreaming = this.isStreaming): void {
+	updateContent(message: AssistantMessage, isStreaming = this.isStreaming, event?: AssistantMessageEvent): void {
+		if (event?.type === "thinking_end" || event?.type === "text_end") this.completedBlocks.add(event.contentIndex);
+		const streamingChanged = this.isStreaming !== isStreaming;
 		this.lastMessage = message;
 		this.isStreaming = isStreaming;
+		if (streamingChanged) this.syncBreathing();
 
 		// Clear content container
 		this.contentContainer.clear();
@@ -161,25 +224,82 @@ export class AssistantMessageComponent extends Container {
 
 		// Render content in order
 		let thinkingRunIndex = 0;
+		let hasPreviousBlock = false;
 		for (let i = 0; i < message.content.length; i++) {
 			const content = message.content[i];
 			if (content.type === "text" && content.text.trim()) {
-				// Assistant text messages with no background - trim the text
-				// Set paddingY=0 to avoid extra spacing before tool executions
-				const markdown = new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, {
-					transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
-					maxProseWidth: PROSE_WIDTH,
-					codeBlockView: (code, language, width, complete) =>
-						this.codeBlockView?.(code, language, width, this.isStreaming, complete),
-					onCopyCode: (code) => {
-						void copyToClipboard(code);
+				const blockIndex = i;
+				if (!this.seenTextBlocks.has(i)) {
+					this.seenTextBlocks.add(i);
+					if (this.isStreaming && this.requestRender) {
+						const entrance = new PanelTransition(this.requestRender, { enter: 240, exit: 240 });
+						entrance.setOptions(this.animations, this.intensity);
+						entrance.setOpen(true);
+						this.entrances.set(i, entrance);
+					}
+				}
+				const progress = () => this.entrances.get(blockIndex)?.value() ?? 1;
+				if (hasPreviousBlock)
+					this.contentContainer.addChild({
+						render: () => [activityRail(this.outputPad, progress())],
+						invalidate: () => {},
+					});
+				const markdown = new Markdown(
+					content.text.trim(),
+					0,
+					0,
+					this.markdownTheme,
+					{
+						color: (text) => {
+							const ink = colorToOklch(theme.colors.text);
+							return theme.style(text, { fg: oklchColor(ink.l * 0.92, ink.c, ink.h) });
+						},
+					},
+					{
+						transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
+						maxProseWidth: PROSE_WIDTH,
+						codeBlockView: (code, language, width, complete) =>
+							this.codeBlockView?.(code, language, width, this.isStreaming, complete),
+						onCopyCode: (code) => {
+							void copyToClipboard(code);
+						},
+					},
+				);
+				this.contentContainer.addChild({
+					render: (width: number) =>
+						markdown
+							.render(Math.max(1, width - this.outputPad - 2))
+							.map(
+								(line, row) =>
+									" ".repeat(this.outputPad) +
+									(row === 0
+										? `${this.marker(this.isStreaming && blockIndex === message.content.length - 1 && !this.completedBlocks.has(blockIndex), "text", progress())} `
+										: "  ") +
+									line,
+							),
+					invalidate: () => markdown.invalidate(),
+					handleMouse: (event: TuiMouseEvent) => {
+						if (
+							event.x === this.outputPad &&
+							event.y === 0 &&
+							event.type === "click" &&
+							event.button === "left" &&
+							!this.isStreaming &&
+							this.stats
+						) {
+							this.statsExpanded = !this.statsExpanded;
+							return { handled: true };
+						}
+						return event.x < this.outputPad + 2
+							? undefined
+							: markdown.handleMouse({
+									...event,
+									x: event.x - this.outputPad - 2,
+									width: Math.max(1, event.width - this.outputPad - 2),
+								});
 					},
 				});
-				this.contentContainer.addChild({
-					render: (width: number) => markdown.render(width),
-					invalidate: () => markdown.invalidate(),
-					handleMouse: (event: TuiMouseEvent) => markdown.handleMouse(event),
-				});
+				hasPreviousBlock = true;
 			} else if (content.type === "thinking") {
 				const thinkingBlocks: string[] = [];
 				for (; i < message.content.length; i++) {
@@ -198,24 +318,22 @@ export class AssistantMessageComponent extends Container {
 					continue;
 				}
 
-				// Add spacing only when another visible assistant content block follows.
-				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
-				const hasVisibleContentAfter = message.content
-					.slice(i + 1)
-					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
-
+				const active = this.isStreaming && i === message.content.length - 1 && !this.completedBlocks.has(i);
 				const runIndex = thinkingRunIndex++;
-				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
 				const thinkingText = thinkingBlocks.join("\n\n");
-				const excerpt = thinkingText.replace(/\s+/g, " ").slice(0, 72);
-				const thinkingLabel =
-					!this.isStreaming && this.hiddenThinkingLabel === "Thinking..." ? "Thought" : this.hiddenThinkingLabel;
+				const lineCount = thinkingText.split("\n").length;
+				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? (this.hideThinkingBlock && lineCount > 3);
+				const excerpt = thinkingText.replace(/\s+/g, " ");
+				const thinkingLabel = this.hiddenThinkingLabel === "Thinking..." ? "" : `${this.hiddenThinkingLabel} `;
+				if (hasPreviousBlock)
+					this.contentContainer.addChild({ render: () => [activityRail(this.outputPad)], invalidate: () => {} });
 				const thinkingComponent = new Container();
 				thinkingComponent.addChild({
 					render: (width: number) => [
 						" ".repeat(this.outputPad) +
 							truncateToWidth(
-								theme.fg("thinkingText", `${hidden ? "▸" : "▾"} ${thinkingLabel} ${hidden ? excerpt : ""}`),
+								(active ? this.marker(true, "thinkingText") : theme.fg("thinkingText", hidden ? "▸" : "▾")) +
+									theme.fg("thinkingText", ` ${thinkingLabel}${hidden ? excerpt : ""}`),
 								Math.max(1, width - this.outputPad),
 								"…",
 							),
@@ -227,7 +345,7 @@ export class AssistantMessageComponent extends Container {
 						new ThinkingRail(
 							new Markdown(
 								thinkingText,
-								this.outputPad,
+								0,
 								0,
 								this.markdownTheme,
 								{
@@ -244,6 +362,7 @@ export class AssistantMessageComponent extends Container {
 									},
 								},
 							),
+							this.outputPad,
 						),
 					);
 				}
@@ -255,9 +374,7 @@ export class AssistantMessageComponent extends Container {
 						return { handled: true };
 					}),
 				);
-				if (hasVisibleContentAfter) {
-					this.contentContainer.addChild(new Spacer(1));
-				}
+				hasPreviousBlock = true;
 			}
 		}
 

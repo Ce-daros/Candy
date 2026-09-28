@@ -56,6 +56,7 @@ export function getAssistantTexts(harness: Harness): string[] {
 }
 
 export interface HarnessOptions {
+	tokensPerSecond?: number;
 	models?: FauxModelDefinition[];
 	settings?: Partial<Settings>;
 	tools?: AgentTool[];
@@ -96,6 +97,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const tempDir = createTempDir();
 	const fauxProvider: FauxProviderRegistration = registerFauxProvider({
 		models: options.models,
+		tokensPerSecond: options.tokensPerSecond,
 	});
 	fauxProvider.setResponses([]);
 	const model = fauxProvider.getModel();

@@ -3,6 +3,7 @@ import { Agent } from "@candy/agent-core";
 import { fauxAssistantMessage } from "@candy/ai";
 import { streamSimple } from "@candy/ai/compat";
 import type { Terminal } from "@candy/tui";
+import tpsExtension from "../../../../.candy/extensions/tps.ts";
 import { AgentSession } from "../../src/core/agent-session.ts";
 import {
 	type AgentSessionRuntime,
@@ -31,9 +32,12 @@ export async function createInteractiveSmoke(
 		empty?: boolean;
 		theme?: "dark" | "light";
 		longModelName?: boolean;
+		transcript?: boolean;
 	} = {},
 ): Promise<InteractiveSmoke> {
 	const harness = await createHarness({
+		tokensPerSecond: options.transcript ? 20 : undefined,
+		extensionFactories: options.transcript ? [tpsExtension] : undefined,
 		models: [
 			{
 				id: "candy-reasoning",
@@ -49,7 +53,26 @@ export async function createInteractiveSmoke(
 	harness.settingsManager.setScopedModels(
 		harness.models.map((model) => ({ provider: model.provider, modelId: model.id })),
 	);
-	harness.setResponses(Array.from({ length: 20 }, () => fauxAssistantMessage("Faux response")));
+	harness.setResponses(
+		Array.from({ length: 20 }, () =>
+			fauxAssistantMessage(
+				options.transcript
+					? [
+							{
+								type: "thinking",
+								thinking: "Checking the first idea.\n思考内容保持灰色，等待正文。\n第三行。\n第四行。",
+							},
+							{ type: "text", text: "First reply. 中文正文与符号对齐。" },
+							{
+								type: "thinking",
+								thinking: "Checking a second idea after the reply.\n第二行。\n第三行。\n第四行。",
+							},
+							{ type: "text", text: "Final reply. Click the star to inspect usage." },
+						]
+					: "Faux response",
+			),
+		),
+	);
 	const sessionDir = join(harness.tempDir, "sessions");
 	const sessionManager = SessionManager.create(harness.tempDir, sessionDir);
 	if (!options.empty) {

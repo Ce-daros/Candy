@@ -26,9 +26,11 @@ export class PanelTransition {
 	private intensity: AnimationIntensity = "moderate";
 	private readonly render: () => void;
 	private onComplete: (() => void) | undefined;
+	private readonly timing: { enter: number; exit: number };
 
-	constructor(render: () => void) {
+	constructor(render: () => void, timing = { enter: 800, exit: 560 }) {
 		this.render = render;
+		this.timing = timing;
 	}
 
 	value(): number {
@@ -58,7 +60,9 @@ export class PanelTransition {
 		this.started = performance.now();
 		this.onComplete = onComplete;
 		const factor = this.intensity === "conservative" ? 1.3 : this.intensity === "aggressive" ? 0.75 : 1;
-		this.duration = this.enabled ? (open ? 800 : 560) * Math.abs(target - this.from) * factor : 0;
+		this.duration = this.enabled
+			? (open ? this.timing.enter : this.timing.exit) * Math.abs(target - this.from) * factor
+			: 0;
 		if (this.timer) clearInterval(this.timer);
 		if (this.duration === 0) {
 			this.finish();

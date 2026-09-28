@@ -1,11 +1,4 @@
-import type { AssistantMessage } from "@candy/ai";
 import type { ExtensionAPI } from "@candy/coding-agent";
-
-function isAssistantMessage(message: unknown): message is AssistantMessage {
-	if (!message || typeof message !== "object") return false;
-	const role = (message as { role?: unknown }).role;
-	return role === "assistant";
-}
 
 export default function (pi: ExtensionAPI) {
 	let agentStartMs: number | null = null;
@@ -29,12 +22,12 @@ export default function (pi: ExtensionAPI) {
 		let totalTokens = 0;
 
 		for (const message of event.messages) {
-			if (!isAssistantMessage(message)) continue;
-			input += message.usage.input || 0;
-			output += message.usage.output || 0;
-			cacheRead += message.usage.cacheRead || 0;
-			cacheWrite += message.usage.cacheWrite || 0;
-			totalTokens += message.usage.totalTokens || 0;
+			if (message.role !== "assistant") continue;
+			input += message.usage.input;
+			output += message.usage.output;
+			cacheRead += message.usage.cacheRead;
+			cacheWrite += message.usage.cacheWrite;
+			totalTokens += message.usage.totalTokens;
 		}
 
 		if (output <= 0) return;
@@ -42,6 +35,6 @@ export default function (pi: ExtensionAPI) {
 		const elapsedSeconds = elapsedMs / 1000;
 		const tokensPerSecond = output / elapsedSeconds;
 		const message = `TPS ${tokensPerSecond.toFixed(1)} tok/s. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`;
-		ctx.ui.notify(message, "info");
+		pi.appendEntry("tps", message);
 	});
 }

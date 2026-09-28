@@ -37,6 +37,8 @@ import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/rend
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 
+import { activityRail } from "./activity-rail.ts";
+
 const GUTTER_WIDTH = 6;
 
 export interface ToolExecutionOptions {
@@ -322,7 +324,7 @@ export class ToolExecutionComponent extends Container {
 					lines.push(...imageComponent.render(width));
 				}
 			}
-			if (this.continuesActivity) lines.push(theme.fg("borderMuted", "│"));
+			if (this.continuesActivity) lines.push(activityRail());
 			return lines;
 		}
 
@@ -350,7 +352,7 @@ export class ToolExecutionComponent extends Container {
 					: theme.fg("dim", "○");
 		const arrow = this.expanded ? "▾" : "▸";
 		const node = `${state}${theme.fg("borderMuted", "─")} ${theme.fg("muted", arrow)} `;
-		const rail = `${theme.fg("borderMuted", "│")}     `;
+		const rail = `${activityRail()}     `;
 		const lines = shown.map((line, index) => `${index === 0 ? node : rail}${line}`);
 		if (remaining > 0) {
 			const hint = `${rail}${truncateToWidth(theme.fg("dim", isShell ? `… ${remaining} earlier lines` : `… ${remaining} more lines`), contentWidth, "…")}`;
@@ -369,7 +371,7 @@ export class ToolExecutionComponent extends Container {
 			lines.push(...imageLines);
 			this.imageRows.push({ start, height: imageLines.length, image });
 		}
-		if (this.continuesActivity) lines.push(theme.fg("borderMuted", "│"));
+		if (this.continuesActivity) lines.push(activityRail());
 		return lines;
 	}
 
