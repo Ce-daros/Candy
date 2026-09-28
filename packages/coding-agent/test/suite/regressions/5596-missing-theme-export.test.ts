@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
-import { fauxAssistantMessage, registerFauxProvider, streamSimple } from "@candy/ai/compat";
+import { fauxAssistantMessage, fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../../../src/core/agent-session.ts";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
@@ -10,7 +10,9 @@ import { convertToLlm } from "../../../src/core/messages.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "../../model-runtime-test-utils.ts";
+import { exportSessionHtml } from "../../../src/presentation/session-html-export.ts";
+import { configuredFauxProvider } from "../../ai.ts";
+import { createInMemoryModelRuntime } from "../../model-runtime-test-utils.ts";
 import { createTestResourceLoader } from "../../utilities.ts";
 
 describe("regression #5596: missing configured theme export", () => {
@@ -25,7 +27,7 @@ describe("regression #5596: missing configured theme export", () => {
 
 	it("exports with the active fallback theme when the configured theme is missing", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-5596-"));
-		const faux = registerFauxProvider({
+		const faux = fauxProvider({
 			models: [{ id: "faux-1", reasoning: false }],
 		});
 		faux.setResponses([fauxAssistantMessage("hello")]);
@@ -33,23 +35,8 @@ describe("regression #5596: missing configured theme export", () => {
 		const model = faux.getModel();
 		const authStorage = AuthStorage.inMemory();
 		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "faux-key" }));
-		const modelRegistry = await createInMemoryModelRegistry(authStorage);
-		modelRegistry.registerProvider(model.provider, {
-			baseUrl: model.baseUrl,
-			apiKey: "faux-key",
-			api: faux.api,
-			models: faux.models.map((registeredModel) => ({
-				id: registeredModel.id,
-				name: registeredModel.name,
-				api: registeredModel.api,
-				reasoning: registeredModel.reasoning,
-				input: registeredModel.input,
-				cost: registeredModel.cost,
-				contextWindow: registeredModel.contextWindow,
-				maxTokens: registeredModel.maxTokens,
-				baseUrl: registeredModel.baseUrl,
-			})),
-		});
+		const modelRuntime = await createInMemoryModelRuntime(authStorage);
+		modelRuntime.registerNativeProvider(configuredFauxProvider(faux));
 
 		const settingsManager = SettingsManager.inMemory({ theme: "missing-theme" });
 		const sessionManager = SessionManager.create(tempDir, join(tempDir, "sessions"));
@@ -61,19 +48,18 @@ describe("regression #5596: missing configured theme export", () => {
 				tools: [],
 			},
 			convertToLlm,
-			streamFn: streamSimple,
+			streamFn: faux.provider.streamSimple,
 		});
 		const session = new AgentSession({
 			agent,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
 		cleanups.push(() => {
 			session.dispose();
-			faux.unregister();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
@@ -83,7 +69,7 @@ describe("regression #5596: missing configured theme export", () => {
 		initTheme(settingsManager.getTheme());
 
 		const outputPath = join(tempDir, "export.html");
-		await expect(session.exportToHtml(outputPath)).resolves.toBe(outputPath);
+		await expect(exportSessionHtml(session, outputPath)).resolves.toBe(outputPath);
 		expect(existsSync(outputPath)).toBe(true);
 		expect(settingsManager.getTheme()).toBe("missing-theme");
 	});

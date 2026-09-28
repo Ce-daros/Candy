@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@candy/ai/compat";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@candy/ai/providers/faux";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -21,6 +21,9 @@ import type {
 	SessionShutdownEvent,
 	SessionStartEvent,
 } from "../../src/index.ts";
+import { extensionHostModules } from "../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../src/presentation/resource-theme-adapter.ts";
+import { configuredFauxProvider } from "../ai.ts";
 
 type RecordedSessionEvent =
 	| SessionBeforeSwitchEvent
@@ -45,7 +48,7 @@ describe("AgentSessionRuntime characterization", () => {
 			options?.cwd ?? join(tmpdir(), `pi-runtime-suite-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 
-		const faux = registerFauxProvider({
+		const faux = fauxProvider({
 			models: [
 				{ id: "faux-1", reasoning: true },
 				{ id: "faux-2", reasoning: false },
@@ -64,21 +67,7 @@ describe("AgentSessionRuntime characterization", () => {
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
-						candy.registerProvider(faux.getModel().provider, {
-							baseUrl: faux.getModel().baseUrl,
-							apiKey: "faux-key",
-							api: faux.api,
-							models: faux.models.map((registeredModel) => ({
-								id: registeredModel.id,
-								name: registeredModel.name,
-								api: registeredModel.api,
-								reasoning: registeredModel.reasoning,
-								input: registeredModel.input,
-								cost: registeredModel.cost,
-								contextWindow: registeredModel.contextWindow,
-								maxTokens: registeredModel.maxTokens,
-							})),
-						});
+						candy.registerProvider(configuredFauxProvider(faux));
 						extensionFactory(candy);
 					},
 				],
@@ -94,6 +83,8 @@ describe("AgentSessionRuntime characterization", () => {
 				throw new Error("runtime factory failed");
 			}
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				...runtimeOptions,
 				cwd,
 			});
@@ -118,7 +109,6 @@ describe("AgentSessionRuntime characterization", () => {
 
 		cleanups.push(async () => {
 			await runtime.dispose();
-			faux.unregister();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
@@ -148,6 +138,30 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session).toBe(originalSession);
 		expect(originalSession.isDisposed).toBe(false);
 		expect(rebound).toEqual([]);
+	});
+
+	it("preserves the current session when resume runtime creation fails", async () => {
+		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
+		await runtime.session.prompt("hello");
+		const originalSession = runtime.session;
+		const sessionFile = originalSession.sessionFile!;
+		failNextRuntimeCreation();
+
+		await expect(runtime.switchSession(sessionFile)).rejects.toThrow("runtime factory failed");
+		expect(runtime.session).toBe(originalSession);
+		expect(originalSession.isDisposed).toBe(false);
+	});
+
+	it("preserves the current session when fork runtime creation fails", async () => {
+		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
+		await runtime.session.prompt("hello");
+		const originalSession = runtime.session;
+		const userMessage = originalSession.getUserMessagesForForking()[0]!;
+		failNextRuntimeCreation();
+
+		await expect(runtime.fork(userMessage.entryId)).rejects.toThrow("runtime factory failed");
+		expect(runtime.session).toBe(originalSession);
+		expect(originalSession.isDisposed).toBe(false);
 	});
 
 	it("preserves the current session when replacement setup fails", async () => {
@@ -489,7 +503,7 @@ describe("AgentSessionRuntime characterization", () => {
 		const tempDir = join(tmpdir(), `pi-runtime-suite-in-memory-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 
-		const faux = registerFauxProvider({
+		const faux = fauxProvider({
 			models: [
 				{ id: "faux-1", reasoning: true },
 				{ id: "faux-2", reasoning: false },
@@ -507,21 +521,7 @@ describe("AgentSessionRuntime characterization", () => {
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
-						candy.registerProvider(faux.getModel().provider, {
-							baseUrl: faux.getModel().baseUrl,
-							apiKey: "faux-key",
-							api: faux.api,
-							models: faux.models.map((registeredModel) => ({
-								id: registeredModel.id,
-								name: registeredModel.name,
-								api: registeredModel.api,
-								reasoning: registeredModel.reasoning,
-								input: registeredModel.input,
-								cost: registeredModel.cost,
-								contextWindow: registeredModel.contextWindow,
-								maxTokens: registeredModel.maxTokens,
-							})),
-						});
+						candy.registerProvider(configuredFauxProvider(faux));
 					},
 				],
 				noSkills: true,
@@ -531,6 +531,8 @@ describe("AgentSessionRuntime characterization", () => {
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				...runtimeOptions,
 				cwd,
 			});
@@ -553,7 +555,6 @@ describe("AgentSessionRuntime characterization", () => {
 		await runtime.session.bindExtensions({});
 		cleanups.push(async () => {
 			await runtime.dispose();
-			faux.unregister();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
@@ -616,21 +617,7 @@ describe("AgentSessionRuntime characterization", () => {
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
-						candy.registerProvider(faux.getModel().provider, {
-							baseUrl: faux.getModel().baseUrl,
-							apiKey: "faux-key",
-							api: faux.api,
-							models: faux.models.map((registeredModel) => ({
-								id: registeredModel.id,
-								name: registeredModel.name,
-								api: registeredModel.api,
-								reasoning: registeredModel.reasoning,
-								input: registeredModel.input,
-								cost: registeredModel.cost,
-								contextWindow: registeredModel.contextWindow,
-								maxTokens: registeredModel.maxTokens,
-							})),
-						});
+						candy.registerProvider(configuredFauxProvider(faux));
 					},
 				],
 				noSkills: true,
@@ -644,6 +631,8 @@ describe("AgentSessionRuntime characterization", () => {
 			sessionStartEvent,
 		}) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				...otherRuntimeOptions,
 				cwd,
 			});
@@ -689,21 +678,7 @@ describe("AgentSessionRuntime characterization", () => {
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
-						candy.registerProvider(faux.getModel().provider, {
-							baseUrl: faux.getModel().baseUrl,
-							apiKey: "faux-key",
-							api: faux.api,
-							models: faux.models.map((registeredModel) => ({
-								id: registeredModel.id,
-								name: registeredModel.name,
-								api: registeredModel.api,
-								reasoning: registeredModel.reasoning,
-								input: registeredModel.input,
-								cost: registeredModel.cost,
-								contextWindow: registeredModel.contextWindow,
-								maxTokens: registeredModel.maxTokens,
-							})),
-						});
+						candy.registerProvider(configuredFauxProvider(faux));
 					},
 				],
 				noSkills: true,
@@ -717,6 +692,8 @@ describe("AgentSessionRuntime characterization", () => {
 			sessionStartEvent,
 		}) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				...otherRuntimeOptions,
 				cwd,
 			});

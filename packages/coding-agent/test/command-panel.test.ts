@@ -1,8 +1,8 @@
 import { setKeybindings, visibleWidth } from "@candy/tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CommandPanel, type CommandPanelAction } from "../src/modes/interactive/components/command-panel.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 const flush = async () => {

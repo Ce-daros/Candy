@@ -1,4 +1,4 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 /**
  * Shared test utilities for coding-agent tests.
  */
@@ -8,7 +8,6 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Agent } from "@candy/agent-core";
 import type { OAuthCredentials } from "@candy/ai";
-import { getModel, streamSimple } from "@candy/ai/compat";
 import { builtinProviders } from "@candy/ai/providers/all";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -24,6 +23,7 @@ import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createCodingTools } from "../src/index.ts";
+import { getTestModel, streamBuiltinSimple } from "./ai.ts";
 
 /**
  * API key for authenticated tests. Tests using this should be wrapped in
@@ -254,7 +254,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	const tempDir = join(tmpdir(), `pi-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	mkdirSync(tempDir, { recursive: true });
 
-	const model = getModel("anthropic", "claude-sonnet-4-5")!;
+	const model = getTestModel("anthropic", "claude-sonnet-4-5");
 	const agent = new Agent({
 		getApiKey: () => API_KEY,
 		initialState: {
@@ -262,7 +262,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 			systemPrompt: options.systemPrompt ?? "You are a helpful assistant. Be extremely concise.",
 			tools: createCodingTools(process.cwd()),
 		},
-		streamFn: streamSimple,
+		streamFn: streamBuiltinSimple,
 	});
 
 	const sessionManager = options.inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);
@@ -273,14 +273,14 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	}
 
 	const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-	const modelRegistry = await createModelRegistry(authStorage, tempDir);
+	const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 
 	const session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
-		modelRuntime: getModelRuntime(modelRegistry),
+		modelRuntime: modelRuntime,
 		resourceLoader: createTestResourceLoader(),
 	});
 

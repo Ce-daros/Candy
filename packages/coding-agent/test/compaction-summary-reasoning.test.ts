@@ -1,25 +1,47 @@
-import type { AgentMessage } from "@candy/agent-core";
-import { type AssistantMessage, type Model, normalizeContext, type TranscriptContext } from "@candy/ai";
+import type { AgentMessage, StreamFn } from "@candy/agent-core";
+import {
+	type AssistantMessage,
+	createAssistantMessageEventStream,
+	type Model,
+	normalizeContext,
+	type TranscriptContext,
+} from "@candy/ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type CompactionPreparation,
-	compact,
-	completeSummarization,
-	generateSummary,
-	generateSummaryWithUsage,
+	compact as compactWithStream,
+	completeSummarization as completeSummarizationWithStream,
+	generateSummary as generateSummaryWithStream,
+	generateSummaryWithUsage as generateSummaryWithUsageWithStream,
 } from "../src/core/compaction/index.ts";
 
-const { completeSimpleMock } = vi.hoisted(() => ({
-	completeSimpleMock: vi.fn(),
-}));
+const completeSimpleMock = vi.fn();
+const testStreamFn: StreamFn = (model, context, options) => {
+	const message = completeSimpleMock(model, context, options) as AssistantMessage;
+	const stream = createAssistantMessageEventStream();
+	queueMicrotask(() => stream.push({ type: "done", reason: "stop", message }));
+	return stream;
+};
 
-vi.mock("@candy/ai/compat", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@candy/ai/compat")>();
-	return {
-		...actual,
-		completeSimple: completeSimpleMock,
-	};
-});
+function generateSummary(...args: Parameters<typeof generateSummaryWithStream>) {
+	args[9] = testStreamFn;
+	return generateSummaryWithStream(...args);
+}
+
+function generateSummaryWithUsage(...args: Parameters<typeof generateSummaryWithUsageWithStream>) {
+	args[9] = testStreamFn;
+	return generateSummaryWithUsageWithStream(...args);
+}
+
+function completeSummarization(...args: Parameters<typeof completeSummarizationWithStream>) {
+	args[3] = testStreamFn;
+	return completeSummarizationWithStream(...args);
+}
+
+function compact(...args: Parameters<typeof compactWithStream>) {
+	args[7] = testStreamFn;
+	return compactWithStream(...args);
+}
 
 function createModel(
 	reasoning: boolean,
@@ -70,7 +92,7 @@ const messages: AgentMessage[] = [{ role: "user", content: "Summarize this.", ti
 describe("generateSummary reasoning options", () => {
 	beforeEach(() => {
 		completeSimpleMock.mockReset();
-		completeSimpleMock.mockResolvedValue(mockSummaryResponse);
+		completeSimpleMock.mockReturnValue(mockSummaryResponse);
 	});
 
 	it("uses the provided thinking level for reasoning-capable models", async () => {
@@ -152,7 +174,7 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("rejects tool calls from conversation summaries", async () => {
-		completeSimpleMock.mockResolvedValueOnce(mockToolCallResponse);
+		completeSimpleMock.mockReturnValueOnce(mockToolCallResponse);
 
 		await expect(generateSummaryWithUsage(messages, createModel(false), 2000, "test-key")).rejects.toThrow(
 			"Summarization attempted to call a tool",
@@ -160,7 +182,7 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("rejects tool calls from split-turn summaries", async () => {
-		completeSimpleMock.mockResolvedValueOnce(mockToolCallResponse);
+		completeSimpleMock.mockReturnValueOnce(mockToolCallResponse);
 		const preparation: CompactionPreparation = {
 			firstKeptEntryId: "entry-keep",
 			messagesToSummarize: [],
@@ -177,7 +199,7 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("rejects a length-limited history summary", async () => {
-		completeSimpleMock.mockResolvedValueOnce({
+		completeSimpleMock.mockReturnValueOnce({
 			...mockSummaryResponse,
 			stopReason: "length",
 			content: [{ type: "text", text: "partial" }],
@@ -189,7 +211,7 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("rejects a length-limited split-turn summary", async () => {
-		completeSimpleMock.mockResolvedValueOnce({
+		completeSimpleMock.mockReturnValueOnce({
 			...mockSummaryResponse,
 			stopReason: "length",
 			content: [{ type: "text", text: "partial" }],

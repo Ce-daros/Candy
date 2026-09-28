@@ -606,7 +606,7 @@ describe("AgentSession prompt characterization", () => {
 		await promptPromise;
 	});
 
-	it("throws when prompted during manual compaction", async () => {
+	it("queues an ordinary prompt during manual compaction", async () => {
 		let markCompactionStarted = () => {};
 		const compactionStarted = new Promise<void>((resolve) => {
 			markCompactionStarted = resolve;
@@ -635,21 +635,29 @@ describe("AgentSession prompt characterization", () => {
 			],
 		});
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two")]);
+		harness.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two"), fauxAssistantMessage("three")]);
 		await harness.session.prompt("first");
 		await harness.session.prompt("second");
 
 		const compactPromise = harness.session.compact();
 		await compactionStarted;
 
-		try {
-			await expect(harness.session.prompt("third")).rejects.toThrow(
-				"Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.",
-			);
-		} finally {
-			releaseCompaction();
-			await compactPromise;
-		}
+		const queuedPrompt = harness.session.prompt("third", {
+			images: [{ type: "image", data: TINY_PNG_BASE64, mimeType: "image/png" }],
+		});
+		expect(harness.session.getFollowUpMessages()).toEqual(["third"]);
+		releaseCompaction();
+		await compactPromise;
+		await queuedPrompt;
+		expect(harness.session.messages.filter((message) => message.role === "user").map(getMessageText)).toContain(
+			"third",
+		);
+		const thirdMessage = harness.session.messages.filter((message) => message.role === "user").at(-1);
+		expect(thirdMessage?.content).toContainEqual({
+			type: "image",
+			data: Buffer.from("normalized").toString("base64"),
+			mimeType: "image/png",
+		});
 	});
 
 	it("executes extensions immediately and queues explicit text commands during compaction", async () => {
@@ -796,7 +804,7 @@ describe("AgentSession prompt characterization", () => {
 		);
 		expect(harness.session.pendingMessageCount).toBe(1);
 		expect(harness.session.getSteeringMessages()).toEqual(["Expanded clear"]);
-		expect(harness.session.clearQueue()).toEqual({ steering: ["Expanded clear"], followUp: [] });
+		expect(harness.session.clearQueue()).toEqual({ steering: [{ text: "Expanded clear" }], followUp: [] });
 		await commandPromise;
 		expect(harness.session.pendingMessageCount).toBe(0);
 		try {
@@ -806,6 +814,20 @@ describe("AgentSession prompt characterization", () => {
 		} finally {
 			releaseCompaction();
 		}
+	});
+
+	it("clearQueue returns images attached to an input queued during compaction", async () => {
+		const { harness, compactPromise, releaseCompaction } = await createPausedCommandCompaction("success");
+		harnesses.push(harness);
+		const image = { type: "image" as const, data: TINY_PNG_BASE64, mimeType: "image/png" };
+		const queuedPrompt = harness.session.prompt("review this", { images: [image] });
+		expect(harness.session.clearQueue()).toEqual({
+			steering: [],
+			followUp: [{ text: "review this", images: [image] }],
+		});
+		await queuedPrompt;
+		releaseCompaction();
+		await compactPromise;
 	});
 
 	it("does not run remaining compaction commands after session disposal", async () => {

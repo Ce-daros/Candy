@@ -11,6 +11,11 @@ type RebindContext = {
 	updateAvailableProviderCount: () => Promise<void>;
 	updateEditorBorderColor: () => void;
 	updateTerminalTitle: () => void;
+	cancelActiveLogin: () => void;
+	presentation: { active: boolean; finish: () => void };
+	inputMode: string;
+	setInputMode: (mode: string) => void;
+	defaultEditor: { restartEntranceAnimation: () => void };
 };
 
 type InteractiveModePrototype = {
@@ -49,6 +54,11 @@ describe("overlapping startup and replacement session rebinds", () => {
 			updateAvailableProviderCount: async () => {},
 			updateEditorBorderColor: () => {},
 			updateTerminalTitle,
+			cancelActiveLogin: vi.fn(),
+			presentation: { active: false, finish: vi.fn() },
+			inputMode: "normal",
+			setInputMode: vi.fn(),
+			defaultEditor: { restartEntranceAnimation: vi.fn() },
 		};
 
 		const startupRebind = interactiveModePrototype.rebindCurrentSession.call(context);

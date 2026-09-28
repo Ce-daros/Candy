@@ -49,13 +49,6 @@ function getCreateJiti(): Promise<typeof createJiti> {
 	return createJitiPromise;
 }
 
-let virtualModulesPromise: Promise<Record<string, unknown>> | undefined;
-
-function getVirtualModules(): Promise<Record<string, unknown>> {
-	virtualModulesPromise ??= import("./virtual-modules.ts").then((module) => module.VIRTUAL_MODULES);
-	return virtualModulesPromise;
-}
-
 /**
  * Get aliases for jiti (used in built Node.js mode).
  * In compiled binary mode, virtualModules is used instead.
@@ -84,10 +77,7 @@ function getAliases(): Record<string, string> {
 	const piCodingAgentEntry = packageIndex;
 	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@candy/agent-core");
 	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@candy/tui");
-	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
-	// superset of the core entrypoint): existing extensions using the old
-	// global API keep working at runtime until compat is removed.
-	const piAiCompatEntry = resolveWorkspaceOrImport("ai/dist/compat.js", "@candy/ai/compat");
+	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@candy/ai");
 	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@candy/ai/oauth");
 	const piAiProvidersEntry = resolveWorkspaceOrImport("ai/dist/providers/all.js", "@candy/ai/providers/all");
 
@@ -96,9 +86,8 @@ function getAliases(): Record<string, string> {
 		"@candy/agent-core": piAgentCoreEntry,
 		"@candy/tui": piTuiEntry,
 		"@candy/ai/providers/all": piAiProvidersEntry,
-		"@candy/ai/compat": piAiCompatEntry,
 		"@candy/ai/oauth": piAiOauthEntry,
-		"@candy/ai": piAiCompatEntry,
+		"@candy/ai": piAiEntry,
 		typebox: typeboxEntry,
 		"typebox/compile": typeboxCompileEntry,
 		"typebox/value": typeboxValueEntry,
@@ -466,7 +455,11 @@ function isCurrentCacheToken(cacheToken: ExtensionCacheToken | undefined): cache
 	);
 }
 
-async function loadExtensionModule(extensionPath: string, cacheToken?: ExtensionCacheToken) {
+async function loadExtensionModule(
+	extensionPath: string,
+	extensionModules: Record<string, unknown> | undefined,
+	cacheToken?: ExtensionCacheToken,
+) {
 	if (isCurrentCacheToken(cacheToken)) {
 		const cachedFactory = extensionCache.get(extensionPath);
 		if (cachedFactory) {
@@ -479,9 +472,9 @@ async function loadExtensionModule(extensionPath: string, cacheToken?: Extension
 	// Source TypeScript reuses host modules and root tsconfig paths. Unbundled
 	// Node builds use dist aliases and do not need the bundled virtual modules.
 	const resolutionOptions = usesEmbeddedModules
-		? { virtualModules: await getVirtualModules(), tryNative: false }
+		? { virtualModules: requireExtensionModules(extensionModules), tryNative: false }
 		: isTypeScriptSourceRuntime
-			? { virtualModules: await getVirtualModules(), tsconfigPaths: true }
+			? { virtualModules: requireExtensionModules(extensionModules), tsconfigPaths: true }
 			: { alias: getAliases() };
 	const jiti = createJitiImpl(import.meta.url, {
 		moduleCache: false,
@@ -497,6 +490,13 @@ async function loadExtensionModule(extensionPath: string, cacheToken?: Extension
 		extensionCache.set(extensionPath, factory);
 	}
 	return factory;
+}
+
+function requireExtensionModules(extensionModules: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (!extensionModules) {
+		throw new Error("Extension module map is required when loading source or embedded extensions");
+	}
+	return extensionModules;
 }
 
 /**
@@ -549,12 +549,13 @@ async function loadExtension(
 	cwd: string,
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
+	extensionModules: Record<string, unknown> | undefined,
 	cacheToken?: ExtensionCacheToken,
 ): Promise<{ extension: Extension | null; error: string | null }> {
 	const resolvedPath = resolvePath(extensionPath, cwd, { normalizeUnicodeSpaces: true });
 
 	try {
-		const factory = await loadExtensionModule(resolvedPath, cacheToken);
+		const factory = await loadExtensionModule(resolvedPath, extensionModules, cacheToken);
 		time(`${extensionPath} module import`, "extensions");
 		if (!factory) {
 			return { extension: null, error: `Extension does not export a valid factory function: ${extensionPath}` };
@@ -591,6 +592,7 @@ async function loadExtensionsInternal(
 	cwd: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
+	extensionModules?: Record<string, unknown>,
 	useCache = false,
 ): Promise<LoadExtensionsResult> {
 	const extensions: Extension[] = [];
@@ -607,6 +609,7 @@ async function loadExtensionsInternal(
 			resolvedCwd,
 			resolvedEventBus,
 			resolvedRuntime,
+			extensionModules,
 			cacheToken,
 		);
 
@@ -633,8 +636,9 @@ export async function loadExtensions(
 	cwd: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
+	extensionModules?: Record<string, unknown>,
 ): Promise<LoadExtensionsResult> {
-	return loadExtensionsInternal(paths, cwd, eventBus, runtime);
+	return loadExtensionsInternal(paths, cwd, eventBus, runtime, extensionModules);
 }
 
 export async function loadExtensionsCached(
@@ -642,8 +646,9 @@ export async function loadExtensionsCached(
 	cwd: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
+	extensionModules?: Record<string, unknown>,
 ): Promise<LoadExtensionsResult> {
-	return loadExtensionsInternal(paths, cwd, eventBus, runtime, true);
+	return loadExtensionsInternal(paths, cwd, eventBus, runtime, extensionModules, true);
 }
 
 function isExtensionFile(name: string): boolean {
@@ -743,6 +748,7 @@ export async function discoverAndLoadExtensions(
 	cwd: string,
 	agentDir: string = getAgentDir(),
 	eventBus?: EventBus,
+	extensionModules?: Record<string, unknown>,
 ): Promise<LoadExtensionsResult> {
 	const resolvedCwd = resolvePath(cwd);
 	const resolvedAgentDir = resolvePath(agentDir);
@@ -785,5 +791,5 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, resolvedCwd, eventBus);
+	return loadExtensions(allPaths, resolvedCwd, eventBus, undefined, extensionModules);
 }

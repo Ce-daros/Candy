@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
-import { createModelRegistry, getModelRuntime } from "../../model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "../../model-runtime-test-utils.ts";
 
 function modelsJson(provider: string, model: string): Record<string, unknown> {
 	return {
@@ -30,7 +30,7 @@ describe("issue #6999 models.json hot reload", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "candy-models-json-hot-reload-"));
 		const modelsPath = join(tempDir, "models.json");
 		writeFileSync(modelsPath, JSON.stringify(modelsJson("old-provider", "old-model")));
-		const runtime = getModelRuntime(await createModelRegistry(AuthStorage.inMemory(), modelsPath));
+		const runtime = await createTestModelRuntime(AuthStorage.inMemory(), modelsPath);
 		expect(runtime.getModel("old-provider", "old-model")).toBeDefined();
 
 		writeFileSync(modelsPath, JSON.stringify(modelsJson("new-provider", "new-model")));

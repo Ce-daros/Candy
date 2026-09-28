@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
+import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
 
 describe("regression #3616: in-memory settings survive reload", () => {
 	let tempDir: string;
@@ -47,6 +49,8 @@ describe("regression #3616: in-memory settings survive reload", () => {
 			compaction: { enabled: false },
 		});
 		const resourceLoader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir,
 			settingsManager,

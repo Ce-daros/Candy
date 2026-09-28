@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Settings Configuration
  *
@@ -20,6 +22,8 @@ settingsManager.applyOverrides({
 });
 
 const { session: customSettingsSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	settingsManager,
 	sessionManager: SessionManager.inMemory(),
 });
@@ -46,6 +50,8 @@ const inMemorySettings = SettingsManager.inMemory({
 });
 
 const { session: testSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	settingsManager: inMemorySettings,
 	sessionManager: SessionManager.inMemory(),
 });

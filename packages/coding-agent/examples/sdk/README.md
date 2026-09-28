@@ -8,7 +8,7 @@ The runtime example shows how to build a recreate function that closes over proc
 
 | File | Description |
 |------|-------------|
-| `01-minimal.ts` | Simplest usage with all defaults |
+| `01-minimal.ts` | Create a session with standard resource adapters |
 | `02-custom-model.ts` | Select model and thinking level |
 | `03-custom-prompt.ts` | Replace or modify system prompt |
 | `04-skills.ts` | Discover, filter, or replace skills |
@@ -33,35 +33,47 @@ node examples/sdk/01-minimal.ts
 
 ```typescript
 import { getModel } from "@candy/ai";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 import {
-  createAgentSession,
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
+	createAgentSession,
+	DefaultResourceLoader,
+	ModelRuntime,
+	resourceThemeAdapter,
+	SessionManager,
+	SettingsManager,
 } from "@candy/coding-agent";
 
+const presentationAdapters = {
+	themeAdapter: resourceThemeAdapter,
+	extensionModules: extensionHostModules,
+};
 const modelRuntime = await ModelRuntime.create();
 
 // Minimal
-const { session } = await createAgentSession({ modelRuntime });
+const { session } = await createAgentSession({ ...presentationAdapters, modelRuntime });
 
 // Custom model
 const model = getModel("anthropic", "claude-opus-4-5");
-const { session } = await createAgentSession({ model, thinkingLevel: "high", modelRuntime });
+const { session } = await createAgentSession({ ...presentationAdapters, model, thinkingLevel: "high", modelRuntime });
 
 // Modify prompt
 const loader = new DefaultResourceLoader({
+	...presentationAdapters,
   systemPromptOverride: (base) => `${base}\n\nBe concise.`,
 });
 await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader, modelRuntime });
 
 // Read-only
-const { session } = await createAgentSession({ tools: ["read", "grep", "find", "ls"], modelRuntime });
+const { session } = await createAgentSession({
+	...presentationAdapters,
+	tools: ["read", "grep", "find", "ls"],
+	modelRuntime,
+});
 
 // In-memory
 const { session } = await createAgentSession({
+	...presentationAdapters,
   sessionManager: SessionManager.inMemory(),
   modelRuntime,
 });
@@ -74,6 +86,7 @@ const customRuntime = await ModelRuntime.create({
 await customRuntime.setRuntimeApiKey("anthropic", process.env.MY_KEY!);
 
 const resourceLoader = new DefaultResourceLoader({
+	...presentationAdapters,
   systemPromptOverride: () => "You are helpful.",
   extensionFactories: [myExtension],
   skillsOverride: () => ({ skills: [], diagnostics: [] }),

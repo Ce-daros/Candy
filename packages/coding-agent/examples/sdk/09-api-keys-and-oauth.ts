@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * API Keys and OAuth
  *
@@ -8,6 +10,8 @@ import { createAgentSession, ModelRuntime, SessionManager } from "@candy/coding-
 
 const modelRuntime = await ModelRuntime.create();
 const { session: defaultAuthSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	sessionManager: SessionManager.inMemory(),
 	modelRuntime,
 });
@@ -19,6 +23,8 @@ const customRuntime = await ModelRuntime.create({
 	modelsPath: "/tmp/my-app/models.json",
 });
 const { session: customAuthSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	sessionManager: SessionManager.inMemory(),
 	modelRuntime: customRuntime,
 });
@@ -27,6 +33,8 @@ customAuthSession.dispose();
 
 await modelRuntime.setRuntimeApiKey("anthropic", "sk-my-temp-key");
 const { session: runtimeKeySession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	sessionManager: SessionManager.inMemory(),
 	modelRuntime,
 });

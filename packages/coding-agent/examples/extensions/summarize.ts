@@ -160,12 +160,12 @@ export default function (candy: ExtensionAPI) {
 				ctx.ui.notify("Preparing summary...", "info");
 			}
 
-			const model = ctx.modelRegistry.find("openai", "gpt-5.2");
+			const model = ctx.modelRuntime.getModel("openai", "gpt-5.2");
 			if (!model) {
 				if (ctx.hasUI) ctx.ui.notify("Model openai/gpt-5.2 not found", "warning");
 				return;
 			}
-			if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
+			if (!ctx.modelRuntime.hasConfiguredAuth(model.provider)) {
 				if (ctx.hasUI) ctx.ui.notify("No authentication configured for openai/gpt-5.2", "warning");
 				return;
 			}
@@ -178,7 +178,7 @@ export default function (candy: ExtensionAPI) {
 				},
 			];
 
-			const response = await ctx.modelRegistry.complete(
+			const response = await ctx.modelRuntime.complete(
 				model,
 				{ messages: summaryMessages },
 				{

@@ -1,17 +1,5 @@
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-	chmodSync,
-	existsSync,
-	globSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 function getEnv(): NodeJS.ProcessEnv {
 	if (process.platform !== "linux" || Object.keys(process.env).length > 0) {
@@ -32,18 +20,40 @@ function getEnv(): NodeJS.ProcessEnv {
 	}
 }
 
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import type { Readable } from "node:stream";
-import ignore from "ignore";
-import { minimatch } from "minimatch";
-import { gt, maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
+import { gt, maxSatisfying, rcompare, satisfies } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
-import { type GitSource, parseGitUrl } from "../utils/git.ts";
-import { canonicalizePath, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
+import type { GitSource } from "../utils/git.ts";
+import { canonicalizePath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { type CandyManifest, readCandyManifest } from "./candy-manifest.ts";
 import { isStdoutTakenOver } from "./output-guard.ts";
+import { GitPackageOperations } from "./package-manager-git.ts";
+import { NpmPackageOperations } from "./package-manager-npm.ts";
+import { PackageManagerPaths } from "./package-manager-paths.ts";
+import type { PackageScope } from "./package-manager-types.ts";
+import {
+	applyAutoloadDisabledPatterns,
+	applyPatterns,
+	collectAncestorAgentsSkillDirs,
+	collectAutoExtensionEntries,
+	collectAutoPromptEntries,
+	collectAutoSkillEntries,
+	collectAutoThemeEntries,
+	collectResourceFiles,
+	expandPackageGlob,
+	hasGlobPattern,
+	isEnabledByOverrides,
+	isOverridePattern,
+	type PackageFilter,
+	RESOURCE_TYPES,
+	type ResourceType,
+	splitPatterns,
+} from "./package-resource-discovery.ts";
+import { type LocalSource, type NpmSource, type ParsedSource, parsePackageSource } from "./package-source.ts";
+import { packageSourceIdentity } from "./package-source-identity.ts";
 import type { PackageSource, SettingsManager } from "./settings-manager.ts";
 
 const NETWORK_TIMEOUT_MS = 10000;
@@ -54,14 +64,6 @@ function isOfflineModeEnabled(): boolean {
 	const value = process.env.CANDY_OFFLINE;
 	if (!value) return false;
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
-}
-
-function isExactNpmVersion(version: string | undefined): boolean {
-	return valid(version ?? "") !== null;
-}
-
-function getNpmVersionRange(version: string | undefined): string | undefined {
-	return version ? (validRange(version) ?? undefined) : undefined;
 }
 
 export interface PathMetadata {
@@ -134,23 +136,7 @@ interface PackageManagerOptions {
 	settingsManager: SettingsManager;
 }
 
-type SourceScope = "user" | "project" | "temporary";
-
-type NpmSource = {
-	type: "npm";
-	spec: string;
-	name: string;
-	version?: string;
-	range?: string;
-	pinned: boolean;
-};
-
-type LocalSource = {
-	type: "local";
-	path: string;
-};
-
-type ParsedSource = NpmSource | GitSource | LocalSource;
+type SourceScope = PackageScope;
 
 type InstalledSourceScope = Exclude<SourceScope, "temporary">;
 
@@ -192,618 +178,6 @@ function resourcePrecedenceRank(m: PathMetadata): number {
 	return scopeBase + (m.source === "local" ? 0 : 1);
 }
 
-interface PackageFilter {
-	autoload?: boolean;
-	extensions?: string[];
-	skills?: string[];
-	prompts?: string[];
-	themes?: string[];
-}
-
-type ResourceType = "extensions" | "skills" | "prompts" | "themes";
-
-const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes"];
-
-const FILE_PATTERNS: Record<ResourceType, RegExp> = {
-	extensions: /\.(ts|js)$/,
-	skills: /\.md$/,
-	prompts: /\.md$/,
-	themes: /\.json$/,
-};
-
-const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
-
-type IgnoreMatcher = ReturnType<typeof ignore>;
-
-function toPosixPath(p: string): string {
-	return p.split(sep).join("/");
-}
-
-function getHomeDir(): string {
-	return process.env.HOME || homedir();
-}
-
-export function getExtensionTempFolder(agentDir: string): string {
-	const tempFolder = join(agentDir, "tmp", "extensions");
-	mkdirSync(tempFolder, { recursive: true, mode: 0o700 });
-	chmodSync(tempFolder, 0o700);
-	return tempFolder;
-}
-
-function prefixIgnorePattern(line: string, prefix: string): string | null {
-	const trimmed = line.trim();
-	if (!trimmed) return null;
-	if (trimmed.startsWith("#") && !trimmed.startsWith("\\#")) return null;
-
-	let pattern = line;
-	let negated = false;
-
-	if (pattern.startsWith("!")) {
-		negated = true;
-		pattern = pattern.slice(1);
-	} else if (pattern.startsWith("\\!")) {
-		pattern = pattern.slice(1);
-	}
-
-	if (pattern.startsWith("/")) {
-		pattern = pattern.slice(1);
-	}
-
-	const prefixed = prefix ? `${prefix}${pattern}` : pattern;
-	return negated ? `!${prefixed}` : prefixed;
-}
-
-function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
-	const relativeDir = relative(rootDir, dir);
-	const prefix = relativeDir ? `${toPosixPath(relativeDir)}/` : "";
-
-	for (const filename of IGNORE_FILE_NAMES) {
-		const ignorePath = join(dir, filename);
-		if (!existsSync(ignorePath)) continue;
-		try {
-			const content = readFileSync(ignorePath, "utf-8");
-			const patterns = content
-				.split(/\r?\n/)
-				.map((line) => prefixIgnorePattern(line, prefix))
-				.filter((line): line is string => Boolean(line));
-			if (patterns.length > 0) {
-				ig.add(patterns);
-			}
-		} catch {}
-	}
-}
-
-function isPattern(s: string): boolean {
-	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-") || s.includes("*") || s.includes("?");
-}
-
-function isOverridePattern(s: string): boolean {
-	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-");
-}
-
-function hasGlobPattern(s: string): boolean {
-	return s.includes("*") || s.includes("?");
-}
-
-/** Glob entries discover visible paths; exact entries can target dot paths or symlinked trees. */
-function expandPackageGlob(pattern: string, root: string): string[] {
-	return globSync(pattern, { cwd: root })
-		.map((match) => resolve(root, match))
-		.filter((path) =>
-			relative(root, path)
-				.split(sep)
-				.every((segment) => segment === ".." || !segment.startsWith(".")),
-		)
-		.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-}
-
-function splitPatterns(entries: string[]): { plain: string[]; patterns: string[] } {
-	const plain: string[] = [];
-	const patterns: string[] = [];
-	for (const entry of entries) {
-		if (isPattern(entry)) {
-			patterns.push(entry);
-		} else {
-			plain.push(entry);
-		}
-	}
-	return { plain, patterns };
-}
-
-function collectFiles(
-	dir: string,
-	filePattern: RegExp,
-	skipNodeModules = true,
-	ignoreMatcher?: IgnoreMatcher,
-	rootDir?: string,
-): string[] {
-	const files: string[] = [];
-	if (!existsSync(dir)) return files;
-
-	const root = rootDir ?? dir;
-	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
-
-	try {
-		const entries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of entries) {
-			if (entry.name.startsWith(".")) continue;
-			if (skipNodeModules && entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			const ignorePath = isDir ? `${relPath}/` : relPath;
-			if (ig.ignores(ignorePath)) continue;
-
-			if (isDir) {
-				files.push(...collectFiles(fullPath, filePattern, skipNodeModules, ig, root));
-			} else if (isFile && filePattern.test(entry.name)) {
-				files.push(fullPath);
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return files;
-}
-
-type SkillDiscoveryMode = "candy" | "agents";
-
-function collectSkillEntries(
-	dir: string,
-	mode: SkillDiscoveryMode,
-	ignoreMatcher?: IgnoreMatcher,
-	rootDir?: string,
-): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	const root = rootDir ?? dir;
-	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-
-		for (const entry of dirEntries) {
-			if (entry.name !== "SKILL.md") {
-				continue;
-			}
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			if (isFile && !ig.ignores(relPath)) {
-				entries.push(fullPath);
-				return entries;
-			}
-		}
-
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			const shouldIncludeMarkdownFile =
-				isFile &&
-				entry.name.endsWith(".md") &&
-				!ig.ignores(relPath) &&
-				((mode === "candy" && dir === root) || (mode === "agents" && dir !== root));
-			if (shouldIncludeMarkdownFile) {
-				entries.push(fullPath);
-				continue;
-			}
-
-			if (!isDir) continue;
-			if (ig.ignores(`${relPath}/`)) continue;
-
-			entries.push(...collectSkillEntries(fullPath, mode, ig, root));
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
-}
-
-function collectAutoSkillEntries(dir: string, mode: SkillDiscoveryMode): string[] {
-	return collectSkillEntries(dir, mode);
-}
-
-function findGitRepoRoot(startDir: string): string | null {
-	let dir = resolve(startDir);
-	while (true) {
-		if (existsSync(join(dir, ".git"))) {
-			return dir;
-		}
-		const parent = dirname(dir);
-		if (parent === dir) {
-			return null;
-		}
-		dir = parent;
-	}
-}
-
-function collectAncestorAgentsSkillDirs(startDir: string): string[] {
-	const skillDirs: string[] = [];
-	const resolvedStartDir = resolve(startDir);
-	const gitRepoRoot = findGitRepoRoot(resolvedStartDir);
-
-	let dir = resolvedStartDir;
-	while (true) {
-		skillDirs.push(join(dir, ".agents", "skills"));
-		if (gitRepoRoot && dir === gitRepoRoot) {
-			break;
-		}
-		const parent = dirname(dir);
-		if (parent === dir) {
-			break;
-		}
-		dir = parent;
-	}
-
-	return skillDirs;
-}
-
-function collectAutoPromptEntries(dir: string): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(dir, fullPath));
-			if (ig.ignores(relPath)) continue;
-
-			if (isFile && entry.name.endsWith(".md")) {
-				entries.push(fullPath);
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
-}
-
-function collectAutoThemeEntries(dir: string): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(dir, fullPath));
-			if (ig.ignores(relPath)) continue;
-
-			if (isFile && entry.name.endsWith(".json")) {
-				entries.push(fullPath);
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
-}
-
-function resolveExtensionEntries(dir: string): string[] | null {
-	const packageJsonPath = join(dir, "package.json");
-	if (existsSync(packageJsonPath)) {
-		const manifest = readCandyManifest(packageJsonPath);
-		if (manifest?.extensions?.length) {
-			const entries: string[] = [];
-			for (const extPath of manifest.extensions) {
-				const resolvedExtPath = resolve(dir, extPath);
-				if (existsSync(resolvedExtPath)) {
-					entries.push(resolvedExtPath);
-				}
-			}
-			if (entries.length > 0) {
-				return entries;
-			}
-		}
-	}
-
-	const indexTs = join(dir, "index.ts");
-	const indexJs = join(dir, "index.js");
-	if (existsSync(indexTs)) {
-		return [indexTs];
-	}
-	if (existsSync(indexJs)) {
-		return [indexJs];
-	}
-
-	return null;
-}
-
-function collectAutoExtensionEntries(dir: string): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	// First check if this directory itself has explicit extension entries (package.json or index)
-	const rootEntries = resolveExtensionEntries(dir);
-	if (rootEntries) {
-		return rootEntries;
-	}
-
-	// Otherwise, discover extensions from directory contents
-	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(dir, fullPath));
-			const ignorePath = isDir ? `${relPath}/` : relPath;
-			if (ig.ignores(ignorePath)) continue;
-
-			if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
-				entries.push(fullPath);
-			} else if (isDir) {
-				const resolvedEntries = resolveExtensionEntries(fullPath);
-				if (resolvedEntries) {
-					entries.push(...resolvedEntries);
-				}
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
-}
-
-/**
- * Collect resource files from a directory based on resource type.
- * Extensions use smart discovery (index.ts in subdirs), others use recursive collection.
- */
-function collectResourceFiles(dir: string, resourceType: ResourceType): string[] {
-	if (resourceType === "skills") {
-		return collectSkillEntries(dir, "candy");
-	}
-	if (resourceType === "extensions") {
-		return collectAutoExtensionEntries(dir);
-	}
-	return collectFiles(dir, FILE_PATTERNS[resourceType]);
-}
-
-function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	const rel = toPosixPath(relative(baseDir, filePath));
-	const name = basename(filePath);
-	const filePathPosix = toPosixPath(filePath);
-	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-	const parentName = isSkillFile ? basename(parentDir!) : undefined;
-	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
-
-	return patterns.some((pattern) => {
-		const normalizedPattern = toPosixPath(pattern);
-		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
-		) {
-			return true;
-		}
-		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
-	});
-}
-
-function normalizeExactPattern(pattern: string): string {
-	const normalized = pattern.startsWith("./") || pattern.startsWith(".\\") ? pattern.slice(2) : pattern;
-	return toPosixPath(normalized);
-}
-
-function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	if (patterns.length === 0) return false;
-	const rel = toPosixPath(relative(baseDir, filePath));
-	const name = basename(filePath);
-	const filePathPosix = toPosixPath(filePath);
-	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
-
-	return patterns.some((pattern) => {
-		const normalized = normalizeExactPattern(pattern);
-		if (normalized === rel || normalized === filePathPosix) {
-			return true;
-		}
-		if (!isSkillFile) return false;
-		return normalized === parentRel || normalized === parentDirPosix;
-	});
-}
-
-function getOverridePatterns(entries: string[]): string[] {
-	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
-}
-
-function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
-	const overrides = getOverridePatterns(patterns);
-	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
-	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
-	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
-
-	let enabled = true;
-	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
-		enabled = false;
-	}
-	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
-		enabled = true;
-	}
-	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
-		enabled = false;
-	}
-	return enabled;
-}
-
-/**
- * Apply patterns to paths and return a Set of enabled paths.
- * Pattern types:
- * - Plain patterns: include matching paths
- * - `!pattern`: exclude matching paths
- * - `+path`: force-include exact path (overrides exclusions)
- * - `-path`: force-exclude exact path (overrides force-includes)
- */
-function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): Set<string> {
-	const includes: string[] = [];
-	const excludes: string[] = [];
-	const forceIncludes: string[] = [];
-	const forceExcludes: string[] = [];
-
-	for (const p of patterns) {
-		if (p.startsWith("+")) {
-			forceIncludes.push(p.slice(1));
-		} else if (p.startsWith("-")) {
-			forceExcludes.push(p.slice(1));
-		} else if (p.startsWith("!")) {
-			excludes.push(p.slice(1));
-		} else {
-			includes.push(p);
-		}
-	}
-
-	// Step 1: Apply includes (or all if no includes)
-	let result: string[];
-	if (includes.length === 0) {
-		result = [...allPaths];
-	} else {
-		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
-	}
-
-	// Step 2: Apply excludes
-	if (excludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
-	}
-
-	// Step 3: Force-include (add back from allPaths, overriding exclusions)
-	if (forceIncludes.length > 0) {
-		for (const filePath of allPaths) {
-			if (!result.includes(filePath) && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
-				result.push(filePath);
-			}
-		}
-	}
-
-	// Step 4: Force-exclude (remove even if included or force-included)
-	if (forceExcludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludes, baseDir));
-	}
-
-	return new Set(result);
-}
-
-function applyAutoloadDisabledPatterns(allPaths: string[], patterns: string[], baseDir: string): Map<string, boolean> {
-	const result = new Map<string, boolean>();
-	for (const pattern of patterns) {
-		const target = pattern.slice(
-			pattern.startsWith("+") || pattern.startsWith("-") || pattern.startsWith("!") ? 1 : 0,
-		);
-		const enabled = !pattern.startsWith("-") && !pattern.startsWith("!");
-		const exact = pattern.startsWith("+") || pattern.startsWith("-");
-		for (const filePath of allPaths) {
-			if (
-				exact ? matchesAnyExactPattern(filePath, [target], baseDir) : matchesAnyPattern(filePath, [target], baseDir)
-			) {
-				result.set(filePath, enabled);
-			}
-		}
-	}
-	return result;
-}
-
 export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
@@ -811,11 +185,36 @@ export class DefaultPackageManager implements PackageManager {
 	private globalNpmRoot: string | undefined;
 	private globalNpmRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
+	private readonly npmOperations: NpmPackageOperations;
+	private readonly gitOperations: GitPackageOperations;
+	private readonly paths: PackageManagerPaths;
 
 	constructor(options: PackageManagerOptions) {
 		this.cwd = resolvePath(options.cwd);
 		this.agentDir = resolvePath(options.agentDir);
 		this.settingsManager = options.settingsManager;
+		this.paths = new PackageManagerPaths({
+			cwd: this.cwd,
+			agentDir: this.agentDir,
+			isProjectTrusted: () => this.settingsManager.isProjectTrusted(),
+		});
+		this.npmOperations = new NpmPackageOperations({
+			getInstallRoot: (scope, temporary) => this.paths.getNpmInstallRoot(scope, temporary),
+			ensureProject: (installRoot) => this.ensureNpmProject(installRoot),
+			getPackageManagerName: () => this.getPackageManagerName(),
+			runNpmCommand: (args, commandOptions) => this.runNpmCommand(args, commandOptions),
+		});
+		this.gitOperations = new GitPackageOperations({
+			getInstallPath: (source, scope) => this.paths.getGitInstallPath(source.host, source.path, source.ref, scope),
+			getInstallRoot: (scope) => this.paths.getGitInstallRoot(scope),
+			ensureGitIgnore: (path) => this.ensureGitIgnore(path),
+			getDependencyInstallArgs: () => this.npmOperations.getGitDependencyInstallArgs(),
+			runCommand: (command, args, commandOptions) =>
+				commandOptions ? this.runCommand(command, args, commandOptions) : this.runCommand(command, args),
+			runCommandCapture: (command, args, commandOptions) => this.runCommandCapture(command, args, commandOptions),
+			runNpmCommand: (args, commandOptions) => this.runNpmCommand(args, commandOptions),
+			withProgress: (action, source, message, operation) => this.withProgress(action, source, message, operation),
+		});
 	}
 
 	setProgressCallback(callback: ProgressCallback | undefined): void {
@@ -872,18 +271,18 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined {
-		const parsed = this.parseSource(source);
+		const parsed = parsePackageSource(source);
 		if (parsed.type === "npm") {
 			const path = this.getNpmInstallPath(parsed, scope);
 			return existsSync(path) ? path : undefined;
 		}
 		if (parsed.type === "git") {
-			const path = this.getGitInstallPath(parsed, scope);
+			const path = this.paths.getGitInstallPath(parsed.host, parsed.path, parsed.ref, scope);
 			return existsSync(path) ? path : undefined;
 		}
 		if (parsed.type === "local") {
-			const baseDir = this.getBaseDirForScope(scope);
-			const path = this.resolvePathFromBase(parsed.path, baseDir);
+			const baseDir = this.paths.getBaseDir(scope);
+			const path = this.paths.resolvePathFromBase(parsed.path, baseDir);
 			return existsSync(path) ? path : undefined;
 		}
 		return undefined;
@@ -1004,20 +403,20 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	async install(source: string, options?: { local?: boolean }): Promise<void> {
-		const parsed = this.parseSource(source);
+		const parsed = parsePackageSource(source);
 		const scope: SourceScope = options?.local ? "project" : "user";
-		this.assertProjectTrustedForScope(scope);
+		this.paths.assertTrusted(scope);
 		await this.withProgress("install", source, `Installing ${source}...`, async () => {
 			if (parsed.type === "npm") {
-				await this.installNpm(parsed, scope, false);
+				await this.npmOperations.install(parsed, scope, false);
 				return;
 			}
 			if (parsed.type === "git") {
-				await this.installGit(parsed, scope);
+				await this.gitOperations.install(parsed, scope);
 				return;
 			}
 			if (parsed.type === "local") {
-				const resolved = this.resolvePath(parsed.path);
+				const resolved = this.paths.resolvePath(parsed.path);
 				if (!existsSync(resolved)) {
 					throw new Error(`Path does not exist: ${resolved}`);
 				}
@@ -1033,16 +432,16 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	async remove(source: string, options?: { local?: boolean }): Promise<void> {
-		const parsed = this.parseSource(source);
+		const parsed = parsePackageSource(source);
 		const scope: SourceScope = options?.local ? "project" : "user";
-		this.assertProjectTrustedForScope(scope);
+		this.paths.assertTrusted(scope);
 		await this.withProgress("remove", source, `Removing ${source}...`, async () => {
 			if (parsed.type === "npm") {
-				await this.uninstallNpm(parsed, scope);
+				await this.npmOperations.uninstall(parsed, scope);
 				return;
 			}
 			if (parsed.type === "git") {
-				await this.removeGit(parsed, scope);
+				this.gitOperations.remove(parsed, scope);
 				return;
 			}
 			if (parsed.type === "local") {
@@ -1098,7 +497,7 @@ export class DefaultPackageManager implements PackageManager {
 		const gitCandidates: GitUpdateTarget[] = [];
 
 		for (const entry of sources) {
-			const parsed = this.parseSource(entry.source);
+			const parsed = parsePackageSource(entry.source);
 			// Pinned npm versions are fixed. Pinned git refs are configured checkout targets,
 			// so include them to reconcile an existing clone when the configured ref changes.
 			if (parsed.type === "npm") {
@@ -1139,7 +538,7 @@ export class DefaultPackageManager implements PackageManager {
 			const gitTasks = gitCandidates.map(
 				(entry) => async () =>
 					this.withProgress("update", entry.source, `Updating ${entry.source}...`, async () => {
-						await this.updateGit(entry.parsed, entry.scope);
+						await this.gitOperations.update(entry.parsed, entry.scope);
 					}),
 			);
 			tasks.push(this.runWithConcurrency(gitTasks, GIT_UPDATE_CONCURRENCY).then(() => {}));
@@ -1149,7 +548,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async shouldUpdateNpmSource(source: NpmSource, scope: InstalledSourceScope): Promise<boolean> {
-		const installedPath = this.getManagedNpmInstallPath(source, scope);
+		const installedPath = this.paths.getManagedNpmInstallPath(source.name, scope);
 		const installedVersion = existsSync(installedPath) ? this.getInstalledNpmVersion(installedPath) : undefined;
 		if (!installedVersion) {
 			return true;
@@ -1174,14 +573,8 @@ export class DefaultPackageManager implements PackageManager {
 		const specs = sources.map((entry) => (entry.parsed.version ? entry.parsed.spec : `${entry.parsed.name}@latest`));
 
 		await this.withProgress("update", sourceLabel, message, async () => {
-			await this.installNpmBatch(specs, scope);
+			await this.npmOperations.installBatch(specs, scope);
 		});
-	}
-
-	private async installNpmBatch(specs: string[], scope: InstalledSourceScope): Promise<void> {
-		const installRoot = this.getNpmInstallRoot(scope, false);
-		this.ensureNpmProject(installRoot);
-		await this.runNpmCommand(this.getNpmInstallArgs(specs, installRoot));
 	}
 
 	async checkForAvailableUpdates(): Promise<PackageUpdate[]> {
@@ -1207,7 +600,7 @@ export class DefaultPackageManager implements PackageManager {
 			)
 			.map((entry) => async (): Promise<PackageUpdate | undefined> => {
 				const source = typeof entry.pkg === "string" ? entry.pkg : entry.pkg.source;
-				const parsed = this.parseSource(source);
+				const parsed = parsePackageSource(source);
 				if (parsed.type === "local" || parsed.pinned) {
 					return undefined;
 				}
@@ -1229,11 +622,11 @@ export class DefaultPackageManager implements PackageManager {
 					};
 				}
 
-				const installedPath = this.getGitInstallPath(parsed, entry.scope);
+				const installedPath = this.paths.getGitInstallPath(parsed.host, parsed.path, parsed.ref, entry.scope);
 				if (!existsSync(installedPath)) {
 					return undefined;
 				}
-				const hasUpdate = await this.gitHasAvailableUpdate(installedPath);
+				const hasUpdate = await this.gitOperations.hasAvailableUpdate(installedPath);
 				if (!hasUpdate) {
 					return undefined;
 				}
@@ -1260,11 +653,11 @@ export class DefaultPackageManager implements PackageManager {
 			const deltaBase = this.findAutoloadDeltaBase(pkg, scope, sources);
 			const resolvedSource = deltaBase?.source ?? sourceStr;
 			const resolvedScope = deltaBase?.scope ?? scope;
-			const parsed = this.parseSource(resolvedSource);
+			const parsed = parsePackageSource(resolvedSource);
 			const metadata: PathMetadata = { source: sourceStr, scope, origin: "package" };
 
 			if (parsed.type === "local") {
-				const baseDir = this.getBaseDirForScope(resolvedScope);
+				const baseDir = this.paths.getBaseDir(resolvedScope);
 				this.resolveLocalExtensionSource(parsed, accumulator, filter, metadata, baseDir);
 				continue;
 			}
@@ -1298,12 +691,12 @@ export class DefaultPackageManager implements PackageManager {
 			}
 
 			if (parsed.type === "git") {
-				const installedPath = this.getGitInstallPath(parsed, resolvedScope);
+				const installedPath = this.paths.getGitInstallPath(parsed.host, parsed.path, parsed.ref, resolvedScope);
 				if (!existsSync(installedPath)) {
 					const installed = await installMissing();
 					if (!installed) continue;
 				} else if (resolvedScope === "temporary" && !parsed.pinned && !isOfflineModeEnabled()) {
-					await this.refreshTemporaryGitSource(parsed, resolvedSource);
+					await this.gitOperations.refreshTemporary(parsed, resolvedSource);
 				}
 				metadata.baseDir = installedPath;
 				metadata.packageRoot = installedPath;
@@ -1334,7 +727,7 @@ export class DefaultPackageManager implements PackageManager {
 		metadata: PathMetadata,
 		baseDir: string,
 	): void {
-		const resolved = this.resolvePathFromBase(source.path, baseDir);
+		const resolved = this.paths.resolvePathFromBase(source.path, baseDir);
 		if (!existsSync(resolved)) {
 			return;
 		}
@@ -1361,11 +754,11 @@ export class DefaultPackageManager implements PackageManager {
 
 	private async installParsedSource(parsed: ParsedSource, scope: SourceScope): Promise<void> {
 		if (parsed.type === "npm") {
-			await this.installNpm(parsed, scope, scope === "temporary");
+			await this.npmOperations.install(parsed, scope, scope === "temporary");
 			return;
 		}
 		if (parsed.type === "git") {
-			await this.installGit(parsed, scope);
+			await this.gitOperations.install(parsed, scope);
 			return;
 		}
 	}
@@ -1375,26 +768,12 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private getSourceMatchKeyForInput(source: string): string {
-		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
-		}
-		if (parsed.type === "git") {
-			return `git:${parsed.host}/${parsed.path}`;
-		}
-		return `local:${this.resolvePath(parsed.path)}`;
+		return packageSourceIdentity(source, (path) => this.paths.resolvePath(path));
 	}
 
 	private getSourceMatchKeyForSettings(source: string, scope: SourceScope): string {
-		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
-		}
-		if (parsed.type === "git") {
-			return `git:${parsed.host}/${parsed.path}`;
-		}
-		const baseDir = this.getBaseDirForScope(scope);
-		return `local:${this.resolvePathFromBase(parsed.path, baseDir)}`;
+		const baseDir = this.paths.getBaseDir(scope);
+		return packageSourceIdentity(source, (path) => this.paths.resolvePathFromBase(path, baseDir));
 	}
 
 	private buildNoMatchingPackageMessage(source: string, configuredPackages: PackageSource[]): string {
@@ -1411,7 +790,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		for (const pkg of configuredPackages) {
 			const sourceStr = this.getPackageSourceString(pkg);
-			const parsed = this.parseSource(sourceStr);
+			const parsed = parsePackageSource(sourceStr);
 			if (parsed.type === "npm") {
 				if (trimmedSource === parsed.name || trimmedSource === parsed.spec) {
 					suggestions.add(sourceStr);
@@ -1437,41 +816,14 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private normalizePackageSourceForSettings(source: string, scope: SourceScope): string {
-		const parsed = this.parseSource(source);
+		const parsed = parsePackageSource(source);
 		if (parsed.type !== "local") {
 			return source;
 		}
-		const baseDir = this.getBaseDirForScope(scope);
-		const resolved = this.resolvePath(parsed.path);
+		const baseDir = this.paths.getBaseDir(scope);
+		const resolved = this.paths.resolvePath(parsed.path);
 		const rel = relative(baseDir, resolved);
 		return rel || ".";
-	}
-
-	private parseSource(source: string): ParsedSource {
-		if (source.startsWith("npm:")) {
-			const spec = source.slice("npm:".length).trim();
-			const { name, version } = this.parseNpmSpec(spec);
-			return {
-				type: "npm",
-				spec,
-				name,
-				version,
-				range: getNpmVersionRange(version),
-				pinned: isExactNpmVersion(version),
-			};
-		}
-
-		if (isLocalPath(source)) {
-			return { type: "local", path: source };
-		}
-
-		// Try parsing as git URL
-		const gitParsed = parseGitUrl(source);
-		if (gitParsed) {
-			return gitParsed;
-		}
-
-		return { type: "local", path: source };
 	}
 
 	private async installedNpmMatchesConfiguredVersion(source: NpmSource, installedPath: string): Promise<boolean> {
@@ -1533,131 +885,6 @@ export class DefaultPackageManager implements PackageManager {
 		throw new Error("Unexpected response from npm view");
 	}
 
-	private async gitHasAvailableUpdate(installedPath: string): Promise<boolean> {
-		if (isOfflineModeEnabled()) {
-			return false;
-		}
-
-		try {
-			const localHead = await this.runCommandCapture("git", ["rev-parse", "HEAD"], {
-				cwd: installedPath,
-				timeoutMs: NETWORK_TIMEOUT_MS,
-			});
-			const remoteHead = await this.getRemoteGitHead(installedPath);
-			return localHead.trim() !== remoteHead.trim();
-		} catch {
-			return false;
-		}
-	}
-
-	private async getRemoteGitHead(installedPath: string): Promise<string> {
-		const upstreamRef = await this.getGitUpstreamRef(installedPath);
-		if (upstreamRef) {
-			const remoteHead = await this.runGitRemoteCommand(installedPath, ["ls-remote", "origin", upstreamRef]);
-			const match = remoteHead.match(/^([0-9a-f]{40})\s+/m);
-			if (match?.[1]) {
-				return match[1];
-			}
-		}
-
-		const remoteHead = await this.runGitRemoteCommand(installedPath, ["ls-remote", "origin", "HEAD"]);
-		const match = remoteHead.match(/^([0-9a-f]{40})\s+HEAD$/m);
-		if (!match?.[1]) {
-			throw new Error("Failed to determine remote HEAD");
-		}
-		return match[1];
-	}
-
-	private async getLocalGitUpdateTarget(
-		installedPath: string,
-	): Promise<{ ref: string; head: string; fetchArgs: string[] }> {
-		try {
-			const upstream = await this.runCommandCapture("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], {
-				cwd: installedPath,
-				timeoutMs: NETWORK_TIMEOUT_MS,
-			});
-			const trimmedUpstream = upstream.trim();
-			if (!trimmedUpstream.startsWith("origin/")) {
-				throw new Error(`Unsupported upstream remote: ${trimmedUpstream}`);
-			}
-			const branch = trimmedUpstream.slice("origin/".length);
-			if (!branch) {
-				throw new Error("Missing upstream branch name");
-			}
-			const head = await this.runCommandCapture("git", ["rev-parse", "@{upstream}"], {
-				cwd: installedPath,
-				timeoutMs: NETWORK_TIMEOUT_MS,
-			});
-			return {
-				ref: "@{upstream}",
-				head,
-				fetchArgs: [
-					"fetch",
-					"--prune",
-					"--no-tags",
-					"origin",
-					`+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-				],
-			};
-		} catch {
-			await this.runCommand("git", ["remote", "set-head", "origin", "-a"], { cwd: installedPath }).catch(() => {});
-			const head = await this.runCommandCapture("git", ["rev-parse", "origin/HEAD"], {
-				cwd: installedPath,
-				timeoutMs: NETWORK_TIMEOUT_MS,
-			});
-			const originHeadRef = await this.runCommandCapture("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], {
-				cwd: installedPath,
-				timeoutMs: NETWORK_TIMEOUT_MS,
-			}).catch(() => "");
-			const branch = originHeadRef.trim().replace(/^refs\/remotes\/origin\//, "");
-			if (branch) {
-				return {
-					ref: "origin/HEAD",
-					head,
-					fetchArgs: [
-						"fetch",
-						"--prune",
-						"--no-tags",
-						"origin",
-						`+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-					],
-				};
-			}
-			return {
-				ref: "origin/HEAD",
-				head,
-				fetchArgs: ["fetch", "--prune", "--no-tags", "origin", "+HEAD:refs/remotes/origin/HEAD"],
-			};
-		}
-	}
-
-	private async getGitUpstreamRef(installedPath: string): Promise<string | undefined> {
-		try {
-			const upstream = await this.runCommandCapture("git", ["rev-parse", "--abbrev-ref", "@{upstream}"], {
-				cwd: installedPath,
-				timeoutMs: NETWORK_TIMEOUT_MS,
-			});
-			const trimmed = upstream.trim();
-			if (!trimmed.startsWith("origin/")) {
-				return undefined;
-			}
-			const branch = trimmed.slice("origin/".length);
-			return branch ? `refs/heads/${branch}` : undefined;
-		} catch {
-			return undefined;
-		}
-	}
-
-	private runGitRemoteCommand(installedPath: string, args: string[]): Promise<string> {
-		return this.runCommandCapture("git", args, {
-			cwd: installedPath,
-			timeoutMs: NETWORK_TIMEOUT_MS,
-			env: {
-				GIT_TERMINAL_PROMPT: "0",
-			},
-		});
-	}
-
 	private async runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
 		if (tasks.length === 0) {
 			return [];
@@ -1689,19 +916,9 @@ export class DefaultPackageManager implements PackageManager {
 	 * for the same repository are treated as identical.
 	 */
 	private getPackageIdentity(source: string, scope?: SourceScope): string {
-		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
-		}
-		if (parsed.type === "git") {
-			// Use host/path for identity to normalize SSH and HTTPS
-			return `git:${parsed.host}/${parsed.path}`;
-		}
-		if (scope) {
-			const baseDir = this.getBaseDirForScope(scope);
-			return `local:${this.resolvePathFromBase(parsed.path, baseDir)}`;
-		}
-		return `local:${this.resolvePath(parsed.path)}`;
+		if (!scope) return packageSourceIdentity(source, (path) => this.paths.resolvePath(path));
+		const baseDir = this.paths.getBaseDir(scope);
+		return packageSourceIdentity(source, (path) => this.paths.resolvePathFromBase(path, baseDir));
 	}
 
 	/**
@@ -1730,22 +947,6 @@ export class DefaultPackageManager implements PackageManager {
 			}
 		}
 		return result;
-	}
-
-	private parseNpmSpec(spec: string): { name: string; version?: string } {
-		const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/);
-		if (!match) {
-			return { name: spec };
-		}
-		const name = match[1] ?? spec;
-		const version = match[2];
-		return { name, version };
-	}
-
-	private assertProjectTrustedForScope(scope: SourceScope): void {
-		if (scope === "project" && !this.settingsManager.isProjectTrusted()) {
-			throw new Error("Project is not trusted; refusing to access project package storage");
-		}
 	}
 
 	private getNpmCommand(): { command: string; args: string[] } {
@@ -1788,245 +989,9 @@ export class DefaultPackageManager implements PackageManager {
 		await this.runCommand(npmCommand.command, [...npmCommand.args, ...args], options);
 	}
 
-	private getGitDependencyInstallArgs(): string[] {
-		switch (this.getPackageManagerName()) {
-			case "bun":
-				return ["install", "--omit=dev", "--omit=peer"];
-			case "pnpm":
-				return [
-					"install",
-					"--prod",
-					"--config.auto-install-peers=false",
-					"--config.strict-peer-dependencies=false",
-					"--config.strict-dep-builds=false",
-				];
-			case "npm":
-				return ["install", "--omit=dev", "--legacy-peer-deps"];
-			default:
-				return ["install"];
-		}
-	}
-
 	private runNpmCommandSync(args: string[]): string {
 		const npmCommand = this.getNpmCommand();
 		return this.runCommandSync(npmCommand.command, [...npmCommand.args, ...args]);
-	}
-
-	private getNpmInstallArgs(specs: string[], installRoot: string): string[] {
-		const packageManagerName = this.getPackageManagerName();
-		// Extension packages run inside candy and resolve candy APIs through loader aliases/virtual modules.
-		// Disable peer dependency resolution for managed installs (npm's --legacy-peer-deps, and
-		// equivalent bun/pnpm settings) so package managers do not install or solve host-provided
-		// @earendil-works/pi-* peers. Stale auto-installed candy peers can otherwise block updates.
-		if (packageManagerName === "bun") {
-			return ["install", ...specs, "--cwd", installRoot, "--omit=peer"];
-		}
-		if (packageManagerName === "pnpm") {
-			return [
-				"install",
-				...specs,
-				"--prefix",
-				installRoot,
-				"--config.auto-install-peers=false",
-				"--config.strict-peer-dependencies=false",
-				"--config.strict-dep-builds=false",
-			];
-		}
-		return ["install", ...specs, "--prefix", installRoot, "--legacy-peer-deps"];
-	}
-
-	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
-		const installRoot = this.getNpmInstallRoot(scope, temporary);
-		this.ensureNpmProject(installRoot);
-		await this.runNpmCommand(this.getNpmInstallArgs([source.spec], installRoot));
-	}
-
-	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
-		const installRoot = this.getNpmInstallRoot(scope, false);
-		if (!existsSync(installRoot)) {
-			return;
-		}
-		const packageManagerName = this.getPackageManagerName();
-		if (packageManagerName === "bun") {
-			await this.runNpmCommand(["uninstall", source.name, "--cwd", installRoot]);
-			return;
-		}
-		const args = ["uninstall", source.name, "--prefix", installRoot];
-		if (packageManagerName !== "pnpm") {
-			args.push("--legacy-peer-deps");
-		}
-		await this.runNpmCommand(args);
-	}
-
-	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {
-		const targetDir = this.getGitInstallPath(source, scope);
-		if (existsSync(targetDir)) {
-			if (source.ref) {
-				await this.ensureGitRef(targetDir, ["fetch", "origin", source.ref], "FETCH_HEAD");
-				return;
-			}
-			const target = await this.getLocalGitUpdateTarget(targetDir);
-			await this.ensureGitRef(targetDir, target.fetchArgs, target.ref);
-			return;
-		}
-		const gitRoot = this.getGitInstallRoot(scope);
-		if (gitRoot) {
-			this.ensureGitIgnore(gitRoot);
-		}
-		mkdirSync(dirname(targetDir), { recursive: true });
-		rmSync(this.getGitUpdateMarkerPath(targetDir), { force: true });
-
-		try {
-			await this.runCommand("git", ["clone", source.repo, targetDir]);
-			if (source.ref) {
-				await this.runCommand("git", ["checkout", source.ref], { cwd: targetDir });
-			}
-			const packageJsonPath = join(targetDir, "package.json");
-			if (existsSync(packageJsonPath)) {
-				await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
-			}
-		} catch (error) {
-			rmSync(targetDir, { recursive: true, force: true });
-			this.pruneEmptyGitParents(targetDir, gitRoot);
-			throw error;
-		}
-	}
-
-	private async updateGit(source: GitSource, scope: SourceScope): Promise<void> {
-		const targetDir = this.getGitInstallPath(source, scope);
-		if (!existsSync(targetDir)) {
-			await this.installGit(source, scope);
-			return;
-		}
-
-		if (source.ref) {
-			await this.ensureGitRef(targetDir, ["fetch", "origin", source.ref], "FETCH_HEAD");
-			return;
-		}
-
-		const target = await this.getLocalGitUpdateTarget(targetDir);
-		await this.ensureGitRef(targetDir, target.fetchArgs, target.ref);
-	}
-
-	private hasMissingGitDependencies(targetDir: string): boolean {
-		const packageJsonPath = join(targetDir, "package.json");
-		if (!existsSync(packageJsonPath)) return false;
-
-		try {
-			const manifest = JSON.parse(stripBom(readFileSync(packageJsonPath, "utf-8"))) as { dependencies?: unknown };
-			if (
-				!manifest.dependencies ||
-				typeof manifest.dependencies !== "object" ||
-				Array.isArray(manifest.dependencies)
-			) {
-				return false;
-			}
-
-			const nodeModulesDir = resolve(targetDir, "node_modules");
-			return Object.keys(manifest.dependencies).some((name) => {
-				const dependencyPath = resolve(nodeModulesDir, name);
-				if (!dependencyPath.startsWith(`${nodeModulesDir}${sep}`)) return false;
-				return !existsSync(dependencyPath);
-			});
-		} catch {
-			return false;
-		}
-	}
-
-	private async repairMissingGitDependencies(targetDir: string): Promise<void> {
-		if (!this.hasMissingGitDependencies(targetDir)) return;
-		await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
-	}
-
-	private getGitUpdateMarkerPath(targetDir: string): string {
-		return join(dirname(targetDir), `.${basename(targetDir)}.pi-update-incomplete`);
-	}
-
-	private async cleanAndInstallGitDependencies(targetDir: string, markerPath: string): Promise<void> {
-		// Clean untracked files (extensions should be pristine). If this fails after
-		// deleting dependencies, repair them so the existing extension still loads.
-		try {
-			await this.runCommand("git", ["clean", "-fdx"], { cwd: targetDir });
-		} catch (error) {
-			await this.repairMissingGitDependencies(targetDir).catch(() => {});
-			throw error;
-		}
-
-		const packageJsonPath = join(targetDir, "package.json");
-		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
-		}
-		rmSync(markerPath, { force: true });
-	}
-
-	private async ensureGitRef(targetDir: string, fetchArgs: string[], ref: string): Promise<void> {
-		// Fetch only the ref we will reset to, avoiding unrelated branch/tag noise.
-		await this.runCommand("git", fetchArgs, { cwd: targetDir });
-
-		const localHead = await this.runCommandCapture("git", ["rev-parse", "HEAD"], {
-			cwd: targetDir,
-			timeoutMs: NETWORK_TIMEOUT_MS,
-		});
-		const commitRef = `${ref}^{commit}`;
-		const targetHead = await this.runCommandCapture("git", ["rev-parse", commitRef], {
-			cwd: targetDir,
-			timeoutMs: NETWORK_TIMEOUT_MS,
-		});
-		const markerPath = this.getGitUpdateMarkerPath(targetDir);
-		if (localHead.trim() === targetHead.trim()) {
-			if (existsSync(markerPath)) {
-				await this.cleanAndInstallGitDependencies(targetDir, markerPath);
-			} else {
-				await this.repairMissingGitDependencies(targetDir);
-			}
-			return;
-		}
-
-		writeFileSync(markerPath, "", "utf-8");
-		await this.runCommand("git", ["reset", "--hard", commitRef], { cwd: targetDir });
-		await this.cleanAndInstallGitDependencies(targetDir, markerPath);
-	}
-
-	private async refreshTemporaryGitSource(source: GitSource, sourceStr: string): Promise<void> {
-		if (isOfflineModeEnabled()) {
-			return;
-		}
-		try {
-			await this.withProgress("pull", sourceStr, `Refreshing ${sourceStr}...`, async () => {
-				await this.updateGit(source, "temporary");
-			});
-		} catch {
-			// Keep cached temporary checkout if refresh fails.
-		}
-	}
-
-	private async removeGit(source: GitSource, scope: SourceScope): Promise<void> {
-		const targetDir = this.getGitInstallPath(source, scope);
-		rmSync(targetDir, { recursive: true, force: true });
-		rmSync(this.getGitUpdateMarkerPath(targetDir), { force: true });
-		this.pruneEmptyGitParents(targetDir, this.getGitInstallRoot(scope));
-	}
-
-	private pruneEmptyGitParents(targetDir: string, installRoot: string | undefined): void {
-		if (!installRoot) return;
-		const resolvedRoot = resolve(installRoot);
-		let current = dirname(targetDir);
-		while (current.startsWith(resolvedRoot) && current !== resolvedRoot) {
-			if (!existsSync(current)) {
-				current = dirname(current);
-				continue;
-			}
-			const entries = readdirSync(current);
-			if (entries.length > 0) {
-				break;
-			}
-			try {
-				rmSync(current, { recursive: true, force: true });
-			} catch {
-				break;
-			}
-			current = dirname(current);
-		}
 	}
 
 	private ensureNpmProject(installRoot: string): void {
@@ -2050,17 +1015,6 @@ export class DefaultPackageManager implements PackageManager {
 		if (!existsSync(ignorePath)) {
 			writeFileSync(ignorePath, "*\n!.gitignore\n", "utf-8");
 		}
-	}
-
-	private getNpmInstallRoot(scope: SourceScope, temporary: boolean): string {
-		if (temporary) {
-			return this.getTemporaryDir("npm");
-		}
-		if (scope === "project") {
-			this.assertProjectTrustedForScope(scope);
-			return join(this.cwd, CONFIG_DIR_NAME, "npm");
-		}
-		return join(this.agentDir, "npm");
 	}
 
 	private getGlobalNpmRoot(): string {
@@ -2093,17 +1047,6 @@ export class DefaultPackageManager implements PackageManager {
 		return undefined;
 	}
 
-	private getManagedNpmInstallPath(source: NpmSource, scope: SourceScope): string {
-		if (scope === "temporary") {
-			return join(this.getTemporaryDir("npm"), "node_modules", source.name);
-		}
-		if (scope === "project") {
-			this.assertProjectTrustedForScope(scope);
-			return join(this.cwd, CONFIG_DIR_NAME, "npm", "node_modules", source.name);
-		}
-		return join(this.agentDir, "npm", "node_modules", source.name);
-	}
-
 	private getLegacyGlobalNpmInstallPath(source: NpmSource): string | undefined {
 		try {
 			return this.getPnpmGlobalPackagePath(source.name) ?? join(this.getGlobalNpmRoot(), source.name);
@@ -2113,72 +1056,12 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private getNpmInstallPath(source: NpmSource, scope: SourceScope): string {
-		const managedPath = this.getManagedNpmInstallPath(source, scope);
+		const managedPath = this.paths.getManagedNpmInstallPath(source.name, scope);
 		if (scope !== "user" || existsSync(managedPath)) {
 			return managedPath;
 		}
 		const legacyPath = this.getLegacyGlobalNpmInstallPath(source);
 		return legacyPath && existsSync(legacyPath) ? legacyPath : managedPath;
-	}
-
-	private getGitInstallPath(source: GitSource, scope: SourceScope): string {
-		if (scope === "temporary") {
-			// Include the ref in the hash so each pinned ref gets its own checkout.
-			return this.getTemporaryDir(`git-${source.host}`, source.path, source.ref);
-		}
-		const installRoot = this.getGitInstallRoot(scope);
-		if (!installRoot) {
-			throw new Error("Missing git install root");
-		}
-		return this.resolveManagedPath(installRoot, source.host, source.path);
-	}
-
-	private getGitInstallRoot(scope: SourceScope): string | undefined {
-		if (scope === "temporary") {
-			return undefined;
-		}
-		if (scope === "project") {
-			this.assertProjectTrustedForScope(scope);
-			return join(this.cwd, CONFIG_DIR_NAME, "git");
-		}
-		return join(this.agentDir, "git");
-	}
-
-	private getTemporaryDir(prefix: string, suffix?: string, ref?: string): string {
-		const root = this.resolveManagedPath(getExtensionTempFolder(this.agentDir), prefix);
-		const hash = createHash("sha256")
-			.update(`${prefix}-${suffix ?? ""}${ref ? `@${ref}` : ""}`)
-			.digest("hex")
-			.slice(0, 8);
-		return this.resolveManagedPath(root, hash, suffix ?? "");
-	}
-
-	private resolveManagedPath(root: string, ...parts: string[]): string {
-		const resolvedRoot = resolve(root);
-		const resolvedPath = resolve(resolvedRoot, ...parts);
-		if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${sep}`)) {
-			throw new Error(`Refusing to use path outside package install root: ${resolvedPath}`);
-		}
-		return resolvedPath;
-	}
-
-	private getBaseDirForScope(scope: SourceScope): string {
-		if (scope === "project") {
-			this.assertProjectTrustedForScope(scope);
-			return join(this.cwd, CONFIG_DIR_NAME);
-		}
-		if (scope === "user") {
-			return this.agentDir;
-		}
-		return this.cwd;
-	}
-
-	private resolvePath(input: string): string {
-		return resolvePath(input, this.cwd, { homeDir: getHomeDir(), trim: true });
-	}
-
-	private resolvePathFromBase(input: string, baseDir: string): string {
-		return resolvePath(input, baseDir, { homeDir: getHomeDir(), trim: true });
 	}
 
 	private collectPackageResources(
@@ -2368,7 +1251,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		// Collect all files from plain entries (non-pattern entries)
 		const { plain, patterns } = splitPatterns(entries);
-		const resolvedPlain = plain.map((p) => this.resolvePathFromBase(p, baseDir));
+		const resolvedPlain = plain.map((p) => this.paths.resolvePathFromBase(p, baseDir));
 		const allFiles = this.collectFilesFromPaths(resolvedPlain, resourceType);
 
 		// Determine which files are enabled based on patterns
@@ -2425,7 +1308,7 @@ export class DefaultPackageManager implements PackageManager {
 			prompts: join(projectBaseDir, "prompts"),
 			themes: join(projectBaseDir, "themes"),
 		};
-		const userAgentsSkillsDir = join(getHomeDir(), ".agents", "skills");
+		const userAgentsSkillsDir = join(this.paths.getHomeDir(), ".agents", "skills");
 		const projectTrusted = this.settingsManager.isProjectTrusted();
 		const projectAgentsSkillDirs = projectTrusted
 			? collectAncestorAgentsSkillDirs(this.cwd).filter((dir) => resolve(dir) !== resolve(userAgentsSkillsDir))

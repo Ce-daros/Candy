@@ -1,12 +1,14 @@
 import { Agent } from "@candy/agent-core";
-import { type AssistantMessage, getModel, streamSimple, type ToolResultMessage, type Usage } from "@candy/ai/compat";
+import type { AssistantMessage, ToolResultMessage, Usage } from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { getUsageCostBreakdown } from "../src/core/usage-totals.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { streamBuiltinSimple as streamSimple } from "./ai.ts";
+import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestResourceLoader } from "./utilities.ts";
 
 const model = getModel("anthropic", "claude-sonnet-4-5")!;
@@ -80,7 +82,7 @@ async function createSession() {
 		sessionManager,
 		settingsManager,
 		cwd: process.cwd(),
-		modelRuntime: getModelRuntime(await createInMemoryModelRegistry(authStorage)),
+		modelRuntime: await createInMemoryModelRuntime(authStorage),
 		resourceLoader: createTestResourceLoader(),
 	});
 

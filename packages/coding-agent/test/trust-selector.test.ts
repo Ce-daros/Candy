@@ -1,9 +1,9 @@
 import { dirname, resolve } from "node:path";
 import { setKeybindings } from "@candy/tui";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { TrustSelectorComponent } from "../src/modes/interactive/components/trust-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("TrustSelectorComponent", () => {

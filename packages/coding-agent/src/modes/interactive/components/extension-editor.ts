@@ -13,7 +13,7 @@ import {
 	Text,
 	type TUI,
 } from "@candy/tui";
-import type { KeybindingsManager } from "../../../core/keybindings.ts";
+import type { KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { editInExternalEditor } from "../external-editor.ts";
 import { getEditorTheme, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";

@@ -1,4 +1,4 @@
-import type { Model } from "@candy/ai/compat";
+import type { Model } from "@candy/ai";
 import { describe, expect, it } from "vitest";
 import { PowerbarController, type PowerbarHost } from "../../../src/modes/interactive/components/powerbar.ts";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";

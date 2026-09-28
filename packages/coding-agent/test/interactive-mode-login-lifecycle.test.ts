@@ -16,8 +16,17 @@ function createLoginHarness(method: "api_key" | "oauth") {
 		},
 		ui: { requestRender: vi.fn() } as unknown as TUI,
 		activeLogin: undefined as { dialog: LoginDialogComponent; session: typeof currentSession } | undefined,
-		mountPanel: vi.fn(),
-		closePanel: vi.fn(),
+		pageController: {
+			generation: 0,
+			mountPanel: vi.fn(
+				(_panel: ExtensionSelectorComponent | LoginDialogComponent) => context.pageController.generation++,
+			),
+			closePanel: vi.fn(),
+			showSelector(create: (done: () => void) => { component: ExtensionSelectorComponent }) {
+				const { component } = create(vi.fn());
+				context.pageController.mountPanel(component);
+			},
+		},
 		showError: vi.fn(),
 		loginProvider: vi.fn(
 			() =>
@@ -68,8 +77,17 @@ describe("InteractiveMode login lifecycle", () => {
 			},
 			ui: { requestRender: vi.fn() } as unknown as TUI,
 			activeLogin: undefined as { dialog: LoginDialogComponent; session: typeof currentSession } | undefined,
-			mountPanel: vi.fn(),
-			closePanel: vi.fn(),
+			pageController: {
+				generation: 0,
+				mountPanel: vi.fn(
+					(_panel: ExtensionSelectorComponent | LoginDialogComponent) => context.pageController.generation++,
+				),
+				closePanel: vi.fn(),
+				showSelector(create: (done: () => void) => { component: ExtensionSelectorComponent }) {
+					const { component } = create(vi.fn());
+					context.pageController.mountPanel(component);
+				},
+			},
 			loginProvider: vi.fn(
 				() =>
 					new Promise<void>((resolve) => {
@@ -101,7 +119,7 @@ describe("InteractiveMode login lifecycle", () => {
 		await pending;
 
 		expect(dialog?.signal.aborted).toBe(true);
-		expect(context.closePanel).not.toHaveBeenCalled();
+		expect(context.pageController.closePanel).not.toHaveBeenCalled();
 		expect(context.completeProviderAuthentication).not.toHaveBeenCalled();
 	});
 
@@ -112,11 +130,18 @@ describe("InteractiveMode login lifecycle", () => {
 		const context = {
 			session,
 			activeLogin: { dialog, session } as { dialog: LoginDialogComponent; session: typeof session } | undefined,
-			panelGeneration: 0,
-			mountPanel: vi.fn((panel: ExtensionSelectorComponent | LoginDialogComponent) => {
-				context.panelGeneration++;
-				if (panel instanceof ExtensionSelectorComponent) selector = panel;
-			}),
+			pageController: {
+				generation: 0,
+				mountPanel: vi.fn((panel: ExtensionSelectorComponent | LoginDialogComponent) => {
+					context.pageController.generation++;
+					if (panel instanceof ExtensionSelectorComponent) selector = panel;
+				}),
+				closePanel: vi.fn(),
+				showSelector(create: (done: () => void) => { component: ExtensionSelectorComponent }) {
+					const { component } = create(vi.fn());
+					context.pageController.mountPanel(component);
+				},
+			},
 			isActiveLogin(candidate: LoginDialogComponent) {
 				return (
 					Reflect.get(InteractiveMode.prototype, "isActiveLogin") as (dialog: LoginDialogComponent) => boolean
@@ -140,7 +165,7 @@ describe("InteractiveMode login lifecycle", () => {
 		context.cancelActiveLogin();
 		await expect(pending).rejects.toThrow("Login cancelled");
 		selector?.handleInput("\r");
-		expect(context.mountPanel).toHaveBeenCalledTimes(1);
+		expect(context.pageController.mountPanel).toHaveBeenCalledTimes(1);
 	});
 
 	it.each(["api_key", "oauth"] as const)(
@@ -185,7 +210,7 @@ describe("InteractiveMode login lifecycle", () => {
 			harness.resolveLogin();
 			await harness.pending;
 
-			expect(harness.context.closePanel).not.toHaveBeenCalled();
+			expect(harness.context.pageController.closePanel).not.toHaveBeenCalled();
 			expect(harness.context.completeProviderAuthentication).not.toHaveBeenCalled();
 			expect(harness.context.showError).not.toHaveBeenCalled();
 		},

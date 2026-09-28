@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Custom System Prompt
  *
@@ -11,6 +13,8 @@ const agentDir = getAgentDir();
 
 // Option 1: Replace prompt entirely
 const loader1 = new DefaultResourceLoader({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd,
 	agentDir,
 	systemPromptOverride: () => `You are a helpful assistant that speaks like a pirate.
@@ -41,6 +45,8 @@ try {
 
 // Option 2: Append instructions to the default prompt
 const loader2 = new DefaultResourceLoader({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd,
 	agentDir,
 	appendSystemPromptOverride: (base) => [

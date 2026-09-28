@@ -83,7 +83,7 @@ export default function (candy: ExtensionAPI) {
 						timestamp: Date.now(),
 					};
 
-					const response = await ctx.modelRegistry.complete(
+					const response = await ctx.modelRuntime.complete(
 						ctx.model!,
 						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
 						{ signal: loader.signal },

@@ -15,7 +15,9 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
 
 describe("createAgentSession provider attribution headers", () => {
 	let tempDir: string;
@@ -99,10 +101,10 @@ describe("createAgentSession provider attribution headers", () => {
 		const authStorage = AuthStorage.inMemory({
 			[model.provider]: { type: "api_key", key: "test-api-key" },
 		});
-		const modelRegistry = await createInMemoryModelRegistry(authStorage);
+		const modelRuntime = await createInMemoryModelRuntime(authStorage);
 		let capturedOptions: SimpleStreamOptions | undefined;
 
-		modelRegistry.registerProvider(model.provider, {
+		modelRuntime.registerProvider(model.provider, {
 			api: model.api,
 			headers: options.providerHeaders,
 			streamSimple: (_model, _context, providerOptions) => {
@@ -111,13 +113,14 @@ describe("createAgentSession provider attribution headers", () => {
 			},
 		});
 
-		const modelRuntime = getModelRuntime(modelRegistry);
 		const sessionManager = SessionManager.inMemory(cwd);
 		if (options.sessionId) {
 			sessionManager.newSession({ id: options.sessionId });
 		}
 
 		const { session } = await createAgentSession({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			model,
@@ -135,7 +138,7 @@ describe("createAgentSession provider attribution headers", () => {
 			return capturedOptions?.headers;
 		} finally {
 			session.dispose();
-			modelRegistry.unregisterProvider(model.provider);
+			modelRuntime.unregisterProvider(model.provider);
 		}
 	}
 

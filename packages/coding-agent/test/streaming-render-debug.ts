@@ -1,7 +1,7 @@
 /**
  * Debug script to reproduce streaming rendering issues.
  * Uses real fixture data that caused the bug.
- * Run with: node --import ./src/experimental/source-resolver.ts test/streaming-render-debug.ts
+ * Run with: node --import ./src/utils/source-resolver.ts test/streaming-render-debug.ts
  */
 
 import type { AssistantMessage } from "@candy/ai";

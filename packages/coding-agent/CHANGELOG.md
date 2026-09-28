@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.
+- Model changes with `{ persist: true }` now await the default-setting write before changing the active session. `setThinkingLevel()` and `cycleThinkingLevel()` only change the active session; save the default separately with `SettingsManager.mutateAndPersist()`.
+- AgentSession behavior-setting methods now return promises and report save failures before applying their runtime side effects.
+- Removed `ModelRegistry` and the legacy AI compatibility entrypoint. SDK and extension callers use `ModelRuntime` through `ctx.modelRuntime`; built-in API streams are available through `@candy/ai/api/streams` when explicit stream injection is needed.
+- SDK session and default resource-loader construction now require a theme adapter when the factory owns resource discovery. Pass the exported `resourceThemeAdapter`, or supply a custom `ResourceLoader`; the runtime no longer imports terminal theme rendering.
+- The `main` CLI launcher is no longer exported from the SDK root; use the `candy` executable or `@candy/coding-agent/rpc-entry`. Hosts that load extension files must pass `extensionHostModules` from `@candy/coding-agent/extension-host-modules` as `extensionModules` to the resource loader.
+- `AgentSession.clearQueue()` and RPC `clear_queue` return queued text with its image attachments so clients can restore complete input. Resource commands must be submitted explicitly; text beginning with `/` or `skill:` remains ordinary text.
+- Settings operations in Command now await persistence. Failed writes keep the page open and restore the prior in-memory value; callers that change settings programmatically can use `SettingsManager.mutateAndPersist()`.
+- Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package now publishes the SDK and RPC entrypoints only.
+- First-time setup now runs for the official distribution whenever the default agent directory has no settings file; `CANDY_EXPERIMENTAL` no longer gates setup.
+- Session reads report malformed JSONL records with their file and line number and do not modify files. Legacy records and missing final newlines are rewritten atomically on the next save.
+
 ### Added
 
 - Added `?` Help mode for Hotkeys and Changelog.
@@ -27,6 +41,10 @@
 - Added an isolated faux-provider smoke launcher for Windows PTY and Linux/tmux interaction checks.
 - Added OKLCH theme colors and composable `Theme.style()` attributes with truecolor and indexed-terminal rendering.
 - Added `DESIGN.md` for Candy's product, navigation, color, motion, and interaction rules.
+
+### Fixed
+
+- Render the home logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals, preserving every source pixel and its transparent background.
 
 ### Removed
 

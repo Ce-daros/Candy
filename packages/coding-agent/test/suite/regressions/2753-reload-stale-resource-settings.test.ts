@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerFauxProvider } from "@candy/ai/compat";
+import { fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type CreateAgentSessionRuntimeFactory,
@@ -12,6 +12,9 @@ import {
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
+import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
+import { configuredFauxProvider } from "../../ai.ts";
 
 describe("issue #2753 reload stale resource settings", () => {
 	const cleanups: Array<() => void> = [];
@@ -29,7 +32,7 @@ describe("issue #2753 reload stale resource settings", () => {
 		mkdirSync(promptsDir, { recursive: true });
 		writeFileSync(join(promptsDir, "test.md"), "Echo test prompt\n");
 
-		const faux = registerFauxProvider({
+		const faux = fauxProvider({
 			models: [{ id: "faux-1", reasoning: false }],
 		});
 		const authStorage = AuthStorage.inMemory();
@@ -41,27 +44,15 @@ describe("issue #2753 reload stale resource settings", () => {
 
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				modelRuntime,
 				resourceLoaderOptions: {
 					extensionFactories: [
 						(candy) => {
-							candy.registerProvider(faux.getModel().provider, {
-								baseUrl: faux.getModel().baseUrl,
-								apiKey: "faux-key",
-								api: faux.api,
-								models: faux.models.map((registeredModel) => ({
-									id: registeredModel.id,
-									name: registeredModel.name,
-									api: registeredModel.api,
-									reasoning: registeredModel.reasoning,
-									input: registeredModel.input,
-									cost: registeredModel.cost,
-									contextWindow: registeredModel.contextWindow,
-									maxTokens: registeredModel.maxTokens,
-								})),
-							});
+							candy.registerProvider(configuredFauxProvider(faux));
 						},
 					],
 					noSkills: true,
@@ -87,7 +78,6 @@ describe("issue #2753 reload stale resource settings", () => {
 
 		cleanups.push(() => {
 			runtime.session.dispose();
-			faux.unregister();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}

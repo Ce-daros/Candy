@@ -5,8 +5,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
-import { migrateKeybindingsConfig } from "./core/keybindings.ts";
 import { cliThemeColor } from "./modes/interactive/theme/theme.ts";
+import { migrateKeybindingsConfig } from "./presentation/keybindings.ts";
 import { stripBom } from "./utils/text.ts";
 
 const MIGRATION_GUIDE_URL =

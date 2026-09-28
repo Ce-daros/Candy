@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Session Management
  *
@@ -8,6 +10,8 @@ import { createAgentSession, SessionManager } from "@candy/coding-agent";
 
 // In-memory (no persistence)
 const { session: inMemory } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("In-memory session:", inMemory.sessionFile ?? "(none)");
@@ -15,6 +19,8 @@ inMemory.dispose();
 
 // New persistent session
 const { session: newSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	sessionManager: SessionManager.create(process.cwd()),
 });
 console.log("New session file:", newSession.sessionFile);
@@ -22,6 +28,8 @@ newSession.dispose();
 
 // Continue most recent session (or create new if none)
 const { session: continued, modelFallbackMessage } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	sessionManager: SessionManager.continueRecent(process.cwd()),
 });
 if (modelFallbackMessage) console.log("Note:", modelFallbackMessage);
@@ -37,6 +45,8 @@ for (const info of sessions.slice(0, 3)) {
 
 if (sessions.length > 0) {
 	const { session: opened } = await createAgentSession({
+		extensionModules: extensionHostModules,
+		themeAdapter: resourceThemeAdapter,
 		sessionManager: SessionManager.open(sessions[0].path),
 	});
 	console.log(`\nOpened: ${opened.sessionId}`);

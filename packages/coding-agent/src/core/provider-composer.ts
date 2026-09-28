@@ -25,7 +25,7 @@ import {
 	type StreamOptions,
 	type TranscriptContext,
 } from "@candy/ai";
-import { getApiProvider } from "@candy/ai/compat";
+import { createBuiltinApiStreams } from "@candy/ai/api/streams";
 import { classifierErrorResult, imageErrorResult } from "@candy/ai/utils/model-operations";
 import type { ModelConfig, ModelsJsonModel, ModelsJsonModelOverride, ModelsJsonProvider } from "./model-config.ts";
 import {
@@ -41,8 +41,6 @@ export interface ExtensionOAuthConfig {
 	name: string;
 	/** Whether access through this auth method is backed by a provider subscription. */
 	isSubscription?: boolean;
-	/** @deprecated Retained for extension source compatibility; ignored by canonical auth flows. */
-	usesCallbackServer?: boolean;
 	login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
 	refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials>;
 	getApiKey(credentials: OAuthCredentials): string;
@@ -572,7 +570,7 @@ export function composeModelProvider(
 					? base.streamSimple(model, context, options as SimpleStreamOptions)
 					: base.stream(model, context, options);
 			}
-			const api = getApiProvider(model.api);
+			const api = createBuiltinApiStreams(model.api);
 			if (!api) throw new Error(`No API provider registered for api: ${model.api}`);
 			return simple
 				? api.streamSimple(model, context, options as SimpleStreamOptions)
@@ -670,26 +668,6 @@ export function resolveConfiguredModelHeaders(
 		`model "${model.provider}/${model.id}"`,
 		env,
 	);
-}
-
-export interface CompatibilityRequestConfig {
-	headers?: ProviderHeaders;
-	authHeader: boolean;
-}
-
-export function resolveCompatibilityRequestConfig(
-	model: AnyModel,
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): CompatibilityRequestConfig {
-	const configured = resolveHeadersOrThrow(
-		{ ...configuredHeaders(config, extension), ...rawModelHeaders(model, config, extension) },
-		`model "${model.provider}/${model.id}"`,
-	);
-	return {
-		headers: model.headers || configured ? { ...model.headers, ...configured } : undefined,
-		authHeader: extension?.authHeader ?? config?.authHeader ?? false,
-	};
 }
 
 export function configuredRequestAuthStatus(

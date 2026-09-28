@@ -10,8 +10,10 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
-import { createModelRegistry } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
 describe("DefaultResourceLoader", () => {
 	let tempDir: string;
@@ -32,7 +34,12 @@ describe("DefaultResourceLoader", () => {
 
 	describe("reload", () => {
 		it("should initialize with empty results before reload", () => {
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 
 			expect(loader.getExtensions().extensions).toEqual([]);
 			expect(loader.getSkills().skills).toEqual([]);
@@ -46,7 +53,12 @@ describe("DefaultResourceLoader", () => {
 			writeFileSync(join(cwd, "package.json"), JSON.stringify({ dependencies: { "@candy/coding-agent": "1.0.0" } }));
 			writeFileSync(join(extensionsDir, "project-extension.ts"), "export default function() {}");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getExtensions().extensions).toHaveLength(1);
@@ -65,6 +77,8 @@ describe("DefaultResourceLoader", () => {
 			writeFileSync(join(extensionsDir, "package-extension.ts"), "export default function() {}");
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				settingsManager: SettingsManager.inMemory({ packages: [packageRoot] }),
@@ -89,6 +103,8 @@ describe("DefaultResourceLoader", () => {
 			writeFileSync(join(extensionsDir, "package-extension.ts"), "export default function() {}");
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				settingsManager: SettingsManager.inMemory({ packages: [packageRoot] }),
@@ -109,7 +125,12 @@ description: A test skill
 Skill content here.`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const { skills } = loader.getSkills();
@@ -129,7 +150,12 @@ Skill content here.`,
 			);
 			writeFileSync(join(skillDir, "EFFICIENCY.md"), "No frontmatter here");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const { skills, diagnostics } = loader.getSkills();
@@ -148,7 +174,12 @@ description: A test prompt
 Prompt content.`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const { prompts } = loader.getPrompts();
@@ -163,7 +194,12 @@ Prompt content.`,
 			writeFileSync(invalidPromptPath, "---\ndescription: Broken: unquoted colon\n---\nDo something.\n");
 			writeFileSync(join(promptsDir, "valid.md"), "Valid prompt content.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const { prompts, diagnostics } = loader.getPrompts();
@@ -224,7 +260,12 @@ Project skill`,
 			}
 			writeFileSync(projectThemePath, JSON.stringify(baseTheme, null, 2));
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const prompt = loader.getPrompts().prompts.find((p) => p.name === "commit");
@@ -252,10 +293,16 @@ Project skill`,
 
 			mkdirSync(agentDir, { recursive: true });
 			mkdirSync(join(cwd, ".candy"), { recursive: true });
-			symlinkSync(sharedExtDir, join(agentDir, "extensions"), "dir");
-			symlinkSync(sharedExtDir, join(cwd, ".candy", "extensions"), "dir");
+			const linkType = process.platform === "win32" ? "junction" : "dir";
+			symlinkSync(sharedExtDir, join(agentDir, "extensions"), linkType);
+			symlinkSync(sharedExtDir, join(cwd, ".candy", "extensions"), linkType);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const extensionsResult = loader.getExtensions();
@@ -296,7 +343,12 @@ export default function(candy) {
 }`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload({
 				resolveProjectTrust: async ({ extensionsResult }) => {
 					expect(extensionsResult.extensions.map((extension) => extension.path)).toEqual([
@@ -348,7 +400,12 @@ export default function(candy) {
 }`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const extensionsResult = loader.getExtensions();
@@ -357,13 +414,13 @@ export default function(candy) {
 
 			const sessionManager = SessionManager.inMemory();
 			const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-			const modelRegistry = await createModelRegistry(authStorage);
+			const modelRuntime = await createTestModelRuntime(authStorage);
 			const runner = new ExtensionRunner(
 				extensionsResult.extensions,
 				extensionsResult.runtime,
 				cwd,
 				sessionManager,
-				modelRegistry,
+				modelRuntime,
 			);
 
 			expect(runner.getCommand("deploy:1")?.description).toBe("project deploy");
@@ -410,7 +467,13 @@ Content`,
 			mkdirSync(themesDir, { recursive: true });
 			writeFileSync(join(themesDir, "skip.json"), "{}");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				settingsManager,
+			});
 			await loader.reload();
 
 			const { extensions } = loader.getExtensions();
@@ -427,7 +490,12 @@ Content`,
 		it("should discover AGENTS.md context files", async () => {
 			writeFileSync(join(cwd, "AGENTS.md"), "# Project Guidelines\n\nBe helpful.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const { agentsFiles } = loader.getAgentsFiles();
@@ -443,7 +511,12 @@ Content`,
 			writeFileSync(join(nestedCwd, "AGENTS.md"), "service instructions");
 			writeFileSync(join(nestedCwd, "AGENTS.override.md"), "service override");
 
-			const loader = new DefaultResourceLoader({ cwd: nestedCwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd: nestedCwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getAgentsFiles().agentsFiles).toEqual([
@@ -459,7 +532,12 @@ Content`,
 			writeFileSync(join(cwd, "CLAUDE.md"), "Fallback instructions");
 			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getAgentsFiles().agentsFiles).toContainEqual({
@@ -476,7 +554,13 @@ Content`,
 			writeFileSync(join(cwd, "AGENTS.md"), "# Project Guidelines\n\nBe helpful.");
 			writeFileSync(join(cwd, "CLAUDE.md"), "# Claude Guidelines\n\nBe helpful.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir, noContextFiles: true });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				noContextFiles: true,
+			});
 			await loader.reload();
 
 			const { agentsFiles } = loader.getAgentsFiles();
@@ -488,7 +572,12 @@ Content`,
 			mkdirSync(piDir, { recursive: true });
 			writeFileSync(join(piDir, "SYSTEM.md"), "You are a helpful assistant.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getSystemPrompt()).toBe("You are a helpful assistant.");
@@ -525,7 +614,13 @@ Project skill content`,
 			writeFileSync(join(themesDir, "project.json"), JSON.stringify(themeData, null, 2));
 			const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				settingsManager,
+			});
 			await loader.reload();
 
 			expect(loader.getSystemPrompt()).toBe("Global system prompt.");
@@ -545,7 +640,12 @@ Project skill content`,
 			mkdirSync(piDir, { recursive: true });
 			writeFileSync(join(piDir, "APPEND_SYSTEM.md"), "Additional instructions.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getAppendSystemPrompt()).toContain("Additional instructions.");
@@ -559,7 +659,12 @@ Project skill content`,
 			mkdirSync(piDir, { recursive: true });
 			writeFileSync(systemPromptPath, "Project system prompt.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getSystemPrompt()).toBe("Project system prompt.");
@@ -570,7 +675,12 @@ Project skill content`,
 			const systemPromptPath = join(agentDir, "SYSTEM.md");
 			writeFileSync(systemPromptPath, "Global system prompt.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getSystemPrompt()).toBe("Global system prompt.");
@@ -578,7 +688,13 @@ Project skill content`,
 		});
 
 		it("does not expose literal system prompt text as a source", async () => {
-			const loader = new DefaultResourceLoader({ cwd, agentDir, systemPrompt: "Literal system prompt." });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				systemPrompt: "Literal system prompt.",
+			});
 			await loader.reload();
 
 			expect(loader.getSystemPrompt()).toBe("Literal system prompt.");
@@ -589,7 +705,13 @@ Project skill content`,
 			const systemPromptPath = join(tempDir, "custom-system.md");
 			writeFileSync(systemPromptPath, "Custom system prompt.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir, systemPrompt: systemPromptPath });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				systemPrompt: systemPromptPath,
+			});
 			await loader.reload();
 
 			expect(loader.getSystemPrompt()).toBe("Custom system prompt.");
@@ -602,7 +724,12 @@ Project skill content`,
 			mkdirSync(piDir, { recursive: true });
 			writeFileSync(appendSystemPromptPath, "Project append prompt.");
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			expect(loader.getAppendSystemPrompt()).toEqual(["Project append prompt."]);
@@ -610,7 +737,13 @@ Project skill content`,
 		});
 
 		it("does not expose literal append system prompt text as a source", async () => {
-			const loader = new DefaultResourceLoader({ cwd, agentDir, appendSystemPrompt: ["Literal append prompt."] });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				appendSystemPrompt: ["Literal append prompt."],
+			});
 			await loader.reload();
 
 			expect(loader.getAppendSystemPrompt()).toEqual(["Literal append prompt."]);
@@ -622,6 +755,8 @@ Project skill content`,
 			writeFileSync(appendSystemPromptPath, "Custom append prompt.");
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				appendSystemPrompt: [appendSystemPromptPath, "Literal append prompt."],
@@ -658,7 +793,12 @@ description: Extra prompt
 Extra prompt content`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			loader.extendResources({
@@ -712,7 +852,12 @@ description: File URL skill
 Extra content`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			loader.extendResources({
@@ -799,6 +944,8 @@ Extension prompt content`,
 			);
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				settingsManager: SettingsManager.inMemory({ packages: ["npm:metadata-pkg"] }),
@@ -852,7 +999,13 @@ description: A test skill
 Content`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir, noSkills: true });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+				noSkills: true,
+			});
 			await loader.reload();
 
 			const { skills } = loader.getSkills();
@@ -872,6 +1025,8 @@ Content`,
 			);
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				noSkills: true,
@@ -895,6 +1050,8 @@ Content`,
 				disableModelInvocation: false,
 			};
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				skillsOverride: () => ({
@@ -911,6 +1068,8 @@ Content`,
 
 		it("should apply systemPromptOverride", async () => {
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				systemPromptOverride: () => "Custom system prompt",
@@ -959,7 +1118,12 @@ export default function(candy: ExtensionAPI) {
 }`,
 			);
 
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
+				cwd,
+				agentDir,
+			});
 			await loader.reload();
 
 			const { errors } = loader.getExtensions();
@@ -1010,6 +1174,8 @@ export default function(candy: ExtensionAPI) {
 			);
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				additionalExtensionPaths: [explicitExtPath],
@@ -1021,13 +1187,13 @@ export default function(candy: ExtensionAPI) {
 
 			const sessionManager = SessionManager.inMemory();
 			const authStorage = AuthStorage.create(join(tempDir, "auth-explicit.json"));
-			const modelRegistry = await createModelRegistry(authStorage);
+			const modelRuntime = await createTestModelRuntime(authStorage);
 			const runner = new ExtensionRunner(
 				extensionsResult.extensions,
 				extensionsResult.runtime,
 				cwd,
 				sessionManager,
-				modelRegistry,
+				modelRuntime,
 			);
 
 			expect(runner.getCommand("deploy:1")?.description).toBe("explicit command");

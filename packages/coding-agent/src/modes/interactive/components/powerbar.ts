@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@candy/agent-core";
-import type { Model } from "@candy/ai/compat";
+import type { Model } from "@candy/ai";
 import { fuzzyFilter, sliceByColumn, visibleWidth } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";

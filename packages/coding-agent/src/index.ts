@@ -205,7 +205,6 @@ export {
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
 export { convertToLlm } from "./core/messages.ts";
-export { ModelRegistry } from "./core/model-registry.ts";
 export {
 	type ResolveCliModelResult,
 	resolveCliModel,
@@ -226,7 +225,12 @@ export type {
 	ResolvedResource,
 } from "./core/package-manager.ts";
 export { DefaultPackageManager } from "./core/package-manager.ts";
-export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
+export type {
+	ResourceCollision,
+	ResourceDiagnostic,
+	ResourceLoader,
+	ResourceThemeAdapter,
+} from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
 // SDK for programmatic usage
 export {
@@ -379,7 +383,6 @@ export {
 	type ProjectTrustUpdate,
 } from "./core/trust-manager.ts";
 // Main entry point
-export { type MainOptions, main } from "./main.ts";
 // Run modes for programmatic SDK usage
 export {
 	InteractiveMode,
@@ -424,7 +427,6 @@ export {
 	SessionSelectorComponent,
 	type SettingsCallbacks,
 	type SettingsConfig,
-	SettingsSelectorComponent,
 	ShowImagesSelectorComponent,
 	SkillInvocationMessageComponent,
 	ThemeSelectorComponent,
@@ -451,6 +453,7 @@ export {
 	type ThemeStyle,
 	type ThemeToken,
 } from "./modes/interactive/theme/theme.ts";
+export { resourceThemeAdapter } from "./presentation/resource-theme-adapter.ts";
 // Clipboard utilities
 export { copyToClipboard } from "./utils/clipboard.ts";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.ts";

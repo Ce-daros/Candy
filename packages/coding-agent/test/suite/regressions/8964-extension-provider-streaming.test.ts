@@ -1,11 +1,10 @@
 import { type AssistantMessage, fauxAssistantMessage, fauxProvider } from "@candy/ai";
-import { getApiProvider } from "@candy/ai/compat";
 import { expect, it } from "vitest";
 import { createHarness } from "../harness.ts";
 
 // Regression for #8964: extensions can stream responses from providers registered with candy.registerProvider().
 it.each(["stream", "streamSimple"] as const)(
-	"allows an extension command to use ctx.modelRegistry.%s",
+	"allows an extension command to use ctx.modelRuntime.%s",
 	async (method) => {
 		const faux = fauxProvider({ provider: "extension-provider", api: "issue-8964-extension-api" });
 		let receivedApiKey: string | undefined;
@@ -32,8 +31,8 @@ it.each(["stream", "streamSimple"] as const)(
 					candy.registerCommand("stream-custom", {
 						description: "Stream a response from the custom provider",
 						handler: async (_args, ctx) => {
-							const model = ctx.modelRegistry.find(faux.provider.id, faux.getModel().id)!;
-							const stream = ctx.modelRegistry[method](model, {
+							const model = ctx.modelRuntime.getModel(faux.provider.id, faux.getModel().id)!;
+							const stream = ctx.modelRuntime[method](model, {
 								messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
 							});
 							for await (const event of stream) {
@@ -46,16 +45,14 @@ it.each(["stream", "streamSimple"] as const)(
 			],
 		});
 		try {
-			expect(getApiProvider(faux.api)).toBeUndefined();
-			await harness.session.prompt("/stream-custom");
+			await harness.session.executeCommand({ source: "extension", name: "stream-custom", args: "" });
 
-			expect(receivedApiKey).toBe("extension-key");
-			expect(streamedText).toBe("custom provider response");
 			expect(result).toMatchObject({
 				stopReason: "stop",
 				content: [{ type: "text", text: "custom provider response" }],
 			});
-			expect(getApiProvider(faux.api)).toBeUndefined();
+			expect(receivedApiKey).toBe("extension-key");
+			expect(streamedText).toBe("custom provider response");
 		} finally {
 			harness.cleanup();
 		}

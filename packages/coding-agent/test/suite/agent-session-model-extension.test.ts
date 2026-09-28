@@ -1,7 +1,7 @@
 import type { AgentTool } from "@candy/agent-core";
 import { fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, type JsonObject, type Usage } from "@candy/ai";
 import { Type } from "typebox";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BuildSystemPromptOptions, ExtensionAPI } from "../../src/index.ts";
 import { createHarness, getAssistantTexts, type Harness } from "./harness.ts";
 
@@ -67,15 +67,34 @@ describe("AgentSession model and extension characterization", () => {
 		expect(harness.settingsManager.getDefaultProvider()).toBe(nextModel.provider);
 		expect(harness.settingsManager.getDefaultModel()).toBe(nextModel.id);
 
-		harness.session.setThinkingLevel("high", { persist: true });
+		await harness.settingsManager.mutateAndPersist(() => harness.settingsManager.setDefaultThinkingLevel("high"));
+		harness.session.setThinkingLevel("high");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("high");
+	});
+
+	it("does not switch the active model when saving the default fails", async () => {
+		const harness = await createHarness({
+			models: [
+				{ id: "faux-1", name: "One", reasoning: true },
+				{ id: "faux-2", name: "Two", reasoning: true },
+			],
+		});
+		harnesses.push(harness);
+		vi.spyOn(harness.settingsManager, "mutateAndPersist").mockRejectedValueOnce(new Error("Settings write failed"));
+
+		await expect(harness.session.setModel(harness.getModel("faux-2")!, { persist: true })).rejects.toThrow(
+			"Settings write failed",
+		);
+		expect(harness.session.model?.id).toBe("faux-1");
+		expect(harness.sessionManager.getEntries().some((entry) => entry.type === "model_change")).toBe(false);
 	});
 
 	it("persists the requested default thinking level even when the current model clamps it", async () => {
 		const harness = await createHarness({ models: [{ id: "faux-1", reasoning: true }] });
 		harnesses.push(harness);
 
-		harness.session.setThinkingLevel("max", { persist: true });
+		await harness.settingsManager.mutateAndPersist(() => harness.settingsManager.setDefaultThinkingLevel("max"));
+		harness.session.setThinkingLevel("max");
 
 		expect(harness.session.thinkingLevel).toBe("high");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("max");

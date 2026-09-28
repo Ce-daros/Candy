@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KEYBINDINGS, useWindowsKeybindings } from "../src/core/keybindings.ts";
+import { KEYBINDINGS, useWindowsKeybindings } from "../src/presentation/keybindings.ts";
 
 describe("Windows keybinding defaults", () => {
 	it("uses Windows keybindings on native Windows", () => {

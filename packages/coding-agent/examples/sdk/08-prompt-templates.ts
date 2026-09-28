@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Prompt Templates
  *
@@ -27,6 +29,8 @@ const deployTemplate: PromptTemplate = {
 };
 
 const loader = new DefaultResourceLoader({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd: process.cwd(),
 	agentDir: getAgentDir(),
 	promptsOverride: (current) => ({

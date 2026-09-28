@@ -3,6 +3,8 @@ import {
 	getKeybindings,
 	Input,
 	Markdown,
+	moveSelection,
+	moveViewport,
 	Text,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
@@ -34,6 +36,7 @@ export class ReadingPanelComponent implements Focusable {
 	private region: "reading" | "search" | "edit" | "close" = "reading";
 	private _focused = false;
 	private visibleRows = 0;
+	private markdownLineCount = 0;
 	private firstBodyRow = 2;
 	private lastSearchRow = -1;
 
@@ -142,7 +145,7 @@ export class ReadingPanelComponent implements Focusable {
 				}
 				selectedBodyIndex--;
 			}
-			this.offset = Math.max(0, Math.min(this.offset, Math.max(0, body.length - this.visibleRows)));
+			this.offset = moveViewport(this.offset, body.length, this.visibleRows, 0);
 			if (selectedBodyIndex < this.offset) this.offset = selectedBodyIndex;
 			if (selectedBodyIndex >= this.offset + this.visibleRows)
 				this.offset = selectedBodyIndex - this.visibleRows + 1;
@@ -153,7 +156,8 @@ export class ReadingPanelComponent implements Focusable {
 			lines.push(...footerLines);
 		} else {
 			const body = this.markdown.render(width);
-			this.offset = Math.max(0, Math.min(this.offset, Math.max(0, body.length - this.visibleRows)));
+			this.markdownLineCount = body.length;
+			this.offset = moveViewport(this.offset, body.length, this.visibleRows, 0);
 			lines.push(...body.slice(this.offset, this.offset + this.visibleRows));
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			lines.push(
@@ -204,9 +208,8 @@ export class ReadingPanelComponent implements Focusable {
 					: kb.matches(data, "tui.select.pageUp")
 						? -this.visibleRows
 						: this.visibleRows;
-			if (this.rows)
-				this.selectedIndex = Math.max(0, Math.min(this.selectedIndex + delta, this.filteredRows.length - 1));
-			else this.offset = Math.max(0, this.offset + delta);
+			if (this.rows) this.selectedIndex = moveSelection(this.selectedIndex, this.filteredRows.length, delta);
+			else this.offset = moveViewport(this.offset, this.markdownLineCount, this.visibleRows, delta);
 			return;
 		}
 		if (this.rows && this.region !== "edit" && this.region !== "close") {
@@ -220,11 +223,18 @@ export class ReadingPanelComponent implements Focusable {
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type === "wheel" && event.wheelDelta) {
 			if (this.rows)
-				this.selectedIndex = Math.max(
-					0,
-					Math.min(this.selectedIndex + (event.wheelDelta < 0 ? 1 : -1), this.filteredRows.length - 1),
+				this.selectedIndex = moveSelection(
+					this.selectedIndex,
+					this.filteredRows.length,
+					event.wheelDelta < 0 ? 1 : -1,
 				);
-			else this.offset = Math.max(0, this.offset + (event.wheelDelta < 0 ? 3 : -3));
+			else
+				this.offset = moveViewport(
+					this.offset,
+					this.markdownLineCount,
+					this.visibleRows,
+					event.wheelDelta < 0 ? 3 : -3,
+				);
 			return { handled: true, render: true };
 		}
 		if (this.rows && event.type === "click" && event.button === "left" && event.y === this.lastSearchRow) {

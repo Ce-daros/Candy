@@ -24,6 +24,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { exportSessionHtml } from "../../presentation/session-html-export.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { toJsonEvent } from "../json-event.ts";
@@ -519,12 +520,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_steering_mode": {
-				session.setSteeringMode(command.mode);
+				await session.setSteeringMode(command.mode);
 				return success(id, "set_steering_mode");
 			}
 
 			case "set_follow_up_mode": {
-				session.setFollowUpMode(command.mode);
+				await session.setFollowUpMode(command.mode);
 				return success(id, "set_follow_up_mode");
 			}
 
@@ -538,7 +539,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "set_auto_compaction": {
-				session.setAutoCompactionEnabled(command.enabled);
+				await session.setAutoCompactionEnabled(command.enabled);
 				return success(id, "set_auto_compaction");
 			}
 
@@ -547,7 +548,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_auto_retry": {
-				session.setAutoRetryEnabled(command.enabled);
+				await session.setAutoRetryEnabled(command.enabled);
 				return success(id, "set_auto_retry");
 			}
 
@@ -598,7 +599,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "export_html": {
-				const path = await session.exportToHtml(command.outputPath);
+				const path = await exportSessionHtml(session, command.outputPath);
 				return success(id, "export_html", { path });
 			}
 

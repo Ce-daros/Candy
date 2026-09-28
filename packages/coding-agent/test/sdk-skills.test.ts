@@ -7,6 +7,8 @@ import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
 describe("createAgentSession skills option", () => {
 	let tempDir: string;
@@ -40,6 +42,8 @@ This is a test skill.
 
 	it("should discover skills by default and expose them on session.skills", async () => {
 		const { session } = await createAgentSession({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.inMemory(),

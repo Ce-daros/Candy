@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage, registerFauxProvider } from "@candy/ai/compat";
+import { fauxAssistantMessage, fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../../../src/core/agent-session.ts";
 import {
@@ -14,6 +14,9 @@ import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "../../../src/index.ts";
+import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
+import { configuredFauxProvider } from "../../ai.ts";
 
 function getText(message: AgentSession["messages"][number]): string {
 	if (!("content" in message)) {
@@ -40,7 +43,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		const tempDir = join(tmpdir(), `pi-2860-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 
-		const faux = registerFauxProvider({
+		const faux = fauxProvider({
 			models: [{ id: "faux-1", reasoning: false }],
 		});
 		faux.setResponses(responses.map((response) => fauxAssistantMessage(response)));
@@ -54,27 +57,15 @@ describe("regression #2860: replaced session callbacks", () => {
 
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir: tempDir,
 				modelRuntime,
 				resourceLoaderOptions: {
 					extensionFactories: [
 						(candy: ExtensionAPI) => {
-							candy.registerProvider(faux.getModel().provider, {
-								baseUrl: faux.getModel().baseUrl,
-								apiKey: "faux-key",
-								api: faux.api,
-								models: faux.models.map((registeredModel) => ({
-									id: registeredModel.id,
-									name: registeredModel.name,
-									api: registeredModel.api,
-									reasoning: registeredModel.reasoning,
-									input: registeredModel.input,
-									cost: registeredModel.cost,
-									contextWindow: registeredModel.contextWindow,
-									maxTokens: registeredModel.maxTokens,
-								})),
-							});
+							candy.registerProvider(configuredFauxProvider(faux));
 							extensionFactory(candy);
 						},
 					],
@@ -135,7 +126,6 @@ describe("regression #2860: replaced session callbacks", () => {
 
 		cleanups.push(async () => {
 			await runtime.dispose();
-			faux.unregister();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
@@ -194,7 +184,7 @@ describe("regression #2860: replaced session callbacks", () => {
 
 		expect(events).toEqual(["start:1"]);
 
-		await runtime.session.prompt("/repro");
+		await runtime.session.executeCommand({ source: "extension", name: "repro", args: "" });
 
 		expect(events).toEqual(["start:1", "shutdown:1", "start:2", "with:1"]);
 		expect(replacementSessionFile).toBeDefined();
@@ -231,7 +221,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		);
 
 		await runtime.session.prompt("seed");
-		await runtime.session.prompt("/fork-it");
+		await runtime.session.executeCommand({ source: "extension", name: "fork-it", args: "" });
 
 		expect(
 			runtime.session.messages
@@ -266,7 +256,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		targetSessionPath = runtime.session.sessionFile!;
 		await runtime.switchSession(originalSessionPath!);
 
-		await runtime.session.prompt("/switch-it");
+		await runtime.session.executeCommand({ source: "extension", name: "switch-it", args: "" });
 
 		expect(runtime.session.sessionFile).toBe(targetSessionPath);
 		expect(

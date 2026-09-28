@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider } from "@candy/ai";
-import { getModel } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
@@ -11,6 +11,8 @@ import type { ExtensionFactory } from "../src/core/sdk.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
 function nativeAnthropicProvider(baseUrl: string): Provider {
 	const model = { ...getModel("anthropic", "claude-sonnet-4-5")!, baseUrl };
@@ -60,6 +62,8 @@ describe("AgentSession dynamic provider registration", () => {
 			modelsPath: join(agentDir, "models.json"),
 		});
 		const resourceLoader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir,
 			settingsManager,

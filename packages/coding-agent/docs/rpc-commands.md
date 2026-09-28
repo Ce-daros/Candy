@@ -104,7 +104,7 @@ Response:
 
 ### clear_queue
 
-Remove queued steering and follow-up messages and return their text.
+Remove queued steering and follow-up inputs and return their text and image attachments.
 
 ```json
 {"type": "clear_queue"}
@@ -117,13 +117,13 @@ Response:
   "command": "clear_queue",
   "success": true,
   "data": {
-    "steering": ["Change direction"],
-    "followUp": ["Summarize when finished"]
+    "steering": [{ "text": "Change direction" }],
+    "followUp": [{ "text": "Summarize when finished" }]
   }
 }
 ```
 
-To implement interactive Esc behavior, send `clear_queue` before `abort`, then restore the returned text in the client editor. `abort` continues queued messages when they remain in the session.
+To implement interactive Esc behavior, send `clear_queue` before `abort`, then restore the returned inputs in the client editor. Each input may contain an `images` array. `abort` continues queued messages when they remain in the session.
 
 ### new_session
 

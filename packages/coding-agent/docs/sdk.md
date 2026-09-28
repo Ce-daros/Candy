@@ -5,9 +5,13 @@
 Use the SDK for in-process TypeScript integration. For a language-independent or isolated subprocess, see [CLI Integration](cli-integration.md).
 
 ```typescript
-import { createAgentSession } from "@candy/coding-agent";
+import { createAgentSession, resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 
-const { session } = await createAgentSession();
+const { session } = await createAgentSession({
+  themeAdapter: resourceThemeAdapter,
+  extensionModules: extensionHostModules,
+});
 
 try {
   await session.prompt("What files are in the current directory?");
@@ -42,9 +46,12 @@ Sessions are persistent by default. `SessionManager` owns the persisted or in-me
 Use an in-memory manager when the host does not want session files:
 
 ```typescript
-import { createAgentSession, SessionManager } from "@candy/coding-agent";
+import { createAgentSession, resourceThemeAdapter, SessionManager } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 
 const { session } = await createAgentSession({
+  themeAdapter: resourceThemeAdapter,
+  extensionModules: extensionHostModules,
   sessionManager: SessionManager.inMemory(),
 });
 ```
@@ -61,7 +68,7 @@ After a runtime replacement, subscriptions belong to the old `AgentSession` and 
 
 ## Prompting
 
-`prompt()` handles extension commands and expands file-based prompt templates before ordinary user messages enter the agent. For an accepted agent run, it resolves after the run finishes, including automatic retries.
+`prompt()` sends ordinary text and attachments. To run an extension command, prompt template, or skill, call `executeCommand({ source, name, args })` with `source` set to `"extension"`, `"prompt"`, or `"skill"`. Text beginning with `/` or `skill:` stays ordinary text. For an accepted agent run, `prompt()` resolves after the run finishes, including automatic retries.
 
 A prompt sent while the session is already streaming must specify whether it should steer the current run or follow it. Calling `prompt()` without that choice rejects rather than guessing.
 
@@ -95,7 +102,7 @@ Use `agent_settled` when the host needs to know that candy will not continue aut
 
 ## Configuring a session
 
-Without overrides, the factory creates a `ModelRuntime`, file-backed `SettingsManager`, persistent `SessionManager`, `DefaultResourceLoader`, and the configured default tools.
+With `themeAdapter` supplied, the factory creates a `ModelRuntime`, file-backed `SettingsManager`, persistent `SessionManager`, `DefaultResourceLoader`, and the configured default tools. The package exports `resourceThemeAdapter` for theme construction and `extensionHostModules` from the `extension-host-modules` subpath for extension imports. Hosts that provide their own `ResourceLoader` do not need these adapters.
 
 Each boundary can be supplied explicitly:
 

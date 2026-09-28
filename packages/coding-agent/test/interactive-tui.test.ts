@@ -2,7 +2,6 @@ import type { Component, Terminal, TUI } from "@candy/tui";
 import { Container, getKeybindings, isViewportTUI, ScrollView, setKeybindings, Text } from "@candy/tui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import type { FullscreenExitOutput } from "../src/core/settings-manager.ts";
 import {
 	BranchSummaryStatusIndicator,
@@ -14,6 +13,7 @@ import {
 } from "../src/modes/interactive/components/status-indicator.ts";
 import { createInteractiveTui, InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 
 const EXIT_ALT_SCREEN = "\x1b[?1049l";
 

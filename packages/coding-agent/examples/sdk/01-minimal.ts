@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Minimal SDK Usage
  *
@@ -7,7 +9,10 @@
 
 import { createAgentSession } from "@candy/coding-agent";
 
-const { session } = await createAgentSession();
+const { session } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
+});
 
 try {
 	session.subscribe((event) => {

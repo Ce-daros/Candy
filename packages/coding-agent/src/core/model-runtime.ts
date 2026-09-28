@@ -67,11 +67,9 @@ import { ModelConfig } from "./model-config.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
 import {
 	type AuthStatus,
-	type CompatibilityRequestConfig,
 	composeModelProvider,
 	configuredRequestAuthStatus,
 	type ProviderConfigInput,
-	resolveCompatibilityRequestConfig,
 	resolveConfiguredModelHeaders,
 	validateExtensionProvider,
 } from "./provider-composer.ts";
@@ -474,15 +472,6 @@ export class ModelRuntime implements Models {
 		return this.nativeExtensionProviders.get(providerId);
 	}
 
-	/** @internal Compatibility fallback for ModelRegistry when provider auth is unconfigured. */
-	getCompatibilityRequestConfig(model: Model<Api>): CompatibilityRequestConfig {
-		return resolveCompatibilityRequestConfig(
-			model,
-			this.config.getProvider(model.provider),
-			this.extensionProviders.get(model.provider),
-		);
-	}
-
 	isUsingOAuth(providerId: string): boolean {
 		return this.snapshot.auth.get(providerId)?.type === "oauth";
 	}
@@ -815,12 +804,10 @@ export class ModelRuntime implements Models {
 	}
 
 	registerProvider(providerId: string, config: ProviderConfigInput): void {
-		// Validate the incoming registration on its own, like the legacy registry:
-		// a broken re-registration must throw without touching the stored config.
+		// Validate before replacing the registration so a failed update preserves it.
 		validateExtensionProvider(providerId, this.builtins.get(providerId), this.config.getProvider(providerId), config);
 		this.nativeExtensionProviders.delete(providerId);
-		// Re-registration merges defined values over the previous registration and
-		// preserves undefined ones, matching the legacy ModelRegistry contract.
+		// Re-registration merges defined values over the previous registration.
 		const previous = this.extensionProviders.get(providerId);
 		const effective: ProviderConfigInput = { ...previous };
 		for (const [key, value] of Object.entries(config)) {

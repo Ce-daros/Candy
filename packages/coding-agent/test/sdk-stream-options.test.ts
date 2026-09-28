@@ -16,7 +16,9 @@ import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { type Settings, SettingsManager } from "../src/core/settings-manager.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
 describe("createAgentSession stream options", () => {
 	let tempDir: string;
@@ -89,6 +91,8 @@ describe("createAgentSession stream options", () => {
 		const model = createModel(api);
 		const settingsManager = SettingsManager.inMemory(settings);
 		const resourceLoader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			settingsManager,
@@ -98,10 +102,10 @@ describe("createAgentSession stream options", () => {
 
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "test-api-key" }));
-		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "models.json"));
+		const modelRuntime = await createTestModelRuntime(authStorage, join(agentDir, "models.json"));
 		let capturedOptions: SimpleStreamOptions | undefined;
 
-		modelRegistry.registerProvider(model.provider, {
+		modelRuntime.registerProvider(model.provider, {
 			api,
 			headers: { "x-provider": "provider" },
 			streamSimple: (requestModel, _context, providerOptions) => {
@@ -117,7 +121,6 @@ describe("createAgentSession stream options", () => {
 			},
 		});
 
-		const modelRuntime = getModelRuntime(modelRegistry);
 		const sessionManager = SessionManager.inMemory(cwd);
 		const { session } = await createAgentSession({
 			cwd,
@@ -143,7 +146,7 @@ describe("createAgentSession stream options", () => {
 			return capturedOptions;
 		} finally {
 			session.dispose();
-			modelRegistry.unregisterProvider(model.provider);
+			modelRuntime.unregisterProvider(model.provider);
 		}
 	}
 
@@ -155,9 +158,9 @@ describe("createAgentSession stream options", () => {
 		};
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "test-api-key" }));
-		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "models.json"));
+		const modelRuntime = await createTestModelRuntime(authStorage, join(agentDir, "models.json"));
 		let providerCalls = 0;
-		modelRegistry.registerProvider(model.provider, {
+		modelRuntime.registerProvider(model.provider, {
 			api: model.api,
 			streamSimple: () => {
 				providerCalls++;
@@ -167,10 +170,12 @@ describe("createAgentSession stream options", () => {
 		const sessionManager = SessionManager.inMemory(cwd);
 		populate?.(sessionManager, model);
 		const { session } = await createAgentSession({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			model,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			settingsManager: SettingsManager.inMemory({ cacheWarming: "idle" }),
 			sessionManager,
 		});
@@ -179,7 +184,7 @@ describe("createAgentSession stream options", () => {
 			providerCalls: () => providerCalls,
 			dispose: () => {
 				session.dispose();
-				modelRegistry.unregisterProvider(model.provider);
+				modelRuntime.unregisterProvider(model.provider);
 			},
 		};
 	}

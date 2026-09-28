@@ -131,7 +131,7 @@ export default function presetExtension(candy: ExtensionAPI) {
 
 		// Apply model if specified
 		if (preset.provider && preset.model) {
-			const model = ctx.modelRegistry.find(preset.provider, preset.model);
+			const model = ctx.modelRuntime.getModel(preset.provider, preset.model);
 			if (model) {
 				const success = await candy.setModel(model);
 				if (!success) {

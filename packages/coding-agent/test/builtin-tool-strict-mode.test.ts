@@ -1,22 +1,21 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModel } from "@candy/ai/compat";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
+import { describe, expect, it } from "vitest";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createAllToolDefinitions, createAllTools } from "../src/core/tools/index.ts";
 import { wrapToolDefinition } from "../src/core/tools/tool-definition-wrapper.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
 const strictToolNames = ["read", "bash", "powershell", "edit", "write"] as const;
 
 describe("strict built-in tools", () => {
-	afterEach(() => vi.unstubAllEnvs());
-
-	it.each([undefined, "0", "1"])("prefers strict sampling with CANDY_EXPERIMENTAL=%s", (experimental) => {
-		vi.stubEnv("CANDY_EXPERIMENTAL", experimental);
+	it("prefers strict sampling for built-in tools", () => {
 		const definitions = createAllToolDefinitions(process.cwd());
 		const tools = createAllTools(process.cwd());
 		for (const name of strictToolNames) {
@@ -53,6 +52,8 @@ describe("strict built-in tools", () => {
 			const agentDir = join(cwd, "agent");
 			const settingsManager = SettingsManager.inMemory({ defaultTools: activeTools });
 			const resourceLoader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				settingsManager,

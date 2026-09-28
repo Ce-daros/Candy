@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModel } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgentSessionFromServices, createAgentSessionServices } from "../src/core/agent-session-services.ts";
@@ -9,6 +9,8 @@ import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { type CreateAgentSessionOptions, createAgentSession, type InlineExtension } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
 type ToolOptions = Pick<CreateAgentSessionOptions, "tools" | "excludeTools" | "noTools" | "customTools">;
 
@@ -35,6 +37,8 @@ describe("defaultTools setting", () => {
 	) {
 		const settingsManager = SettingsManager.inMemory({ defaultTools });
 		const resourceLoader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir,
 			settingsManager,
@@ -140,7 +144,13 @@ describe("defaultTools setting", () => {
 
 	it("applies through service-based session creation", async () => {
 		const settingsManager = SettingsManager.inMemory({ defaultTools: ["ls"] });
-		const services = await createAgentSessionServices({ cwd: tempDir, agentDir, settingsManager });
+		const services = await createAgentSessionServices({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
+			cwd: tempDir,
+			agentDir,
+			settingsManager,
+		});
 		const { session } = await createAgentSessionFromServices({
 			services,
 			sessionManager: SessionManager.inMemory(tempDir),

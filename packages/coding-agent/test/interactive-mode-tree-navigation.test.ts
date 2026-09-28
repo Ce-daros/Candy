@@ -37,10 +37,15 @@ function createTreeUI() {
 		isInitialized: true,
 		footer: { invalidate: vi.fn() },
 		ui: { terminal: { rows: 24, setProgress: vi.fn() }, requestRender: vi.fn() },
-		showSelector: (
-			create: (done: () => void) => { component: TreeSelectorComponent; focus: TreeSelectorComponent },
-		) => {
-			selector = create(vi.fn()).component;
+		pageController: {
+			generation: 0,
+			showSelector: (
+				create: (done: () => void) => { component: TreeSelectorComponent; focus: TreeSelectorComponent },
+			) => {
+				selector = create(vi.fn()).component;
+			},
+			mountPanel: vi.fn(),
+			closePanel: vi.fn(),
 		},
 		showExtensionSelector: vi.fn(async () => "No summary"),
 		// Dispose newly created indicators so a failing regression cannot leak spinner timers.

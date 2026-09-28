@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Session runtime
  *
@@ -18,7 +20,11 @@ import {
 } from "@candy/coding-agent";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-	const services = await createAgentSessionServices({ cwd });
+	const services = await createAgentSessionServices({
+		extensionModules: extensionHostModules,
+		themeAdapter: resourceThemeAdapter,
+		cwd,
+	});
 	return {
 		...(await createAgentSessionFromServices({
 			services,

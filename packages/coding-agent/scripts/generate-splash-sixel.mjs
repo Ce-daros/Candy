@@ -16,28 +16,12 @@ const pkgRoot = path.resolve(here, "..");
 const srcPath = path.join(pkgRoot, "assets", "candy-v3.png");
 const outPath = path.join(pkgRoot, "src", "modes", "interactive", "components", "splash-logo.generated.ts");
 
-// Sixel: the art's content bbox is enlarged by an integer factor, then the canvas is
-// padded to whole cells of a nominal 9x18 px cell. Integer-only enlargement keeps every
-// source pixel whole (the box filter below degenerates to 1:1), so the picture is an
-// exact 4x copy, and padding to whole cells leaves a terminal that fits the image to
-// its cell grid nothing to resample. 4x over 3x is for scaled displays: at
-// 100/125/150/175/200% DPI an art pixel lands on 4/5/6/7/8 device pixels, 3x on 3.75/4.5.
 const SIXEL_SCALE = 4;
-const CELL_W = 9;
-const CELL_H = 18;
 
 // Sprite: 56 columns of half-block cells (fits an 80-column terminal with room to spare).
 const SPRITE_COLUMNS = 56;
 
-// Palette: the opaque colors of the source, most frequent first. Both encoders
-// are palette-based (sixel color registers, one hex digit per sprite cell), so
-// the cap is 16. Colors within MERGE_DISTANCE of an already-kept color are
-// folded into it: on flat pixel art that keeps every color exactly as authored,
-// and on antialiased art it collapses the gradient to the dominant shade of
-// each region instead of spending all 16 slots on it.
 const MAX_COLORS = 16;
-const MIN_COLOR_PIXELS = 4;
-const MERGE_DISTANCE = 40;
 
 const PNG = PhotonImage.new_from_byteslice(new Uint8Array(readFileSync(srcPath)));
 const srcW = PNG.get_width();
@@ -47,27 +31,19 @@ const px = (x, y) => {
 	const i = (y * srcW + x) * 4;
 	return [raw[i], raw[i + 1], raw[i + 2], raw[i + 3]];
 };
-const isEmptyPixel = (r, g, b, a) => a <= 40 || r + g + b <= 60;
+const isEmptyPixel = (_r, _g, _b, a) => a === 0;
 
 const colorCounts = new Map();
 for (let i = 0; i < raw.length; i += 4) {
 	if (isEmptyPixel(raw[i], raw[i + 1], raw[i + 2], raw[i + 3])) continue;
+	if (raw[i + 3] !== 255) throw new Error("Sixel splash requires fully opaque or transparent source pixels");
 	const key = (raw[i] << 16) | (raw[i + 1] << 8) | raw[i + 2];
 	colorCounts.set(key, (colorCounts.get(key) ?? 0) + 1);
 }
 const hex = (key) => [(key >> 16) & 0xff, (key >> 8) & 0xff, key & 0xff];
-const ranked = [...colorCounts].filter(([, n]) => n >= MIN_COLOR_PIXELS).sort((a, b) => b[1] - a[1]);
-const kept = [];
-for (const [key, count] of ranked) {
-	const [r, g, b] = hex(key);
-	const near = kept.find(({ rgb: [kr, kg, kb] }) => (r - kr) ** 2 + (g - kg) ** 2 + (b - kb) ** 2 <= MERGE_DISTANCE ** 2);
-	if (near) {
-		near.count += count;
-	} else {
-		kept.push({ rgb: [r, g, b], count });
-	}
-}
-const PALETTE = kept.sort((a, b) => b.count - a.count).slice(0, MAX_COLORS).map((entry) => entry.rgb);
+if (colorCounts.size > MAX_COLORS) throw new Error(`Sixel splash has ${colorCounts.size} colors; sprite supports ${MAX_COLORS}`);
+const PALETTE = [...colorCounts].sort((a, b) => b[1] - a[1]).map(([key]) => hex(key));
+const paletteIndex = new Map(PALETTE.map(([r, g, b], index) => [(r << 16) | (g << 8) | b, index]));
 
 // --- content bounding box (skip transparent / near-black background) ---
 let minX = srcW, minY = srcH, maxX = 0, maxY = 0;
@@ -98,31 +74,8 @@ function classify(r, g, b) {
 	return best;
 }
 
-// Box-filter average of the source pixels covered by a rect in bbox space.
-function averageRect(x0, y0, x1, y1) {
-	let r = 0, g = 0, b = 0, a = 0, n = 0;
-	for (let y = y0; y < Math.max(y1, y0 + 1); y++) {
-		for (let x = x0; x < Math.max(x1, x0 + 1); x++) {
-			if (x < minX || x > maxX || y < minY || y > maxY) continue;
-			const [pr, pg, pb, pa] = px(x, y);
-			r += pr;
-			g += pg;
-			b += pb;
-			a += pa;
-			n++;
-		}
-	}
-	if (n === 0) return [0, 0, 0, 0];
-	return [r / n, g / n, b / n, a / n];
-}
-
-// --- Sixel: enlarge the bbox by an integer factor, pad the canvas to whole cells ---
-const drawW = bw * SIXEL_SCALE;
-const drawH = bh * SIXEL_SCALE;
-const CANVAS_W = Math.ceil(drawW / CELL_W) * CELL_W;
-const CANVAS_H = Math.ceil(drawH / CELL_H) * CELL_H;
-const offX = Math.floor((CANVAS_W - drawW) / 2);
-const offY = Math.floor((CANVAS_H - drawH) / 2);
+const CANVAS_W = srcW * SIXEL_SCALE;
+const CANVAS_H = srcH * SIXEL_SCALE;
 
 function encodeSixel() {
 	// `0;1;0`: P2=1 selects "do not fill the background", so pixels the image does
@@ -151,14 +104,9 @@ function encodeSixel() {
 				for (let row = 0; row < 6; row++) {
 					const py = band * 6 + row;
 					if (py >= CANVAS_H) break;
-					if (x < offX || x >= offX + drawW || py < offY || py >= offY + drawH) continue;
-					const fx0 = minX + (((x - offX) * bw) / drawW);
-					const fx1 = minX + (((x - offX + 1) * bw) / drawW);
-					const fy0 = minY + (((py - offY) * bh) / drawH);
-					const fy1 = minY + (((py - offY + 1) * bh) / drawH);
-					const [r, g, b, a] = averageRect(Math.floor(fx0), Math.floor(fy0), Math.ceil(fx1), Math.ceil(fy1));
+					const [r, g, b, a] = px(Math.floor(x / SIXEL_SCALE), Math.floor(py / SIXEL_SCALE));
 					if (isEmptyPixel(r, g, b, a)) continue;
-					if (classify(r, g, b) === colorIndex) {
+					if (paletteIndex.get((r << 16) | (g << 8) | b) === colorIndex) {
 						bits |= 1 << row;
 						any = true;
 					}
@@ -255,7 +203,7 @@ export const SPRITE_PALETTE: readonly (readonly [number, number, number])[] = ${
 
 writeFileSync(outPath, generated);
 console.log(`wrote ${outPath}`);
-console.log(`sixel: ${sixelSequence.length} chars, canvas ${CANVAS_W}x${CANVAS_H}, drawn ${drawW}x${drawH}`);
+console.log(`sixel: ${sixelSequence.length} chars, canvas ${CANVAS_W}x${CANVAS_H}`);
 console.log(`sprite: ${SPRITE_COLUMNS}x${spriteRows} cells`);
-console.log(`palette: ${PALETTE.length} colors (${kept.length} clusters from ${ranked.length} distinct, source ${srcW}x${srcH})`);
+console.log(`palette: ${PALETTE.length} colors (source ${srcW}x${srcH})`);
 console.log(`  ${PALETTE.map((c) => `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`).join(" ")}`);

@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import type { Api, Model } from "@candy/ai/compat";
-import { clampThinkingLevel, getSupportedThinkingLevels } from "@candy/ai/compat";
+import { type Api, clampThinkingLevel, getSupportedThinkingLevels, type Model } from "@candy/ai";
 import type { AutocompleteItem } from "@candy/tui";
 import type { AgentSession } from "../../core/agent-session.ts";
 import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
@@ -487,7 +486,7 @@ export class InteractivePresentation {
 			() => [
 				...this.host
 					.historyCommands()
-					.map((item) => ({ ...item, group: item.id === "new" ? "Sessions" : "Files" })),
+					.map((item) => ({ ...item, group: item.id === "local:New session" ? "Sessions" : "Files" })),
 				action("context", "Context", async () => {
 					const usage = this.host.session().getContextUsage();
 					this.host.read(
@@ -627,15 +626,15 @@ export class InteractivePresentation {
 		const session = this.host.session();
 		this.page("agent", "Behavior", (page) => [
 			action("steering", `Steering: ${session.steeringMode}`, async () => {
-				session.setSteeringMode(session.steeringMode === "all" ? "one-at-a-time" : "all");
+				await session.setSteeringMode(session.steeringMode === "all" ? "one-at-a-time" : "all");
 				this.refresh(page);
 			}),
 			action("follow-up", `Follow-up: ${session.followUpMode}`, async () => {
-				session.setFollowUpMode(session.followUpMode === "all" ? "one-at-a-time" : "all");
+				await session.setFollowUpMode(session.followUpMode === "all" ? "one-at-a-time" : "all");
 				this.refresh(page);
 			}),
 			action("retry", `Automatic retry: ${session.autoRetryEnabled ? "On" : "Off"}`, async () => {
-				session.setAutoRetryEnabled(!session.autoRetryEnabled);
+				await session.setAutoRetryEnabled(!session.autoRetryEnabled);
 				this.refresh(page);
 			}),
 		]);

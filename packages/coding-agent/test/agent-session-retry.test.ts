@@ -2,14 +2,16 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentEvent, type AgentTool } from "@candy/agent-core";
-import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@candy/ai/compat";
+import type { AssistantMessage, AssistantMessageEvent } from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
+import { EventStream } from "@candy/ai/utils/event-stream";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestResourceLoader } from "./utilities.ts";
 
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -108,7 +110,7 @@ describe("AgentSession retry", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries, baseDelayMs: 1, maxAgentDelayMs } });
 
@@ -117,7 +119,7 @@ describe("AgentSession retry", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -223,7 +225,7 @@ describe("AgentSession retry", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } });
 		session = new AgentSession({
@@ -231,7 +233,7 @@ describe("AgentSession retry", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -308,7 +310,7 @@ describe("AgentSession retry", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } });
 
@@ -317,7 +319,7 @@ describe("AgentSession retry", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { echo: echoTool },
 		});

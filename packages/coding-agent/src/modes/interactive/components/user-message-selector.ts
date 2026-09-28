@@ -1,6 +1,8 @@
 import {
 	type Component,
 	getKeybindings,
+	moveSelection,
+	moveViewport,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	truncateToWidth,
@@ -101,11 +103,12 @@ class UserMessageList implements Component {
 		if (event.type === "wheel" && event.wheelDelta) {
 			const delta = event.wheelDelta < 0 ? 1 : -1;
 			if (this.region === "preview")
-				this.previewOffset = Math.max(
-					0,
-					Math.min(this.previewLineCount - this.previewHeight, this.previewOffset + delta),
-				);
-			else this.selectedIndex = Math.max(0, Math.min(this.messages.length - 1, this.selectedIndex + delta));
+				this.previewOffset = moveViewport(this.previewOffset, this.previewLineCount, this.previewHeight, delta);
+			else {
+				const selectedIndex = moveSelection(this.selectedIndex, this.messages.length, delta);
+				if (selectedIndex !== this.selectedIndex) this.previewOffset = 0;
+				this.selectedIndex = selectedIndex;
+			}
 			return { handled: true, render: true };
 		}
 		if (event.type === "click" && event.button === "left" && event.y >= 0 && event.y < this.visibleCount * 2) {
@@ -128,12 +131,9 @@ class UserMessageList implements Component {
 		} else if (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down")) {
 			const delta = kb.matches(data, "tui.select.down") ? 1 : -1;
 			if (this.region === "preview")
-				this.previewOffset = Math.max(
-					0,
-					Math.min(Math.max(0, this.previewLineCount - this.previewHeight), this.previewOffset + delta),
-				);
+				this.previewOffset = moveViewport(this.previewOffset, this.previewLineCount, this.previewHeight, delta);
 			else {
-				this.selectedIndex = (this.selectedIndex + delta + this.messages.length) % this.messages.length;
+				this.selectedIndex = moveSelection(this.selectedIndex, this.messages.length, delta, true);
 				this.previewOffset = 0;
 			}
 		} else if (kb.matches(data, "tui.select.confirm")) {

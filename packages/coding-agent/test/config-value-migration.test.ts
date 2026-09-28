@@ -6,7 +6,7 @@ import { ENV_AGENT_DIR } from "../src/config.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { runMigrations } from "../src/migrations.ts";
 
-import { createModelRegistry } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
 describe("config value env var syntax migration", () => {
 	const tempDirs: string[] = [];
@@ -80,8 +80,8 @@ describe("config value env var syntax migration", () => {
 		withAgentDir(agentDir, () => expect(() => runMigrations(agentDir)).not.toThrow());
 
 		expect(fs.readFileSync(modelsPath, "utf-8")).toBe(content);
-		const registry = await createModelRegistry(AuthStorage.create(path.join(agentDir, "auth.json")), modelsPath);
-		const loadError = registry.getError();
+		const runtime = await createTestModelRuntime(AuthStorage.create(path.join(agentDir, "auth.json")), modelsPath);
+		const loadError = runtime.getError();
 		expect(loadError).toContain("Failed to parse models.json");
 		expect(loadError).toContain(`File: ${modelsPath}`);
 	});
@@ -149,20 +149,21 @@ describe("config value env var syntax migration", () => {
 			expect(provider.modelOverrides?.["model-b"]?.headers?.["x-override-key"]).toBe("OVERRIDE_API_KEY");
 			expect(logSpy).not.toHaveBeenCalled();
 
-			const registry = await createModelRegistry(
+			const runtime = await createTestModelRuntime(
 				AuthStorage.create(path.join(agentDir, "auth.json")),
 				path.join(agentDir, "models.json"),
 			);
-			const model = registry.find("custom-provider", "model-a");
+			const model = runtime.getModel("custom-provider", "model-a");
 			expect(model).toBeDefined();
-			expect(await registry.getApiKeyForProvider("custom-provider")).toBe("CUSTOM_API_KEY");
-			expect(await registry.getApiKeyAndHeaders(model!)).toMatchObject({
-				ok: true,
-				apiKey: "CUSTOM_API_KEY",
-				headers: {
-					"x-api-key": "HEADER_API_KEY",
-					"x-literal": "literal",
-					"x-model-key": "MODEL_API_KEY",
+			expect((await runtime.getAuth("custom-provider"))?.auth.apiKey).toBe("CUSTOM_API_KEY");
+			expect(await runtime.getAuth(model!)).toMatchObject({
+				auth: {
+					apiKey: "CUSTOM_API_KEY",
+					headers: {
+						"x-api-key": "HEADER_API_KEY",
+						"x-literal": "literal",
+						"x-model-key": "MODEL_API_KEY",
+					},
 				},
 			});
 		} finally {

@@ -7,7 +7,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
 import type { ImageContent } from "@candy/ai";
-import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
+import type { PromptDisposition, QueuedInput, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -237,9 +237,9 @@ export class RpcClient {
 	}
 
 	/**
-	 * Clear queued steering and follow-up messages, returning their text.
+	 * Withdraw queued steering and follow-up inputs with their attachments.
 	 */
-	async clearQueue(): Promise<{ steering: string[]; followUp: string[] }> {
+	async clearQueue(): Promise<{ steering: QueuedInput[]; followUp: QueuedInput[] }> {
 		const response = await this.send({ type: "clear_queue" });
 		return this.getData(response);
 	}

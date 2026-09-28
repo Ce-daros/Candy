@@ -8,7 +8,7 @@
  *   node test.ts claude-sonnet-4-5-20250929 --thinking
  */
 
-import { type Api, type Context, type Model, registerApiProvider, streamSimple } from "@candy/ai/compat";
+import { type Api, type Model, normalizeContext } from "@candy/ai";
 import { getAgentDir } from "@candy/coding-agent";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -36,13 +36,6 @@ async function main() {
 		process.exit(1);
 	}
 
-	// Register provider
-	registerApiProvider({
-		api: "gitlab-duo-api" as Api,
-		stream: streamGitLabDuo,
-		streamSimple: streamGitLabDuo,
-	});
-
 	// Create model
 	const model: Model<Api> = {
 		id: cfg.id,
@@ -57,13 +50,13 @@ async function main() {
 		maxTokens: cfg.maxTokens,
 	};
 
-	const context: Context = {
+	const context = normalizeContext({
 		messages: [{ role: "user", content: "Say hello in exactly 3 words.", timestamp: Date.now() }],
-	};
+	});
 
 	console.log(`Model: ${model.id}, Backend: ${cfg.backend}, Thinking: ${useThinking}`);
 
-	const stream = streamSimple(model, context, {
+	const stream = streamGitLabDuo(model, context, {
 		apiKey: gitlabCred.access,
 		maxTokens: 100,
 		reasoning: useThinking ? "low" : undefined,

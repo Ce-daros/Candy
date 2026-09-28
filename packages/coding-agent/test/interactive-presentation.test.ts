@@ -1,11 +1,11 @@
 import { stripVTControlCharacters as stripAnsi } from "node:util";
 import { setKeybindings } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { reconcileQuickSelection } from "../src/core/quick-selection.ts";
 import type { CommandPanel } from "../src/modes/interactive/components/command-panel.ts";
 import { InteractivePresentation, type PresentationHost } from "../src/modes/interactive/interactive-presentation.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 describe("interactive presentation", () => {
@@ -247,6 +247,18 @@ describe("interactive presentation", () => {
 		await choose("Rename");
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("> Research notes");
 	});
+
+	it("places the New session action in the Sessions group", () => {
+		host.historyCommands = () => [
+			{ id: "local:New session", name: "New session", argumentMode: "none", execute: vi.fn(async () => {}) },
+			{ id: "local:Export", name: "Export", argumentMode: "none", execute: vi.fn(async () => {}) },
+		];
+		presentation.open("history");
+		const lines = stripAnsi(panel.render(100).join("\n")).split("\n");
+		expect(lines.indexOf("Sessions")).toBeLessThan(lines.findIndex((line) => line.includes("New session")));
+		expect(lines.indexOf("Files")).toBeLessThan(lines.findIndex((line) => line.includes("Export")));
+	});
+
 	it("reconciles only when leaving Sources after an edit", async () => {
 		presentation.open("sources");
 		await choose(harness.session.modelRuntime.getProvider(harness.models[0].provider)!.name);

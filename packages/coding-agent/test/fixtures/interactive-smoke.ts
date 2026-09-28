@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
 import { fauxAssistantMessage } from "@candy/ai";
-import { streamSimple } from "@candy/ai/compat";
 import type { Terminal } from "@candy/tui";
 import tpsExtension from "../../../../.candy/extensions/tps.ts";
 import { AgentSession } from "../../src/core/agent-session.ts";
@@ -15,6 +14,7 @@ import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { streamBuiltinSimple as streamSimple } from "../ai.ts";
 import { createHarness, type Harness } from "../suite/harness.ts";
 import { userMsg } from "../utilities.ts";
 

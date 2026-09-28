@@ -1,4 +1,4 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 /**
  * E2E tests for AgentSession compaction behavior.
  *
@@ -12,13 +12,14 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
-import { getModel, streamSimple } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createCodingTools } from "../src/index.ts";
+import { streamBuiltinSimple as streamSimple } from "./ai.ts";
 import { API_KEY, createTestResourceLoader } from "./utilities.ts";
 
 describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
@@ -62,14 +63,14 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		// Use minimal keepRecentTokens so small test conversations have something to summarize
 		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage);
+		const modelRuntime = await createTestModelRuntime(authStorage);
 
 		session = new AgentSession({
 			agent,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
 

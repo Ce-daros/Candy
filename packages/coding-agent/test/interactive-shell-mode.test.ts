@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 
 type InputMode = "normal" | "shell" | "shell-no-context" | "command";
 

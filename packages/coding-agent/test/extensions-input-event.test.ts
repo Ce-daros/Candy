@@ -3,11 +3,21 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { discoverAndLoadExtensions } from "../src/core/extensions/loader.ts";
+import { discoverAndLoadExtensions as discoverAndLoadExtensionsCore } from "../src/core/extensions/loader.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 
-import { createInMemoryModelRegistry } from "./model-runtime-test-utils.ts";
+import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
+
+function discoverAndLoadExtensions(
+	configuredPaths: string[],
+	cwd: string,
+	agentDir?: string,
+	eventBus?: Parameters<typeof discoverAndLoadExtensionsCore>[3],
+) {
+	return discoverAndLoadExtensionsCore(configuredPaths, cwd, agentDir, eventBus, extensionHostModules);
+}
 
 describe("Input Event", () => {
 	let tempDir: string;
@@ -30,7 +40,7 @@ describe("Input Event", () => {
 		for (let i = 0; i < extensions.length; i++) fs.writeFileSync(path.join(extensionsDir, `e${i}.ts`), extensions[i]);
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 		const sm = SessionManager.inMemory();
-		const mr = await createInMemoryModelRegistry(AuthStorage.inMemory());
+		const mr = await createInMemoryModelRuntime(AuthStorage.inMemory());
 		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr);
 	}
 

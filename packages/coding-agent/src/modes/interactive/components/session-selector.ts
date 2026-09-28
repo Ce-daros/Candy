@@ -8,6 +8,7 @@ import {
 	type Focusable,
 	getKeybindings,
 	Input,
+	moveSelection,
 	Spacer,
 	Text,
 	type TuiMouseEvent,
@@ -16,8 +17,8 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import { KeybindingsManager } from "../../../core/keybindings.ts";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
+import { KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
 import { keycap, keyHint, keyText } from "./keybinding-hints.ts";
@@ -567,9 +568,10 @@ class SessionList implements Component, Focusable {
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type === "wheel" && event.wheelDelta) {
-			this.selectedIndex = Math.max(
-				0,
-				Math.min(this.filteredSessions.length - 1, this.selectedIndex + (event.wheelDelta < 0 ? -1 : 1)),
+			this.selectedIndex = moveSelection(
+				this.selectedIndex,
+				this.filteredSessions.length,
+				event.wheelDelta < 0 ? -1 : 1,
 			);
 			this.region = "list";
 			return { handled: true, render: true };

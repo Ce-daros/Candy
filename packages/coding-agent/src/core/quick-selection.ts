@@ -1,5 +1,4 @@
-import type { Api, Model } from "@candy/ai/compat";
-import { modelsAreEqual } from "@candy/ai/compat";
+import { type Api, type Model, modelsAreEqual } from "@candy/ai";
 import type { AgentSession } from "./agent-session.ts";
 
 export type QuickSelectionReconcileResult = "unchanged" | "selected" | "empty";

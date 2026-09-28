@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Context Files (AGENTS.md)
  *
@@ -8,6 +10,8 @@ import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager 
 
 // Disable context files entirely by returning an empty list in agentsFilesOverride.
 const loader = new DefaultResourceLoader({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd: process.cwd(),
 	agentDir: getAgentDir(),
 	agentsFilesOverride: (current) => ({

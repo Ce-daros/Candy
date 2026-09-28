@@ -1,8 +1,8 @@
 import { setKeybindings } from "@candy/tui";
 import { beforeEach, describe, expect, test } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { keycap, keyHint, rawKeyHint } from "../src/modes/interactive/components/keybinding-hints.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("keycaps in terminal hints", () => {

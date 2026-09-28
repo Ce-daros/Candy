@@ -1,17 +1,4 @@
-/**
- * AgentSession - Core abstraction for agent lifecycle and session management.
- *
- * This class is shared between all run modes (interactive, print, rpc).
- * It encapsulates:
- * - Agent state access
- * - Event subscription with automatic session persistence
- * - Model and thinking level management
- * - Compaction (manual and auto)
- * - Bash execution
- * - Session switching and branching
- *
- * Modes use this class and add their own I/O layer on top.
- */
+/** Coordinates one active conversation for the interactive, print, RPC, and SDK hosts. */
 
 import { readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
@@ -25,10 +12,8 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@candy/agent-core";
-import { contentText, getCurrentSystemMessage, retryDelayMs } from "@candy/ai";
 import type {
 	AssistantMessage,
-	AuthResult,
 	ImageContent,
 	Model,
 	ProviderHeaders,
@@ -36,24 +21,22 @@ import type {
 	TextContent,
 	ToolResultMessage,
 	Usage,
-} from "@candy/ai/compat";
+} from "@candy/ai";
 import {
-	clampThinkingLevel,
 	cleanupSessionResources,
-	getSupportedThinkingLevels,
+	contentText,
+	getCurrentSystemMessage,
 	isContextOverflow,
 	isRecoverableLength,
 	isRetryableAssistantError,
-	modelsAreEqual,
 	type RetryCallbacks,
-	resetApiProviders,
-	streamSimple,
-} from "@candy/ai/compat";
-import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
+	retryDelayMs,
+} from "@candy/ai";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { processImage } from "../utils/image-process.ts";
 import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
+import { AgentInputQueue } from "./agent-input-queue.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import type { CacheWarmer, CacheWarmingStatus } from "./cache-warmer.ts";
@@ -71,9 +54,6 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
-import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "./defaults.ts";
-import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
-import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
 	type AgentActivityOutcome,
 	type BoundaryContextPreview,
@@ -105,8 +85,11 @@ import {
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.ts";
-import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
+import { type ModelMutationOptions, ModelSelection } from "./model-selection.ts";
+
+export type { ModelMutationOptions } from "./model-selection.ts";
+
 import { type PromptTemplate, parseCommandArgs, substituteArgs } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import { exportSessionToJsonl } from "./session-export.ts";
@@ -260,6 +243,11 @@ export interface ExtensionBindings {
 export type QueuedInputDisposition = "handled" | "queued";
 export type PromptDisposition = QueuedInputDisposition | "started";
 
+export interface QueuedInput {
+	text: string;
+	images?: ImageContent[];
+}
+
 /** Options for AgentSession.prompt() */
 export interface PromptOptions {
 	/** Image attachments */
@@ -273,13 +261,6 @@ export interface PromptOptions {
 }
 
 /** Options for model/thinking mutations. */
-export interface ModelMutationOptions {
-	/** Persist the new value to global defaults. Defaults to session-only. */
-	persist?: boolean;
-	/** Cancel an in-flight authentication check before the model is applied. */
-	signal?: AbortSignal;
-}
-
 /** Session statistics for the History details view. */
 export interface SessionStats {
 	sessionFile: string | undefined;
@@ -330,10 +311,7 @@ export class AgentSession {
 	private _idleWaitPromise: Promise<void> | undefined;
 	private _resolveIdleWait: (() => void) | undefined;
 
-	/** Tracks pending steering messages for UI display. Removed when delivered. */
-	private _steeringMessages: string[] = [];
-	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
-	private _followUpMessages: string[] = [];
+	private readonly _inputQueue: AgentInputQueue;
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
 	/** Context-only custom messages queued during a run, flushed once the current turn's tool results are in. */
@@ -342,13 +320,6 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
-	private _pendingCompactionCommands: Array<{
-		text: string;
-		mode: "steer" | "followUp";
-		options?: PromptOptions;
-		resolve: () => void;
-		reject: (error: unknown) => void;
-	}> = [];
 	private _drainingCompactionCommands = false;
 	private _disposed = false;
 	private _overflowRecoveryAttempted = false;
@@ -396,6 +367,7 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
+	private readonly _modelSelection: ModelSelection;
 	private _cacheWarmer?: Pick<CacheWarmer, "cancel" | "status" | "onAgentSettled" | "onModeChanged" | "onWarmed">;
 
 	// Tool registry for extension getTools/setTools
@@ -410,12 +382,30 @@ export class AgentSession {
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
+		this._inputQueue = new AgentInputQueue(this.agent, () => this._emitQueueUpdate());
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRuntime = config.modelRuntime;
+		this._modelSelection = new ModelSelection(
+			this.agent,
+			this._modelRuntime,
+			this.sessionManager,
+			this.settingsManager,
+			{
+				isDisposed: () => this._disposed,
+				isBusy: () => this.isStreaming || this.isCompacting,
+				onModelSelect: async (model, previousModel) => {
+					await this._extensionRunner.emit({ type: "model_select", model, previousModel, source: "set" });
+				},
+				onThinkingLevelChange: (level, previousLevel) => {
+					this._emit({ type: "thinking_level_changed", level });
+					void this._extensionRunner.emit({ type: "thinking_level_select", level, previousLevel });
+				},
+			},
+		);
 		this._cacheWarmer = config.cacheWarmer;
 		if (this._cacheWarmer) {
 			this._cacheWarmer.onWarmed = (entry) => this._emit({ type: "entry_appended", entry });
@@ -447,46 +437,6 @@ export class AgentSession {
 		return this._modelRuntime;
 	}
 
-	private async _getRequiredRequestAuth(
-		model: Model<any>,
-		signal?: AbortSignal,
-	): Promise<{
-		model: Model<any>;
-		apiKey?: string;
-		headers?: Record<string, string>;
-		env?: Record<string, string>;
-	}> {
-		let result: AuthResult | undefined;
-		try {
-			result = await this._modelRuntime.getAuth(model, { signal });
-		} catch (error) {
-			const cause = error instanceof Error ? error.cause : undefined;
-			if (cause instanceof Error && cause.message === "authHeader requires a resolved API key") {
-				throw new Error(formatNoApiKeyFoundMessage(model.provider));
-			}
-			throw error;
-		}
-		if (result && (result.auth.apiKey || result.auth.headers)) {
-			const requestModel = result.auth.baseUrl ? { ...model, baseUrl: result.auth.baseUrl } : model;
-			return {
-				model: requestModel,
-				apiKey: result.auth.apiKey,
-				headers: withoutDeletedHeaders(result.auth.headers),
-				env: result.env,
-			};
-		}
-
-		const isOAuth = this._modelRuntime.isUsingOAuth(model.provider);
-		if (isOAuth) {
-			throw new Error(
-				`Authentication failed for "${model.provider}". ` +
-					`Credentials may have expired or network is unavailable. ` +
-					`Open Sources to re-authenticate ${model.provider}.`,
-			);
-		}
-		throw new Error(formatNoApiKeyFoundMessage(model.provider));
-	}
-
 	private async _getSummarizationRequestAuth(
 		model: Model<any>,
 		signal?: AbortSignal,
@@ -496,10 +446,6 @@ export class AgentSession {
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
 	}> {
-		if (this.agent.streamFunction === streamSimple) {
-			return this._getRequiredRequestAuth(model, signal);
-		}
-
 		try {
 			const result = await this._modelRuntime.getAuth(model, { signal });
 			if (!result) return { model };
@@ -896,22 +842,7 @@ export class AgentSession {
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false;
-			const messageText = contentText(event.message.content, "");
-			if (messageText) {
-				// Check steering queue first
-				const steeringIndex = this._steeringMessages.indexOf(messageText);
-				if (steeringIndex !== -1) {
-					this._steeringMessages.splice(steeringIndex, 1);
-					this._emitQueueUpdate();
-				} else {
-					// Check follow-up queue
-					const followUpIndex = this._followUpMessages.indexOf(messageText);
-					if (followUpIndex !== -1) {
-						this._followUpMessages.splice(followUpIndex, 1);
-						this._emitQueueUpdate();
-					}
-				}
-			}
+			this._inputQueue.markStarted(event.message);
 		}
 
 		// Emit to extensions first, then notify public listeners.
@@ -1170,9 +1101,7 @@ export class AgentSession {
 	 */
 	dispose(): void {
 		this._disposed = true;
-		for (const item of this._pendingCompactionCommands.splice(0)) {
-			item.reject(new Error("Session was disposed before the command could run"));
-		}
+		this._inputQueue.rejectDeferred(new Error("Session was disposed before the queued input could run"));
 		try {
 			this.abortRetry();
 			this.abortCompaction();
@@ -1214,15 +1143,15 @@ export class AgentSession {
 		return this._cacheWarmer?.status;
 	}
 
-	/** Persist the cache-warming mode and immediately reconcile active warming. */
-	setCacheWarmingMode(mode: CacheWarmingMode): void {
-		this.settingsManager.setCacheWarmingMode(mode);
+	/** Persist the cache-warming mode, then reconcile active warming. */
+	async setCacheWarmingMode(mode: CacheWarmingMode): Promise<void> {
+		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setCacheWarmingMode(mode));
 		this._cacheWarmer?.onModeChanged();
 	}
 
 	/** Current model (may be undefined if not yet selected) */
 	get model(): Model<any> | undefined {
-		return this.agent.state.model;
+		return this._modelSelection.model;
 	}
 
 	get isDisposed(): boolean {
@@ -1231,7 +1160,7 @@ export class AgentSession {
 
 	/** Current thinking level */
 	get thinkingLevel(): ThinkingLevel {
-		return this.agent.state.thinkingLevel;
+		return this._modelSelection.thinkingLevel;
 	}
 
 	/** Whether the session is currently processing an agent run or post-run continuation. */
@@ -1608,10 +1537,9 @@ export class AgentSession {
 		}
 		const preflightResult = options?.preflightResult;
 
-		if (this._compactionAbortController !== undefined) {
-			throw new Error(
-				"Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.",
-			);
+		if (this._compactionAbortController || (this._branchSummaryAbortController && !this.isStreaming)) {
+			preflightResult?.("queued");
+			return this._inputQueue.queueForCompaction(text, options?.streamingBehavior ?? "followUp", options);
 		}
 
 		// Emit input event for extension interception.
@@ -1636,9 +1564,9 @@ export class AgentSession {
 				);
 			}
 			if (options.streamingBehavior === "followUp") {
-				await this._queueFollowUp(currentText, currentImages);
+				this._inputQueue.queue("followUp", currentText, currentImages);
 			} else {
-				await this._queueSteer(currentText, currentImages);
+				this._inputQueue.queue("steer", currentText, currentImages);
 			}
 			preflightResult?.("queued");
 			return;
@@ -1785,33 +1713,23 @@ export class AgentSession {
 			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
 			text = args.trim() ? `${skillBlock}\n\n${args.trim()}` : skillBlock;
 		}
-		if (this._compactionAbortController) {
-			options?.preflightResult?.("queued");
-			return new Promise<void>((resolve, reject) => {
-				this._pendingCompactionCommands.push({
-					text,
-					mode: options?.streamingBehavior ?? "followUp",
-					options,
-					resolve,
-					reject,
-				});
-				this._emitQueueUpdate();
-			});
-		}
 		await this.prompt(text, {
 			...options,
-			streamingBehavior:
-				options?.streamingBehavior ?? (this._autoCompactionAbortController ? "followUp" : undefined),
+			streamingBehavior: options?.streamingBehavior ?? (this.isCompacting ? "followUp" : undefined),
 		});
 	}
 
-	private async _drainPendingCompactionCommands(): Promise<void> {
+	private async _drainPendingCompactionInputs(): Promise<void> {
 		if (this._drainingCompactionCommands) return;
 		this._drainingCompactionCommands = true;
 		try {
-			while (!this._disposed && !this._compactionAbortController && this._pendingCompactionCommands.length > 0) {
-				const item = this._pendingCompactionCommands.shift()!;
-				this._emitQueueUpdate();
+			while (
+				!this._disposed &&
+				!this._compactionAbortController &&
+				!this._branchSummaryAbortController &&
+				this._inputQueue.hasDeferred
+			) {
+				const item = this._inputQueue.takeDeferred()!;
 				try {
 					await this.prompt(item.text, {
 						...item.options,
@@ -1842,11 +1760,7 @@ export class AgentSession {
 		);
 		if (!processedInput) return "handled";
 
-		if (behavior === "steer") {
-			await this._queueSteer(processedInput.text, processedInput.images);
-		} else {
-			await this._queueFollowUp(processedInput.text, processedInput.images);
-		}
+		this._inputQueue.queue(behavior, processedInput.text, processedInput.images);
 		return "queued";
 	}
 
@@ -1877,36 +1791,6 @@ export class AgentSession {
 		options?: { source?: InputSource },
 	): Promise<QueuedInputDisposition> {
 		return this._queueUserInput(text, images, "followUp", options?.source ?? "interactive");
-	}
-
-	/**
-	 * Internal: Queue a steering message.
-	 */
-	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
-		this._steeringMessages.push(text);
-		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.steer({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
-	}
-
-	/**
-	 * Internal: Queue a follow-up message.
-	 */
-	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
-		this._followUpMessages.push(text);
-		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.followUp({ role: "user", content, timestamp: Date.now() });
 	}
 
 	/**
@@ -2025,40 +1909,25 @@ export class AgentSession {
 	}
 
 	/**
-	 * Clear all queued messages and return them.
-	 * Useful for restoring to editor when user aborts.
-	 * @returns Object with steering and followUp arrays
+	 * Withdraw queued inputs with their attachments.
 	 */
-	clearQueue(): { steering: string[]; followUp: string[] } {
-		const steering = [...this.getSteeringMessages()];
-		const followUp = [...this.getFollowUpMessages()];
-		this._steeringMessages = [];
-		this._followUpMessages = [];
-		for (const item of this._pendingCompactionCommands.splice(0)) item.resolve();
-		this.agent.clearAllQueues();
-		this._emitQueueUpdate();
-		return { steering, followUp };
+	clearQueue(): { steering: QueuedInput[]; followUp: QueuedInput[] } {
+		return this._inputQueue.withdraw();
 	}
 
 	/** Number of pending messages (includes both steering and follow-up) */
 	get pendingMessageCount(): number {
-		return this._steeringMessages.length + this._followUpMessages.length + this._pendingCompactionCommands.length;
+		return this._inputQueue.count;
 	}
 
 	/** Get pending steering messages (read-only) */
 	getSteeringMessages(): readonly string[] {
-		return [
-			...this._steeringMessages,
-			...this._pendingCompactionCommands.filter((item) => item.mode === "steer").map((item) => item.text),
-		];
+		return this._inputQueue.getTexts("steer");
 	}
 
 	/** Get pending follow-up messages (read-only) */
 	getFollowUpMessages(): readonly string[] {
-		return [
-			...this._followUpMessages,
-			...this._pendingCompactionCommands.filter((item) => item.mode === "followUp").map((item) => item.text),
-		];
+		return this._inputQueue.getTexts("followUp");
 	}
 
 	get resourceLoader(): ResourceLoader {
@@ -2091,20 +1960,6 @@ export class AgentSession {
 	// Model Management
 	// =========================================================================
 
-	private async _emitModelSelect(
-		nextModel: Model<any>,
-		previousModel: Model<any> | undefined,
-		source: "set" | "restore",
-	): Promise<void> {
-		if (modelsAreEqual(previousModel, nextModel)) return;
-		await this._extensionRunner.emit({
-			type: "model_select",
-			model: nextModel,
-			previousModel,
-			source,
-		});
-	}
-
 	/**
 	 * Set model directly.
 	 * Validates that auth is configured and saves to the session transcript.
@@ -2112,38 +1967,12 @@ export class AgentSession {
 	 * @throws Error if no auth is configured for the model
 	 */
 	async setModel(model: Model<any>, options: ModelMutationOptions = {}): Promise<void> {
-		options.signal?.throwIfAborted();
-		if (this._disposed) throw new Error("Session was disposed before the model could be set");
-		const authenticated = await this._modelRuntime.checkAuth(model.provider, { signal: options.signal });
-		options.signal?.throwIfAborted();
-		if (this._disposed) throw new Error("Session was disposed before the model could be set");
-		if (!authenticated) {
-			throw new Error(`No API key for ${model.provider}/${model.id}`);
-		}
-
-		const previousModel = this.model;
-		const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
-		this.agent.state.model = model;
-		this.sessionManager.appendModelChange(model.provider, model.id);
-		if (options.persist) {
-			this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
-		}
-
-		// Apply thinking level for the new model.
-		// Per-model thinking level overrides take priority over the global default.
-		// Model persistence does not implicitly rewrite the global thinking default.
-		this.setThinkingLevel(thinkingLevel);
-
-		await this._emitModelSelect(model, previousModel, "set");
+		await this._modelSelection.setModel(model, options);
 	}
 
 	/** Clear the active session model without changing defaults or writing transcript entries. */
 	clearModel(): void {
-		if (this._disposed) throw new Error("Session was disposed before the model could be cleared");
-		if (this.isStreaming || this.isCompacting) {
-			throw new Error("Cannot clear the model while the session is busy");
-		}
-		this.agent.clearModel();
+		this._modelSelection.clearModel();
 	}
 
 	// =========================================================================
@@ -2154,47 +1983,17 @@ export class AgentSession {
 	 * Set thinking level.
 	 * Clamps to model capabilities based on available thinking levels.
 	 * Saves the clamped level to the session transcript only if the level actually changes.
-	 * Persists the requested level to global defaults only when options.persist is true.
 	 */
-	setThinkingLevel(level: ThinkingLevel, options: ModelMutationOptions = {}): void {
-		const availableLevels = this.getAvailableThinkingLevels();
-		const effectiveLevel = availableLevels.includes(level) ? level : this._clampThinkingLevel(level, availableLevels);
-
-		// Only persist if actually changing
-		const previousLevel = this.agent.state.thinkingLevel;
-		const isChanging = effectiveLevel !== previousLevel;
-
-		this.agent.state.thinkingLevel = effectiveLevel;
-
-		if (options.persist) {
-			this.settingsManager.setDefaultThinkingLevel(level);
-		}
-
-		if (isChanging) {
-			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-			this._emit({ type: "thinking_level_changed", level: effectiveLevel });
-			void this._extensionRunner.emit({
-				type: "thinking_level_select",
-				level: effectiveLevel,
-				previousLevel,
-			});
-		}
+	setThinkingLevel(level: ThinkingLevel): void {
+		this._modelSelection.setThinkingLevel(level);
 	}
 
 	/**
 	 * Cycle to next thinking level.
 	 * @returns New level, or undefined if model doesn't support thinking
 	 */
-	cycleThinkingLevel(options: ModelMutationOptions = {}): ThinkingLevel | undefined {
-		if (!this.supportsThinking()) return undefined;
-
-		const levels = this.getAvailableThinkingLevels();
-		const currentIndex = levels.indexOf(this.thinkingLevel);
-		const nextIndex = (currentIndex + 1) % levels.length;
-		const nextLevel = levels[nextIndex];
-
-		this.setThinkingLevel(nextLevel, options);
-		return nextLevel;
+	cycleThinkingLevel(): ThinkingLevel | undefined {
+		return this._modelSelection.cycleThinkingLevel();
 	}
 
 	/**
@@ -2202,33 +2001,14 @@ export class AgentSession {
 	 * The provider will clamp to what the specific model supports internally.
 	 */
 	getAvailableThinkingLevels(): ThinkingLevel[] {
-		if (!this.model) return [...THINKING_LEVEL_OPTIONS];
-		return getSupportedThinkingLevels(this.model) as ThinkingLevel[];
+		return this._modelSelection.getAvailableThinkingLevels();
 	}
 
 	/**
 	 * Check if current model supports thinking/reasoning.
 	 */
 	supportsThinking(): boolean {
-		return !!this.model?.reasoning;
-	}
-
-	private _getThinkingLevelForModelSwitch(targetModel?: Model<any>, explicitLevel?: ThinkingLevel): ThinkingLevel {
-		if (explicitLevel !== undefined) {
-			return explicitLevel;
-		}
-		// Per-model default takes priority when switching to a model that has one
-		if (targetModel) {
-			const perModel = this.settingsManager.getModelThinkingLevel(targetModel.provider, targetModel.id);
-			if (perModel !== undefined) {
-				return perModel;
-			}
-		}
-		return this.settingsManager.getDefaultThinkingLevel() ?? this.thinkingLevel ?? DEFAULT_THINKING_LEVEL;
-	}
-
-	private _clampThinkingLevel(level: ThinkingLevel, _availableLevels: ThinkingLevel[]): ThinkingLevel {
-		return this.model ? (clampThinkingLevel(this.model, level) as ThinkingLevel) : "off";
+		return this._modelSelection.supportsThinking();
 	}
 
 	// =========================================================================
@@ -2244,18 +2024,18 @@ export class AgentSession {
 	 * Set steering message mode.
 	 * Saves to settings.
 	 */
-	setSteeringMode(mode: "all" | "one-at-a-time"): void {
+	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setSteeringMode(mode));
 		this.agent.steeringMode = mode;
-		this.settingsManager.setSteeringMode(mode);
 	}
 
 	/**
 	 * Set follow-up message mode.
 	 * Saves to settings.
 	 */
-	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setFollowUpMode(mode));
 		this.agent.followUpMode = mode;
-		this.settingsManager.setFollowUpMode(mode);
 	}
 
 	// =========================================================================
@@ -2439,7 +2219,7 @@ export class AgentSession {
 				aborted: false,
 				willRetry: false,
 			});
-			void this._drainPendingCompactionCommands();
+			void this._drainPendingCompactionInputs();
 			return compactionResult;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -2461,7 +2241,7 @@ export class AgentSession {
 				willRetry: false,
 				fromExtension,
 			});
-			void this._drainPendingCompactionCommands();
+			void this._drainPendingCompactionInputs();
 			throw error;
 		} finally {
 			this._clearManualCompactionState();
@@ -2815,8 +2595,8 @@ export class AgentSession {
 	/**
 	 * Toggle auto-compaction setting.
 	 */
-	setAutoCompactionEnabled(enabled: boolean): void {
-		this.settingsManager.setCompactionEnabled(enabled);
+	async setAutoCompactionEnabled(enabled: boolean): Promise<void> {
+		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setCompactionEnabled(enabled));
 	}
 
 	/** Whether auto-compaction is enabled */
@@ -2911,20 +2691,6 @@ export class AgentSession {
 			: undefined;
 	}
 
-	private _refreshCurrentModelFromRegistry(): void {
-		const currentModel = this.model;
-		if (!currentModel) {
-			return;
-		}
-
-		const refreshedModel = this._modelRuntime.getModel(currentModel.provider, currentModel.id);
-		if (!refreshedModel || refreshedModel === currentModel) {
-			return;
-		}
-
-		this.agent.state.model = refreshedModel;
-	}
-
 	private _bindExtensionCore(runner: ExtensionRunner): void {
 		runner.bindCore(
 			{
@@ -2968,7 +2734,7 @@ export class AgentSession {
 				refreshTools: () => this._refreshToolRegistry(),
 				getCommands: () => this.getCommands(),
 				setModel: async (model) => {
-					if (!this._modelRuntime.hasConfiguredAuth(model.provider)) return false;
+					if (!(await this._modelRuntime.checkAuth(model.provider))) return false;
 					await this.setModel(model);
 					return true;
 				},
@@ -3009,15 +2775,15 @@ export class AgentSession {
 			{
 				registerProvider: (name, config) => {
 					this._modelRuntime.registerProvider(name, config);
-					this._refreshCurrentModelFromRegistry();
+					this._modelSelection.refreshFromRegistry();
 				},
 				registerNativeProvider: (provider) => {
 					this._modelRuntime.registerNativeProvider(provider);
-					this._refreshCurrentModelFromRegistry();
+					this._modelSelection.refreshFromRegistry();
 				},
 				unregisterProvider: (name) => {
 					this._modelRuntime.unregisterProvider(name);
-					this._refreshCurrentModelFromRegistry();
+					this._modelSelection.refreshFromRegistry();
 				},
 			},
 		);
@@ -3152,7 +2918,7 @@ export class AgentSession {
 			extensionsResult.runtime,
 			this._cwd,
 			this.sessionManager,
-			new ModelRegistry(this._modelRuntime),
+			this._modelRuntime,
 		);
 		if (this._extensionRunnerRef) {
 			this._extensionRunnerRef.current = this._extensionRunner;
@@ -3177,7 +2943,6 @@ export class AgentSession {
 		oldRunner.invalidate();
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
-		resetApiProviders();
 		await this._resourceLoader.reload();
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
@@ -3320,8 +3085,8 @@ export class AgentSession {
 	/**
 	 * Toggle auto-retry setting.
 	 */
-	setAutoRetryEnabled(enabled: boolean): void {
-		this.settingsManager.setRetryEnabled(enabled);
+	async setAutoRetryEnabled(enabled: boolean): Promise<void> {
+		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setRetryEnabled(enabled));
 	}
 
 	// =========================================================================
@@ -3654,6 +3419,7 @@ export class AgentSession {
 			return { editorText, cancelled: false, summaryEntry };
 		} finally {
 			this._branchSummaryAbortController = undefined;
+			void this._drainPendingCompactionInputs();
 			this._resolveIdleWaitIfIdle();
 		}
 	}
@@ -3780,31 +3546,6 @@ export class AgentSession {
 			contextWindow,
 			percent,
 		};
-	}
-
-	/**
-	 * Export session to HTML.
-	 * @param outputPath Optional output path (defaults to session directory)
-	 * @param options Optional export presentation settings
-	 * @returns Path to exported file
-	 */
-	async exportToHtml(outputPath?: string, options: { themeName?: string } = {}): Promise<string> {
-		const themeName = [options.themeName, this.settingsManager.getTheme()].find(
-			(candidate) => candidate !== undefined && getThemeByName(candidate) !== undefined,
-		);
-
-		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
-		const toolRenderer: ToolHtmlRenderer = createToolHtmlRenderer({
-			getToolDefinition: (name) => this.getToolDefinition(name),
-			theme,
-			cwd: this.sessionManager.getCwd(),
-		});
-
-		return await exportSessionToHtml(this.sessionManager, this.state, {
-			outputPath,
-			themeName,
-			toolRenderer,
-		});
 	}
 
 	/**

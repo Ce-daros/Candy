@@ -5,11 +5,11 @@
 import type { AgentMessage } from "@candy/agent-core";
 import { getCurrentSystemMessage, type ImageContent, type Model, type Provider, type ProviderHeaders } from "@candy/ai";
 import type { KeyId } from "@candy/tui";
-import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
+import type { Theme } from "../../modes/interactive/theme/theme.ts";
+import type { KeybindingsConfig } from "../../presentation/keybindings.ts";
 import type { CacheWarmingAction } from "../cache-warmer.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
-import type { KeybindingsConfig } from "../keybindings.ts";
-import type { ModelRegistry } from "../model-registry.ts";
+import type { ModelRuntime } from "../model-runtime.ts";
 import type { SessionManager } from "../session-manager.ts";
 import {
 	type BuildSystemPromptOptions,
@@ -329,8 +329,8 @@ const noOpUIContext: ExtensionUIContext = {
 	addAutocompleteProvider: () => {},
 	setEditorComponent: () => {},
 	getEditorComponent: () => undefined,
-	get theme() {
-		return theme;
+	get theme(): Theme {
+		throw new Error("UI not available");
 	},
 	getAllThemes: () => [],
 	getTheme: () => undefined,
@@ -346,7 +346,7 @@ export class ExtensionRunner {
 	private mode: ExtensionMode = "print";
 	private cwd: string;
 	private sessionManager: SessionManager;
-	private modelRegistry: ModelRegistry;
+	private modelRuntime: ModelRuntime;
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
 	private isIdleFn: () => boolean = () => true;
@@ -377,14 +377,14 @@ export class ExtensionRunner {
 		runtime: ExtensionRuntime,
 		cwd: string,
 		sessionManager: SessionManager,
-		modelRegistry: ModelRegistry,
+		modelRuntime: ModelRuntime,
 	) {
 		this.extensions = extensions;
 		this.runtime = runtime;
 		this.uiContext = noOpUIContext;
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
-		this.modelRegistry = modelRegistry;
+		this.modelRuntime = modelRuntime;
 	}
 
 	bindCore(
@@ -432,7 +432,7 @@ export class ExtensionRunner {
 				if (providerActions?.registerProvider) {
 					providerActions.registerProvider(name, config);
 				} else {
-					this.modelRegistry.registerProvider(name, config);
+					this.modelRuntime.registerProvider(name, config);
 				}
 			} catch (err) {
 				this.emitError({
@@ -449,7 +449,7 @@ export class ExtensionRunner {
 				if (providerActions?.registerNativeProvider) {
 					providerActions.registerNativeProvider(provider);
 				} else {
-					this.modelRegistry.registerProvider(provider);
+					this.modelRuntime.registerNativeProvider(provider);
 				}
 			} catch (err) {
 				this.emitError({
@@ -469,21 +469,21 @@ export class ExtensionRunner {
 				providerActions.registerProvider(name, config);
 				return;
 			}
-			this.modelRegistry.registerProvider(name, config);
+			this.modelRuntime.registerProvider(name, config);
 		};
 		this.runtime.registerNativeProvider = (provider) => {
 			if (providerActions?.registerNativeProvider) {
 				providerActions.registerNativeProvider(provider);
 				return;
 			}
-			this.modelRegistry.registerProvider(provider);
+			this.modelRuntime.registerNativeProvider(provider);
 		};
 		this.runtime.unregisterProvider = (name) => {
 			if (providerActions?.unregisterProvider) {
 				providerActions.unregisterProvider(name);
 				return;
 			}
-			this.modelRegistry.unregisterProvider(name);
+			this.modelRuntime.unregisterProvider(name);
 		};
 	}
 
@@ -759,8 +759,8 @@ export class ExtensionRunner {
 		});
 	}
 
-	getModelRegistry(): ModelRegistry {
-		return this.modelRegistry;
+	getModelRuntime(): ModelRuntime {
+		return this.modelRuntime;
 	}
 
 	getRegisteredCommands(): ResolvedCommand[] {
@@ -817,9 +817,9 @@ export class ExtensionRunner {
 				runner.assertActive();
 				return runner.sessionManager;
 			},
-			get modelRegistry() {
+			get modelRuntime() {
 				runner.assertActive();
-				return runner.modelRegistry;
+				return runner.modelRuntime;
 			},
 			get model() {
 				runner.assertActive();

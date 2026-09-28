@@ -1,6 +1,5 @@
 import { setCapabilityOverrides, setKeybindings, type TUI, visibleWidth } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.ts";
 import { keycap, keyText } from "../src/modes/interactive/components/keybinding-hints.ts";
 import {
@@ -11,6 +10,7 @@ import {
 	WorkingStatusIndicator,
 } from "../src/modes/interactive/components/status-indicator.ts";
 import { getEditorTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("status indicators", () => {

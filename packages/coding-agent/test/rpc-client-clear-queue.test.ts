@@ -14,7 +14,7 @@ describe("RpcClient clearQueue", () => {
 			type: "response",
 			command: "clear_queue",
 			success: true,
-			data: { steering: ["Change direction"], followUp: ["Summarize when finished"] },
+			data: { steering: [{ text: "Change direction" }], followUp: [{ text: "Summarize when finished" }] },
 		}));
 		privateClient.send = send;
 		privateClient.getData = <T>(response: unknown): T => {
@@ -24,6 +24,9 @@ describe("RpcClient clearQueue", () => {
 		const result = await client.clearQueue();
 
 		expect(send).toHaveBeenCalledWith({ type: "clear_queue" });
-		expect(result).toEqual({ steering: ["Change direction"], followUp: ["Summarize when finished"] });
+		expect(result).toEqual({
+			steering: [{ text: "Change direction" }],
+			followUp: [{ text: "Summarize when finished" }],
+		});
 	});
 });

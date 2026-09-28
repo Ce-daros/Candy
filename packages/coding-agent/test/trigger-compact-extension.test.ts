@@ -9,7 +9,7 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
 		ui: {} as ExtensionContext["ui"],
 		cwd: process.cwd(),
 		sessionManager: {} as ExtensionContext["sessionManager"],
-		modelRegistry: {} as ExtensionContext["modelRegistry"],
+		modelRuntime: {} as ExtensionContext["modelRuntime"],
 		model: undefined,
 		isIdle: () => true,
 		isProjectTrusted: () => true,

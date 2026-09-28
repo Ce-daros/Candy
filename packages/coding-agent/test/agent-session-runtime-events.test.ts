@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage, registerFauxProvider } from "@candy/ai/compat";
+import { fauxAssistantMessage, fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type CreateAgentSessionRuntimeFactory,
@@ -19,6 +19,9 @@ import type {
 	SessionShutdownEvent,
 	SessionStartEvent,
 } from "../src/index.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { configuredFauxProvider } from "./ai.ts";
 
 type RecordedSessionEvent =
 	| SessionBeforeSwitchEvent
@@ -39,7 +42,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		const tempDir = join(tmpdir(), `pi-runtime-events-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 
-		const faux = registerFauxProvider();
+		const faux = fauxProvider();
 		faux.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two"), fauxAssistantMessage("three")]);
 
 		const authStorage = AuthStorage.inMemory();
@@ -48,24 +51,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 			credentials: authStorage,
 			modelsPath: join(tempDir, "models.json"),
 		});
-		const model = faux.getModel();
-		modelRuntime.registerProvider(model.provider, {
-			baseUrl: model.baseUrl,
-			api: model.api,
-			models: [
-				{
-					id: model.id,
-					name: model.name,
-					api: model.api,
-					reasoning: model.reasoning,
-					input: model.input,
-					cost: model.cost,
-					contextWindow: model.contextWindow,
-					maxTokens: model.maxTokens,
-					baseUrl: model.baseUrl,
-				},
-			],
-		});
+		modelRuntime.registerNativeProvider(configuredFauxProvider(faux));
 
 		const runtimeOptions = {
 			agentDir: tempDir,
@@ -80,6 +66,8 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				...runtimeOptions,
 				cwd,
 			});
@@ -103,7 +91,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		cleanups.push(async () => {
 			await runtimeHost.dispose();
-			faux.unregister();
+			modelRuntime.unregisterProvider(faux.provider.id);
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}

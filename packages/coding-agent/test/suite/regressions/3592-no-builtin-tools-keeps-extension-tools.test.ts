@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModel } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -12,6 +12,8 @@ import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import { createAgentSession } from "../../../src/core/sdk.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
+import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
 
 describe("regression #3592: no-builtin-tools keeps extension tools enabled", () => {
 	let tempDir: string;
@@ -33,6 +35,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory(tempDir);
 		const resourceLoader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir,
 			settingsManager,
@@ -99,6 +103,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory(tempDir);
 		const services = await createAgentSessionServices({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir,
 			settingsManager,

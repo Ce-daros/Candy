@@ -3,9 +3,6 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@candy/chord": ["../chord/dist/index.d.ts"],
-			"@candy/chord/bundler": ["../chord/dist/bundler.d.ts"],
-			"@candy/chord/node": ["../chord/dist/node.d.ts"],
 			"@candy/agent-core": ["../agent/dist/index.d.ts"],
 			"@candy/agent-core/*": ["../agent/dist/*.d.ts"],
 			"@candy/ai": ["../ai/dist/index.d.ts"],
@@ -16,5 +13,5 @@
 		"rootDir": "./src"
 	},
 	"include": ["src/**/*.ts", "src/**/*.d.ts"],
-	"exclude": ["node_modules", "dist", "src/client", "src/experimental", "src/cli/experimental"]
+	"exclude": ["node_modules", "dist"]
 }

@@ -6,6 +6,7 @@
  */
 
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@candy/agent-core";
+import type { AssistantMessage, Model, SimpleStreamOptions, SystemMessage, TranscriptContext, Usage } from "@candy/ai";
 import {
 	contentText,
 	getCurrentSystemMessage,
@@ -15,15 +16,6 @@ import {
 	retryAssistantCall,
 	uuidv7,
 } from "@candy/ai";
-import type {
-	AssistantMessage,
-	Model,
-	SimpleStreamOptions,
-	SystemMessage,
-	TranscriptContext,
-	Usage,
-} from "@candy/ai/compat";
-import { completeSimple } from "@candy/ai/compat";
 import { convertToLlm } from "../messages.ts";
 import {
 	buildSessionProjection,
@@ -653,10 +645,8 @@ export async function completeSummarization(
 		cacheRetention: "none",
 		sessionId: options.sessionId ?? uuidv7(),
 	};
-	const produce = async (): Promise<AssistantMessage> =>
-		streamFn
-			? (await streamFn(model, context, requestOptions)).result()
-			: completeSimple(model, context, requestOptions);
+	if (!streamFn) throw new Error("Summarization requires an explicit stream function");
+	const produce = async (): Promise<AssistantMessage> => (await streamFn(model, context, requestOptions)).result();
 	return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
 }
 

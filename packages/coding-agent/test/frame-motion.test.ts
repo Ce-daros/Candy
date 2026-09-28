@@ -2,11 +2,11 @@ import type { TUI } from "@candy/tui";
 import { setCapabilityOverrides, visibleWidth } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.ts";
 import { FooterComponent } from "../src/modes/interactive/components/footer.ts";
 import { FrameMotion } from "../src/modes/interactive/components/frame-motion.ts";
 import { getEditorTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("editor frame motion", () => {

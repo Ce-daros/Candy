@@ -7,7 +7,7 @@
 
 import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
 import type { ImageContent, Model } from "@candy/ai";
-import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
+import type { PromptDisposition, QueuedInput, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -121,7 +121,7 @@ export type RpcResponse =
 			type: "response";
 			command: "clear_queue";
 			success: true;
-			data: { steering: string[]; followUp: string[] };
+			data: { steering: QueuedInput[]; followUp: QueuedInput[] };
 	  }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 

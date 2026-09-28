@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../../../src/config.ts";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { runMigrations } from "../../../src/migrations.ts";
-import { createModelRegistry } from "../../model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "../../model-runtime-test-utils.ts";
 import { createHarness } from "../harness.ts";
 
 describe("regression #5661: uppercase models.json header values", () => {
@@ -79,13 +79,14 @@ describe("regression #5661: uppercase models.json header values", () => {
 		expect(migrated.providers["my-provider"]?.apiKey).toBe("CUSTOM_API_KEY");
 		expect(migrated.providers["my-provider"]?.headers?.Authorization).toBe("BEARER");
 
-		const registry = await createModelRegistry(AuthStorage.create(join(harness.tempDir, "auth.json")), modelsPath);
-		const model = registry.find("my-provider", "my-model");
+		const registry = await createTestModelRuntime(AuthStorage.create(join(harness.tempDir, "auth.json")), modelsPath);
+		const model = registry.getModel("my-provider", "my-model");
 		expect(model).toBeDefined();
-		expect(await registry.getApiKeyAndHeaders(model!)).toMatchObject({
-			ok: true,
-			apiKey: "CUSTOM_API_KEY",
-			headers: { Authorization: "BEARER" },
+		expect(await registry.getAuth(model!)).toMatchObject({
+			auth: {
+				apiKey: "CUSTOM_API_KEY",
+				headers: { Authorization: "BEARER" },
+			},
 		});
 	});
 });

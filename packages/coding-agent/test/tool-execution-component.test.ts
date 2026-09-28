@@ -12,10 +12,10 @@ import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.ts";
 import { createEditToolDefinition } from "../src/core/tools/edit.ts";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.ts";
-import { withBuiltInRenderers } from "../src/core/tools/renderers/index.ts";
 import { createWriteToolDefinition } from "../src/core/tools/write.ts";
-import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
+import { ToolExecutionComponent, type ToolRenderers } from "../src/modes/interactive/components/tool-execution.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { withBuiltInRenderers } from "../src/presentation/tool-renderers/index.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 function createBaseToolDefinition(name = "custom_tool"): ToolDefinition {
@@ -31,6 +31,25 @@ function createBaseToolDefinition(name = "custom_tool"): ToolDefinition {
 	};
 }
 
+function createToolExecutionComponent(
+	toolName: string,
+	toolCallId: string,
+	args: any,
+	options: ConstructorParameters<typeof ToolExecutionComponent>[3],
+	toolDefinition: ToolRenderers | ToolDefinition<any, any, any> | undefined,
+	ui: TUI,
+	cwd: string,
+): ToolExecutionComponent {
+	return new ToolExecutionComponent(
+		toolName,
+		toolCallId,
+		args,
+		options,
+		withBuiltInRenderers(toolName, toolDefinition),
+		ui,
+		cwd,
+	);
+}
 function createFakeTui(): TUI {
 	return {
 		requestRender: () => {},
@@ -56,7 +75,7 @@ describe("ToolExecutionComponent parity", () => {
 			finishConversion = resolve;
 		});
 		imageConvertMocks.convertToPng.mockReturnValue(conversion);
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-image-race",
 			{},
@@ -91,7 +110,7 @@ describe("ToolExecutionComponent parity", () => {
 			renderResult: () => new Text("custom result", 0, 0),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-1",
 			{},
@@ -124,7 +143,7 @@ describe("ToolExecutionComponent parity", () => {
 			renderResult: () => new Text("", 0, 0),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-empty-self-render",
 			{},
@@ -152,7 +171,7 @@ describe("ToolExecutionComponent parity", () => {
 			...createBaseToolDefinition("edit"),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"edit",
 			"tool-2",
 			{ path: "README.md", oldText: "before", newText: "after" },
@@ -169,7 +188,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("renders edit diffs inside the activity rail with five preview rows", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"edit",
 			"edit-preview",
 			{ path: "src/theme.ts", oldText: "before", newText: "after" },
@@ -189,7 +208,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("shows one bash tail preview hint and a named activity node", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"bash",
 			"bash-tail",
 			{ command: "generate" },
@@ -215,7 +234,7 @@ describe("ToolExecutionComponent parity", () => {
 		Buffer.from("89504e470d0a1a0a0000000d49484452", "hex").copy(png);
 		png.writeUInt32BE(800, 16);
 		png.writeUInt32BE(600, 20);
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"image-preview",
 			{},
@@ -256,7 +275,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("preserves legacy file_path rendering compatibility for built-in tools", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-3",
 			{ file_path: "README.md" },
@@ -307,7 +326,7 @@ describe("ToolExecutionComponent parity", () => {
 			undefined,
 			{} as never,
 		);
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"bash",
 			"tool-bash-1b",
 			{ command: "generate output" },
@@ -341,7 +360,7 @@ describe("ToolExecutionComponent parity", () => {
 	])("bash renderer formats $ms ms as $formatted while running and after completion", ({ ms, formatted }) => {
 		vi.useFakeTimers();
 		vi.setSystemTime(0);
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"bash",
 			"tool-bash-duration",
 			{ command: "long-running-command" },
@@ -368,7 +387,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("does not duplicate built-in headers when passed the active built-in definition", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-4",
 			{ path: "README.md" },
@@ -384,7 +403,7 @@ describe("ToolExecutionComponent parity", () => {
 
 	// Issue #9996: strict tool schemas make models send null for omitted optional fields.
 	test("renders read calls with null offset and limit as full-file reads", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-read-null-range",
 			{ path: "src/example.ts", offset: null, limit: null },
@@ -404,7 +423,7 @@ describe("ToolExecutionComponent parity", () => {
 			renderCall: () => new Text("override call", 0, 0),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-4b",
 			{ path: "notes.txt" },
@@ -426,7 +445,7 @@ describe("ToolExecutionComponent parity", () => {
 			renderResult: () => new Text("override result", 0, 0),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-4c",
 			{ path: "README.md" },
@@ -444,7 +463,7 @@ describe("ToolExecutionComponent parity", () => {
 
 	test("uses custom renderers for built-in overrides that reuse built-in definition parameters", () => {
 		const builtInDefinition = createReadToolDefinition(process.cwd());
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-4d",
 			{ path: "README.md" },
@@ -466,7 +485,7 @@ describe("ToolExecutionComponent parity", () => {
 
 	test("uses custom renderers for built-in overrides that reuse wrapped built-in tool parameters", () => {
 		const builtInTool = createReadTool(process.cwd());
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-4e",
 			{ path: "README.md" },
@@ -499,7 +518,7 @@ describe("ToolExecutionComponent parity", () => {
 			},
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-5",
 			{},
@@ -522,7 +541,7 @@ describe("ToolExecutionComponent parity", () => {
 				new Text(`arg:${String((context.args as { foo: string }).foo)}`, 0, 0),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-5b",
 			{ foo: "bar" },
@@ -541,7 +560,7 @@ describe("ToolExecutionComponent parity", () => {
 			...createBaseToolDefinition(),
 		};
 
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-6",
 			{ foo: "bar" },
@@ -566,7 +585,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("uses configurable screen-row previews and distinguishes success, error and cancellation", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"custom_tool",
 			"tool-activity",
 			{},
@@ -595,7 +614,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("connects adjacent tool activity only when requested", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"activity",
 			{ path: "README.md" },
@@ -613,7 +632,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("trims trailing blank display lines from write previews", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"write",
 			"tool-7",
 			{ path: "README.md", content: "one\ntwo\n" },
@@ -629,7 +648,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("trims trailing blank display lines from read results", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-8",
 			{ path: "notes.txt" },
@@ -650,7 +669,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("does not syntax-highlight read errors based on the requested file path", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-read-error-highlighting",
 			{ path: "config.exs", offset: 120, limit: 130 },
@@ -668,7 +687,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("expands a collapsed tool result when clicked", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-click-expand",
 			{ path: "notes.txt" },
@@ -704,7 +723,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("collapses ordinary read results until expanded", () => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			"read",
 			"tool-ordinary-read-collapsed",
 			{ path: "notes.txt" },
@@ -739,7 +758,7 @@ describe("ToolExecutionComponent parity", () => {
 		{ name: "find", args: { pattern: "*.ts", path: "." }, output: "a.ts\nb.ts", summary: "2 files" },
 		{ name: "ls", args: { path: "." }, output: "a.ts\nb.ts", summary: "2 entries" },
 	])("shows a real $name result count in its collapsed activity row", ({ name, args, output, summary }) => {
-		const component = new ToolExecutionComponent(
+		const component = createToolExecutionComponent(
 			name,
 			`tool-${name}-summary`,
 			args,
@@ -799,7 +818,7 @@ describe("ToolExecutionComponent parity", () => {
 		},
 	] as const) {
 		test(`renders ${scenario.title} read results compactly until expanded`, () => {
-			const component = new ToolExecutionComponent(
+			const component = createToolExecutionComponent(
 				"read",
 				`tool-compact-${scenario.title}`,
 				{ path: scenario.path },
@@ -831,7 +850,7 @@ describe("ToolExecutionComponent parity", () => {
 		{ title: "candy documentation", path: getReadmePath(), compact: "read docs README.md:120-329" },
 	] as const) {
 		test(`shows the read line range in compact ${scenario.title} reads before the expand hint`, () => {
-			const component = new ToolExecutionComponent(
+			const component = createToolExecutionComponent(
 				"read",
 				`tool-compact-range-${scenario.title}`,
 				{ path: scenario.path, offset: 120, limit: 210 },

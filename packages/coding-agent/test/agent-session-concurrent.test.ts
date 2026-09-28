@@ -1,4 +1,4 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 /**
  * Tests for AgentSession concurrent prompt guard.
  */
@@ -7,14 +7,9 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
-import {
-	type AssistantMessage,
-	type AssistantMessageEvent,
-	EventStream,
-	getModel,
-	type ImageContent,
-	type TextContent,
-} from "@candy/ai/compat";
+import type { AssistantMessage, AssistantMessageEvent, ImageContent, TextContent } from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
+import { EventStream } from "@candy/ai/utils/event-stream";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
@@ -115,7 +110,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		// Set a runtime API key so validation passes
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
@@ -124,7 +119,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -240,7 +235,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		const extensionsResult = await createTestExtensionsResult([
@@ -259,7 +254,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader({ extensionsResult }),
 		});
 		session.subscribe((event) => {
@@ -318,7 +313,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		session = new AgentSession({
@@ -326,7 +321,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
 
@@ -424,7 +419,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		session = new AgentSession({
@@ -432,7 +427,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
 		});
@@ -573,7 +568,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage, tempDir);
+		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		session = new AgentSession({
@@ -581,7 +576,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
 		});

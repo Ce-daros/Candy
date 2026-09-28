@@ -1,4 +1,4 @@
-import type { Usage } from "@candy/ai/compat";
+import type { Usage } from "@candy/ai";
 import type { SessionEntry } from "./session-manager.ts";
 
 export interface UsageTotals {

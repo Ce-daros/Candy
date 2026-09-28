@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Skills Configuration
  *
@@ -25,6 +27,8 @@ const customSkill: Skill = {
 };
 
 const loader = new DefaultResourceLoader({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd: process.cwd(),
 	agentDir: getAgentDir(),
 	skillsOverride: (current) => {

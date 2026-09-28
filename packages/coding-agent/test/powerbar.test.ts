@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@candy/agent-core";
-import type { Model } from "@candy/ai/compat";
+import type { Model } from "@candy/ai";
 import { visibleWidth } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";

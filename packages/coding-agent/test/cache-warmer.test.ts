@@ -28,7 +28,7 @@ import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import type { ExtensionFactory } from "../src/core/extensions/types.ts";
 import { type SessionEntry, SessionManager, type UsageEntry } from "../src/core/session-manager.ts";
 import type { CacheWarmingMode } from "../src/core/settings-manager.ts";
-import { createInMemoryModelRegistry } from "./model-runtime-test-utils.ts";
+import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
 
 const adaptiveModel: Model<Api> = {
 	...getBuiltinModel("anthropic", "claude-opus-4-6"),
@@ -351,8 +351,8 @@ describe("ExtensionRunner.emitCacheWarmingDecision", () => {
 		for (const factory of factories) {
 			extensions.push(await loadExtensionFromFactory(factory, process.cwd(), eventBus, runtime));
 		}
-		const modelRegistry = await createInMemoryModelRegistry(AuthStorage.inMemory());
-		const runner = new ExtensionRunner(extensions, runtime, process.cwd(), SessionManager.inMemory(), modelRegistry);
+		const modelRuntime = await createInMemoryModelRuntime(AuthStorage.inMemory());
+		const runner = new ExtensionRunner(extensions, runtime, process.cwd(), SessionManager.inMemory(), modelRuntime);
 		const event: CacheWarmingDecisionEvent = {
 			type: "cache_warming_decision",
 			warmCost: 0.05,

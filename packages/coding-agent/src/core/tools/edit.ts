@@ -15,7 +15,6 @@ import {
 } from "./edit-diff.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
-import { type EditRenderState, editRenderers } from "./renderers/edit.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const replaceEditSchema = Type.Object(
@@ -143,7 +142,7 @@ function validateEditInput(input: EditToolInput): { path: string; edits: Edit[] 
 export function createEditToolDefinition(
 	cwd: string,
 	options?: EditToolOptions,
-): ToolDefinition<typeof editSchema, EditToolDetails | undefined, EditRenderState> {
+): ToolDefinition<typeof editSchema, EditToolDetails | undefined> {
 	const ops = options?.operations ?? defaultEditOperations;
 	return {
 		name: "edit",
@@ -211,7 +210,6 @@ export function createEditToolDefinition(
 				};
 			});
 		},
-		...editRenderers,
 	};
 }
 

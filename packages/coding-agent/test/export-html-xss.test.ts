@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
 describe("export HTML markdown link sanitization", () => {
-	const templateJs = readFileSync(new URL("../src/core/export-html/template.js", import.meta.url), "utf-8");
+	const templateJs = readFileSync(new URL("../src/presentation/export-html/template.js", import.meta.url), "utf-8");
 
 	it("overrides the marked link renderer to use scheme allow-list sanitization", () => {
 		expect(templateJs).toMatch(/link\s*\(\s*token\s*\)/);

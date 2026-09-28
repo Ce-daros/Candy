@@ -25,7 +25,7 @@ export default function (candy: ExtensionAPI) {
 		const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
 
 		// Use Gemini Flash for summarization (cheaper/faster than most conversation models)
-		const model = ctx.modelRegistry.find("google", "gemini-2.5-flash");
+		const model = ctx.modelRuntime.getModel("google", "gemini-2.5-flash");
 		if (!model) {
 			ctx.ui.notify(`Could not find Gemini Flash model, using default compaction`, "warning");
 			return;
@@ -76,7 +76,7 @@ ${conversationText}
 
 		try {
 			// Pass signal to honor abort requests (e.g., user cancels compaction)
-			const response = await ctx.modelRegistry.complete(
+			const response = await ctx.modelRuntime.complete(
 				model,
 				{ messages: summaryMessages },
 				{

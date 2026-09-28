@@ -243,7 +243,7 @@ if (cmd === "contrast") {
 	cmdTheme(cmd);
 } else {
 	console.log("Usage (from packages/coding-agent):");
-	console.log("  node --import ./src/experimental/source-resolver.ts test/test-theme-colors.ts <command>");
+	console.log("  node --import ./src/utils/source-resolver.ts test/test-theme-colors.ts <command>");
 	console.log("");
 	console.log("Commands:");
 	console.log("  light|dark     Test built-in theme");

@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Custom Model Selection
  *
@@ -29,6 +31,8 @@ console.log(
 
 if (available.length > 0) {
 	const { session } = await createAgentSession({
+		extensionModules: extensionHostModules,
+		themeAdapter: resourceThemeAdapter,
 		model: available[0],
 		thinkingLevel: "medium", // off, low, medium, high
 		modelRuntime,

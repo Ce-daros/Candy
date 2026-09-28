@@ -1,8 +1,12 @@
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Usage } from "@candy/ai";
 import { Container } from "@candy/tui";
 import { describe, expect, test, vi } from "vitest";
 import type { SessionEntry } from "../src/core/session-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { SessionPresentation } from "../src/modes/interactive/session-presentation.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
@@ -107,7 +111,10 @@ describe("InteractiveMode compaction events", () => {
 				usage: previousUsage,
 			},
 		];
-		const fakeThis = { renderSessionItems: vi.fn() };
+		const fakeThis = {
+			sessionPresentation: new SessionPresentation(),
+			renderSessionItems: vi.fn(),
+		};
 		const renderSessionEntries = Reflect.get(InteractiveMode.prototype, "renderSessionEntries") as (
 			this: typeof fakeThis,
 			entries: SessionEntry[],
@@ -171,7 +178,6 @@ describe("InteractiveMode compaction events", () => {
 			showError: vi.fn(),
 			showStatus: vi.fn(),
 			clearStatusIndicator: vi.fn(),
-			flushCompactionQueue: vi.fn().mockResolvedValue(undefined),
 			settingsManager: { getShowTerminalProgress: () => false },
 			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 		};
@@ -215,7 +221,6 @@ describe("InteractiveMode compaction events", () => {
 			kind: "compaction",
 			usage,
 		});
-		expect(fakeThis.flushCompactionQueue).toHaveBeenCalledWith({ willRetry: false });
 	});
 
 	test("updates the working state when the same agent run resumes after compaction", async () => {
@@ -268,52 +273,107 @@ describe("InteractiveMode compaction events", () => {
 		expect(abort).toHaveBeenCalledOnce();
 	});
 
-	test("preserves steering behavior when flushing into an active agent run", async () => {
+	test("submits steering input to the session queue during compaction", async () => {
 		const fakeThis = {
-			compactionQueuedMessages: [{ text: "change direction", mode: "steer" as const }],
+			editor: { addToHistory: vi.fn(), setText: vi.fn(), getText: vi.fn(() => "") },
 			session: {
-				clearQueue: vi.fn(),
 				prompt: vi.fn().mockResolvedValue(undefined),
-				steer: vi.fn().mockResolvedValue(undefined),
-				followUp: vi.fn().mockResolvedValue(undefined),
 			},
 			updatePendingMessagesDisplay: vi.fn(),
 			showError: vi.fn(),
+			showStatus: vi.fn(),
 		};
-
-		const flushCompactionQueue = Reflect.get(InteractiveMode.prototype, "flushCompactionQueue") as (
+		const queueCompactionMessage = Reflect.get(InteractiveMode.prototype, "queueCompactionMessage") as (
 			this: typeof fakeThis,
-			options?: { willRetry?: boolean },
-		) => Promise<void>;
+			input: { text: string; images?: Array<{ type: "image"; data: string; mimeType: string }> },
+			mode: "steer" | "followUp",
+		) => void;
+		const images = [{ type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" }];
+		queueCompactionMessage.call(fakeThis, { text: "change direction", images }, "steer");
 
-		await flushCompactionQueue.call(fakeThis, { willRetry: false });
-
-		expect(fakeThis.session.prompt).toHaveBeenCalledWith("change direction", { streamingBehavior: "steer" });
-		expect(fakeThis.compactionQueuedMessages).toEqual([]);
+		expect(fakeThis.session.prompt).toHaveBeenCalledWith("change direction", {
+			images,
+			streamingBehavior: "steer",
+		});
+		expect(fakeThis.editor.setText).toHaveBeenCalledWith("");
 		expect(fakeThis.showError).not.toHaveBeenCalled();
 	});
 
-	test("flushes slash-prefixed text as an ordinary queued message", async () => {
+	test("submits slash-prefixed text as an ordinary queued message", async () => {
 		const fakeThis = {
-			compactionQueuedMessages: [{ text: "/compact", mode: "followUp" as const }],
+			editor: { addToHistory: vi.fn(), setText: vi.fn(), getText: vi.fn(() => "") },
 			session: {
-				clearQueue: vi.fn(),
 				prompt: vi.fn().mockResolvedValue(undefined),
-				steer: vi.fn().mockResolvedValue(undefined),
-				followUp: vi.fn().mockResolvedValue(undefined),
 			},
 			updatePendingMessagesDisplay: vi.fn(),
 			showError: vi.fn(),
+			showStatus: vi.fn(),
 		};
-		const flushCompactionQueue = Reflect.get(InteractiveMode.prototype, "flushCompactionQueue") as (
+		const queueCompactionMessage = Reflect.get(InteractiveMode.prototype, "queueCompactionMessage") as (
 			this: typeof fakeThis,
-			options?: { willRetry?: boolean },
-		) => Promise<void>;
+			input: { text: string },
+			mode: "steer" | "followUp",
+		) => void;
+		queueCompactionMessage.call(fakeThis, { text: "/compact" }, "followUp");
 
-		await flushCompactionQueue.call(fakeThis, { willRetry: true });
+		expect(fakeThis.session.prompt).toHaveBeenCalledWith("/compact", {
+			images: undefined,
+			streamingBehavior: "followUp",
+		});
+	});
 
-		expect(fakeThis.session.followUp).toHaveBeenCalledWith("/compact");
-		expect(fakeThis.session.prompt).not.toHaveBeenCalled();
-		expect(fakeThis.compactionQueuedMessages).toEqual([]);
+	test("restores queued input text and binary attachments in queue order", () => {
+		const steeringImages = [{ type: "image" as const, data: "c3RlZXI=", mimeType: "image/png" }];
+		const followUpImages = [{ type: "image" as const, data: "Zm9sbG93", mimeType: "image/jpeg" }];
+		const restoreImagesToEditor = vi.fn();
+		const fakeThis = {
+			clearAllQueues: () => ({
+				steering: [{ text: "steer [Image #1 1×1]", images: steeringImages }],
+				followUp: [{ text: "follow up [Image #2 2×2]", images: followUpImages }],
+			}),
+			editor: {
+				getExpandedText: () => "draft",
+				getText: () => "draft",
+				setText: vi.fn(),
+			},
+			createEditorInput: () => ({ text: "draft", images: [] }),
+			restoreImagesToEditor,
+			updatePendingMessagesDisplay: vi.fn(),
+			session: { abort: vi.fn() },
+		};
+		const restoreQueuedMessagesToEditor = Reflect.get(InteractiveMode.prototype, "restoreQueuedMessagesToEditor") as (
+			this: typeof fakeThis,
+		) => number;
+
+		expect(restoreQueuedMessagesToEditor.call(fakeThis)).toBe(2);
+		expect(fakeThis.editor.setText).toHaveBeenCalledWith("steer\n\nfollow up\n\ndraft");
+		expect(restoreImagesToEditor).toHaveBeenCalledWith([...steeringImages, ...followUpImages]);
+	});
+
+	test("captures binary image attachments before editor submission clears their markers", () => {
+		const filePath = join(tmpdir(), `candy-input-${Date.now()}.png`);
+		const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+		writeFileSync(filePath, Buffer.from(data, "base64"));
+		try {
+			const fakeThis = {
+				editor: {
+					getPastePaths: () => [filePath],
+					getPromptText: () => "[Image #1 1×1]",
+				},
+			};
+			const createEditorInput = Reflect.get(InteractiveMode.prototype, "createEditorInput") as (
+				this: typeof fakeThis,
+				text: string,
+				imagePaths: string[],
+				promptText: string,
+			) => { text: string; images?: Array<{ type: "image"; data: string; mimeType: string }> };
+
+			expect(createEditorInput.call(fakeThis, filePath, [filePath], "[Image #1 1×1]")).toEqual({
+				text: "[Image #1 1×1]",
+				images: [{ type: "image", data, mimeType: "image/png" }],
+			});
+		} finally {
+			rmSync(filePath, { force: true });
+		}
 	});
 });

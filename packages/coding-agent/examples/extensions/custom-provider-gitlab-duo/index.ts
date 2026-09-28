@@ -12,16 +12,16 @@
 import {
 	type Api,
 	type AssistantMessageEventStream,
-	anthropicMessagesApi,
 	createAssistantMessageEventStream,
 	type Model,
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
-	openAIResponsesApi,
 	type SimpleStreamOptions,
 	type ThinkingLevelMap,
 	type TranscriptContext,
-} from "@candy/ai/compat";
+} from "@candy/ai";
+import { anthropicMessagesApi } from "@candy/ai/api/anthropic-messages.lazy";
+import { openAIResponsesApi } from "@candy/ai/api/openai-responses.lazy";
 import type { ExtensionAPI } from "@candy/coding-agent";
 
 // =============================================================================

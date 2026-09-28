@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@candy/agent-core";
-import type { AssistantMessage, Usage } from "@candy/ai/compat";
-import { getModel } from "@candy/ai/compat";
+import type { AssistantMessage, Usage } from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";

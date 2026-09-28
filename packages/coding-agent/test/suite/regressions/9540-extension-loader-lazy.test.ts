@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
 	jitiModuleLoads: 0,
 	jitiStaticModuleLoads: 0,
-	virtualModulesLoads: 0,
 	createJiti: vi.fn((_id: unknown, _options: unknown) => ({
 		import: vi.fn(async () => () => {}),
 	})),
@@ -19,11 +18,6 @@ vi.mock("jiti/static", () => {
 	return { createJiti: state.createJiti };
 });
 
-vi.mock("../../../src/core/extensions/virtual-modules.ts", () => {
-	state.virtualModulesLoads++;
-	return { VIRTUAL_MODULES: {} };
-});
-
 import { loadExtensions } from "../../../src/core/extensions/loader.ts";
 
 interface JitiOptionsProbe {
@@ -35,24 +29,23 @@ interface JitiOptionsProbe {
 
 describe("extension loader lazy imports", () => {
 	// Regression test for #9540.
-	it("defers ordinary jiti and its virtual modules until importing an extension", async () => {
+	it("defers ordinary jiti until importing an extension and uses host modules", async () => {
 		expect(state.jitiModuleLoads).toBe(0);
 		expect(state.jitiStaticModuleLoads).toBe(0);
-		expect(state.virtualModulesLoads).toBe(0);
 
-		const result = await loadExtensions(["/extension.ts"], "/");
+		const extensionModules = {};
+		const result = await loadExtensions(["/extension.ts"], "/", undefined, undefined, extensionModules);
 
 		expect(result.errors).toEqual([]);
 		expect(result.extensions).toHaveLength(1);
 		expect(state.jitiModuleLoads).toBe(1);
 		expect(state.jitiStaticModuleLoads).toBe(0);
-		expect(state.virtualModulesLoads).toBe(1);
 		expect(state.createJiti).toHaveBeenCalledOnce();
 
 		const options = state.createJiti.mock.calls[0][1] as JitiOptionsProbe;
 		expect(options.tryNative).toBeUndefined();
 		expect(options.tsconfigPaths).toBe(true);
 		expect(options.alias).toBeUndefined();
-		expect(options.virtualModules).toBeDefined();
+		expect(options.virtualModules).toBe(extensionModules);
 	});
 });

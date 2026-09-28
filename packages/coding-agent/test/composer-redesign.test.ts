@@ -1,10 +1,10 @@
 import { type Component, type TUI, visibleWidth } from "@candy/tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { ComposerPanel } from "../src/modes/interactive/components/composer-panel.ts";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.ts";
 import { PanelTransition } from "../src/modes/interactive/components/panel-transition.ts";
 import { getEditorTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 function editor(): { editor: CustomEditor; ui: TUI } {

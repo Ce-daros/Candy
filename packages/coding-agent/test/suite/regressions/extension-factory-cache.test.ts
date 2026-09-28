@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearExtensionCache, loadExtensions, loadExtensionsCached } from "../../../src/core/extensions/loader.ts";
 import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
+import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
 
 interface TestState {
 	moduleLoads?: number;
@@ -71,8 +73,8 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		const first = await loadExtensionsCached([extensionPath], cwd);
-		const second = await loadExtensionsCached([extensionPath], cwd);
+		const first = await loadExtensionsCached([extensionPath], cwd, undefined, undefined, extensionHostModules);
+		const second = await loadExtensionsCached([extensionPath], cwd, undefined, undefined, extensionHostModules);
 
 		expect(state().moduleLoads).toBe(1);
 		expect(state().factoryRuns).toBe(2);
@@ -85,8 +87,8 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		await loadExtensions([extensionPath], cwd);
-		await loadExtensions([extensionPath], cwd);
+		await loadExtensions([extensionPath], cwd, undefined, undefined, extensionHostModules);
+		await loadExtensions([extensionPath], cwd, undefined, undefined, extensionHostModules);
 
 		expect(state().moduleLoads).toBe(2);
 		expect(state().factoryRuns).toBe(2);
@@ -98,6 +100,8 @@ describe("extension factory cache", () => {
 		mkdirSync(extensionDir, { recursive: true });
 		writeCountingExtension(join(extensionDir, "counting.ts"));
 		const loader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			noSkills: true,
@@ -121,9 +125,9 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		await loadExtensionsCached([extensionPath], firstCwd);
-		await loadExtensionsCached([extensionPath], secondCwd);
-		await loadExtensionsCached([extensionPath], secondCwd);
+		await loadExtensionsCached([extensionPath], firstCwd, undefined, undefined, extensionHostModules);
+		await loadExtensionsCached([extensionPath], secondCwd, undefined, undefined, extensionHostModules);
+		await loadExtensionsCached([extensionPath], secondCwd, undefined, undefined, extensionHostModules);
 
 		expect(state().moduleLoads).toBe(2);
 		expect(state().factoryRuns).toBe(3);

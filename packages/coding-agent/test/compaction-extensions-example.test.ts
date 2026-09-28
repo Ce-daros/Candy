@@ -19,8 +19,7 @@ describe("Documentation example", () => {
 			candy.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
 				// All these should be accessible on the event
 				const { preparation, branchEntries } = event;
-				// sessionManager, modelRegistry, and model come from ctx
-				const { sessionManager, modelRegistry } = ctx;
+				const { sessionManager, modelRuntime } = ctx;
 				const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, isSplitTurn } =
 					preparation;
 
@@ -30,7 +29,7 @@ describe("Documentation example", () => {
 				expect(typeof isSplitTurn).toBe("boolean");
 				expect(typeof tokensBefore).toBe("number");
 				expect(typeof sessionManager.getEntries).toBe("function");
-				expect(typeof modelRegistry.getApiKeyAndHeaders).toBe("function");
+				expect(typeof modelRuntime.getAuth).toBe("function");
 				expect(typeof firstKeptEntryId).toBe("string");
 				expect(Array.isArray(branchEntries)).toBe(true);
 
@@ -54,7 +53,7 @@ describe("Documentation example", () => {
 		expect(typeof exampleExtension).toBe("function");
 	});
 
-	it("custom compaction example dispatches through modelRegistry.complete", async () => {
+	it("custom compaction example dispatches through modelRuntime.complete", async () => {
 		let handler: ((event: any, ctx: any) => Promise<any>) | undefined;
 		customCompactionExtension({
 			on(event, fn) {
@@ -107,8 +106,8 @@ describe("Documentation example", () => {
 			},
 			{
 				ui: { notify: vi.fn() },
-				modelRegistry: {
-					find: vi.fn(() => model),
+				modelRuntime: {
+					getModel: vi.fn(() => model),
 					complete,
 				},
 			},

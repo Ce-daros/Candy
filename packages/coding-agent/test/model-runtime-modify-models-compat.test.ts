@@ -11,7 +11,6 @@ import {
 } from "@candy/ai";
 import { describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRegistry } from "../src/core/model-registry.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 
 function model(id: string): Model<"openai-completions"> {
@@ -73,22 +72,21 @@ describe("extension provider model lifecycle", () => {
 		};
 
 		runtime.registerNativeProvider(provider);
-		const registry = new ModelRegistry(runtime);
-		expect(registry.getProvider("extension-native")).toBe(provider);
-		expect(registry.getRegisteredNativeProvider("extension-native")).toBe(provider);
-		expect(registry.getRegisteredProviderIds()).toContain("extension-native");
-		expect(registry.find("extension-native", "native")).toBeDefined();
+		expect(runtime.getProvider("extension-native")).toBe(provider);
+		expect(runtime.getRegisteredNativeProvider("extension-native")).toBe(provider);
+		expect(runtime.getRegisteredProviderIds()).toContain("extension-native");
+		expect(runtime.getModel("extension-native", "native")).toBeDefined();
 
 		await runtime.login("extension-native", "api_key", {
 			prompt: async () => "secret",
 			notify: () => {},
 		});
-		expect(await registry.getProviderAuth("extension-native")).toMatchObject({
+		expect(await runtime.getAuth("extension-native")).toMatchObject({
 			auth: { apiKey: "secret", baseUrl: "https://resolved.test/v1" },
 		});
 
-		registry.unregisterProvider("extension-native");
-		expect(registry.getProvider("extension-native")).toBeUndefined();
+		runtime.unregisterProvider("extension-native");
+		expect(runtime.getProvider("extension-native")).toBeUndefined();
 	});
 
 	it("preserves native deferred methods through provider overlays", async () => {

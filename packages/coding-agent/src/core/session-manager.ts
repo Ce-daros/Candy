@@ -21,23 +21,35 @@ import {
 	openSync,
 	readdirSync,
 	readSync,
+	renameSync,
 	type Stats,
 	statSync,
+	unlinkSync,
 	writeFileSync,
 } from "fs";
 import { readdir, stat } from "fs/promises";
 import { basename, join, resolve } from "path";
 import { createInterface } from "readline";
-import { StringDecoder } from "string_decoder";
 import { APP_NAME, getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
+import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import {
-	type BashExecutionMessage,
-	type CustomMessage,
-	createBranchSummaryMessage,
-	createCompactionSummaryMessage,
-	createCustomMessage,
-} from "./messages.ts";
+	loadEntriesFromFile,
+	parseSessionEntryLine,
+	readSessionHeader,
+	readSessionHeaderForDiscovery,
+	SessionHeaderScanLimitError,
+} from "./session-jsonl.ts";
+import { buildContextEntries, buildSessionProjection } from "./session-projection.ts";
+
+export { loadEntriesFromFile } from "./session-jsonl.ts";
+export {
+	buildContextEntries,
+	buildSessionContext,
+	buildSessionProjection,
+	getLatestCompactionEntry,
+	sessionEntryToContextMessages,
+} from "./session-projection.ts";
 export const CURRENT_SESSION_VERSION = 3;
 
 export interface SessionHeader {
@@ -354,232 +366,14 @@ export function migrateSessionEntries(entries: FileEntry[]): void {
 /** Exported for compaction.test.ts */
 export function parseSessionEntries(content: string): FileEntry[] {
 	const entries: FileEntry[] = [];
-	const lines = content.trim().split("\n");
+	const lines = content.split("\n");
 
-	for (const line of lines) {
-		if (!line.trim()) continue;
-		try {
-			const entry = JSON.parse(line) as FileEntry;
-			entries.push(entry);
-		} catch {
-			// Skip malformed lines
-		}
+	for (const [index, line] of lines.entries()) {
+		const entry = parseSessionEntryLine(line, "session content", index + 1);
+		if (entry) entries.push(entry);
 	}
 
 	return entries;
-}
-
-export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
-	for (let i = entries.length - 1; i >= 0; i--) {
-		if (entries[i].type === "compaction") {
-			return entries[i] as CompactionEntry;
-		}
-	}
-	return null;
-}
-
-function buildEntryIndex(entries: SessionEntry[], byId?: Map<string, SessionEntry>): Map<string, SessionEntry> {
-	if (byId) return byId;
-	const index = new Map<string, SessionEntry>();
-	for (const entry of entries) {
-		index.set(entry.id, entry);
-	}
-	return index;
-}
-
-function buildSessionPath(
-	entries: SessionEntry[],
-	leafId?: string | null,
-	byId?: Map<string, SessionEntry>,
-): SessionEntry[] {
-	const index = buildEntryIndex(entries, byId);
-	let leaf: SessionEntry | undefined;
-	if (leafId === null) {
-		return [];
-	}
-	if (leafId) {
-		leaf = index.get(leafId);
-	}
-	leaf ??= entries[entries.length - 1];
-	if (!leaf) {
-		return [];
-	}
-
-	const path: SessionEntry[] = [];
-	let current: SessionEntry | undefined = leaf;
-	while (current) {
-		path.push(current);
-		current = current.parentId ? index.get(current.parentId) : undefined;
-	}
-	path.reverse();
-	return path;
-}
-
-function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "thinkingLevel" | "model"> {
-	let thinkingLevel = "off";
-	let model: { provider: string; modelId: string } | null = null;
-
-	for (const entry of path) {
-		if (entry.type === "thinking_level_change") {
-			thinkingLevel = entry.thinkingLevel;
-		} else if (entry.type === "model_change") {
-			model = { provider: entry.provider, modelId: entry.modelId };
-		} else if (entry.type === "message" && entry.message.role === "assistant") {
-			model = { provider: entry.message.provider, modelId: entry.message.model };
-		}
-	}
-
-	return { thinkingLevel, model };
-}
-
-/**
- * Project one selected session entry into LLM/runtime messages.
- * Plain custom entries are display/state entries and do not participate in context.
- */
-export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage[] {
-	if (entry.type === "message") {
-		const message = entry.message;
-		// Session files are parsed without validation; old versions, forks, or
-		// hand-edited files can contain messages with null/missing content.
-		if (message.role === "system" && message.content == null) return [{ ...message, content: "" }];
-		if (
-			(message.role === "user" || message.role === "assistant" || message.role === "toolResult") &&
-			message.content == null
-		) {
-			return [{ ...message, content: [] }];
-		}
-		return [message];
-	}
-	if (entry.type === "custom_message") {
-		return [
-			createCustomMessage(entry.customType, entry.content ?? [], entry.display, entry.details, entry.timestamp),
-		];
-	}
-	if (entry.type === "branch_summary" && entry.summary) {
-		return [createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp)];
-	}
-	if (entry.type === "compaction") {
-		const summary = createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
-		return entry.systemMessage ? [entry.systemMessage, summary] : [summary];
-	}
-	return [];
-}
-
-/**
- * Build the active, compaction-aware session entry list.
- *
- * This follows the current leaf path. If the path contains compaction entries,
- * the latest compaction is represented by the compaction entry itself, followed
- * by the kept entries starting at firstKeptEntryId and all entries after the
- * compaction entry. Older summarized entries are omitted.
- */
-export function buildContextEntries(
-	entries: SessionEntry[],
-	leafId?: string | null,
-	byId?: Map<string, SessionEntry>,
-): SessionEntry[] {
-	const path = buildSessionPath(entries, leafId, byId);
-	let compaction: CompactionEntry | null = null;
-
-	for (const entry of path) {
-		if (entry.type === "compaction") {
-			compaction = entry;
-		}
-	}
-
-	if (!compaction) {
-		return path;
-	}
-
-	const compactionIdx = path.findIndex((entry) => entry.id === compaction.id);
-	if (compactionIdx < 0) {
-		return path;
-	}
-
-	const contextEntries: SessionEntry[] = [compaction];
-	let foundFirstKept = false;
-	for (let i = 0; i < compactionIdx; i++) {
-		const entry = path[i];
-		if (entry.id === compaction.firstKeptEntryId) {
-			foundFirstKept = true;
-		}
-		if (foundFirstKept && !(entry.type === "message" && entry.message.role === "system")) {
-			contextEntries.push(entry);
-		}
-	}
-	contextEntries.push(...path.slice(compactionIdx + 1));
-	return contextEntries;
-}
-
-/**
- * Build the session context from entries using tree traversal.
- * If leafId is provided, walks from that entry to root.
- * Handles compaction and branch summaries along the path.
- */
-function projectContextEntry(entry: SessionEntry, edit: ContextEditEntry | undefined): AgentMessage[] {
-	const messages = sessionEntryToContextMessages(entry);
-	if (!edit) return messages;
-	const replacement = edit.replacement;
-	if (replacement === null) return [];
-
-	return messages.map((message) => {
-		if (
-			message.role !== "user" &&
-			message.role !== "assistant" &&
-			message.role !== "toolResult" &&
-			message.role !== "custom"
-		) {
-			return message;
-		}
-		const content =
-			(message.role === "assistant" || message.role === "toolResult") && typeof replacement.content === "string"
-				? [{ type: "text" as const, text: replacement.content }]
-				: replacement.content;
-		return { ...message, content } as AgentMessage;
-	});
-}
-
-/** Build provenance-preserving, compaction-aware model context. */
-export function buildSessionProjection(
-	entries: SessionEntry[],
-	leafId?: string | null,
-	byId?: Map<string, SessionEntry>,
-): SessionProjection {
-	const path = buildSessionPath(entries, leafId, byId);
-	const { thinkingLevel, model } = getSessionContextSettings(path);
-	const contextEntries = buildContextEntries(entries, leafId, byId);
-	const edits = new Map<string, ContextEditEntry>();
-	for (const entry of contextEntries) {
-		if (entry.type === "context_edit") edits.set(entry.targetId, entry);
-	}
-	const projectedEntries = contextEntries.map(
-		(sourceEntry, index): ProjectedSessionEntry => ({
-			sourceEntry,
-			// buildContextEntries() may retain an older compaction entry because its
-			// raw ID lies inside the newest retained range. Only the newest compaction
-			// at index zero contributes a checkpoint and summary.
-			messages:
-				sourceEntry.type === "compaction" && index > 0
-					? []
-					: projectContextEntry(sourceEntry, edits.get(sourceEntry.id)),
-		}),
-	);
-	return {
-		entries: projectedEntries,
-		messages: projectedEntries.flatMap((entry) => entry.messages),
-		thinkingLevel,
-		model,
-	};
-}
-
-/** Build the finalized model context from the canonical session projection. */
-export function buildSessionContext(
-	entries: SessionEntry[],
-	leafId?: string | null,
-	byId?: Map<string, SessionEntry>,
-): SessionContext {
-	const { messages, thinkingLevel, model } = buildSessionProjection(entries, leafId, byId);
-	return { messages, thinkingLevel, model };
 }
 
 /**
@@ -599,141 +393,6 @@ export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultA
 		mkdirSync(sessionDir, { recursive: true });
 	}
 	return sessionDir;
-}
-
-const SESSION_READ_BUFFER_SIZE = 1024 * 1024;
-const SESSION_HEADER_READ_BUFFER_SIZE = 4096;
-/** Bound synchronous header discovery while allowing large cwd and custom metadata fields. */
-const MAX_SESSION_HEADER_SCAN_BYTES = 1024 * 1024;
-
-class SessionHeaderScanLimitError extends Error {
-	constructor(filePath: string) {
-		super(`Session header exceeds ${MAX_SESSION_HEADER_SCAN_BYTES}-byte scan limit: ${filePath}`);
-		this.name = "SessionHeaderScanLimitError";
-	}
-}
-
-function parseSessionEntryLine(line: string): FileEntry | null {
-	if (!line.trim()) return null;
-	try {
-		return JSON.parse(line) as FileEntry;
-	} catch {
-		// Skip malformed lines
-		return null;
-	}
-}
-
-/** Exported for testing */
-export function loadEntriesFromFile(filePath: string): FileEntry[] {
-	const resolvedFilePath = normalizePath(filePath);
-	if (!existsSync(resolvedFilePath)) return [];
-
-	const entries: FileEntry[] = [];
-	let pending = "";
-	const fd = openSync(resolvedFilePath, "r");
-	try {
-		const decoder = new StringDecoder("utf8");
-		const buffer = Buffer.allocUnsafe(SESSION_READ_BUFFER_SIZE);
-
-		while (true) {
-			const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
-			if (bytesRead === 0) break;
-
-			pending += decoder.write(buffer.subarray(0, bytesRead));
-			let lineStart = 0;
-			let newlineIndex = pending.indexOf("\n", lineStart);
-			while (newlineIndex !== -1) {
-				const entry = parseSessionEntryLine(pending.slice(lineStart, newlineIndex));
-				if (entry) entries.push(entry);
-				lineStart = newlineIndex + 1;
-				newlineIndex = pending.indexOf("\n", lineStart);
-			}
-			pending = pending.slice(lineStart);
-		}
-
-		pending += decoder.end();
-		const finalEntry = parseSessionEntryLine(pending);
-		if (finalEntry) entries.push(finalEntry);
-	} finally {
-		closeSync(fd);
-	}
-
-	// Validate session header before repairing the file.
-	if (entries.length === 0) return entries;
-	const header = entries[0];
-	if (header.type !== "session" || typeof (header as { id?: unknown }).id !== "string") {
-		return [];
-	}
-
-	if (pending) appendFileSync(resolvedFilePath, "\n");
-	return entries;
-}
-
-/**
- * Inspect a physical line while searching for the first parsed session entry.
- * Blank and malformed lines are skipped to match loadEntriesFromFile().
- * Returns undefined to keep scanning, null for a parsed non-header entry, or the header.
- */
-function parseSessionHeaderCandidate(line: string): SessionHeader | null | undefined {
-	if (!line.trim()) return undefined;
-	const entry = parseSessionEntryLine(line);
-	if (!entry) return undefined;
-	if (entry.type !== "session" || typeof (entry as { id?: unknown }).id !== "string") return null;
-	return entry;
-}
-
-function readSessionHeader(filePath: string): SessionHeader | null {
-	const fd = openSync(filePath, "r");
-	try {
-		const decoder = new StringDecoder("utf8");
-		const buffer = Buffer.allocUnsafe(SESSION_HEADER_READ_BUFFER_SIZE);
-		const lineChunks: string[] = [];
-		let scannedBytes = 0;
-
-		while (scannedBytes < MAX_SESSION_HEADER_SCAN_BYTES) {
-			const readLength = Math.min(buffer.length, MAX_SESSION_HEADER_SCAN_BYTES - scannedBytes);
-			const bytesRead = readSync(fd, buffer, 0, readLength, null);
-			if (bytesRead === 0) {
-				lineChunks.push(decoder.end());
-				return parseSessionHeaderCandidate(lineChunks.join("")) ?? null;
-			}
-			scannedBytes += bytesRead;
-
-			const chunk = decoder.write(buffer.subarray(0, bytesRead));
-			let lineStart = 0;
-			let newlineIndex = chunk.indexOf("\n", lineStart);
-			while (newlineIndex !== -1) {
-				lineChunks.push(chunk.slice(lineStart, newlineIndex));
-				const header = parseSessionHeaderCandidate(lineChunks.join(""));
-				if (header !== undefined) return header;
-				lineChunks.length = 0;
-				lineStart = newlineIndex + 1;
-				newlineIndex = chunk.indexOf("\n", lineStart);
-			}
-			lineChunks.push(chunk.slice(lineStart));
-		}
-
-		// Probe for EOF so a final header without a newline is allowed when it ends
-		// exactly at the scan limit. Any additional byte exceeds the bounded scan.
-		const probe = Buffer.allocUnsafe(1);
-		if (readSync(fd, probe, 0, probe.length, null) === 0) {
-			lineChunks.push(decoder.end());
-			return parseSessionHeaderCandidate(lineChunks.join("")) ?? null;
-		}
-		throw new SessionHeaderScanLimitError(filePath);
-	} finally {
-		closeSync(fd);
-	}
-}
-
-function readSessionHeaderForDiscovery(filePath: string): SessionHeader | null {
-	try {
-		return readSessionHeader(filePath);
-	} catch {
-		// Discovery is best-effort: unreadable or oversized files are not sessions,
-		// and one corrupt file must not prevent other sessions from being found.
-		return null;
-	}
 }
 
 function getSessionHeaderCwd(header: SessionHeader): string | undefined {
@@ -815,8 +474,9 @@ async function buildSessionInfo(
 			crlfDelay: Infinity,
 		});
 
+		let lineNumber = 0;
 		for await (const line of rl) {
-			const entry = parseSessionEntryLine(line);
+			const entry = parseSessionEntryLine(line, filePath, ++lineNumber);
 			if (!entry) continue;
 
 			if (!header) {
@@ -991,6 +651,8 @@ export class SessionManager {
 	private cwd: string;
 	private persist: boolean;
 	private flushed: boolean = false;
+	private pendingFileRewrite = false;
+	private emptyExistingFile = false;
 	private fileEntries: FileEntry[] = [];
 	private byId: Map<string, SessionEntry> = new Map();
 	private labelsById: Map<string, string> = new Map();
@@ -1040,11 +702,19 @@ export class SessionManager {
 				}
 				this.newSession();
 				this.sessionFile = explicitPath;
-				this._rewriteFile();
-				this.flushed = true;
+				this.emptyExistingFile = true;
 				return;
 			}
 
+			const fd = openSync(this.sessionFile, "r");
+			try {
+				const size = statSync(this.sessionFile).size;
+				const lastByte = Buffer.allocUnsafe(1);
+				readSync(fd, lastByte, 0, 1, size - 1);
+				this.pendingFileRewrite = lastByte[0] !== 10;
+			} finally {
+				closeSync(fd);
+			}
 			this._loadEntries(entries);
 			this.flushed = true;
 		} else {
@@ -1074,6 +744,8 @@ export class SessionManager {
 		this.labelTimestampsById.clear();
 		this.leafId = null;
 		this.flushed = false;
+		this.pendingFileRewrite = false;
+		this.emptyExistingFile = false;
 
 		if (this.persist) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
@@ -1089,9 +761,7 @@ export class SessionManager {
 			this.fileEntries = entries;
 			this.sessionId = header.id;
 
-			if (migrateToCurrentVersion(this.fileEntries)) {
-				this._rewriteFile();
-			}
+			if (migrateToCurrentVersion(this.fileEntries)) this.pendingFileRewrite = true;
 		} else {
 			this.newSession(options);
 			this.fileEntries = this.fileEntries.concat(entries);
@@ -1123,14 +793,25 @@ export class SessionManager {
 
 	private _rewriteFile(): void {
 		if (!this.persist || !this.sessionFile) return;
-		const fd = openSync(this.sessionFile, "w");
+		const temporaryFile = `${this.sessionFile}.${randomUUID()}.tmp`;
+		const fd = openSync(temporaryFile, "wx");
 		try {
 			for (const entry of this.fileEntries) {
 				writeFileSync(fd, `${JSON.stringify(entry)}\n`);
 			}
-		} finally {
+		} catch (error) {
 			closeSync(fd);
+			unlinkSync(temporaryFile);
+			throw error;
 		}
+		closeSync(fd);
+		try {
+			renameSync(temporaryFile, this.sessionFile);
+		} catch (error) {
+			unlinkSync(temporaryFile);
+			throw error;
+		}
+		this.pendingFileRewrite = false;
 	}
 
 	isPersisted(): boolean {
@@ -1174,7 +855,7 @@ export class SessionManager {
 
 		if (!this.flushed) {
 			if (!this._hasConversation()) return;
-			const fd = openSync(this.sessionFile, "wx");
+			const fd = openSync(this.sessionFile, this.emptyExistingFile ? "w" : "wx");
 			try {
 				for (const e of this.fileEntries) {
 					writeFileSync(fd, `${JSON.stringify(e)}\n`);
@@ -1183,6 +864,9 @@ export class SessionManager {
 				closeSync(fd);
 			}
 			this.flushed = true;
+			this.emptyExistingFile = false;
+		} else if (this.pendingFileRewrite) {
+			this._rewriteFile();
 		} else {
 			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 		}

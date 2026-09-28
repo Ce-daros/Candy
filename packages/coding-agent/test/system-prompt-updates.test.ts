@@ -10,7 +10,7 @@ import {
 	getSystemMessageText,
 	type TranscriptContext,
 } from "@candy/ai";
-import { getModel } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
@@ -22,6 +22,8 @@ import {
 	diffSystemPromptSections,
 } from "../src/core/system-prompt.ts";
 import type { ExtensionFactory } from "../src/index.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 import { createHarness } from "./suite/harness.ts";
 
 describe("system prompt updates", () => {
@@ -59,6 +61,8 @@ describe("system prompt updates", () => {
 			const sessionManager = SessionManager.inMemory(tempDir);
 			sessionManager.appendMessage({ role: "user", content: "existing", timestamp: 1 });
 			const created = await createAgentSession({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd: tempDir,
 				agentDir: join(tempDir, "agent"),
 				model: getModel("anthropic", "claude-sonnet-4-5")!,

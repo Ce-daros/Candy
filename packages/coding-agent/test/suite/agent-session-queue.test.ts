@@ -258,7 +258,7 @@ describe("AgentSession queue characterization", () => {
 		const waiting = await createWaitingHarness();
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
 		harnesses.push(harness);
-		harness.session.setSteeringMode("all");
+		await harness.session.setSteeringMode("all");
 		let batchedUserMessages: string[] = [];
 
 		harness.setResponses([
@@ -285,7 +285,7 @@ describe("AgentSession queue characterization", () => {
 		const waiting = await createWaitingHarness();
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
 		harnesses.push(harness);
-		harness.session.setFollowUpMode("all");
+		await harness.session.setFollowUpMode("all");
 		let batchedUserMessages: string[] = [];
 
 		harness.setResponses([

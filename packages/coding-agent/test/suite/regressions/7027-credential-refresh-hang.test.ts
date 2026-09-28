@@ -109,6 +109,7 @@ describe("issues #7027 and #7113 credential refresh hang", () => {
 			showWarning,
 			maybeWarnAboutAnthropicSubscriptionAuth: vi.fn(),
 			ui: { requestRender: vi.fn() },
+			pageController: { generation: 0 },
 		};
 		await complete.call(context, dynamicModel.provider, "Stalled Login", "api_key", harness.getModel());
 		expect(runtime.refresh).toHaveBeenCalledWith({
@@ -134,7 +135,7 @@ describe("issues #7027 and #7113 credential refresh hang", () => {
 		);
 		const context = {
 			session: harness.session,
-			panelGeneration: 1,
+			pageController: { generation: 1 },
 			updateAvailableProviderCount: vi.fn(),
 			footer: { invalidate: vi.fn() },
 			refreshContextLine: vi.fn(),
@@ -146,7 +147,7 @@ describe("issues #7027 and #7113 credential refresh hang", () => {
 			ui: { requestRender: vi.fn() },
 		};
 		await complete.call(context, dynamicModel.provider, "Stalled Login", "api_key", harness.getModel());
-		context.panelGeneration++;
+		context.pageController.generation++;
 		resolveRefresh({ aborted: true, errors: new Map() });
 		await Promise.resolve();
 		await Promise.resolve();

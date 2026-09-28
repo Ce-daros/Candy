@@ -12,17 +12,17 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
-import { normalizeContext } from "@candy/ai";
 import {
 	type Api,
 	type AssistantMessage,
 	type AssistantMessageEventStream,
 	type Context,
-	getModel,
 	type Model,
+	normalizeContext,
 	type SimpleStreamOptions,
-	Type,
-} from "@candy/ai/compat";
+} from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
+import { Type } from "typebox";
 import {
 	getOpenAICodexWebSocketDebugStats,
 	streamSimple as streamSimpleOpenAICodexResponses,
@@ -34,7 +34,7 @@ import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
 type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
@@ -279,7 +279,7 @@ async function main(): Promise<void> {
 	mkdirSync(dirname(args.sessionPath), { recursive: true });
 
 	const authStorage = AuthStorage.create();
-	const modelRegistry = await createModelRegistry(authStorage);
+	const modelRuntime = await createTestModelRuntime(authStorage);
 
 	const model = getModel("openai-codex", "gpt-5.5");
 	if (!model) {
@@ -296,7 +296,7 @@ async function main(): Promise<void> {
 			normalizeContext(context),
 			options,
 		);
-	modelRegistry.registerProvider("openai-codex", {
+	modelRuntime.registerProvider("openai-codex", {
 		api: "openai-codex-responses",
 		baseUrl: baseModel.baseUrl,
 		apiKey: "!echo source-provider-override-uses-auth-storage",
@@ -304,7 +304,6 @@ async function main(): Promise<void> {
 		models: [baseModel],
 	});
 
-	const modelRuntime = getModelRuntime(modelRegistry);
 	const settingsManager = SettingsManager.inMemory({
 		compaction: { enabled: false },
 		retry: { enabled: false },

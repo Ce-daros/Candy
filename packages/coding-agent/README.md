@@ -50,10 +50,8 @@ Clone the repository, install its dependencies, and run candy from source:
 git clone https://github.com/earendil-works/pi
 cd candy
 npm install --ignore-scripts
-./candy-test.sh
+npm run build
 ```
-
-`candy-test.sh` can be called from any directory and preserves the caller's working directory.
 
 Before submitting changes, run:
 

@@ -6,9 +6,8 @@
  */
 
 import type { AgentMessage, StreamFn } from "@candy/agent-core";
-import type { RetryCallbacks, RetryPolicy } from "@candy/ai";
+import type { Model, RetryCallbacks, RetryPolicy, SimpleStreamOptions, Usage } from "@candy/ai";
 import { contentText, normalizeContext } from "@candy/ai";
-import type { Model, SimpleStreamOptions, Usage } from "@candy/ai/compat";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

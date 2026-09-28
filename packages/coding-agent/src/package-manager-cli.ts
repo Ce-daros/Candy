@@ -35,6 +35,8 @@ import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { cliThemeColor } from "./modes/interactive/theme/theme.ts";
+import { extensionHostModules } from "./presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "./presentation/resource-theme-adapter.ts";
 import { getCandyUserAgent } from "./utils/candy-user-agent.ts";
 import { spawnProcess, spawnProcessSync, waitForChildProcess } from "./utils/child-process.ts";
 import { canonicalizePath, getCwdRelativePath } from "./utils/paths.ts";
@@ -766,6 +768,8 @@ async function createCommandSettingsManager(options: {
 					cwd: options.cwd,
 					agentDir: options.agentDir,
 					settingsManager,
+					themeAdapter: resourceThemeAdapter,
+					extensionModules: extensionHostModules,
 					extensionFactories: options.extensionFactories,
 				}).loadProjectTrustExtensions()
 			: undefined;

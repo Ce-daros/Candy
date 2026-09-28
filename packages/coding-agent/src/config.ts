@@ -419,8 +419,8 @@ export function getThemesDir(): string {
 /**
  * Get path to HTML export template directory (shipped with package)
  * - For Bun binary: export-html/ next to executable
- * - For Node.js (dist/): dist/core/export-html/
- * - For source (src/): src/core/export-html/
+ * - For Node.js (dist/): dist/presentation/export-html/
+ * - For source (src/): src/presentation/export-html/
  */
 export function getExportTemplateDir(): string {
 	if (isBunBinary) {
@@ -428,7 +428,7 @@ export function getExportTemplateDir(): string {
 	}
 	const packageDir = getPackageDir();
 	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
-	return join(packageDir, srcOrDist, "core", "export-html");
+	return join(packageDir, srcOrDist, "presentation", "export-html");
 }
 
 /** Get path to package.json */
@@ -454,26 +454,6 @@ export function getExamplesPath(): string {
 /** Get path to CHANGELOG.md */
 export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
-}
-
-/**
- * Get path to built-in interactive assets directory.
- * - For Bun binary: assets/ next to executable
- * - For Node.js (dist/): dist/modes/interactive/assets/
- * - For source (src/): src/modes/interactive/assets/
- */
-export function getInteractiveAssetsDir(): string {
-	if (isBunBinary) {
-		return join(getPackageDir(), "assets");
-	}
-	const packageDir = getPackageDir();
-	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
-	return join(packageDir, srcOrDist, "modes", "interactive", "assets");
-}
-
-/** Get path to a bundled interactive asset */
-export function getBundledInteractiveAssetPath(name: string): string {
-	return join(getInteractiveAssetsDir(), name);
 }
 
 // =============================================================================

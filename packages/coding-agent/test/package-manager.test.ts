@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.ts";
+import { type ParsedSource, parsePackageSource } from "../src/core/package-source.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 function normalizeForMatch(value: string): string {
@@ -13,6 +14,15 @@ function normalizeForMatch(value: string): string {
 
 function pathEndsWith(actualPath: string, suffix: string): boolean {
 	return normalizeForMatch(actualPath).endsWith(normalizeForMatch(suffix));
+}
+
+function parseSourceAs(source: string, type: "npm"): Extract<ParsedSource, { type: "npm" }>;
+function parseSourceAs(source: string, type: "git"): Extract<ParsedSource, { type: "git" }>;
+function parseSourceAs(source: string, type: "local"): Extract<ParsedSource, { type: "local" }>;
+function parseSourceAs(source: string, type: ParsedSource["type"]): ParsedSource {
+	const parsed = parsePackageSource(source);
+	if (parsed.type !== type) throw new Error(`Expected ${type} source: ${source}`);
+	return parsed;
 }
 
 class MockSpawnedProcess extends EventEmitter {
@@ -28,25 +38,30 @@ class MockSpawnedProcess extends EventEmitter {
 interface PackageManagerInternals {
 	runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void>;
 	getPackageManagerName(): string;
-	getGitDependencyInstallArgs(): string[];
+	paths: {
+		getGitInstallPath(
+			host: string,
+			repositoryPath: string,
+			ref: string | undefined,
+			scope: "user" | "project" | "temporary",
+		): string;
+	};
+	npmOperations: {
+		getGitDependencyInstallArgs(): string[];
+	};
+	gitOperations: {
+		getLocalUpdateTarget(installedPath: string): Promise<{ ref: string; head: string; fetchArgs: string[] }>;
+		update(source: Extract<ParsedSource, { type: "git" }>, scope: "user" | "project" | "temporary"): Promise<void>;
+		refreshTemporary(gitSource: Extract<ParsedSource, { type: "git" }>, sourceString: string): Promise<void>;
+		hasAvailableUpdate(installedPath: string): Promise<boolean>;
+	};
 	runCommandCapture(
 		command: string,
 		args: string[],
 		options?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
 	): Promise<string>;
-	getLocalGitUpdateTarget(installedPath: string): Promise<{ ref: string; head: string; fetchArgs: string[] }>;
-	parseSource(
-		source: string,
-	):
-		| { type: "npm"; spec: string; name: string; pinned: boolean }
-		| { type: "git"; repo: string; host: string; path: string; pinned: boolean; ref?: string }
-		| { type: "local"; path: string };
 	getNpmInstallPath(
 		source: { type: "npm"; spec: string; name: string; pinned: boolean },
-		scope: "user" | "project" | "temporary",
-	): string;
-	getGitInstallPath(
-		source: { type: "git"; repo: string; host: string; path: string; pinned: boolean; ref?: string },
 		scope: "user" | "project" | "temporary",
 	): string;
 }
@@ -98,6 +113,7 @@ describe("DefaultPackageManager", () => {
 			process.env.CANDY_OFFLINE = previousOfflineEnv;
 		}
 		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
 		vi.unstubAllGlobals();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
@@ -184,7 +200,7 @@ Content`,
 			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
 		});
 
-		it("should resolve symlinked user and project resources once", async () => {
+		it("should resolve symlinked user and project resources once", async ({ skip }) => {
 			const previousHome = process.env.HOME;
 			process.env.HOME = tempDir;
 
@@ -198,6 +214,21 @@ Content`,
 				mkdirSync(sharedSkillsDir, { recursive: true });
 				mkdirSync(sharedPromptsDir, { recursive: true });
 				mkdirSync(sharedThemesDir, { recursive: true });
+				const symlinkProbe = join(tempDir, "symlink-probe");
+				try {
+					symlinkSync(sharedDir, symlinkProbe, "dir");
+					rmSync(symlinkProbe);
+				} catch (error) {
+					if (
+						process.platform === "win32" &&
+						error instanceof Error &&
+						"code" in error &&
+						(error.code === "EPERM" || error.code === "EACCES")
+					) {
+						skip();
+					}
+					throw error;
+				}
 
 				writeFileSync(join(sharedExtensionsDir, "shared.ts"), "export default function() {}");
 				mkdirSync(join(sharedSkillsDir, "shared-skill"), { recursive: true });
@@ -859,7 +890,7 @@ Content`,
 			mkdirSync(targetDir, { recursive: true });
 
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
-			vi.spyOn(managerWithInternals, "getLocalGitUpdateTarget").mockResolvedValue({
+			vi.spyOn(managerWithInternals.gitOperations, "getLocalUpdateTarget").mockResolvedValue({
 				ref: "origin/HEAD",
 				head: "new-head",
 				fetchArgs,
@@ -897,7 +928,7 @@ Content`,
 
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
 			expect(managerWithInternals.getPackageManagerName()).toBe("pnpm");
-			expect(managerWithInternals.getGitDependencyInstallArgs()).toEqual([
+			expect(managerWithInternals.npmOperations.getGitDependencyInstallArgs()).toEqual([
 				"install",
 				"--prod",
 				"--config.auto-install-peers=false",
@@ -1015,7 +1046,7 @@ Content`,
 			settingsManager.setPackages([source]);
 
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
-			vi.spyOn(managerWithInternals, "getLocalGitUpdateTarget").mockResolvedValue({
+			vi.spyOn(managerWithInternals.gitOperations, "getLocalUpdateTarget").mockResolvedValue({
 				ref: "@{upstream}",
 				head: "current-head",
 				fetchArgs,
@@ -1043,7 +1074,7 @@ Content`,
 			settingsManager.setPackages([source]);
 
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
-			vi.spyOn(managerWithInternals, "getLocalGitUpdateTarget").mockResolvedValue({
+			vi.spyOn(managerWithInternals.gitOperations, "getLocalUpdateTarget").mockResolvedValue({
 				ref: "@{upstream}",
 				head: "new-head",
 				fetchArgs,
@@ -1317,7 +1348,7 @@ Content`,
 
 		it("should parse package source types from docs examples", () => {
 			const parseNpm = (source: string) => {
-				const parsed = (packageManager as any).parseSource(source);
+				const parsed = parsePackageSource(source);
 				if (parsed.type !== "npm") {
 					throw new Error(`Expected npm source: ${source}`);
 				}
@@ -1328,22 +1359,22 @@ Content`,
 			expect(parseNpm("npm:@scope/pkg@^1.2.3").pinned).toBe(false);
 			expect(parseNpm("npm:pkg").pinned).toBe(false);
 
-			expect((packageManager as any).parseSource("git:github.com/user/repo@v1").type).toBe("git");
-			expect((packageManager as any).parseSource("https://github.com/user/repo@v1").type).toBe("git");
-			expect((packageManager as any).parseSource("git:git@github.com:user/repo@v1").type).toBe("git");
-			expect((packageManager as any).parseSource("ssh://git@github.com/user/repo@v1").type).toBe("git");
+			expect(parsePackageSource("git:github.com/user/repo@v1").type).toBe("git");
+			expect(parsePackageSource("https://github.com/user/repo@v1").type).toBe("git");
+			expect(parsePackageSource("git:git@github.com:user/repo@v1").type).toBe("git");
+			expect(parsePackageSource("ssh://git@github.com/user/repo@v1").type).toBe("git");
 
-			expect((packageManager as any).parseSource("/absolute/path/to/package").type).toBe("local");
-			expect((packageManager as any).parseSource("./relative/path/to/package").type).toBe("local");
-			expect((packageManager as any).parseSource("../relative/path/to/package").type).toBe("local");
+			expect(parsePackageSource("/absolute/path/to/package").type).toBe("local");
+			expect(parsePackageSource("./relative/path/to/package").type).toBe("local");
+			expect(parsePackageSource("../relative/path/to/package").type).toBe("local");
 		});
 
 		it("should never parse dot-relative paths as git", () => {
-			const dotSlash = (packageManager as any).parseSource("./packages/agent-timers");
+			const dotSlash = parseSourceAs("./packages/agent-timers", "local");
 			expect(dotSlash.type).toBe("local");
 			expect(dotSlash.path).toBe("./packages/agent-timers");
 
-			const dotDotSlash = (packageManager as any).parseSource("../packages/agent-timers");
+			const dotDotSlash = parseSourceAs("../packages/agent-timers", "local");
 			expect(dotDotSlash.type).toBe("local");
 			expect(dotDotSlash.path).toBe("../packages/agent-timers");
 		});
@@ -1361,9 +1392,14 @@ Content`,
 			};
 
 			for (const scope of ["user", "project", "temporary"] as const) {
-				expect(() => managerWithInternals.getGitInstallPath(traversalSource, scope)).toThrow(
-					"outside package install root",
-				);
+				expect(() =>
+					managerWithInternals.paths.getGitInstallPath(
+						traversalSource.host,
+						traversalSource.path,
+						undefined,
+						scope,
+					),
+				).toThrow("outside package install root");
 			}
 		});
 	});
@@ -1371,7 +1407,7 @@ Content`,
 	describe("temporary install paths", () => {
 		it("should place temporary npm packages under the agent temp extension folder", () => {
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
-			const source = managerWithInternals.parseSource("npm:left-pad");
+			const source = parsePackageSource("npm:left-pad");
 			if (source.type !== "npm") {
 				throw new Error("Expected npm source");
 			}
@@ -1472,7 +1508,7 @@ Content`,
 
 	describe("HTTPS git URL parsing (old behavior)", () => {
 		it("should parse HTTPS GitHub URLs correctly", async () => {
-			const parsed = (packageManager as any).parseSource("https://github.com/user/repo");
+			const parsed = parseSourceAs("https://github.com/user/repo", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("github.com");
 			expect(parsed.path).toBe("user/repo");
@@ -1480,14 +1516,14 @@ Content`,
 		});
 
 		it("should parse HTTPS URLs with git: prefix", async () => {
-			const parsed = (packageManager as any).parseSource("git:https://github.com/user/repo");
+			const parsed = parseSourceAs("git:https://github.com/user/repo", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("github.com");
 			expect(parsed.path).toBe("user/repo");
 		});
 
 		it("should parse HTTPS URLs with ref", async () => {
-			const parsed = (packageManager as any).parseSource("https://github.com/user/repo@v1.2.3");
+			const parsed = parseSourceAs("https://github.com/user/repo@v1.2.3", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("github.com");
 			expect(parsed.path).toBe("user/repo");
@@ -1496,40 +1532,40 @@ Content`,
 		});
 
 		it("should parse host/path shorthand only with git: prefix", async () => {
-			const parsed = (packageManager as any).parseSource("git:github.com/user/repo");
+			const parsed = parseSourceAs("git:github.com/user/repo", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("github.com");
 			expect(parsed.path).toBe("user/repo");
 		});
 
 		it("should treat host/path shorthand as local without git: prefix", async () => {
-			const parsed = (packageManager as any).parseSource("github.com/user/repo");
+			const parsed = parseSourceAs("github.com/user/repo", "local");
 			expect(parsed.type).toBe("local");
 		});
 
 		it("should parse HTTPS URLs with .git suffix", async () => {
-			const parsed = (packageManager as any).parseSource("https://github.com/user/repo.git");
+			const parsed = parseSourceAs("https://github.com/user/repo.git", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("github.com");
 			expect(parsed.path).toBe("user/repo");
 		});
 
 		it("should parse GitLab HTTPS URLs", async () => {
-			const parsed = (packageManager as any).parseSource("https://gitlab.com/user/repo");
+			const parsed = parseSourceAs("https://gitlab.com/user/repo", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("gitlab.com");
 			expect(parsed.path).toBe("user/repo");
 		});
 
 		it("should parse Bitbucket HTTPS URLs", async () => {
-			const parsed = (packageManager as any).parseSource("https://bitbucket.org/user/repo");
+			const parsed = parseSourceAs("https://bitbucket.org/user/repo", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("bitbucket.org");
 			expect(parsed.path).toBe("user/repo");
 		});
 
 		it("should parse Codeberg HTTPS URLs", async () => {
-			const parsed = (packageManager as any).parseSource("https://codeberg.org/user/repo");
+			const parsed = parseSourceAs("https://codeberg.org/user/repo", "git");
 			expect(parsed.type).toBe("git");
 			expect(parsed.host).toBe("codeberg.org");
 			expect(parsed.path).toBe("user/repo");
@@ -1573,11 +1609,11 @@ Content`,
 
 		it("should handle HTTPS URLs with refs in resolve", async () => {
 			// This tests that the ref is properly extracted and stored
-			const parsed = (packageManager as any).parseSource("https://github.com/user/repo@main");
+			const parsed = parseSourceAs("https://github.com/user/repo@main", "git");
 			expect(parsed.ref).toBe("main");
 			expect(parsed.pinned).toBe(true);
 
-			const parsed2 = (packageManager as any).parseSource("https://github.com/user/repo@feature/branch");
+			const parsed2 = parseSourceAs("https://github.com/user/repo@feature/branch", "git");
 			expect(parsed2.ref).toBe("feature/branch");
 		});
 	});
@@ -1958,7 +1994,7 @@ Content`,
 			const result = await packageManager.resolve();
 
 			expect(result.extensions.map((resource) => resource.path)).toEqual([join(pkgDir, "extensions", "foo.ts")]);
-			expect(result.skills).toEqual([]);
+			expect(result.skills.filter((resource) => resource.metadata.origin === "package")).toEqual([]);
 		});
 	});
 
@@ -2529,12 +2565,14 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 
 			let activeGitUpdates = 0;
 			let maxConcurrentGitUpdates = 0;
-			const updateGitSpy = vi.spyOn(packageManager as any, "updateGit").mockImplementation(async () => {
-				activeGitUpdates += 1;
-				maxConcurrentGitUpdates = Math.max(maxConcurrentGitUpdates, activeGitUpdates);
-				await new Promise((resolve) => setTimeout(resolve, 20));
-				activeGitUpdates -= 1;
-			});
+			const updateGitSpy = vi
+				.spyOn((packageManager as unknown as PackageManagerInternals).gitOperations, "update")
+				.mockImplementation(async () => {
+					activeGitUpdates += 1;
+					maxConcurrentGitUpdates = Math.max(maxConcurrentGitUpdates, activeGitUpdates);
+					await new Promise((resolve) => setTimeout(resolve, 20));
+					activeGitUpdates -= 1;
+				});
 
 			await packageManager.update();
 
@@ -2602,13 +2640,21 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		it("should skip refreshing temporary git sources when offline", async () => {
 			process.env.CANDY_OFFLINE = "1";
 			const gitSource = "git:github.com/example/repo";
-			const parsedGitSource = (packageManager as any).parseSource(gitSource);
-			const installedPath = (packageManager as any).getGitInstallPath(parsedGitSource, "temporary") as string;
+			const parsedGitSource = parseSourceAs(gitSource, "git");
+			const installedPath = (packageManager as unknown as PackageManagerInternals).paths.getGitInstallPath(
+				parsedGitSource.host,
+				parsedGitSource.path,
+				parsedGitSource.ref,
+				"temporary",
+			);
 
 			mkdirSync(join(installedPath, "extensions"), { recursive: true });
 			writeFileSync(join(installedPath, "extensions", "index.ts"), "export default function() {};");
 
-			const refreshTemporaryGitSourceSpy = vi.spyOn(packageManager as any, "refreshTemporaryGitSource");
+			const refreshTemporaryGitSourceSpy = vi.spyOn(
+				(packageManager as unknown as PackageManagerInternals).gitOperations,
+				"refreshTemporary",
+			);
 
 			const result = await packageManager.resolveExtensionSources([gitSource], { temporary: true });
 			expect(result.extensions.some((r) => pathEndsWith(r.path, "extensions/index.ts") && r.enabled)).toBe(true);
@@ -2620,20 +2666,30 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
 			const oldSource = "git:github.com/example/repo@aaaaaaa";
 			const newSource = "git:github.com/example/repo@bbbbbbb";
-			const oldParsed = managerWithInternals.parseSource(oldSource);
-			const newParsed = managerWithInternals.parseSource(newSource);
+			const oldParsed = parseSourceAs(oldSource, "git");
+			const newParsed = parseSourceAs(newSource, "git");
 			if (oldParsed.type !== "git" || newParsed.type !== "git") {
 				throw new Error("Expected git sources");
 			}
 
-			const oldPath = managerWithInternals.getGitInstallPath(oldParsed, "temporary");
+			const oldPath = managerWithInternals.paths.getGitInstallPath(
+				oldParsed.host,
+				oldParsed.path,
+				oldParsed.ref,
+				"temporary",
+			);
 			mkdirSync(join(oldPath, "extensions"), { recursive: true });
 			writeFileSync(join(oldPath, "extensions", "old.ts"), "export default function() {};");
 
 			const installParsedSourceSpy = vi
 				.spyOn(packageManager as any, "installParsedSource")
 				.mockImplementation(async () => {
-					const newPath = managerWithInternals.getGitInstallPath(newParsed, "temporary");
+					const newPath = managerWithInternals.paths.getGitInstallPath(
+						newParsed.host,
+						newParsed.path,
+						newParsed.ref,
+						"temporary",
+					);
 					mkdirSync(join(newPath, "extensions"), { recursive: true });
 					writeFileSync(join(newPath, "extensions", "new.ts"), "export default function() {};");
 				});
@@ -2717,14 +2773,22 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedNpmPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedNpmPath, { recursive: true });
 			writeFileSync(join(installedNpmPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			const parsedGitSource = (packageManager as any).parseSource("git:github.com/example/repo@v1");
-			const installedGitPath = (packageManager as any).getGitInstallPath(parsedGitSource, "project") as string;
+			const parsedGitSource = parseSourceAs("git:github.com/example/repo@v1", "git");
+			const installedGitPath = (packageManager as unknown as PackageManagerInternals).paths.getGitInstallPath(
+				parsedGitSource.host,
+				parsedGitSource.path,
+				parsedGitSource.ref,
+				"project",
+			);
 			mkdirSync(installedGitPath, { recursive: true });
 
 			settingsManager.setProjectPackages(["npm:example@1.0.0", "git:github.com/example/repo@v1"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture");
-			const gitUpdateSpy = vi.spyOn(packageManager as any, "gitHasAvailableUpdate");
+			const gitUpdateSpy = vi.spyOn(
+				(packageManager as unknown as PackageManagerInternals).gitOperations,
+				"hasAvailableUpdate",
+			);
 
 			const updates = await packageManager.checkForAvailableUpdates();
 			expect(updates).toEqual([]);

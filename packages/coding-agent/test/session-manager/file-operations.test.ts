@@ -55,16 +55,16 @@ describe("loadEntriesFromFile", () => {
 		expect(loadEntriesFromFile(file)).toEqual([]);
 	});
 
-	it("returns empty array for file without valid session header", () => {
+	it("rejects a file without a session header", () => {
 		const file = join(tempDir, "no-header.jsonl");
 		writeFileSync(file, '{"type":"message","id":"1"}\n');
-		expect(loadEntriesFromFile(file)).toEqual([]);
+		expect(() => loadEntriesFromFile(file)).toThrow("no valid header");
 	});
 
-	it("returns empty array for malformed JSON", () => {
+	it("reports malformed JSON with its line", () => {
 		const file = join(tempDir, "malformed.jsonl");
 		writeFileSync(file, "not json\n");
-		expect(loadEntriesFromFile(file)).toEqual([]);
+		expect(() => loadEntriesFromFile(file)).toThrow(`${file}:1`);
 	});
 
 	it("loads valid session file", () => {
@@ -80,7 +80,7 @@ describe("loadEntriesFromFile", () => {
 		expect(entries[1].type).toBe("message");
 	});
 
-	it("skips malformed lines but keeps valid ones", () => {
+	it("rejects malformed middle lines", () => {
 		const file = join(tempDir, "mixed.jsonl");
 		writeFileSync(
 			file,
@@ -88,11 +88,10 @@ describe("loadEntriesFromFile", () => {
 				"not valid json\n" +
 				'{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"role":"user","content":"hi","timestamp":1}}\n',
 		);
-		const entries = loadEntriesFromFile(file);
-		expect(entries).toHaveLength(2);
+		expect(() => loadEntriesFromFile(file)).toThrow(`${file}:2`);
 	});
 
-	it("adds a newline after an unterminated valid record", () => {
+	it("reads an unterminated valid record without modifying the file", () => {
 		const file = join(tempDir, "unterminated.jsonl");
 		const content =
 			'{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n' +
@@ -100,17 +99,42 @@ describe("loadEntriesFromFile", () => {
 		writeFileSync(file, content);
 
 		expect(loadEntriesFromFile(file)).toHaveLength(2);
-		expect(readFileSync(file, "utf8")).toBe(`${content}\n`);
+		expect(readFileSync(file, "utf8")).toBe(content);
 	});
 
-	it("adds a newline after an unterminated malformed final fragment", () => {
+	it("rewrites an unterminated valid record on the next save", () => {
+		const file = join(tempDir, "unterminated-save.jsonl");
+		const content = '{"type":"session","version":3,"id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}';
+		writeFileSync(file, content);
+		const session = SessionManager.open(file, tempDir);
+		expect(readFileSync(file, "utf8")).toBe(content);
+
+		session.appendMessage(userMsg("hello"));
+		const lines = readFileSync(file, "utf8").trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(JSON.parse(lines[1]).type).toBe("message");
+	});
+
+	it("migrates an older session only when it is saved", () => {
+		const file = join(tempDir, "v2.jsonl");
+		const content = '{"type":"session","version":2,"id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n';
+		writeFileSync(file, content);
+		const session = SessionManager.open(file, tempDir);
+		expect(readFileSync(file, "utf8")).toBe(content);
+		expect(session.getHeader()?.version).toBe(3);
+
+		session.appendMessage(userMsg("hello"));
+		expect(JSON.parse(readFileSync(file, "utf8").split("\n")[0]).version).toBe(3);
+	});
+
+	it("rejects an unterminated malformed final fragment without modifying the file", () => {
 		const file = join(tempDir, "malformed-tail.jsonl");
 		const content =
 			'{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n' + '{"type":"message"';
 		writeFileSync(file, content);
 
-		expect(loadEntriesFromFile(file)).toHaveLength(1);
-		expect(readFileSync(file, "utf8")).toBe(`${content}\n`);
+		expect(() => loadEntriesFromFile(file)).toThrow(`${file}:2`);
+		expect(readFileSync(file, "utf8")).toBe(content);
 	});
 
 	it("does not modify an unterminated non-session file", () => {
@@ -118,13 +142,12 @@ describe("loadEntriesFromFile", () => {
 		const content = '{"type":"message","id":"1"}';
 		writeFileSync(file, content);
 
-		expect(loadEntriesFromFile(file)).toEqual([]);
+		expect(() => loadEntriesFromFile(file)).toThrow("no valid header");
 		expect(readFileSync(file, "utf8")).toBe(content);
 	});
 
 	it.each([
 		["leading blank lines", "\n  \n", "leading-blank"],
-		["leading malformed lines", "not json\n{broken json\n", "leading-malformed"],
 		["a multi-buffer header", "", "a".repeat(8192)],
 	])("reads cwd from a session with %s", (_description, prefix, sessionId) => {
 		const file = join(tempDir, "header.jsonl");
@@ -139,14 +162,7 @@ describe("loadEntriesFromFile", () => {
 	it("opens compatible sessions beyond the discovery scan limit", () => {
 		const storedCwd = join(tempDir, "stored-project");
 		const overrideCwd = join(tempDir, "override-project");
-		const cases = [
-			{ name: "large-header", id: "a".repeat(HEADER_SCAN_LIMIT_BYTES + 1), prefix: "" },
-			{
-				name: "large-prefix",
-				id: "large-prefix",
-				prefix: `${"x".repeat(HEADER_SCAN_LIMIT_BYTES + 1)}\n`,
-			},
-		];
+		const cases = [{ name: "large-header", id: "a".repeat(HEADER_SCAN_LIMIT_BYTES + 1), prefix: "" }];
 
 		for (const { name, id, prefix } of cases) {
 			const file = join(tempDir, `${name}.jsonl`);
@@ -159,7 +175,7 @@ describe("loadEntriesFromFile", () => {
 		}
 	});
 
-	it("opens session files larger than Node's max string length", () => {
+	it("rejects corrupt sparse session files larger than Node's max string length", () => {
 		const file = join(tempDir, "large.jsonl");
 		writeFileSync(
 			file,
@@ -182,10 +198,7 @@ describe("loadEntriesFromFile", () => {
 			'{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"role":"user","content":"hi","timestamp":1}}\n',
 		);
 
-		const sessionManager = SessionManager.open(file, tempDir);
-		expect(sessionManager.getSessionId()).toBe("abc");
-		expect(sessionManager.getEntries()).toHaveLength(1);
-		expect(sessionManager.buildSessionContext().messages).toEqual([{ role: "user", content: "hi", timestamp: 1 }]);
+		expect(() => SessionManager.open(file, tempDir)).toThrow(`${file}:2`);
 	});
 });
 
@@ -367,7 +380,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
-	it("truncates and rewrites empty file with valid header", () => {
+	it("keeps an empty file unchanged until a message is saved", () => {
 		const emptyFile = join(tempDir, "empty.jsonl");
 		writeFileSync(emptyFile, "");
 
@@ -378,13 +391,11 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		expect(sm.getHeader()).toBeTruthy();
 		expect(sm.getHeader()?.type).toBe("session");
 
-		// File should now contain a valid header
-		const content = readFileSync(emptyFile, "utf-8");
-		const lines = content.trim().split("\n").filter(Boolean);
-		expect(lines.length).toBe(1);
-		const header = JSON.parse(lines[0]);
-		expect(header.type).toBe("session");
-		expect(header.id).toBe(sm.getSessionId());
+		expect(readFileSync(emptyFile, "utf-8")).toBe("");
+		sm.appendMessage(userMsg("hello"));
+		const lines = readFileSync(emptyFile, "utf-8").trim().split("\n");
+		expect(JSON.parse(lines[0]).id).toBe(sm.getSessionId());
+		expect(lines).toHaveLength(2);
 	});
 
 	it("throws and preserves non-empty file without valid header", () => {
@@ -394,7 +405,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		writeFileSync(noHeaderFile, originalContent);
 
 		expect(() => SessionManager.open(noHeaderFile, tempDir)).toThrow(
-			`Session file is not a valid candy session: ${noHeaderFile}`,
+			`Session file has no valid header: ${noHeaderFile}`,
 		);
 		expect(readFileSync(noHeaderFile, "utf-8")).toBe(originalContent);
 	});
@@ -405,7 +416,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		writeFileSync(nonSessionFile, originalContent);
 
 		expect(() => SessionManager.open(nonSessionFile, tempDir)).toThrow(
-			`Session file is not a valid candy session: ${nonSessionFile}`,
+			`Session file has no valid header: ${nonSessionFile}`,
 		);
 		expect(readFileSync(nonSessionFile, "utf-8")).toBe(originalContent);
 	});
@@ -420,12 +431,13 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		expect(sm.getSessionFile()).toBe(explicitPath);
 	});
 
-	it("subsequent loads of initialized empty file work correctly", () => {
+	it("subsequent loads share the session after its first message", () => {
 		const emptyFile = join(tempDir, "empty.jsonl");
 		writeFileSync(emptyFile, "");
 
 		const sm1 = SessionManager.open(emptyFile, tempDir);
 		const sessionId = sm1.getSessionId();
+		sm1.appendMessage(userMsg("hello"));
 
 		const sm2 = SessionManager.open(emptyFile, tempDir);
 		expect(sm2.getSessionId()).toBe(sessionId);

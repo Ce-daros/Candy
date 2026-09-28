@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Extensions Configuration
  *
@@ -19,6 +21,8 @@ import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager 
 // You can also add paths via settings.json or DefaultResourceLoader options.
 
 const resourceLoader = new DefaultResourceLoader({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd: process.cwd(),
 	agentDir: getAgentDir(),
 	additionalExtensionPaths: ["./my-logging-extension.ts", "./my-safety-extension.ts"],

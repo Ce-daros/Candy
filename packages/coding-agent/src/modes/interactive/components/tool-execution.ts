@@ -33,7 +33,7 @@ export interface ToolRenderers {
 	) => Component;
 }
 
-import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
+import { getTextOutput as getRenderedTextOutput } from "../../../presentation/tool-render-utils.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 

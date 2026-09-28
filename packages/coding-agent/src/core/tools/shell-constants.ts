@@ -1,0 +1,1 @@
+export const BASH_UPDATE_THROTTLE_MS = 100;

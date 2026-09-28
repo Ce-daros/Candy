@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
-import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel, type Model } from "@candy/ai/compat";
+import type { AssistantMessage, AssistantMessageEvent, Model } from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
+import { EventStream } from "@candy/ai/utils/event-stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
@@ -13,7 +15,7 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
 
 const rpcIo = vi.hoisted(() => ({
@@ -132,7 +134,7 @@ async function createRuntimeHost(options: {
 	const sessionManager = SessionManager.inMemory();
 	const settingsManager = SettingsManager.create(tempDir, tempDir);
 	const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-	const modelRegistry = await createInMemoryModelRegistry(authStorage);
+	const modelRuntime = await createInMemoryModelRuntime(authStorage);
 	if (options.withAuth) {
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 	}
@@ -142,7 +144,7 @@ async function createRuntimeHost(options: {
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
-		modelRuntime: getModelRuntime(modelRegistry),
+		modelRuntime: modelRuntime,
 		resourceLoader: {
 			...createTestResourceLoader({ extensionsResult: options.extensionsResult }),
 			getPrompts: () => ({ prompts: options.promptTemplates ?? [], diagnostics: [] }),
@@ -530,8 +532,8 @@ describe("RPC prompt response semantics", () => {
 					command: "clear_queue",
 					success: true,
 					data: {
-						steering: ["Change direction"],
-						followUp: ["Summarize when finished"],
+						steering: [{ text: "Change direction" }],
+						followUp: [{ text: "Summarize when finished" }],
 					},
 				});
 			});

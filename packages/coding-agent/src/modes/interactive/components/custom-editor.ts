@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@candy/agent-core";
 import { Editor, type EditorOptions, type EditorTheme, type TUI, truncateToWidth, visibleWidth } from "@candy/tui";
-import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
+import type { AppKeybinding, KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { theme } from "../theme/theme.ts";
 import { FrameMotion, type InputMode } from "./frame-motion.ts";
 import { PanelTransition, panelPhase, panelRowVisible } from "./panel-transition.ts";

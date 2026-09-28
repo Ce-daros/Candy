@@ -14,23 +14,16 @@ vi.mock("../src/config.ts", async (importOriginal) => {
 import { shouldRunFirstTimeSetup } from "../src/cli/startup-ui.ts";
 
 describe("shouldRunFirstTimeSetup in forked distributions", () => {
-	const originalCandyExperimental = process.env.CANDY_EXPERIMENTAL;
 	let tempDir: string;
 	let settingsPath: string;
 
 	beforeEach(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "pi-first-time-setup-fork-"));
 		settingsPath = join(tempDir, "settings.json");
-		process.env.CANDY_EXPERIMENTAL = "1";
 	});
 
 	afterEach(() => {
 		rmSync(tempDir, { recursive: true, force: true });
-		if (originalCandyExperimental === undefined) {
-			delete process.env.CANDY_EXPERIMENTAL;
-		} else {
-			process.env.CANDY_EXPERIMENTAL = originalCandyExperimental;
-		}
 	});
 
 	it("returns false for a forked package", () => {

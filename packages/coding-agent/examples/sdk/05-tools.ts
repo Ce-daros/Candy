@@ -1,3 +1,5 @@
+import { resourceThemeAdapter } from "@candy/coding-agent";
+import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Tools Configuration
  *
@@ -14,6 +16,8 @@ import { createAgentSession, SessionManager } from "@candy/coding-agent";
 
 // Read-only mode (no edit/write)
 const { session: readOnlySession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	tools: ["read", "grep", "find", "ls"],
 	sessionManager: SessionManager.inMemory(),
 });
@@ -22,6 +26,8 @@ readOnlySession.dispose();
 
 // Custom tool selection
 const { session: customToolsSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	tools: ["read", "bash", "grep"],
 	sessionManager: SessionManager.inMemory(),
 });
@@ -31,6 +37,8 @@ customToolsSession.dispose();
 // With custom cwd
 const customCwd = "/path/to/project";
 const { session: customCwdSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd: customCwd,
 	tools: ["read", "bash", "edit", "write"],
 	sessionManager: SessionManager.inMemory(customCwd),
@@ -40,6 +48,8 @@ customCwdSession.dispose();
 
 // Or pick specific tools for custom cwd
 const { session: specificToolsSession } = await createAgentSession({
+	extensionModules: extensionHostModules,
+	themeAdapter: resourceThemeAdapter,
 	cwd: customCwd,
 	tools: ["read", "bash", "grep"],
 	sessionManager: SessionManager.inMemory(customCwd),

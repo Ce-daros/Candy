@@ -53,6 +53,7 @@ import type {
 } from "@candy/tui";
 import type { Static, TSchema } from "typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
+import type { KeybindingsManager } from "../../presentation/keybindings.ts";
 import type { BashResult } from "../bash-executor.ts";
 import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult } from "../cache-warmer.ts";
 import type { CommandInfo } from "../commands.ts";
@@ -60,9 +61,8 @@ import type { CompactionPreparation, CompactionResult } from "../compaction/inde
 import type { EventBus } from "../event-bus.ts";
 import type { ExecOptions, ExecResult } from "../exec.ts";
 import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
-import type { KeybindingsManager } from "../keybindings.ts";
 import type { CustomMessage } from "../messages.ts";
-import type { ModelRegistry } from "../model-registry.ts";
+import type { ModelRuntime } from "../model-runtime.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -97,7 +97,7 @@ import type {
 export type { ExecOptions, ExecResult } from "../exec.ts";
 export type { BuildSystemPromptOptions, NormalizedBuildSystemPromptOptions } from "../system-prompt.ts";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
-export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
+export type { AppKeybinding, KeybindingsManager } from "../../presentation/keybindings.ts";
 
 // ============================================================================
 // UI Context
@@ -305,8 +305,8 @@ export interface ExtensionContext {
 	cwd: string;
 	/** Session manager (read-only) */
 	sessionManager: ReadonlySessionManager;
-	/** Model registry for API key resolution */
-	modelRegistry: ModelRegistry;
+	/** Model and provider runtime for catalog, authentication, and requests. */
+	modelRuntime: ModelRuntime;
 	/** Current model (may be undefined) */
 	model: Model<any> | undefined;
 	/** Current thinking level, when provided by the session runtime. */
@@ -1667,8 +1667,6 @@ export interface ProviderConfig {
 		name: string;
 		/** Whether access through this auth method is backed by a provider subscription. */
 		isSubscription?: boolean;
-		/** @deprecated Retained for source compatibility; canonical auth flows ignore it. */
-		usesCallbackServer?: boolean;
 		/** Run the login flow, return credentials to persist. */
 		login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
 		/** Refresh expired credentials, return updated credentials to persist. */
@@ -1833,7 +1831,7 @@ export interface ExtensionRuntimeState {
 	 * Register or unregister a provider.
 	 *
 	 * Before bindCore(): queues registrations / removes from queue.
-	 * After bindCore(): calls ModelRegistry directly for immediate effect.
+	 * After bindCore(): applies the change to ModelRuntime immediately.
 	 */
 	registerProvider: (name: string, config: ProviderConfig, extensionPath?: string) => void;
 	registerNativeProvider: (provider: Provider, extensionPath?: string) => void;

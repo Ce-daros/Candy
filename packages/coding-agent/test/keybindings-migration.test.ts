@@ -3,8 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { runMigrations } from "../src/migrations.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 
 describe("keybindings migration", () => {
 	const tempDirs: string[] = [];

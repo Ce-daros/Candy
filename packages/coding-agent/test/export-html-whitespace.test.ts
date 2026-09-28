@@ -1,14 +1,14 @@
 import type { Component } from "@candy/tui";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
-import { ansiLinesToHtml } from "../src/core/export-html/ansi-to-html.ts";
-import { createToolHtmlRenderer } from "../src/core/export-html/tool-renderer.ts";
 import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import type { Theme } from "../src/modes/interactive/theme/theme.ts";
+import { ansiLinesToHtml } from "../src/presentation/export-html/ansi-to-html.ts";
+import { createToolHtmlRenderer } from "../src/presentation/export-html/tool-renderer.ts";
 
 describe("export HTML tool output whitespace", () => {
 	it("preserves whitespace for plain-text tool output lines without preserving template whitespace", () => {
-		const css = readFileSync(new URL("../src/core/export-html/template.css", import.meta.url), "utf-8");
+		const css = readFileSync(new URL("../src/presentation/export-html/template.css", import.meta.url), "utf-8");
 
 		expect(css).toMatch(
 			/\.output-preview > div:not\(\.expand-hint\),\s*\.output-full > div:not\(\.expand-hint\) \{[\s\S]*?white-space:\s*pre-wrap;/,

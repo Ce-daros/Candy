@@ -28,4 +28,24 @@ describe("UserMessageSelectorComponent", () => {
 		selector.handleInput("\r");
 		expect(select).toHaveBeenCalledWith("two");
 	});
+
+	it("resets the preview when the mouse wheel changes the selected message", () => {
+		const firstMessage = Array.from({ length: 30 }, (_, index) => `first-${index}`).join("\n");
+		const selector = new UserMessageSelectorComponent(
+			[
+				{ id: "first", text: firstMessage },
+				{ id: "second", text: "second message" },
+			],
+			vi.fn(),
+			vi.fn(),
+			"second",
+		);
+		selector.setAvailableHeight(20);
+		selector.handleInput("\t");
+		for (let index = 0; index < 20; index++) selector.handleInput("\x1b[B");
+		selector.handleInput("\t");
+		selector.handleMouse({ type: "wheel", wheelDelta: 1 } as TuiMouseEvent);
+
+		expect(stripAnsi(selector.render(80).join("\n"))).toContain("first-0");
+	});
 });

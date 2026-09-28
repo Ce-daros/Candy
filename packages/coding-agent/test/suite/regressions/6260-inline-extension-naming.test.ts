@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import type { ExtensionAPI } from "../../../src/index.ts";
+import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
 
 const noop: (candy: ExtensionAPI) => void = () => {};
 
@@ -36,6 +38,8 @@ describe("inline extension naming", () => {
 	it("displays bare factories as <inline:N>", async () => {
 		const { cwd, agentDir } = fixture("bare");
 		const loader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			noSkills: true,
@@ -56,6 +60,8 @@ describe("inline extension naming", () => {
 	it("displays named wrappers as <inline:name>", async () => {
 		const { cwd, agentDir } = fixture("named");
 		const loader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			noSkills: true,
@@ -79,6 +85,8 @@ describe("inline extension naming", () => {
 	it("preserves hidden state for named factories", async () => {
 		const { cwd, agentDir } = fixture("hidden");
 		const loader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			noSkills: true,
@@ -99,6 +107,8 @@ describe("inline extension naming", () => {
 	it("supports mixed bare and named factories", async () => {
 		const { cwd, agentDir } = fixture("mixed");
 		const loader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			noSkills: true,

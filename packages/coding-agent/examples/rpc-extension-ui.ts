@@ -26,7 +26,7 @@ import {
 	type TUI,
 	TuiMainScreen,
 } from "@candy/tui";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

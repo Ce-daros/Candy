@@ -3,6 +3,11 @@ import type { ThinkingLevel } from "@candy/agent-core";
 import type { Model } from "@candy/ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
+import {
+	type CreateAgentSessionOptions,
+	type CreateAgentSessionResult,
+	createAgentSession,
+} from "./agent-session-factory.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { ModelRuntime } from "./model-runtime.ts";
 import {
@@ -11,7 +16,6 @@ import {
 	type ResourceLoader,
 	type ResourceLoaderReloadOptions,
 } from "./resource-loader.ts";
-import { type CreateAgentSessionOptions, type CreateAgentSessionResult, createAgentSession } from "./sdk.ts";
 import type { SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 
@@ -41,7 +45,12 @@ export interface CreateAgentSessionServicesOptions {
 	modelRuntime?: ModelRuntime;
 	modelRuntimeSignal?: AbortSignal;
 	extensionFlagValues?: Map<string, boolean | string>;
-	resourceLoaderOptions?: Omit<DefaultResourceLoaderOptions, "cwd" | "agentDir" | "settingsManager">;
+	resourceLoaderOptions?: Omit<
+		DefaultResourceLoaderOptions,
+		"cwd" | "agentDir" | "settingsManager" | "themeAdapter" | "extensionModules"
+	>;
+	themeAdapter: DefaultResourceLoaderOptions["themeAdapter"];
+	extensionModules?: DefaultResourceLoaderOptions["extensionModules"];
 	resourceLoaderReloadOptions?: ResourceLoaderReloadOptions;
 }
 
@@ -149,6 +158,8 @@ export async function createAgentSessionServices(
 		cwd,
 		agentDir,
 		settingsManager,
+		themeAdapter: options.themeAdapter,
+		extensionModules: options.extensionModules,
 	});
 	await resourceLoader.reload(options.resourceLoaderReloadOptions);
 

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultPackageManager } from "../src/core/package-manager.ts";
+import { parsePackageSource } from "../src/core/package-source.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { allowNetwork } from "./test-network-env.ts";
 
@@ -51,18 +52,10 @@ function getFileContent(repoDir: string, filename: string): string {
 	return readFileSync(join(repoDir, filename), "utf-8");
 }
 
-type GitSourceForTest = {
-	type: "git";
-	repo: string;
-	host: string;
-	path: string;
-	pinned: boolean;
-	ref?: string;
-};
-
 interface PackageManagerPathInternals {
-	parseSource(source: string): GitSourceForTest;
-	getGitInstallPath(source: GitSourceForTest, scope: "temporary"): string;
+	paths: {
+		getGitInstallPath(host: string, repositoryPath: string, ref: string | undefined, scope: "temporary"): string;
+	};
 }
 
 describe("DefaultPackageManager git update", () => {
@@ -74,7 +67,7 @@ describe("DefaultPackageManager git update", () => {
 	let packageManager: DefaultPackageManager;
 
 	// Git source that maps to our installed directory structure.
-	// Must use "git:" prefix so parseSource() treats it as a git source
+	// Must use "git:" prefix so the source parser recognizes this as a git source.
 	// (bare "github.com/..." is not recognized as a git URL).
 	const gitSource = "git:github.com/test/extension";
 
@@ -236,7 +229,9 @@ describe("DefaultPackageManager git update", () => {
 	describe("temporary git sources", () => {
 		it("should refresh cached temporary git sources when resolving", async () => {
 			const managerWithPaths = packageManager as unknown as PackageManagerPathInternals;
-			const cachedDir = managerWithPaths.getGitInstallPath(managerWithPaths.parseSource(gitSource), "temporary");
+			const parsed = parsePackageSource(gitSource);
+			if (parsed.type !== "git") throw new Error("Expected git source");
+			const cachedDir = managerWithPaths.paths.getGitInstallPath(parsed.host, parsed.path, parsed.ref, "temporary");
 			const extensionFile = join(cachedDir, "pi-extensions", "session-breakdown.ts");
 
 			rmSync(cachedDir, { recursive: true, force: true });

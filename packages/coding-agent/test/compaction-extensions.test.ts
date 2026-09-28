@@ -1,4 +1,4 @@
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 /**
  * Tests for compaction extension events (before_compact / compact).
  */
@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
-import { getModel, streamSimple } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -22,6 +22,7 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { createCodingTools } from "../src/index.ts";
+import { streamBuiltinSimple as streamSimple } from "./ai.ts";
 import { createTestResourceLoader } from "./utilities.ts";
 
 const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
@@ -101,7 +102,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		const modelRegistry = await createModelRegistry(authStorage);
+		const modelRuntime = await createTestModelRuntime(authStorage);
 
 		const runtime = createExtensionRuntime();
 		const resourceLoader = {
@@ -114,7 +115,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
-			modelRuntime: getModelRuntime(modelRegistry),
+			modelRuntime: modelRuntime,
 			resourceLoader,
 		});
 
@@ -148,7 +149,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		expect(beforeEvent.preparation.tokensBefore).toBeGreaterThanOrEqual(0);
 		expect(typeof beforeEvent.preparation.isSplitTurn).toBe("boolean");
 		expect(beforeEvent.branchEntries).toBeDefined();
-		// sessionManager, modelRegistry, and model are now on ctx, not event
+		// sessionManager, modelRuntime, and model are now on ctx, not event
 
 		const afterEvent = compactEvents[0];
 		expect(afterEvent.compactionEntry).toBeDefined();

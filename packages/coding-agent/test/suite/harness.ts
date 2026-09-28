@@ -1,4 +1,4 @@
-import { createInMemoryModelRegistry, createModelRegistry, getModelRuntime } from "../model-runtime-test-utils.ts";
+import { createInMemoryModelRuntime, createTestModelRuntime } from "../model-runtime-test-utils.ts";
 /**
  * Local test harness for the new coding-agent test suite.
  */
@@ -8,8 +8,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@candy/agent-core";
 import { Agent } from "@candy/agent-core";
-import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@candy/ai/compat";
-import { registerFauxProvider, streamSimple } from "@candy/ai/compat";
+import type { Model } from "@candy/ai";
+import {
+	type FauxModelDefinition,
+	type FauxProviderHandle,
+	type FauxResponseStep,
+	fauxProvider,
+} from "@candy/ai/providers/faux";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
@@ -18,6 +23,7 @@ import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
+import { configuredFauxProvider } from "../ai.ts";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,
@@ -74,7 +80,7 @@ export interface Harness {
 	sessionManager: SessionManager;
 	settingsManager: SettingsManager;
 	authStorage: AuthStorage;
-	faux: FauxProviderRegistration;
+	faux: FauxProviderHandle;
 	models: [Model<string>, ...Model<string>[]];
 	getModel(): Model<string>;
 	getModel(modelId: string): Model<string> | undefined;
@@ -95,12 +101,12 @@ function createTempDir(): string {
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
 	const tempDir = createTempDir();
-	const fauxProvider: FauxProviderRegistration = registerFauxProvider({
+	const faux: FauxProviderHandle = fauxProvider({
 		models: options.models,
 		tokensPerSecond: options.tokensPerSecond,
 	});
-	fauxProvider.setResponses([]);
-	const model = fauxProvider.getModel();
+	faux.setResponses([]);
+	const model = faux.getModel();
 	const toolMap = options.tools ? Object.fromEntries(options.tools.map((tool) => [tool.name, tool])) : undefined;
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
@@ -114,32 +120,17 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	}
 	const modelsPath = options.modelsJson === undefined ? undefined : join(tempDir, "models.json");
 	if (modelsPath) writeFileSync(modelsPath, JSON.stringify(options.modelsJson));
-	const modelRegistry = modelsPath
-		? await createModelRegistry(authStorage, modelsPath)
-		: await createInMemoryModelRegistry(authStorage);
+	const modelRuntime = modelsPath
+		? await createTestModelRuntime(authStorage, modelsPath)
+		: await createInMemoryModelRuntime(authStorage);
 	if (withConfiguredAuth) {
-		modelRegistry.registerProvider(model.provider, {
-			baseUrl: model.baseUrl,
-			apiKey: "faux-key",
-			api: fauxProvider.api,
-			models: fauxProvider.models.map((registeredModel) => ({
-				id: registeredModel.id,
-				name: registeredModel.name,
-				api: registeredModel.api,
-				reasoning: registeredModel.reasoning,
-				input: registeredModel.input,
-				inputLimits: registeredModel.inputLimits,
-				cost: registeredModel.cost,
-				contextWindow: registeredModel.contextWindow,
-				maxTokens: registeredModel.maxTokens,
-				baseUrl: registeredModel.baseUrl,
-			})),
-		});
+		modelRuntime.registerNativeProvider(configuredFauxProvider(faux));
+		await modelRuntime.refresh({ allowNetwork: false });
 	}
 
 	const agent = new Agent({
 		getApiKey: () => (withConfiguredAuth ? "faux-key" : undefined),
-		streamFn: streamSimple,
+		streamFn: faux.provider.streamSimple,
 		initialState: {
 			model,
 			systemPrompt: "",
@@ -181,7 +172,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
-		modelRuntime: getModelRuntime(modelRegistry),
+		modelRuntime: modelRuntime,
 		resourceLoader,
 		baseToolsOverride: toolMap,
 		initialActiveToolNames: options.initialActiveToolNames,
@@ -200,12 +191,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		sessionManager,
 		settingsManager,
 		authStorage,
-		faux: fauxProvider,
-		models: fauxProvider.models,
-		getModel: fauxProvider.getModel,
-		setResponses: fauxProvider.setResponses,
-		appendResponses: fauxProvider.appendResponses,
-		getPendingResponseCount: fauxProvider.getPendingResponseCount,
+		faux,
+		models: faux.models,
+		getModel: faux.getModel,
+		setResponses: faux.setResponses,
+		appendResponses: faux.appendResponses,
+		getPendingResponseCount: faux.getPendingResponseCount,
 		events,
 		eventsOfType<T extends AgentSessionEvent["type"]>(type: T) {
 			return events.filter((event): event is Extract<AgentSessionEvent, { type: T }> => event.type === type);
@@ -213,7 +204,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		tempDir,
 		cleanup() {
 			session.dispose();
-			fauxProvider.unregister();
+			modelRuntime.unregisterProvider(faux.provider.id);
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true });
 			}

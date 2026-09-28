@@ -1,3 +1,5 @@
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 /**
  * Tests for AgentSession forking behavior.
  *
@@ -10,7 +12,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModel } from "@candy/ai/compat";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import {
@@ -62,6 +64,8 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
 			const services = await createAgentSessionServices({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				...servicesOptions,
 				cwd,
 			});

@@ -3,8 +3,7 @@ import {
 	Container,
 	type Focusable,
 	getKeybindings,
-	Input,
-	type Keybinding,
+	moveSelection,
 	sliceByColumn,
 	Text,
 	type TuiMouseEvent,
@@ -15,28 +14,8 @@ import {
 } from "@candy/tui";
 import type { SessionTreeNode } from "../../../core/session-manager.ts";
 import { theme } from "../theme/theme.ts";
-import { formatKeyText, keycap, keyHint } from "./keybinding-hints.ts";
-
-/** Gutter info: position (displayIndent where connector was) and whether to show │ */
-interface GutterInfo {
-	position: number; // displayIndent level where the connector was shown
-	show: boolean; // true = show │, false = show spaces
-}
-
-/** Flattened tree node for navigation */
-interface FlatNode {
-	node: SessionTreeNode;
-	/** Indentation level (each level = 3 chars) */
-	indent: number;
-	/** Whether to show connector (├─ or └─) - true if parent has multiple children */
-	showConnector: boolean;
-	/** If showConnector, true = last sibling (└─), false = not last (├─) */
-	isLast: boolean;
-	/** Gutter info for each ancestor branch point */
-	gutters: GutterInfo[];
-	/** True if this node is a root under a virtual branching root (multiple roots) */
-	isVirtualRootChild: boolean;
-}
+import { type FlatNode, flattenSessionTree, type GutterInfo, type ToolCallInfo } from "./tree-projection.ts";
+import { LabelInput, TreeHelp } from "./tree-selector-controls.ts";
 
 interface HorizontalViewportRow {
 	gutter: string;
@@ -97,12 +76,6 @@ export type FilterMode = "default" | "no-tools" | "user-only" | "labeled-only" |
 /**
  * Tree list component with selection and ASCII art visualization
  */
-/** Tool call info for lookup */
-interface ToolCallInfo {
-	name: string;
-	arguments: Record<string, unknown>;
-}
-
 class TreeList implements Component {
 	private flatNodes: FlatNode[] = [];
 	private filteredNodes: FlatNode[] = [];
@@ -142,8 +115,10 @@ class TreeList implements Component {
 		this.currentLeafId = currentLeafId;
 		this.maxVisibleLines = maxVisibleLines;
 		this.filterMode = initialFilterMode ?? "default";
-		this.multipleRoots = tree.length > 1;
-		this.flatNodes = this.flattenTree(tree);
+		const projection = flattenSessionTree(tree, currentLeafId);
+		this.flatNodes = projection.nodes;
+		this.toolCallMap = projection.toolCallMap;
+		this.multipleRoots = projection.multipleRoots;
 		this.buildActivePath();
 		this.applyFilter();
 
@@ -202,136 +177,6 @@ class TreeList implements Component {
 			if (!node) break;
 			currentId = node.node.entry.parentId ?? null;
 		}
-	}
-
-	private flattenTree(roots: SessionTreeNode[]): FlatNode[] {
-		const result: FlatNode[] = [];
-		this.toolCallMap.clear();
-
-		// Indentation rules:
-		// - At indent 0: stay at 0 unless parent has >1 children (then +1)
-		// - At indent 1: children always go to indent 2 (visual grouping of subtree)
-		// - At indent 2+: stay flat for single-child chains, +1 only if parent branches
-
-		// Stack items: [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
-		type StackItem = [SessionTreeNode, number, boolean, boolean, boolean, GutterInfo[], boolean];
-		const stack: StackItem[] = [];
-
-		// Determine which subtrees contain the active leaf (to sort current branch first)
-		// Use iterative post-order traversal to avoid stack overflow
-		const containsActive = new Map<SessionTreeNode, boolean>();
-		const leafId = this.currentLeafId;
-		{
-			// Build list in pre-order, then process in reverse for post-order effect
-			const allNodes: SessionTreeNode[] = [];
-			const preOrderStack: SessionTreeNode[] = [...roots];
-			while (preOrderStack.length > 0) {
-				const node = preOrderStack.pop()!;
-				allNodes.push(node);
-				// Push children in reverse so they're processed left-to-right
-				for (let i = node.children.length - 1; i >= 0; i--) {
-					preOrderStack.push(node.children[i]);
-				}
-			}
-			// Process in reverse (post-order): children before parents
-			for (let i = allNodes.length - 1; i >= 0; i--) {
-				const node = allNodes[i];
-				let has = leafId !== null && node.entry.id === leafId;
-				for (const child of node.children) {
-					if (containsActive.get(child)) {
-						has = true;
-					}
-				}
-				containsActive.set(node, has);
-			}
-		}
-
-		// Add roots in reverse order, prioritizing the one containing the active leaf
-		// If multiple roots, treat them as children of a virtual root that branches
-		const multipleRoots = roots.length > 1;
-		const orderedRoots = [...roots].sort((a, b) => Number(containsActive.get(b)) - Number(containsActive.get(a)));
-		for (let i = orderedRoots.length - 1; i >= 0; i--) {
-			const isLast = i === orderedRoots.length - 1;
-			stack.push([orderedRoots[i], multipleRoots ? 1 : 0, multipleRoots, multipleRoots, isLast, [], multipleRoots]);
-		}
-
-		while (stack.length > 0) {
-			const [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild] = stack.pop()!;
-
-			// Extract tool calls from assistant messages for later lookup
-			const entry = node.entry;
-			if (entry.type === "message" && entry.message.role === "assistant") {
-				const content = (entry.message as { content?: unknown }).content;
-				if (Array.isArray(content)) {
-					for (const block of content) {
-						if (typeof block === "object" && block !== null && "type" in block && block.type === "toolCall") {
-							const tc = block as { id: string; name: string; arguments: Record<string, unknown> };
-							this.toolCallMap.set(tc.id, { name: tc.name, arguments: tc.arguments });
-						}
-					}
-				}
-			}
-
-			result.push({ node, indent, showConnector, isLast, gutters, isVirtualRootChild });
-
-			const children = node.children;
-			const multipleChildren = children.length > 1;
-
-			// Order children so the branch containing the active leaf comes first
-			const orderedChildren = (() => {
-				const prioritized: SessionTreeNode[] = [];
-				const rest: SessionTreeNode[] = [];
-				for (const child of children) {
-					if (containsActive.get(child)) {
-						prioritized.push(child);
-					} else {
-						rest.push(child);
-					}
-				}
-				return [...prioritized, ...rest];
-			})();
-
-			// Calculate child indent
-			let childIndent: number;
-			if (multipleChildren) {
-				// Parent branches: children get +1
-				childIndent = indent + 1;
-			} else if (justBranched && indent > 0) {
-				// First generation after a branch: +1 for visual grouping
-				childIndent = indent + 1;
-			} else {
-				// Single-child chain: stay flat
-				childIndent = indent;
-			}
-
-			// Build gutters for children
-			// If this node showed a connector, add a gutter entry for descendants
-			// Only add gutter if connector is actually displayed (not suppressed for virtual root children)
-			const connectorDisplayed = showConnector && !isVirtualRootChild;
-			// When connector is displayed, add a gutter entry at the connector's position
-			// Connector is at position (displayIndent - 1), so gutter should be there too
-			const currentDisplayIndent = this.multipleRoots ? Math.max(0, indent - 1) : indent;
-			const connectorPosition = Math.max(0, currentDisplayIndent - 1);
-			const childGutters: GutterInfo[] = connectorDisplayed
-				? [...gutters, { position: connectorPosition, show: !isLast }]
-				: gutters;
-
-			// Add children in reverse order
-			for (let i = orderedChildren.length - 1; i >= 0; i--) {
-				const childIsLast = i === orderedChildren.length - 1;
-				stack.push([
-					orderedChildren[i],
-					childIndent,
-					multipleChildren,
-					multipleChildren,
-					childIsLast,
-					childGutters,
-					false,
-				]);
-			}
-		}
-
-		return result;
 	}
 
 	private applyFilter(): void {
@@ -438,7 +283,7 @@ class TreeList implements Component {
 	 * Recompute indentation/connectors for the filtered view
 	 *
 	 * Filtering can hide intermediate entries; descendants attach to the nearest visible ancestor.
-	 * Keep indentation semantics aligned with flattenTree() so single-child chains don't drift right.
+	 * Keep indentation semantics aligned with the full-tree projection so single-child chains don't drift right.
 	 */
 	private recalculateVisualStructure(): void {
 		if (this.filteredNodes.length === 0) return;
@@ -491,7 +336,7 @@ class TreeList implements Component {
 			filteredNodeMap.set(flatNode.node.entry.id, flatNode);
 		}
 
-		// DFS over the visible tree using flattenTree() indentation semantics
+		// DFS over the visible tree using the full-tree projection's indentation semantics
 		// Stack items: [nodeId, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
 		type StackItem = [string, number, boolean, boolean, boolean, GutterInfo[], boolean];
 		const stack: StackItem[] = [];
@@ -527,7 +372,7 @@ class TreeList implements Component {
 			const children = visibleChildren.get(nodeId) || [];
 			const multipleChildren = children.length > 1;
 
-			// Child indent follows flattenTree(): branch points (and first generation after a branch) shift +1
+			// Branch points and their first generation shift the child indentation by one.
 			let childIndent: number;
 			if (multipleChildren) {
 				childIndent = indent + 1;
@@ -537,7 +382,7 @@ class TreeList implements Component {
 				childIndent = indent;
 			}
 
-			// Child gutters follow flattenTree() connector/gutter rules
+			// Child gutters follow the connector and gutter rules from the full-tree projection.
 			const connectorDisplayed = showConnector && !isVirtualRootChild;
 			const currentDisplayIndent = this.multipleRoots ? Math.max(0, indent - 1) : indent;
 			const connectorPosition = Math.max(0, currentDisplayIndent - 1);
@@ -808,9 +653,10 @@ class TreeList implements Component {
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type === "wheel" && event.wheelDelta) {
-			this.selectedIndex = Math.max(
-				0,
-				Math.min(this.filteredNodes.length - 1, this.selectedIndex + (event.wheelDelta < 0 ? -1 : 1)),
+			this.selectedIndex = moveSelection(
+				this.selectedIndex,
+				this.filteredNodes.length,
+				event.wheelDelta < 0 ? -1 : 1,
 			);
 			return { handled: true, render: true };
 		}
@@ -1245,133 +1091,6 @@ class SearchLine implements Component {
 	}
 
 	handleInput(_keyData: string): void {}
-}
-
-/** Component that renders tree help as semantic rows with chunk-aware wrapping */
-class TreeHelp implements Component {
-	invalidate(): void {}
-
-	render(width: number): string[] {
-		const items = TREE_HELP_ITEMS.map(({ keys, label, labelFirst }) => {
-			const text = formatHelpKeys(keys);
-			if (!text) return theme.fg("muted", label);
-			return labelFirst ? `${theme.fg("muted", label)} ${text}` : `${text} ${theme.fg("muted", label)}`;
-		});
-
-		const primary = `${keyHint("app.panel.focusNext", "panels")} · ${keyHint("tui.select.confirm", "navigate")} · ${keyHint("tui.select.cancel", "close")} · ${items.slice(0, 5).join(" · ")}`;
-		const secondary = items.slice(5).join(" · ");
-		return [...wrapTextWithAnsi(primary, Math.max(1, width)), ...wrapTextWithAnsi(secondary, Math.max(1, width))];
-	}
-}
-
-const TREE_HELP_ITEMS: Array<{ keys: Keybinding[]; label: string; labelFirst?: boolean }> = [
-	{ keys: ["tui.select.up", "tui.select.down"], label: "move" },
-	{ keys: ["tui.editor.cursorLeft", "tui.editor.cursorRight"], label: "page" },
-	{ keys: ["app.tree.foldOrUp", "app.tree.unfoldOrDown"], label: "branch" },
-	{ keys: ["app.message.copy"], label: "copy" },
-	{ keys: ["app.tree.editLabel"], label: "label" },
-	{ keys: ["app.tree.toggleLabelTimestamp"], label: "label time" },
-	{
-		keys: [
-			"app.tree.filter.default",
-			"app.tree.filter.noTools",
-			"app.tree.filter.userOnly",
-			"app.tree.filter.labeledOnly",
-			"app.tree.filter.all",
-		],
-		label: "filters",
-		labelFirst: true,
-	},
-	{ keys: ["app.tree.filter.cycleForward", "app.tree.filter.cycleBackward"], label: "cycle", labelFirst: true },
-];
-
-function formatHelpKeys(keybindings: Keybinding[]): string {
-	const keys: string[] = [];
-	for (const keybinding of keybindings) {
-		const key = getKeybindings().getKeys(keybinding)[0];
-		if (key !== undefined) keys.push(key);
-	}
-	if (keys.length === 0) return "";
-
-	return keycap(
-		formatKeyText(compactRawKeys(keys))
-			.replace(/\bpageUp\b/g, "pgup")
-			.replace(/\bpageDown\b/g, "pgdn")
-			.replace(/\bup\b/g, "↑")
-			.replace(/\bdown\b/g, "↓")
-			.replace(/\bleft\b/g, "←")
-			.replace(/\bright\b/g, "→"),
-	);
-}
-
-function compactRawKeys(keys: string[]): string {
-	if (keys.length === 1) return keys[0]!;
-
-	const parts = keys.map((key) => {
-		const separatorIndex = key.lastIndexOf("+");
-		return separatorIndex === -1
-			? { prefix: "", suffix: key }
-			: { prefix: key.slice(0, separatorIndex + 1), suffix: key.slice(separatorIndex + 1) };
-	});
-	const prefix = parts[0]!.prefix;
-	return prefix && parts.every((part) => part.prefix === prefix)
-		? `${prefix}${parts.map((part) => part.suffix).join("/")}`
-		: keys.join("/");
-}
-
-/** Label input component shown when editing a label */
-class LabelInput implements Component, Focusable {
-	private input: Input;
-	private entryId: string;
-	public onSubmit?: (entryId: string, label: string | undefined) => void;
-	public onCancel?: () => void;
-
-	// Focusable implementation - propagate to input for IME cursor positioning
-	private _focused = false;
-	get focused(): boolean {
-		return this._focused;
-	}
-	set focused(value: boolean) {
-		this._focused = value;
-		this.input.focused = value;
-	}
-
-	constructor(entryId: string, currentLabel: string | undefined) {
-		this.entryId = entryId;
-		this.input = new Input();
-		if (currentLabel) {
-			this.input.setValue(currentLabel);
-		}
-	}
-
-	invalidate(): void {}
-
-	render(width: number): string[] {
-		const lines: string[] = [];
-		const indent = "  ";
-		const availableWidth = width - indent.length;
-		lines.push(truncateToWidth(`${indent}${theme.fg("muted", "Label (empty to remove):")}`, width));
-		lines.push(...this.input.render(availableWidth).map((line) => truncateToWidth(`${indent}${line}`, width)));
-		lines.push(
-			truncateToWidth(
-				`${indent}${keyHint("tui.select.confirm", "save")}  ${keyHint("tui.select.cancel", "cancel")}`,
-				width,
-			),
-		);
-		return lines;
-	}
-
-	handleInput(keyData: string): void {
-		const kb = getKeybindings();
-		if (kb.matches(keyData, "tui.select.confirm")) {
-			const value = this.input.getValue().trim();
-			this.onSubmit?.(this.entryId, value || undefined);
-		} else if (kb.matches(keyData, "tui.select.cancel")) {
-			this.onCancel?.();
-		} else {
-			this.input.handleInput(keyData);
-		}
-	}
 }
 
 /**

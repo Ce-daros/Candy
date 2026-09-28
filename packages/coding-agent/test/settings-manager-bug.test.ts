@@ -34,6 +34,61 @@ describe("SettingsManager - External Edit Preservation", () => {
 		}
 	});
 
+	it("reports a failed save and accepts a later successful save", async () => {
+		const settingsPath = join(agentDir, "settings.json");
+		const manager = SettingsManager.create(projectDir, agentDir);
+		writeFileSync(settingsPath, "{broken");
+
+		manager.setShowImages(false);
+		await expect(manager.flushOrThrow()).rejects.toThrow();
+		expect(readFileSync(settingsPath, "utf8")).toBe("{broken");
+
+		writeFileSync(settingsPath, "{}");
+		manager.setShowImages(true);
+		await expect(manager.flushOrThrow()).resolves.toBeUndefined();
+		expect(JSON.parse(readFileSync(settingsPath, "utf8")).terminal.showImages).toBe(true);
+	});
+
+	it("does not hide an earlier queued write failure behind a later success", async () => {
+		let failNextWrite = false;
+		let global = "{}";
+		let project: string | undefined;
+		const manager = SettingsManager.fromStorage({
+			withLock(scope, update) {
+				const current = scope === "global" ? global : project;
+				const next = update(current);
+				if (next === undefined) return;
+				if (failNextWrite) {
+					failNextWrite = false;
+					throw new Error("first write failed");
+				}
+				if (scope === "global") global = next;
+				else project = next;
+			},
+		});
+
+		failNextWrite = true;
+		manager.setTheme("dark");
+		manager.setShowImages(false);
+		await expect(manager.flushOrThrow()).rejects.toThrow("first write failed");
+		expect(JSON.parse(global)).toMatchObject({ theme: "dark", terminal: { showImages: false } });
+	});
+
+	it("restores active settings when an awaited mutation cannot be saved", async () => {
+		let failWrite = false;
+		const storage = {
+			withLock(_scope: "global" | "project", update: (current: string | undefined) => string | undefined) {
+				if (failWrite) throw new Error("disk unavailable");
+				return update(undefined);
+			},
+		};
+		const manager = SettingsManager.fromStorage(storage);
+		failWrite = true;
+
+		await expect(manager.mutateAndPersist(() => manager.setTheme("dark"))).rejects.toThrow("disk unavailable");
+		expect(manager.getTheme()).toBeUndefined();
+	});
+
 	it("should preserve file changes to packages array when changing unrelated setting", async () => {
 		const settingsPath = join(agentDir, "settings.json");
 

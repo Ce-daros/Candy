@@ -5,7 +5,6 @@
 import type { ThinkingLevel } from "@candy/agent-core";
 import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@candy/ai";
 import { isValidThinkingLevel } from "../cli/args.ts";
-import { cliThemeColor } from "../modes/interactive/theme/theme.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 
@@ -503,7 +502,7 @@ export async function findInitialModel(options: {
 			modelRuntime,
 		});
 		if (resolved.error) {
-			console.error(cliThemeColor("error", resolved.error));
+			console.error(resolved.error);
 			process.exit(1);
 		}
 		if (resolved.model) {
@@ -564,7 +563,7 @@ export async function restoreModelFromSession(
 
 	if (restoredModel && hasConfiguredAuth) {
 		if (shouldPrintMessages) {
-			console.log(cliThemeColor("dim", `Restored model: ${savedProvider}/${savedModelId}`));
+			console.log(`Restored model: ${savedProvider}/${savedModelId}`);
 		}
 		return { model: restoredModel, fallbackMessage: undefined };
 	}
@@ -573,15 +572,13 @@ export async function restoreModelFromSession(
 	const reason = !restoredModel ? "model no longer exists" : "no auth configured";
 
 	if (shouldPrintMessages) {
-		console.error(
-			cliThemeColor("warning", `Warning: Could not restore model ${savedProvider}/${savedModelId} (${reason}).`),
-		);
+		console.error(`Warning: Could not restore model ${savedProvider}/${savedModelId} (${reason}).`);
 	}
 
 	// If we already have a model, use it as fallback
 	if (currentModel) {
 		if (shouldPrintMessages) {
-			console.log(cliThemeColor("dim", `Falling back to: ${currentModel.provider}/${currentModel.id}`));
+			console.log(`Falling back to: ${currentModel.provider}/${currentModel.id}`);
 		}
 		return {
 			model: currentModel,
@@ -610,7 +607,7 @@ export async function restoreModelFromSession(
 		}
 
 		if (shouldPrintMessages) {
-			console.log(cliThemeColor("dim", `Falling back to: ${fallbackModel.provider}/${fallbackModel.id}`));
+			console.log(`Falling back to: ${fallbackModel.provider}/${fallbackModel.id}`);
 		}
 
 		return {

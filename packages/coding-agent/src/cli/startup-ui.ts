@@ -1,8 +1,6 @@
 import { ProcessTerminal, setCapabilityOverrides, setKeybindings, type TUI, TuiMainScreen } from "@candy/tui";
 import { existsSync } from "fs";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.ts";
-import { areExperimentalFeaturesEnabled } from "../core/experimental.ts";
-import { KeybindingsManager } from "../core/keybindings.ts";
 import { DefaultPackageManager, type ResolvedResource } from "../core/package-manager.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.ts";
@@ -22,6 +20,7 @@ import {
 	setTheme,
 	type Theme,
 } from "../modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../presentation/keybindings.ts";
 
 const OFFICIAL_PACKAGE_NAME = "@candy/coding-agent";
 const OFFICIAL_APP_NAME = "candy";
@@ -109,7 +108,6 @@ async function clearStartupTui(ui: TUI): Promise<void> {
 /**
  * First-time setup runs when all of these hold:
  * - this is the official candy distribution (not a fork/rebrand)
- * - experimental features are enabled (CANDY_EXPERIMENTAL=1)
  * - the default agent directory is used (no custom agent dir override)
  * - setup was not completed before (settings.json does not exist)
  */
@@ -121,9 +119,6 @@ export function shouldRunFirstTimeSetup(settingsPath: string = getSettingsPath()
 			configDirName: CONFIG_DIR_NAME,
 		})
 	) {
-		return false;
-	}
-	if (!areExperimentalFeaturesEnabled()) {
 		return false;
 	}
 	if (process.env[ENV_AGENT_DIR]) {

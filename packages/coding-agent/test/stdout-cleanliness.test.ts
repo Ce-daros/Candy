@@ -9,7 +9,7 @@ import { allowNetwork } from "./test-network-env.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
 // --import takes a module specifier, not a filesystem path.
-const sourceResolverUrl = pathToFileURL(resolve(__dirname, "../src/experimental/source-resolver.ts")).href;
+const sourceResolverUrl = pathToFileURL(resolve(__dirname, "../src/utils/source-resolver.ts")).href;
 
 const tempDirs: string[] = [];
 

@@ -28,7 +28,6 @@ export { type BashExecutorOptions, type BashResult, executeBashWithOperations } 
 export type { CacheWarmingDecision, CacheWarmingStatus } from "./cache-warmer.ts";
 export type { CompactionResult } from "./compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
-export { areExperimentalFeaturesEnabled } from "./experimental.ts";
 // Extensions system
 export {
 	type AgentActivityOutcome,

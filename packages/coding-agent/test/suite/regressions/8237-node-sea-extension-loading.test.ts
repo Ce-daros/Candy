@@ -10,7 +10,6 @@ const state = vi.hoisted(() => {
 	return {
 		originalGetBuiltinModule,
 		jitiModuleLoads: 0,
-		virtualModulesLoads: 0,
 		createJiti: vi.fn((_id: unknown, _options: unknown) => ({
 			import: vi.fn(async () => () => {}),
 		})),
@@ -20,16 +19,6 @@ const state = vi.hoisted(() => {
 vi.mock("jiti/static", () => {
 	state.jitiModuleLoads++;
 	return { createJiti: state.createJiti };
-});
-
-vi.mock("../../../src/core/extensions/virtual-modules.ts", () => {
-	state.virtualModulesLoads++;
-	return {
-		VIRTUAL_MODULES: {
-			typebox: {},
-			"@candy/coding-agent": {},
-		},
-	};
 });
 
 import { loadExtensions } from "../../../src/core/extensions/loader.ts";
@@ -48,15 +37,14 @@ afterAll(() => {
 
 describe("Node SEA extension loading", () => {
 	// Regression test for #8237 and #9540.
-	it("loads jiti and bundled virtual modules only when importing an extension", async () => {
+	it("loads jiti lazily and uses the host-provided virtual modules", async () => {
 		expect(state.jitiModuleLoads).toBe(0);
-		expect(state.virtualModulesLoads).toBe(0);
 
-		const result = await loadExtensions(["/extension.ts"], "/");
+		const extensionModules = { typebox: {}, "@candy/coding-agent": {} };
+		const result = await loadExtensions(["/extension.ts"], "/", undefined, undefined, extensionModules);
 
 		expect(result.errors).toEqual([]);
 		expect(state.jitiModuleLoads).toBe(1);
-		expect(state.virtualModulesLoads).toBe(1);
 		expect(result.extensions).toHaveLength(1);
 		expect(state.createJiti).toHaveBeenCalledOnce();
 
@@ -65,7 +53,6 @@ describe("Node SEA extension loading", () => {
 		// proves the compiled-binary branch took precedence over the source branch.
 		expect(options.tryNative).toBe(false);
 		expect(options.alias).toBeUndefined();
-		expect(options.virtualModules?.typebox).toBeDefined();
-		expect(options.virtualModules?.["@candy/coding-agent"]).toBeDefined();
+		expect(options.virtualModules).toBe(extensionModules);
 	});
 });

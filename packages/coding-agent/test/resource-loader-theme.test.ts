@@ -5,6 +5,8 @@ import { resetCapabilitiesCache, setCapabilityOverrides } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
 describe("DefaultResourceLoader theme color mode", () => {
 	let tempDir: string;
@@ -57,6 +59,8 @@ describe("DefaultResourceLoader theme color mode", () => {
 			resetCapabilitiesCache();
 
 			const loader = new DefaultResourceLoader({
+				extensionModules: extensionHostModules,
+				themeAdapter: resourceThemeAdapter,
 				cwd,
 				agentDir,
 				settingsManager: SettingsManager.inMemory({ terminal: { trueColor: setting } }),
@@ -82,6 +86,8 @@ describe("DefaultResourceLoader theme color mode", () => {
 		writeFileSync(settingsPath, JSON.stringify({ terminal: { trueColor: false } }));
 		const settingsManager = SettingsManager.create(cwd, agentDir);
 		const loader = new DefaultResourceLoader({
+			extensionModules: extensionHostModules,
+			themeAdapter: resourceThemeAdapter,
 			cwd,
 			agentDir,
 			settingsManager,

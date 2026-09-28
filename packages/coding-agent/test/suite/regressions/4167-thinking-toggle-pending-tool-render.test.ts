@@ -46,7 +46,8 @@ type RenderSessionContextThis = {
 		getShowCacheMissNotices(): boolean;
 	};
 	sessionManager: { getCwd(): string; getEntries(): SessionEntry[] };
-	session: { retryAttempt: number; modelRegistry: { find(provider: string, modelId: string): undefined } };
+	sessionPresentation: { projectEntries(entries: SessionEntry[]): AgentMessage[] };
+	session: { retryAttempt: number; modelRuntime: { find(provider: string, modelId: string): undefined } };
 	toolOutputExpanded: boolean;
 	isInitialized: boolean;
 	updateEditorBorderColor(): void;
@@ -80,7 +81,10 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 			getShowCacheMissNotices: () => false,
 		},
 		sessionManager: { getCwd: () => process.cwd(), getEntries: () => [] },
-		session: { retryAttempt: 0, modelRegistry: { find: () => undefined } },
+		sessionPresentation: {
+			projectEntries: (entries) => entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),
+		},
+		session: { retryAttempt: 0, modelRuntime: { find: () => undefined } },
 		toolOutputExpanded: false,
 		isInitialized: true,
 		updateEditorBorderColor: vi.fn(),
