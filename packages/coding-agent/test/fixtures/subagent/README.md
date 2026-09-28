@@ -36,18 +36,18 @@ From the repository root, symlink the files:
 ```bash
 # Symlink the extension (must be in a subdirectory with index.ts)
 mkdir -p ~/.candy/agent/extensions/subagent
-ln -sf "$(pwd)/packages/coding-agent/examples/extensions/subagent/index.ts" ~/.candy/agent/extensions/subagent/index.ts
-ln -sf "$(pwd)/packages/coding-agent/examples/extensions/subagent/agents.ts" ~/.candy/agent/extensions/subagent/agents.ts
+ln -sf "$(pwd)/packages/coding-agent/test/fixtures/subagent/index.ts" ~/.candy/agent/extensions/subagent/index.ts
+ln -sf "$(pwd)/packages/coding-agent/test/fixtures/subagent/agents.ts" ~/.candy/agent/extensions/subagent/agents.ts
 
 # Symlink agents
 mkdir -p ~/.candy/agent/agents
-for f in packages/coding-agent/examples/extensions/subagent/agents/*.md; do
+for f in packages/coding-agent/test/fixtures/subagent/agents/*.md; do
   ln -sf "$(pwd)/$f" ~/.candy/agent/agents/$(basename "$f")
 done
 
 # Symlink workflow prompts
 mkdir -p ~/.candy/agent/prompts
-for f in packages/coding-agent/examples/extensions/subagent/prompts/*.md; do
+for f in packages/coding-agent/test/fixtures/subagent/prompts/*.md; do
   ln -sf "$(pwd)/$f" ~/.candy/agent/prompts/$(basename "$f")
 done
 ```

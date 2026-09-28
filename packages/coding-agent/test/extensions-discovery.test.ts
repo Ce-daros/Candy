@@ -412,7 +412,7 @@ describe("extensions discovery", () => {
 
 	it("resolves dependencies from extension's own node_modules", async () => {
 		// Load extension that has its own package.json and node_modules with 'ms' package
-		const extPath = path.resolve(__dirname, "../examples/extensions/with-deps");
+		const extPath = path.resolve(__dirname, "./fixtures/with-deps");
 
 		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
 

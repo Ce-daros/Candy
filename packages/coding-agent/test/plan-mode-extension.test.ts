@@ -1,8 +1,8 @@
 import type { AgentMessage } from "@candy/agent-core";
 import type { AssistantMessage } from "@candy/ai";
 import { describe, expect, it, vi } from "vitest";
-import planModeExtension from "../examples/extensions/plan-mode/index.ts";
 import type { ExtensionAPI, ExtensionContext } from "../src/core/extensions/index.ts";
+import planModeExtension from "./fixtures/plan-mode/index.ts";
 
 type CommandHandler = (args: string, ctx: ExtensionContext) => Promise<void> | void;
 type AgentEndHandler = (

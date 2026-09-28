@@ -9,7 +9,7 @@
  * exec call is skipped so the correction reaches the model without delay.
  *
  * Start candy with this extension:
- *   candy -e ./examples/extensions/input-transform-streaming.ts
+ *   candy -e ./test/fixtures/input-transform-streaming.ts
  */
 import type { ExtensionAPI } from "@candy/coding-agent";
 

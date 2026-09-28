@@ -9,7 +9,7 @@
  * Also re-sends unresolved conflicts from a previous incomplete merge.
  *
  * Start candy with this extension:
- *   candy -e ./examples/extensions/git-merge-and-resolve.ts
+ *   candy -e ./test/fixtures/git-merge-and-resolve.ts
  */
 import { createReadStream } from "node:fs";
 import { join } from "node:path";

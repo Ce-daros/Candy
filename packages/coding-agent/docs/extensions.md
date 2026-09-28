@@ -106,7 +106,7 @@ Events cover resource discovery, sessions, agent and message lifecycle, provider
 
 `provider_stream_event` fires for each parsed provider stream event before candy normalizes it. The event identifies the provider, API, and model; `event.data` is the earliest structured value available to candy, not necessarily the original HTTP bytes or SSE frame. Treat it as read-only because mutation can affect normalization. The event is notification-only and is not persisted.
 
-Handlers are awaited in stream order, so slow handlers delay stream consumption. Handler errors are reported without changing the provider response. See [`debug-provider.ts`](../examples/extensions/debug-provider.ts) for an opt-in viewer that groups raw events by assistant message.
+Handlers are awaited in stream order, so slow handlers delay stream consumption. Handler errors are reported without changing the provider response.
 
 <a id="context_with_system"></a>
 
@@ -141,7 +141,6 @@ Use sequential execution when tools share mutable in-memory state.
 File-mutating tools should wrap the complete read-modify-write operation with `withFileMutationQueue()`.
 Truncate large model-facing results and tell the model where to read the complete output.
 
-See [`hello.ts`](../examples/extensions/hello.ts), [`todo.ts`](../examples/extensions/todo.ts), [`dynamic-tools.ts`](../examples/extensions/dynamic-tools.ts), and [`truncated-tool.ts`](../examples/extensions/truncated-tool.ts).
 
 ### Activate tools dynamically
 
@@ -213,11 +212,10 @@ Keep cleanup idempotent because cancellation, reload, session replacement, and p
 Use `ctx.shutdown()` to request an orderly process shutdown.
 
 <a id="examples-reference"></a>
-<a id="use-examples-as-the-implementation-reference"></a>
+<a id="implementation-reference"></a>
 
-## Examples and reference
+## Implementation reference
 
-The checked [extension examples](../examples/extensions/) cover tools, lifecycle events, commands, flags, shortcuts, state, rendering, providers, OAuth, remote execution, and terminal components.
-Start with the smallest example matching your integration point.
+The exported declarations in [`extensions/types.ts`](../src/core/extensions/types.ts) are the implementation reference for every event, context, tool, and result type described here.
 
 Use [Custom Providers](custom-provider.md) for model-service integrations, [Terminal UI](tui.md) for custom components, and [candy Packages](packages.md) to install or distribute extensions with other resources.

@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import mergeAndResolve from "../examples/extensions/git-merge-and-resolve.ts";
 import type { ExecResult, ExtensionAPI, ExtensionContext } from "../src/core/extensions/index.ts";
+import mergeAndResolve from "./fixtures/git-merge-and-resolve.ts";
 
 type AgentEndHandler = (event: { type: "agent_end" }, ctx: ExtensionContext) => Promise<undefined>;
 

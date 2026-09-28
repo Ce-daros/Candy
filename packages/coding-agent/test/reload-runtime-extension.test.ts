@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import reloadRuntimeExtension from "../examples/extensions/reload-runtime.ts";
 import type { ExtensionAPI } from "../src/core/extensions/index.ts";
+import reloadRuntimeExtension from "./fixtures/reload-runtime.ts";
 
 describe("reload-runtime example extension", () => {
 	it("reloads from Command and does not send a slash message from its tool", async () => {

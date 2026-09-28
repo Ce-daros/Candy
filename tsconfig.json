@@ -27,5 +27,5 @@
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
-	"exclude": ["**/dist/**", "packages/coding-agent/examples/extensions/gondolin/**"]
+	"exclude": ["**/dist/**"]
 }

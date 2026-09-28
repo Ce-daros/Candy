@@ -155,7 +155,7 @@ export function buildSystemPromptSections(input: BuildSystemPromptOptions): Syst
 - Additional docs: ${getDocsPath()}
 - Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
 - When reading candy docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), candy packages (docs/packages.md), environment variables (docs/environment-variables.md)
+- When asked about: extensions (docs/extensions.md), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), candy packages (docs/packages.md), environment variables (docs/environment-variables.md)
 - When working on candy topics, read the docs and examples, and follow .md cross-references before implementing
 - Always read candy .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
 	}

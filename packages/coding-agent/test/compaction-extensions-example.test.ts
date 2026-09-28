@@ -10,7 +10,7 @@ vi.mock("@candy/coding-agent", () => ({
 	serializeConversation: () => "conversation",
 }));
 
-const { default: customCompactionExtension } = await import("../examples/extensions/custom-compaction.ts");
+const { default: customCompactionExtension } = await import("./fixtures/custom-compaction.ts");
 
 describe("Documentation example", () => {
 	it("custom compaction example should type-check correctly", () => {

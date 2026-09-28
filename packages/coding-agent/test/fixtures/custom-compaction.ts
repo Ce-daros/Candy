@@ -10,7 +10,7 @@
  * which can be cheaper/faster than the main conversation model.
  *
  * Usage:
- *   candy --extension examples/extensions/custom-compaction.ts
+ *   candy --extension test/fixtures/custom-compaction.ts
  */
 
 import { uuidv7 } from "@candy/ai";

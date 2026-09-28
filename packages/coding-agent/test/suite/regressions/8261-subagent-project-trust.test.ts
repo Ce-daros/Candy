@@ -2,8 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import { describe, expect, it, vi } from "vitest";
-import subagentExtension from "../../../examples/extensions/subagent/index.ts";
 import type { ExtensionUIContext } from "../../../src/core/extensions/index.ts";
+import subagentExtension from "../../fixtures/subagent/index.ts";
 import { createHarness, getMessageText } from "../harness.ts";
 
 vi.mock("@candy/coding-agent", () => ({
