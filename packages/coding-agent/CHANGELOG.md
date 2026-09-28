@@ -7,7 +7,7 @@
 - Exposed optional tool cancellation metadata in the `tool_execution_end` extension event so transcript views can distinguish an aborted tool from an ordinary error after reloading a session.
 - Added `toolPreviewLines` (`5`, `10`, or `20`, default `5`) to control the visible row limit for `bash` and tool previews; extension tool renderers receive the limit as `previewLines`.
 - Redesigned the interactive UI around Candy's semantic palette across transcripts, composer, settings, selectors, session navigation, login and trust flows, extension dialogs, resources, notifications, and startup surfaces.
-- Added collapsible transcript previews for long user messages, queued messages, loaded resources, skills, summaries, and tool output, with per-item expansion alongside the global details toggle.
+- Added collapsible transcript previews for long user messages, queued messages, skills, summaries, and tool output, with per-item expansion alongside the global details toggle.
 - Added composer-hosted transcript search, image paste markers, masked API-key input, panel region navigation, and a reading panel for changelog content.
 - Added per-input disposition to successful RPC `prompt`, `steer`, and `follow_up` responses, `AgentSession.steer()`/`followUp()`, and `RpcClient.prompt()`/`steer()`/`followUp()`; `RpcClient.prompt()` also accepts `streamingBehavior` ([#9098](https://github.com/earendil-works/pi/issues/9098), [#9803](https://github.com/earendil-works/pi/issues/9803)).
 - Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat, image, and classifier entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
@@ -26,6 +26,7 @@
 
 ### Breaking Changes
 
+- Removed the built-in llama.cpp provider, `/llama` command, and integrated router model discovery and management. Configure compatible model endpoints in `models.json`.
 - Removed interactive model cycling and scoped model selection: the top-level `--models` flag, `enabledModels`, `/scoped-models`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use `--model`, the default model setting, `/model`, or the footer selector. `candy update --models` remains the model-catalog refresh command.
 - Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
 - Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
@@ -45,6 +46,7 @@
 - Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).
 - Pressing `tab` in the footer powerbar now wraps between the model and thinking level selectors instead of stopping at the thinking level.
 - The composer prompt glyph is a half-width space followed by `◆` in normal mode (new `editorPrompt` theme color, pink by default) or `❯` in Shell modes (`bashMode`), and typed input text uses `text` (ink). Shell titles render with one space of padding on each side. The footer model label is purple, the picker `‹`/`›` arrows are cyan, and the `▼` selector chevrons are removed.
+- Loaded resources render as a static summary line. Clicking the summary no longer expands it, and the global details toggle leaves it unchanged; verbose startup still lists names and paths.
 
 ### Fixed
 

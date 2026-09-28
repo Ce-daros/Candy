@@ -7,7 +7,6 @@ import { TuiMainScreen } from "../../tui/src/tui-main-screen.ts";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
-import { LoadedResourcesComponent } from "../src/modes/interactive/components/loaded-resources.ts";
 import type { AuthSelectorProvider } from "../src/modes/interactive/components/oauth-selector.ts";
 import { TransientNotification } from "../src/modes/interactive/components/transient-notification.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
@@ -68,11 +67,10 @@ function normalizeRenderedOutput(container: Container, width = 220): string {
 		.trim();
 }
 
-function normalizeResourceDetails(container: Container): string {
-	const resources = container.children.find((child) => child instanceof LoadedResourcesComponent);
-	if (!resources) throw new Error("Loaded resources component was not rendered");
-	resources.setExpanded(true);
-	return normalizeRenderedOutput(container);
+function normalizeResourceDetails(fakeThis: any): string {
+	fakeThis.options.verbose = true;
+	(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, { force: false });
+	return normalizeRenderedOutput(fakeThis.loadedResourcesContainer);
 }
 
 type ExtensionFixture = {
@@ -163,7 +161,7 @@ describe("InteractiveMode.setToolsExpanded", () => {
 
 		expect(fakeThis.toolOutputExpanded).toBe(true);
 		expect(header.setExpanded).toHaveBeenCalledWith(true);
-		expect(loadedResourcesChild.setExpanded).toHaveBeenCalledWith(true);
+		expect(loadedResourcesChild.setExpanded).not.toHaveBeenCalled();
 		expect(chatChild.setExpanded).toHaveBeenCalledWith(true);
 		expect(fakeThis.showStatus).toHaveBeenCalledWith("Details expanded");
 	});
@@ -765,7 +763,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		const output = renderAll(fakeThis.loadedResourcesContainer);
 		expect(output).toContain("Loaded resources · 2  2 extensions");
 		expect(output).not.toContain("answer.ts");
-		const details = normalizeResourceDetails(fakeThis.loadedResourcesContainer);
+		const details = normalizeResourceDetails(fakeThis);
 		expect(details).toContain("answer.ts");
 		expect(details).toContain("btw.ts");
 	});
@@ -781,8 +779,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 8  8 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 8  8 extensions
 			  Extensions  8
 			    answer.ts  · local
 			      /tmp/project/.candy/extensions/answer.ts
@@ -844,8 +842,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 3  3 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 3  3 extensions
 			  Extensions  3
 			    alpha/one  · cli
 			      /tmp/alpha/one/index.ts
@@ -879,8 +877,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 1  1 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 1  1 extensions
 			  Extensions  1
 			    plan-mode  · local
 			      /tmp/extensions/plan-mode/index.ts"
@@ -910,8 +908,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 1  1 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 1  1 extensions
 			  Extensions  1
 			    plan-mode  · local
 			      /tmp/extensions/plan-mode/index.js"
@@ -950,8 +948,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 2  2 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 2  2 extensions
 			  Extensions  2
 			    webfetch.ts  · local
 			      /tmp/extensions/webfetch.ts
@@ -992,8 +990,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 2  2 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 2  2 extensions
 			  Extensions  2
 			    foo  · local
 			      /tmp/extensions/foo/index.ts
@@ -1034,8 +1032,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 2  2 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 2  2 extensions
 			  Extensions  2
 			    alpha/tools  · cli
 			      /tmp/alpha/tools/index.ts
@@ -1067,8 +1065,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 1  1 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 1  1 extensions
 			  Extensions  1
 			    main.ts  · local
 			      /tmp/extensions/my-ext/main.ts"
@@ -1101,8 +1099,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 1  1 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 1  1 extensions
 			  Extensions  1
 			    pi-markdown-preview  · npm:pi-markdown-preview
 			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts"
@@ -1141,8 +1139,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 2  2 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 2  2 extensions
 			  Extensions  2
 			    primary-package  · npm:primary-package
 			      /tmp/project/.candy/npm/node_modules/primary-package/index.ts
@@ -1186,8 +1184,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 2  2 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 2  2 extensions
 			  Extensions  2
 			    primary-package  · npm:primary-package
 			      C:/Users/me/.candy/agent/npm/node_modules/primary-package/index.ts
@@ -1208,8 +1206,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeResourceDetails(fakeThis.loadedResourcesContainer)).toMatchInlineSnapshot(`
-			"▾ Loaded resources · 8  8 extensions
+		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
+			"Loaded resources · 8  8 extensions
 			  Extensions  8
 			    answer.ts  · local
 			      /tmp/project/.candy/extensions/answer.ts
@@ -1249,7 +1247,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		const collapsed = renderAll(fakeThis.loadedResourcesContainer).replace(/\\/g, "/");
 		expect(collapsed).toContain("Loaded resources · 2  2 context");
 		expect(collapsed).not.toContain("AGENTS.md");
-		const details = normalizeResourceDetails(fakeThis.loadedResourcesContainer);
+		const details = normalizeResourceDetails(fakeThis);
 		expect(details).toContain("~/.candy/agent/AGENTS.md");
 		expect(details).toContain("AGENTS.md");
 		expect(details).toContain(`${cwd.replace(/\\/g, "/")}/AGENTS.md`);
@@ -1269,7 +1267,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		const output = normalizeResourceDetails(fakeThis.loadedResourcesContainer);
+		const output = normalizeResourceDetails(fakeThis);
 		expect(output).toContain("Context  3");
 		expect(output.indexOf(".candy/SYSTEM.md")).toBeLessThan(output.indexOf(".candy/APPEND_SYSTEM.md"));
 		expect(output.indexOf(".candy/APPEND_SYSTEM.md")).toBeLessThan(output.indexOf("AGENTS.md"));
