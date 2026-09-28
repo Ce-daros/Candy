@@ -1,5 +1,5 @@
 import { type Component, truncateToWidth } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { metaSeparator, theme } from "../theme/theme.ts";
 
 export interface LoadedResourceEntry {
 	name: string;
@@ -37,7 +37,7 @@ export class LoadedResourcesComponent implements Component {
 			for (const entry of section.entries) {
 				lines.push(
 					truncateToWidth(
-						`    ${theme.fg("text", entry.name)}${entry.source ? theme.fg("muted", `  · ${entry.source}`) : ""}`,
+						`    ${theme.fg("text", entry.name)}${entry.source ? `${metaSeparator()}${theme.fg("muted", entry.source)}` : ""}`,
 						width,
 					),
 				);

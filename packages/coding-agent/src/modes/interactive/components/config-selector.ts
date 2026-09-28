@@ -15,6 +15,7 @@ import {
 	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
+	visibleWindow,
 } from "@candy/tui";
 import { CONFIG_DIR_NAME } from "../../../config.ts";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.ts";
@@ -24,7 +25,7 @@ import {
 	type ResourceType,
 } from "../../../core/resource-configuration.ts";
 import type { SettingsManager } from "../../../core/settings-manager.ts";
-import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import { checkboxGlyph, selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
@@ -446,11 +447,11 @@ class ResourceList implements Component, Focusable {
 		}
 
 		// Calculate visible range
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
+		const { start: startIndex, end: endIndex } = visibleWindow(
+			this.selectedIndex,
+			this.filteredItems.length,
+			this.maxVisible,
 		);
-		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
 		this.lastVisibleStart = startIndex;
 		this.lastVisibleCount = endIndex - startIndex;
 
@@ -676,9 +677,9 @@ class ResourceList implements Component, Focusable {
 			const state = this.resourceConfiguration.getProjectOverrideState(item);
 			if (state === "load") return theme.fg("success", "[+]");
 			if (state === "unload") return theme.fg("warning", "[-]");
-			return theme.fg("dim", item.enabled ? "[x]" : "[ ]");
+			return checkboxGlyph(item.enabled, false);
 		}
-		return item.enabled ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
+		return checkboxGlyph(item.enabled);
 	}
 
 	private getItemSuffix(item: ResourceItem): string {

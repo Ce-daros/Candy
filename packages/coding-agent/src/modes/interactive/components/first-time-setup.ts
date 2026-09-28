@@ -1,6 +1,13 @@
 import { Container, getKeybindings, Spacer, Text } from "@candy/tui";
-import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, type TerminalTheme, theme } from "../theme/theme.ts";
-import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
+import {
+	infoLine,
+	selectedRowLabel,
+	selectionCursor,
+	selectionMarkerSuffix,
+	type TerminalTheme,
+	theme,
+} from "../theme/theme.ts";
+import { hintRow } from "./keybinding-hints.ts";
 import { SplashLogoComponent } from "./splash.ts";
 
 export interface FirstTimeSetupResult {
@@ -71,7 +78,7 @@ export class FirstTimeSetupComponent extends Container {
 
 		if (this.step === "theme") {
 			this.addChild(new Text(theme.fg("text", "Choose a theme"), 1, 0));
-			this.addChild(new Text(theme.fg("muted", `Detected system appearance: ${this.options.detectedTheme}`), 1, 0));
+			this.addChild(new Text(infoLine("Detected system appearance", this.options.detectedTheme), 1, 0));
 			this.addChild(new Spacer(1));
 			this.addOptionList(
 				THEME_OPTIONS.map((option) => option.label),
@@ -96,11 +103,14 @@ export class FirstTimeSetupComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				rawKeyHint("↑↓", "navigate") +
-					"  " +
-					keyHint("tui.select.confirm", this.step === "theme" ? "continue" : "finish") +
-					"  " +
-					keyHint("tui.select.cancel", "skip setup"),
+				hintRow([
+					{ raw: "↑↓", label: "navigate" },
+					{
+						key: "tui.select.confirm",
+						label: this.step === "theme" ? "continue" : "finish",
+					},
+					{ key: "tui.select.cancel", label: "skip setup" },
+				]),
 				1,
 				0,
 			),

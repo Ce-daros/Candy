@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- `visibleWindow(index, count, viewportSize)` added to `selection.ts`: render-time centered window over a flat list, complementing `moveSelection`/`moveViewport`.
+
 - `SelectItem` supports an optional `header` flag; header rows render flush-left without the selection cursor while selectable items keep the two-space indent.
 
 - Removed slash-command and `skill:` autocomplete from the generic editor. Applications can provide command navigation separately; editor text beginning with `/` is submitted literally.

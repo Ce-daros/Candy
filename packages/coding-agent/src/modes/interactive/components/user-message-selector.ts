@@ -9,7 +9,7 @@ import {
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
-import { keyHint } from "./keybinding-hints.ts";
+import { hintRow } from "./keybinding-hints.ts";
 
 interface UserMessageItem {
 	id: string;
@@ -94,7 +94,14 @@ class UserMessageList implements Component {
 				: "",
 		);
 		lines.push(
-			`${keyHint("app.panel.focusNext", "list / preview")} · ${keyHint("tui.select.confirm", "fork")} · ${keyHint("tui.select.cancel", "close")}`,
+			hintRow(
+				[
+					{ key: "app.panel.focusNext", label: "list / preview" },
+					{ key: "tui.select.confirm", label: "fork" },
+					{ key: "tui.select.cancel", label: "close" },
+				],
+				" · ",
+			),
 		);
 		return lines;
 	}

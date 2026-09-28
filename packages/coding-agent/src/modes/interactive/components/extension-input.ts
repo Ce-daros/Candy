@@ -57,7 +57,7 @@ export class ExtensionInputComponent extends Container implements Focusable {
 			this.countdown = new CountdownTimer(
 				opts.timeout,
 				opts.tui,
-				(s) => this.titleText.setText(theme.fg("accent", `${this.baseTitle} (${s}s)`)),
+				(s) => this.titleText.setText(dialogTitle(`${this.baseTitle} (${s}s)`)),
 				() => this.onCancelCallback(),
 			);
 		}

@@ -4,6 +4,12 @@
 
 ### Breaking Changes
 
+- Hand-rendered list panels share one scaffold: `readListAction` (navigation keys incl. vim aliases and horizontal cursor keys), `scrollCounter` ("  (n/total)"), and `emptyLine` from `list-scaffold.ts`, plus `visibleWindow` from `@candy/tui`. The four ad-hoc scroll-counter formats, ad-hoc windowing math, and per-panel key handling in the trust, extension, oauth, session, tree, and config panels are gone.
+
+- Extension dialogs (selector, input, editor) mount through one `panelDialog` helper in interactive mode, and the startup dialogs (selector, trust selector, input) through `withStartupTui`, replacing eleven copies of the settled-flag promise wrapper.
+
+- Metadata rows share `metaSeparator()`, "Label: value" lines share `infoLine` (value gets semantic color: trusted green, untrusted red), checkboxes share `checkboxGlyph`, and hint rows share `hintRow`.
+
 - Project trust prompting now uses the dedicated trust selector everywhere (startup, session resume, package manager). The multi-line prompt rendered as an all-accent title via generic `ui.select` is gone; the selector shows the title, path, and consequence paragraph with proper title/body color semantics.
 
 - Dialog and panel titles come from one shared `dialogTitle`/`dialogBody` theme helper in `theme.ts` instead of inline `bold(accent(...))` copies; the Help panel keeps its cyan title via the helper's color parameter.

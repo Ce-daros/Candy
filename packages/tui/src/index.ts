@@ -117,7 +117,7 @@ export {
 export { type RenderLatexOptions, renderLatex } from "./latex.ts";
 // Native platform integration
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
-export { moveSelection, moveViewport } from "./selection.ts";
+export { moveSelection, moveViewport, visibleWindow } from "./selection.ts";
 // Input buffering for batch splitting
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
 // Terminal interface and implementations

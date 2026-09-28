@@ -1202,6 +1202,22 @@ export function dialogBody(text: string): string {
 	return theme.fg("muted", text);
 }
 
+/** Muted " · " separator for metadata rows ("scope · origin · state"). */
+export function metaSeparator(): string {
+	return theme.fg("muted", " · ");
+}
+
+/** "Label: value" info line; the value gets a semantic color, the label stays muted. */
+export function infoLine(label: string, value: string, valueColor: ThemeColor = "muted"): string {
+	return theme.fg("muted", `${label}: `) + theme.fg(valueColor, value);
+}
+
+/** "[x]" / "[ ]" checkbox glyph; rows that cannot be toggled render both states dim. */
+export function checkboxGlyph(checked: boolean, enabled = true): string {
+	if (!enabled) return theme.fg("dim", checked ? "[x]" : "[ ]");
+	return checked ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
+}
+
 export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),
