@@ -23,6 +23,7 @@
 - Reduced image stretching in terminals that use the Kitty graphics protocol ([#8938](https://github.com/earendil-works/pi/issues/8938)).
 - Fixed the shell cursor staying hidden after exit when an extension closed an overlay during shutdown ([#10026](https://github.com/earendil-works/pi/issues/10026)).
 - Fixed image fallback paths showing Windows backslash separators (now normalized to `~/...`).
+- Fixed Sixel images being erased by partial repaints that left the image rows unchanged.
 
 ## [0.87.1] - 2026-09-22
 

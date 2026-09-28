@@ -1780,7 +1780,14 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const deferSixelImages = this.imageProtocol === "sixel";
 		const deferredSixelRows: string[] = [];
 		for (let row = 0; row < height; row++) {
-			if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row]) continue;
+			// A later terminal repaint can erase Sixel pixels without changing the image line.
+			if (
+				!fullRedraw &&
+				!imagesNeedRedraw &&
+				screen[row] === this.previousScreen[row] &&
+				!(deferSixelImages && isImageLine(screen[row] ?? ""))
+			)
+				continue;
 			const line = preparedKittyScreen.lines[row] ?? "";
 			if (deferSixelImages && isImageLine(line)) {
 				deferredSixelRows.push(`\x1b[${row + 1};1H${line}`);
