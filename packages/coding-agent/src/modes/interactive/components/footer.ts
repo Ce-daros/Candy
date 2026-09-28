@@ -265,7 +265,8 @@ export class FooterComponent implements EditorBottomStatus {
 	/** Display name from the model catalog. */
 	private modelLabel(): string {
 		const model = this.session.state.model;
-		const name = model ? modelDisplayName(model) : "no-model";
+		const name = model ? modelDisplayName(model) : "No model selected";
+		if (!model) return theme.fg("error", name);
 		if (this.frameMotion) return this.frameMotion.paintLabel(name, "accent");
 		return theme.fg("accent", name);
 	}

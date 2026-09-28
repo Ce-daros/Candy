@@ -1,14 +1,4 @@
-import {
-	type Component,
-	Container,
-	getCapabilities,
-	SixelImage,
-	Spacer,
-	type TuiMouseEvent,
-	type TuiMouseEventResult,
-	truncateToWidth,
-	visibleWidth,
-} from "@candy/tui";
+import { type Component, getCapabilities, SixelImage, truncateToWidth, visibleWidth } from "@candy/tui";
 import { theme } from "../theme/theme.ts";
 import { keycap, keyText } from "./keybinding-hints.ts";
 import {
@@ -21,28 +11,64 @@ import {
 	SPRITE_ROWS,
 } from "./splash-logo.generated.ts";
 
-const TIPS = [
-	() => `${theme.fg("dim", "Type ")}${keycap("@")}${theme.fg("dim", " to find a file.")}`,
-	() => `${theme.fg("dim", "Use ")}${keycap("!")}${theme.fg("dim", " to run a shell command.")}`,
-	() => `${theme.fg("dim", "Use ")}${keycap("!!")}${theme.fg("dim", " to run a command outside model context.")}`,
-	() => `${theme.fg("dim", "Use ")}${keycap(keyText("app.model.select"))}${theme.fg("dim", " to choose a model.")}`,
-	() =>
-		`${theme.fg("dim", "Press ")}${keycap(keyText("app.powerbar.next"))}${theme.fg("dim", " in the Powerbar to choose Thinking.")}`,
-	() => theme.fg("dim", "Open History to revisit a conversation branch."),
-	() => theme.fg("dim", "Open History to fork an earlier message."),
-	() => theme.fg("dim", "Click an activity title to expand its details."),
-	() => theme.fg("dim", "Open Command to change the theme."),
-	() => theme.fg("dim", "Open History to see usage and session details."),
+export interface SplashResources {
+	context: number;
+	skills: number;
+	prompts: number;
+	extensions: number;
+}
+
+const basicTips = [
+	() => `psst, tap ${keycap(keyText("app.model.select"))} for models.`,
+	() => `in the Powerbar? ${keycap(keyText("app.powerbar.next"))} takes you to Thinking.`,
+	() => `model picked? ${keycap(keyText("app.powerbar.up"))} opens Sources.`,
+	() => `curious about a model? ${keycap(keyText("app.powerbar.down"))} opens its Details.`,
+	() => `type ${keycap(keyText("app.command.enter"))} in an empty composer. command time, yayy.`,
+	() => `need a hand? type ${keycap(keyText("app.help.enter"))} for Hotkeys.`,
+	() => `type ${keycap("@")} to find a file. there it is.`,
+	() => `a little shell magic: start with ${keycap("!")}.`,
+	() => `Sources checkboxes make your model shortlist. pick your faves.`,
+	() => `new thought, fresh page. find New session in History.`,
 ] as const;
+
+const advancedTips = [
+	() => `shell output just for you? start with ${keycap("!!")}.`,
+	() => `History → Tree. take the other path, babe.`,
+	() => `History → Fork. give that earlier idea another life.`,
+	() => `still working? ${keycap(keyText("app.message.followUp"))} queues your next message.`,
+	() => `big draft energy? ${keycap(keyText("app.editor.external"))} opens your external editor.`,
+] as const;
+
+const easterTips = [
+	() => "also, try Terraria! tiny break, big cave.",
+	() => "the cake can wait. have some Candy.",
+	() => "dangerous to go alone? take a little Candy.",
+	() => "stay determined, cutie.",
+	() => "one more turn? nah, one more day on the farm.",
+] as const;
+
+export const SplashTips = {
+	basic: basicTips,
+	advanced: advancedTips,
+	easter: easterTips,
+} as const;
+
+const tips = [...basicTips, ...advancedTips, ...easterTips];
 
 /** Unicode half-block sprite of the Candy logo for terminals without image protocols. */
 export class SplashLogoComponent implements Component {
 	private cachedLines?: string[];
 	private cachedWidth?: number;
-	private readonly maxHeight?: number;
+	private maxHeight?: number;
 
 	constructor(maxHeight?: number) {
 		this.maxHeight = maxHeight;
+	}
+
+	setMaxHeight(height: number): void {
+		if (this.maxHeight === height) return;
+		this.maxHeight = height;
+		this.invalidate();
 	}
 
 	invalidate(): void {
@@ -120,60 +146,75 @@ export class SplashLogoComponent implements Component {
 	}
 }
 
-class SplashActions implements Component {
-	private readonly tip = TIPS[Math.floor(Math.random() * TIPS.length)];
-	private readonly onCommand: ((command: string) => void) | undefined;
-	private regions: { start: number; end: number; command: string }[] = [];
+export interface SplashOptions {
+	version: string;
+	resources: SplashResources;
+	tipIndex?: number;
+	getAvailableHeight?: () => number;
+}
 
-	constructor(onCommand?: (command: string) => void) {
-		this.onCommand = onCommand;
+/** Brand splash screen shown for a new, empty session. */
+export class SplashComponent implements Component {
+	private readonly getAvailableHeight: (() => number) | undefined;
+	private readonly version: string;
+	private readonly tip: () => string;
+	private resources: SplashResources;
+	private availableHeight = 24;
+	private readonly sprite = new SplashLogoComponent();
+	private readonly sixel = new SixelImage(SIXEL_SEQUENCE, SIXEL_WIDTH_PX, SIXEL_HEIGHT_PX);
+
+	constructor(options: SplashOptions) {
+		this.getAvailableHeight = options.getAvailableHeight;
+		this.version = options.version;
+		this.resources = options.resources;
+		const index = options.tipIndex ?? Math.floor(Math.random() * tips.length);
+		this.tip = tips[index];
 	}
 
-	invalidate(): void {}
+	setResources(resources: SplashResources): void {
+		this.resources = resources;
+	}
+
+	setAvailableHeight(height: number): void {
+		this.availableHeight = Math.max(1, Math.floor(height));
+		this.invalidate();
+	}
+
+	invalidate(): void {
+		this.sprite.invalidate();
+		this.sixel.invalidate();
+	}
 
 	render(width: number): string[] {
-		const commands = ["History", "Command", "Hotkeys"];
-		const text = commands.join("     ");
-		let column = Math.max(0, Math.floor((width - visibleWidth(text)) / 2));
-		const left = " ".repeat(column);
-		this.regions = commands.map((command) => {
-			const region = { start: column, end: column + command.length, command };
-			column += command.length + 5;
-			return region;
-		});
-		const tip = truncateToWidth(this.tip(), width, "");
-		return [
-			truncateToWidth(left + commands.map((command) => theme.fg("accent", command)).join("     "), width, ""),
+		if (this.getAvailableHeight) this.availableHeight = this.getAvailableHeight();
+		const capability = getCapabilities().images;
+		const sixelLines = capability === "sixel" ? this.sixel.render(width) : [];
+		const logoRows = capability === "sixel" ? sixelLines.length : Math.ceil(SPRITE_ROWS / 2);
+		const fixedRows = 5;
+		const maxLogoRows = Math.max(2, this.availableHeight - fixedRows);
+		const useSixel = capability === "sixel" && logoRows <= maxLogoRows;
+		this.sprite.setMaxHeight(maxLogoRows);
+		const logo = useSixel ? sixelLines : this.sprite.render(width);
+		const resources = `${this.resources.context} context · ${this.resources.skills} skills · ${this.resources.prompts} prompts · ${this.resources.extensions} extensions`;
+		const content = [
+			...logo,
 			"",
-			" ".repeat(Math.max(0, Math.floor((width - visibleWidth(tip)) / 2))) + tip,
+			center(theme.fg("accent", `Candy (${this.version})`), width),
+			center(resources, width),
+			"",
+			center(theme.fg("dim", this.tip()), width),
 		];
-	}
-
-	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "click" || event.button !== "left" || event.y !== 0) return;
-		const region = this.regions.find((region) => event.x >= region.start && event.x < region.end);
-		if (!region || !this.onCommand) return;
-		this.onCommand(region.command);
-		return { handled: true };
+		const height = Math.min(this.availableHeight, content.length);
+		const top = Math.floor((this.availableHeight - height) / 2);
+		const bottom = Math.min(this.availableHeight - height - top, this.availableHeight);
+		return [...Array<string>(top).fill(""), ...content.slice(0, height), ...Array<string>(bottom).fill("")];
 	}
 }
 
-/**
- * Brand splash screen shown on startup: the Candy logo (Sixel image when the
- * terminal supports it, Unicode half-block sprite otherwise) with a short
- * action row. Removed once the first user message is submitted.
- */
-export class SplashComponent extends Container {
-	constructor(onCommand?: (command: string) => void) {
-		super();
-		this.addChild(new Spacer(2));
-		if (getCapabilities().images === "sixel") {
-			this.addChild(new SixelImage(SIXEL_SEQUENCE, SIXEL_WIDTH_PX, SIXEL_HEIGHT_PX));
-		} else {
-			this.addChild(new SplashLogoComponent());
-		}
-		this.addChild(new Spacer(1));
-		this.addChild(new SplashActions(onCommand));
-		this.addChild(new Spacer(1));
-	}
+function center(value: string, width: number): string {
+	return truncateToWidth(
+		`${" ".repeat(Math.max(0, Math.floor((width - visibleWidth(value)) / 2)))}${value}`,
+		width,
+		"",
+	);
 }

@@ -33,6 +33,10 @@ export type ScopedResolvedPaths = Record<ConfigWriteScope, ResolvedPaths>;
 export interface ConfigSelectorOptions {
 	resourceTypes?: readonly ResourceType[];
 	onToggle?: () => void;
+	onOpen?: (path: string) => void;
+	beforeToggle?: () => string | undefined;
+	title?: string;
+	embedded?: boolean;
 }
 
 const RESOURCE_TYPES = ["extensions", "skills", "prompts", "themes"] as const satisfies readonly ResourceType[];
@@ -193,10 +197,14 @@ type FlatEntry =
 class ConfigSelectorHeader implements Component {
 	private writeScope: ConfigWriteScope;
 	private projectModeAvailable: boolean;
+	private title?: string;
+	private embedded: boolean;
 
-	constructor(writeScope: ConfigWriteScope, projectModeAvailable: boolean) {
+	constructor(writeScope: ConfigWriteScope, projectModeAvailable: boolean, title?: string, embedded = false) {
 		this.writeScope = writeScope;
 		this.projectModeAvailable = projectModeAvailable;
+		this.title = title;
+		this.embedded = embedded;
 	}
 
 	setWriteScope(writeScope: ConfigWriteScope): void {
@@ -206,7 +214,9 @@ class ConfigSelectorHeader implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const title = theme.bold(this.writeScope === "project" ? "Project Local Resources" : "Global Resources");
+		const title = theme.bold(
+			this.title ?? (this.writeScope === "project" ? "Project Local Resources" : "Global Resources"),
+		);
 		const sep = theme.fg("muted", " · ");
 		const switchHint = this.projectModeAvailable ? keyHint("app.panel.scope", "scope") + sep : "";
 		const actionHint =
@@ -218,10 +228,9 @@ class ConfigSelectorHeader implements Component {
 				? theme.fg("muted", `${CONFIG_DIR_NAME}/settings.json · inherited global resources are dimmed`)
 				: theme.fg("muted", `~/${CONFIG_DIR_NAME}/agent/settings.json`);
 
-		return [
-			truncateToWidth(`${title}${" ".repeat(spacing)}${hint}`, width, ""),
-			truncateToWidth(scopeHint, width, ""),
-		];
+		return this.embedded
+			? [truncateToWidth(`${title}${" ".repeat(spacing)}${hint}`, width, "")]
+			: [truncateToWidth(`${title}${" ".repeat(spacing)}${hint}`, width, ""), truncateToWidth(scopeHint, width, "")];
 	}
 }
 
@@ -242,11 +251,15 @@ class ResourceList implements Component, Focusable {
 	private lastVisibleStart = 0;
 	private lastVisibleCount = 0;
 	private lastSearchRow = 0;
+	private toggleError?: string;
+	private readonly embedded: boolean;
 
 	public onCancel?: () => void;
 	public onExit?: () => void;
 	public onToggle?: (item: ResourceItem, newEnabled: boolean) => void;
 	public onSwitchMode?: () => void;
+	public onOpen?: (path: string) => void;
+	public beforeToggle?: () => string | undefined;
 
 	private _focused = false;
 	get focused(): boolean {
@@ -263,15 +276,15 @@ class ResourceList implements Component, Focusable {
 		terminalHeight?: number,
 		writeScope: ConfigWriteScope = "global",
 		resourceTypes: readonly ResourceType[] = RESOURCE_TYPES,
+		embedded = false,
 	) {
 		this.groupsByScope = groupsByScope;
 		this.resourceConfiguration = resourceConfiguration;
 		this.resourceTypes = resourceTypes;
+		this.embedded = embedded;
 		this.writeScope = writeScope;
 		this.searchInput = new Input();
-		// 8 lines of chrome: top spacer + top border + spacer + header (2 lines) + spacer + bottom spacer + bottom border
-		const chrome = 8;
-		this.maxVisible = Math.max(5, (terminalHeight ?? 24) - chrome);
+		this.maxVisible = Math.max(1, (terminalHeight ?? 24) - (embedded ? 11 : 19));
 		this.buildFlatList();
 		this.filteredItems = [...this.flatItems];
 	}
@@ -284,7 +297,7 @@ class ResourceList implements Component, Focusable {
 	}
 
 	setAvailableHeight(height: number): void {
-		this.maxVisible = Math.max(4, height - 9);
+		this.maxVisible = Math.max(1, height - (this.embedded ? 11 : 19));
 	}
 
 	private get groups(): ResourceGroup[] {
@@ -300,7 +313,7 @@ class ResourceList implements Component, Focusable {
 			if (subgroups.length === 0) continue;
 			this.flatItems.push({ type: "group", group });
 			for (const subgroup of subgroups) {
-				this.flatItems.push({ type: "subgroup", subgroup, group });
+				if (this.resourceTypes.length > 1) this.flatItems.push({ type: "subgroup", subgroup, group });
 				for (const item of subgroup.items) {
 					this.flatItems.push({ type: "item", item });
 				}
@@ -396,7 +409,8 @@ class ResourceList implements Component, Focusable {
 
 	render(width: number): string[] {
 		const lines: string[] = [];
-		const wide = width >= 100;
+		const showCategories = this.resourceTypes.length > 1;
+		const wide = width >= 100 && showCategories;
 		const categoryWidth = wide ? 20 : width;
 		this.lastWide = wide;
 		this.lastCategoryWidth = categoryWidth;
@@ -412,8 +426,8 @@ class ResourceList implements Component, Focusable {
 
 		if (this.filteredItems.length === 0) {
 			lines.push(theme.fg("muted", "  No resources found"));
-			if (wide) {
-				const output = Array.from({ length: Math.max(this.maxVisible, this.resourceTypes.length) }, (_, index) => {
+			if (wide && showCategories) {
+				const output = Array.from({ length: this.resourceTypes.length }, (_, index) => {
 					const left = index < this.resourceTypes.length ? categoryLine(index) : "";
 					return `${left}${" ".repeat(Math.max(0, categoryWidth - visibleWidth(left)))} ${theme.fg("borderMuted", "│")} ${lines[index] ?? ""}`;
 				});
@@ -421,13 +435,14 @@ class ResourceList implements Component, Focusable {
 				output.push(...this.searchInput.render(width));
 				return output;
 			}
-			while (lines.length < this.maxVisible) lines.push("");
-			this.lastSearchRow = 1 + lines.length;
-			return [
-				truncateToWidth(this.resourceTypes.map((_, index) => categoryLine(index)).join(" "), width),
-				...lines,
-				...this.searchInput.render(width),
-			];
+			this.lastSearchRow = showCategories ? 1 + lines.length : lines.length;
+			return showCategories
+				? [
+						truncateToWidth(this.resourceTypes.map((_, index) => categoryLine(index)).join(" "), width),
+						...lines,
+						...this.searchInput.render(width),
+					]
+				: [...lines, ...this.searchInput.render(width)];
 		}
 
 		// Calculate visible range
@@ -480,10 +495,8 @@ class ResourceList implements Component, Focusable {
 				this.filteredItems.slice(0, this.selectedIndex).filter((e) => e.type === "item").length + 1;
 			lines.push(theme.fg("dim", `  (${currentItemIndex}/${itemCount})`));
 		}
-		while (lines.length < this.maxVisible + 1) lines.push("");
-
 		const selected = this.filteredItems[this.selectedIndex];
-		lines.push(theme.fg("borderMuted", "─".repeat(bodyWidth)));
+		if (showCategories) lines.push(theme.fg("borderMuted", "─".repeat(bodyWidth)));
 		if (selected?.type === "item") {
 			const item = selected.item;
 			const state =
@@ -500,7 +513,8 @@ class ResourceList implements Component, Focusable {
 				),
 			);
 		}
-		if (wide) {
+		if (this.toggleError) lines.push(truncateToWidth(theme.fg("error", this.toggleError), bodyWidth));
+		if (wide && showCategories) {
 			const rows = Math.max(lines.length, this.resourceTypes.length);
 			const combined: string[] = [];
 			for (let row = 0; row < rows; row++) {
@@ -513,13 +527,15 @@ class ResourceList implements Component, Focusable {
 			this.lastSearchRow = combined.length - 1;
 			return combined;
 		}
-		this.lastSearchRow = lines.length + 2;
-		return [
-			truncateToWidth(this.resourceTypes.map((_, index) => categoryLine(index)).join(" "), width),
-			theme.fg("borderMuted", "─".repeat(width)),
-			...lines,
-			...this.searchInput.render(width),
-		];
+		this.lastSearchRow = showCategories ? lines.length + 2 : lines.length;
+		return showCategories
+			? [
+					truncateToWidth(this.resourceTypes.map((_, index) => categoryLine(index)).join(" "), width),
+					theme.fg("borderMuted", "─".repeat(width)),
+					...lines,
+					...this.searchInput.render(width),
+				]
+			: [...lines, ...this.searchInput.render(width)];
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
@@ -532,20 +548,26 @@ class ResourceList implements Component, Focusable {
 			this.region = "search";
 			return this.searchInput.handleMouse?.({ ...event, y: 0 });
 		}
-		if (this.lastWide && event.x < this.lastCategoryWidth && event.y < this.resourceTypes.length) {
+		if (
+			this.resourceTypes.length > 1 &&
+			this.lastWide &&
+			event.x < this.lastCategoryWidth &&
+			event.y < this.resourceTypes.length
+		) {
 			this.selectedTypeIndex = event.y;
 			this.region = "categories";
 			this.buildFlatList();
 			this.filterItems(this.searchInput.getValue());
 			return { handled: true, focus: true, render: true };
 		}
-		const row = event.y - (this.lastWide ? 0 : 2);
+		const row =
+			event.y - (this.lastWide && this.resourceTypes.length > 1 ? 0 : this.resourceTypes.length > 1 ? 2 : 0);
 		if (row >= 0 && row < this.lastVisibleCount && (!this.lastWide || event.x > this.lastCategoryWidth + 1)) {
 			const index = this.lastVisibleStart + row;
 			if (this.filteredItems[index]?.type !== "item") return undefined;
 			this.selectedIndex = index;
 			this.region = "list";
-			if (event.type === "click") this.handleInput(" ");
+			if (event.type === "click") this.toggleSelected();
 			return { handled: true, focus: true, render: true };
 		}
 		return undefined;
@@ -554,7 +576,8 @@ class ResourceList implements Component, Focusable {
 	handleInput(data: string): void {
 		const kb = getKeybindings();
 		if (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious")) {
-			const regions = ["categories", "list", "search"] as const;
+			const regions: readonly ("categories" | "list" | "search")[] =
+				this.resourceTypes.length > 1 ? (["categories", "list", "search"] as const) : (["list", "search"] as const);
 			const delta = kb.matches(data, "app.panel.focusNext") ? 1 : -1;
 			this.region = regions[(regions.indexOf(this.region) + delta + regions.length) % regions.length];
 			this.searchInput.focused = this._focused && this.region === "search";
@@ -615,24 +638,37 @@ class ResourceList implements Component, Focusable {
 			this.onSwitchMode?.();
 			return;
 		}
-		if (this.region === "list" && (data === " " || kb.matches(data, "tui.select.confirm"))) {
+		if (this.region === "list" && data === " ") {
+			this.toggleSelected();
+			return;
+		}
+		if (this.region === "list" && kb.matches(data, "tui.select.confirm")) {
 			const entry = this.filteredItems[this.selectedIndex];
-			if (
-				entry?.type === "item" &&
-				(this.writeScope === "project" || this.resourceConfiguration.getItemScope(entry.item) === "user")
-			) {
-				const newEnabled = this.resourceConfiguration.toggleResource(entry.item);
-				if (newEnabled !== undefined) {
-					this.updateItem(entry.item, newEnabled);
-					this.onToggle?.(entry.item, newEnabled);
-				}
-			}
+			if (entry?.type === "item" && this.onOpen) this.onOpen(entry.item.path);
+			else this.toggleSelected();
 			return;
 		}
 
 		// Pass to search input
 		this.searchInput.handleInput(data);
 		this.filterItems(this.searchInput.getValue());
+	}
+
+	private toggleSelected(): void {
+		const entry = this.filteredItems[this.selectedIndex];
+		if (
+			entry?.type !== "item" ||
+			(this.writeScope !== "project" && this.resourceConfiguration.getItemScope(entry.item) !== "user")
+		)
+			return;
+		this.toggleError = this.beforeToggle?.();
+		if (this.toggleError) return;
+		const newEnabled = this.resourceConfiguration.toggleResource(entry.item);
+		if (newEnabled !== undefined) {
+			this.toggleError = undefined;
+			this.updateItem(entry.item, newEnabled);
+			this.onToggle?.(entry.item, newEnabled);
+		}
 	}
 
 	private renderCheckbox(item: ResourceItem): string {
@@ -701,13 +737,15 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 			project: buildGroups(resolvedPaths.project, agentDir),
 		};
 
-		// Add header
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-		this.header = new ConfigSelectorHeader(this.writeScope, projectModeAvailable);
+		const embedded = options.embedded ?? false;
+		if (!embedded) {
+			this.addChild(new Spacer(1));
+			this.addChild(new DynamicBorder());
+			this.addChild(new Spacer(1));
+		}
+		this.header = new ConfigSelectorHeader(this.writeScope, projectModeAvailable, options.title, embedded);
 		this.addChild(this.header);
-		this.addChild(new Spacer(1));
+		if (!embedded) this.addChild(new Spacer(1));
 
 		// Resource list
 		this.resourceList = new ResourceList(
@@ -716,6 +754,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 			terminalHeight,
 			this.writeScope,
 			options.resourceTypes,
+			embedded,
 		);
 		this.resourceList.onCancel = onClose;
 		this.resourceList.onExit = onExit;
@@ -723,6 +762,8 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 			options.onToggle?.();
 			requestRender();
 		};
+		this.resourceList.onOpen = options.onOpen;
+		this.resourceList.beforeToggle = options.beforeToggle;
 		if (projectModeAvailable) {
 			this.resourceList.onSwitchMode = () => {
 				this.switchWriteScope();
@@ -731,9 +772,10 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		}
 		this.addChild(this.resourceList);
 
-		// Bottom border
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
+		if (!embedded) {
+			this.addChild(new Spacer(1));
+			this.addChild(new DynamicBorder());
+		}
 	}
 
 	override render(width: number): string[] {
@@ -750,10 +792,14 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 
 	setAvailableHeight(height: number): void {
 		this.availableHeight = height;
-		this.resourceList.setAvailableHeight(height - 6);
+		this.resourceList.setAvailableHeight(height);
 	}
 
 	getResourceList(): ResourceList {
 		return this.resourceList;
+	}
+
+	handleInput(data: string): void {
+		this.resourceList.handleInput(data);
 	}
 }

@@ -977,6 +977,17 @@ export class SettingsSelectorComponent implements Focusable {
 		return [...this.allItems];
 	}
 
+	cycleSetting(id: string, direction: 1 | -1): void {
+		const item = this.allItems.find((candidate) => candidate.id === id);
+		if (!item?.values?.length) return;
+		const currentIndex = item.values.indexOf(item.currentValue);
+		const nextIndex = (currentIndex + direction + item.values.length) % item.values.length;
+		const value = item.values[nextIndex];
+		if (value === undefined) return;
+		item.currentValue = value;
+		this.onSettingChange(item.id, value);
+	}
+
 	createSettingControl(id: string, onCancel: () => void): Component {
 		const item = this.allItems.find((candidate) => candidate.id === id);
 		if (!item) throw new Error(`Unknown setting: ${id}`);
@@ -1034,7 +1045,8 @@ export class SettingsSelectorComponent implements Focusable {
 			return truncateToWidth(label, categoryWidth);
 		};
 		if (wide) {
-			for (let row = 0; row < bodyHeight; row++) {
+			const contentHeight = Math.min(bodyHeight, Math.max(this.categories.length, mainLines.length));
+			for (let row = 0; row < contentHeight; row++) {
 				const left = row < this.categories.length ? categoryLine(row) : "";
 				lines.push(
 					`${left}${" ".repeat(Math.max(0, categoryWidth - visibleWidth(left)))} ${theme.fg("borderMuted", "│")} ${mainLines[row] ?? ""}`,
@@ -1054,7 +1066,6 @@ export class SettingsSelectorComponent implements Focusable {
 			lines.push(truncateToWidth(`${firstCategory > 0 ? theme.fg("muted", "‹ ") : ""}${categoryStrip}`, width));
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			lines.push(...mainLines);
-			while (lines.length < 4 + bodyHeight) lines.push("");
 		}
 		lines.push(theme.fg("borderMuted", "─".repeat(width)));
 		this.lastSearchRow = lines.length;

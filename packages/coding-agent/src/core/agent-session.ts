@@ -276,6 +276,8 @@ export interface PromptOptions {
 export interface ModelMutationOptions {
 	/** Persist the new value to global defaults. Defaults to session-only. */
 	persist?: boolean;
+	/** Cancel an in-flight authentication check before the model is applied. */
+	signal?: AbortSignal;
 }
 
 /** Session statistics for the History details view. */
@@ -604,6 +606,8 @@ export class AgentSession {
 	private _installAgentRequestProjection(): void {
 		const previousPrepareRequest = this.agent.prepareRequest;
 		this.agent.prepareRequest = async (request, signal) => {
+			const model = this.model;
+			if (!model) throw new Error("No model selected. Select a model before sending a prompt.");
 			const canonicalContext = {
 				...request.context,
 				messages: this.sessionManager.buildSessionProjection().messages,
@@ -614,7 +618,7 @@ export class AgentSession {
 				{
 					...request,
 					context: canonicalContext,
-					model: this.agent.state.model,
+					model,
 					thinkingLevel: this.agent.state.thinkingLevel,
 				},
 				signal,
@@ -622,7 +626,7 @@ export class AgentSession {
 			return {
 				...previous,
 				context: previous?.context ?? canonicalContext,
-				model: previous?.model ?? this.agent.state.model,
+				model: previous?.model ?? model,
 				thinkingLevel: previous?.thinkingLevel ?? this.agent.state.thinkingLevel,
 			};
 		};
@@ -1219,6 +1223,10 @@ export class AgentSession {
 	/** Current model (may be undefined if not yet selected) */
 	get model(): Model<any> | undefined {
 		return this.agent.state.model;
+	}
+
+	get isDisposed(): boolean {
+		return this._disposed;
 	}
 
 	/** Current thinking level */
@@ -2104,7 +2112,12 @@ export class AgentSession {
 	 * @throws Error if no auth is configured for the model
 	 */
 	async setModel(model: Model<any>, options: ModelMutationOptions = {}): Promise<void> {
-		if (!(await this._modelRuntime.checkAuth(model.provider))) {
+		options.signal?.throwIfAborted();
+		if (this._disposed) throw new Error("Session was disposed before the model could be set");
+		const authenticated = await this._modelRuntime.checkAuth(model.provider, { signal: options.signal });
+		options.signal?.throwIfAborted();
+		if (this._disposed) throw new Error("Session was disposed before the model could be set");
+		if (!authenticated) {
 			throw new Error(`No API key for ${model.provider}/${model.id}`);
 		}
 
@@ -2122,6 +2135,15 @@ export class AgentSession {
 		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(model, previousModel, "set");
+	}
+
+	/** Clear the active session model without changing defaults or writing transcript entries. */
+	clearModel(): void {
+		if (this._disposed) throw new Error("Session was disposed before the model could be cleared");
+		if (this.isStreaming || this.isCompacting) {
+			throw new Error("Cannot clear the model while the session is busy");
+		}
+		this.agent.clearModel();
 	}
 
 	// =========================================================================

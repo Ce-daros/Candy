@@ -6,6 +6,56 @@ import { LoginDialogComponent } from "../src/modes/interactive/components/login-
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
+function createLoginHarness(method: "api_key" | "oauth") {
+	let resolveLogin: () => void = () => {};
+	let rejectLogin: (error: Error) => void = () => {};
+	let currentSession = { model: undefined };
+	const context: any = {
+		get session() {
+			return currentSession;
+		},
+		ui: { requestRender: vi.fn() } as unknown as TUI,
+		activeLogin: undefined as { dialog: LoginDialogComponent; session: typeof currentSession } | undefined,
+		mountPanel: vi.fn(),
+		closePanel: vi.fn(),
+		showError: vi.fn(),
+		loginProvider: vi.fn(
+			() =>
+				new Promise<void>((resolve, reject) => {
+					resolveLogin = resolve;
+					rejectLogin = reject;
+				}),
+		),
+		completeProviderAuthentication: vi.fn(),
+		finishLoginDialog(dialog: LoginDialogComponent) {
+			return (
+				Reflect.get(InteractiveMode.prototype, "finishLoginDialog") as (dialog: LoginDialogComponent) => boolean
+			).call(context, dialog);
+		},
+		cancelActiveLogin() {
+			(Reflect.get(InteractiveMode.prototype, "cancelActiveLogin") as () => void).call(context);
+		},
+	};
+	const handlerName = method === "api_key" ? "showApiKeyLoginDialog" : "showLoginDialog";
+	const start = Reflect.get(InteractiveMode.prototype, handlerName) as (
+		this: typeof context,
+		providerId: string,
+		providerName: string,
+	) => Promise<void>;
+	const pending = start.call(context, "example", "Example");
+	const activeDialog = context.activeLogin?.dialog as LoginDialogComponent | undefined;
+	return {
+		context,
+		pending,
+		dialog: () => activeDialog,
+		rejectLogin: (error = new Error("Login cancelled")) => rejectLogin(error),
+		resolveLogin,
+		replaceSession: () => {
+			currentSession = { model: undefined };
+		},
+	};
+}
+
 describe("InteractiveMode login lifecycle", () => {
 	beforeAll(() => initTheme("dark"));
 
@@ -91,5 +141,76 @@ describe("InteractiveMode login lifecycle", () => {
 		await expect(pending).rejects.toThrow("Login cancelled");
 		selector?.handleInput("\r");
 		expect(context.mountPanel).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(["api_key", "oauth"] as const)(
+		"does not report save failure when the user cancels %s login",
+		async (method) => {
+			const harness = createLoginHarness(method);
+			harness.dialog()?.abort();
+			harness.rejectLogin();
+			await harness.pending;
+
+			expect(harness.context.showError).not.toHaveBeenCalled();
+			expect(harness.context.completeProviderAuthentication).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["api_key", "oauth"] as const)("does not report failure after leaving the %s login page", async (method) => {
+		const harness = createLoginHarness(method);
+		harness.context.cancelActiveLogin();
+		harness.rejectLogin(new Error("Login was aborted"));
+		await harness.pending;
+
+		expect(harness.dialog()?.signal.aborted).toBe(true);
+		expect(harness.context.showError).not.toHaveBeenCalled();
+		expect(harness.context.completeProviderAuthentication).not.toHaveBeenCalled();
+	});
+
+	it.each(["api_key", "oauth"] as const)("ignores a %s login rejection after session replacement", async (method) => {
+		const harness = createLoginHarness(method);
+		harness.replaceSession();
+		harness.rejectLogin(new Error("late provider failure"));
+		await harness.pending;
+
+		expect(harness.context.showError).not.toHaveBeenCalled();
+		expect(harness.context.completeProviderAuthentication).not.toHaveBeenCalled();
+	});
+
+	it.each(["api_key", "oauth"] as const)(
+		"does not apply a late %s login success to a replacement session",
+		async (method) => {
+			const harness = createLoginHarness(method);
+			harness.replaceSession();
+			harness.resolveLogin();
+			await harness.pending;
+
+			expect(harness.context.closePanel).not.toHaveBeenCalled();
+			expect(harness.context.completeProviderAuthentication).not.toHaveBeenCalled();
+			expect(harness.context.showError).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["api_key", "oauth"] as const)(
+		"does not apply a %s login success that arrives after cancellation",
+		async (method) => {
+			const harness = createLoginHarness(method);
+			harness.dialog()?.abort();
+			harness.resolveLogin();
+			await harness.pending;
+
+			expect(harness.context.completeProviderAuthentication).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["api_key", "oauth"] as const)("keeps a real %s login failure visible", async (method) => {
+		const harness = createLoginHarness(method);
+		harness.rejectLogin(new Error("provider refused credentials"));
+		await harness.pending;
+
+		expect(harness.context.showError).toHaveBeenCalledWith(
+			"Example: provider refused credentials",
+			method === "api_key" ? "Could not save API key" : "Authentication failed",
+		);
 	});
 });

@@ -1,4 +1,4 @@
-import { setKeybindings } from "@candy/tui";
+import { setKeybindings, visibleWidth } from "@candy/tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CommandPanel, type CommandPanelAction } from "../src/modes/interactive/components/command-panel.ts";
@@ -200,7 +200,8 @@ describe("CommandPanel", () => {
 		);
 		panel.focused = true;
 		panel.handleInput("Model");
-		panel.render(80);
+		const rendered = stripAnsi(panel.render(80).join("\n")).split("\n");
+		const modelRow = rendered.findIndex((line) => line.includes("♦ [x] Model"));
 		const mouse = {
 			type: "press" as const,
 			button: "left" as const,
@@ -213,13 +214,148 @@ describe("CommandPanel", () => {
 			alt: false,
 			ctrl: false,
 		};
-		panel.handleMouse({ ...mouse, y: 4 });
+		panel.handleMouse({ ...mouse, y: modelRow });
 		panel.handleInput(" ");
 		await flush();
 		expect(toggle).toHaveBeenCalledOnce();
 		expect(panel.getQuery()).toBe("Model");
-		panel.handleMouse({ ...mouse, x: 20, y: 2 });
+		const searchRow = stripAnsi(panel.render(80).join("\n"))
+			.split("\n")
+			.findIndex((line) => line.includes("/ "));
+		panel.handleMouse({ ...mouse, x: 20, y: searchRow });
 		panel.handleInput(" ");
 		expect(panel.getQuery()).toBe("Model ");
+	});
+
+	it("renders groups, status tones, and runs setting cycle/reset actions in place", async () => {
+		const cycle = vi.fn(async (_direction: 1 | -1) => {});
+		const reset = vi.fn(async () => {});
+		const panel = new CommandPanel(
+			[
+				{
+					id: "grouped",
+					name: "Transport",
+					group: "Connection",
+					status: { text: "Not connected", tone: "error" },
+					cycle,
+					reset,
+					inline: true,
+					argumentMode: "none",
+					execute: vi.fn(),
+				},
+			],
+			{ title: "Settings", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		const output = stripAnsi(panel.render(80).join("\n"));
+		expect(output).toContain("Connection");
+		expect(output).toContain("Not connected");
+		expect(output).not.toContain("Search:");
+		panel.handleInput("\x1b[C");
+		await flush();
+		expect(cycle).toHaveBeenCalledWith(1);
+		panel.handleInput("\x1b[3~");
+		await flush();
+		expect(reset).toHaveBeenCalledOnce();
+	});
+
+	it("edits inline arguments on the selected row and preserves selection on cancel", () => {
+		const execute = vi.fn(async () => "stay" as const);
+		const panel = new CommandPanel(
+			[{ id: "timeout", name: "Timeout", inline: true, initialArgs: "5", argumentMode: "single", execute }],
+			{ title: "Settings", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		panel.handleInput("\r");
+		expect(stripAnsi(panel.render(80).join("\n"))).toContain("Timeout");
+		panel.handleInput("1");
+		const editing = panel.render(80).join("\n");
+		expect(stripAnsi(editing)).toContain("Timeout");
+		expect(editing).toContain("\x1b[7m");
+		expect(editing.split("\n").every((line) => visibleWidth(line) <= 80)).toBe(true);
+		panel.handleInput("\x1b");
+		const cancelled = stripAnsi(panel.render(80).join("\n"));
+		expect(cancelled).toContain("Timeout");
+		expect(cancelled).not.toContain("> 51");
+		panel.handleInput("\r");
+		panel.handleInput("1");
+		panel.handleInput("\r");
+		expect(execute).toHaveBeenCalledWith("51");
+		expect(panel.getSelectedId()).toBe("timeout");
+	});
+
+	it("cycles settings from the selected row while search remains available", async () => {
+		const cycle = vi.fn(async (_direction: 1 | -1) => {});
+		const panel = new CommandPanel([{ id: "mode", name: "Mode", cycle, argumentMode: "none", execute: vi.fn() }], {
+			title: "Settings",
+			onCancel: vi.fn(),
+			onMessage: vi.fn(),
+			requestRender: vi.fn(),
+		});
+		panel.handleInput("\x1b[B");
+		panel.handleInput("\x1b[C");
+		await flush();
+		expect(cycle).toHaveBeenCalledWith(1);
+		expect(stripAnsi(panel.render(80).join("\n"))).toContain("Search:");
+	});
+
+	it("keeps a provider status beside the complete option label at 80 and 100 columns", () => {
+		const panel = new CommandPanel(
+			[
+				{
+					id: "auth",
+					name: "Check authentication",
+					status: { text: "Not connected", tone: "error" },
+					argumentMode: "none",
+					execute: vi.fn(),
+				},
+			],
+			{ onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		for (const width of [80, 100]) {
+			const output = stripAnsi(panel.render(width).join("\n"));
+			expect(output).toContain("Check authentication");
+			expect(output).toContain("Not connected");
+		}
+	});
+
+	it("does not clip longer settings labels in the primary column", () => {
+		const panel = new CommandPanel(
+			[
+				{
+					id: "recent",
+					name: "Keep recent tokens",
+					description: "20000 · default · Saved: Inherited",
+					argumentMode: "none",
+					execute: vi.fn(),
+				},
+			],
+			{ title: "Details", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		for (const width of [80, 100]) expect(stripAnsi(panel.render(width).join("\n"))).toContain("Keep recent tokens");
+	});
+
+	it("wraps long status details and scrolls them without changing the selected action", () => {
+		const detail = Array.from({ length: 12 }, (_, index) => `Cause ${index}`).join(" ");
+		const panel = new CommandPanel(
+			[
+				{
+					id: "auth",
+					name: "Authentication",
+					status: { text: "Not connected", tone: "error", detail },
+					argumentMode: "none",
+					execute: vi.fn(),
+				},
+			],
+			{ onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		panel.setAvailableHeight(8);
+		const initial = stripAnsi(panel.render(40).join("\n"));
+		expect(initial).toContain("Cause 0");
+		expect(initial).not.toContain("Cause 11");
+		panel.handleInput("\t");
+		panel.handleInput("\x1b[B");
+		panel.handleInput("\x1b[B");
+		const later = stripAnsi(panel.render(40).join("\n"));
+		expect(later).toContain("Cause 11");
+		expect(panel.getSelectedId()).toBe("auth");
 	});
 });

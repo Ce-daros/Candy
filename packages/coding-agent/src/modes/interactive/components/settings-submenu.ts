@@ -67,13 +67,11 @@ export class SelectSubmenu extends Container {
 
 		// Description
 		if (description) {
-			this.addChild(new Spacer(1));
 			this.addChild(new Text(theme.fg("muted", description), 0, 0));
 		}
 
 		// Search input
 		if (submenuOptions?.searchable) {
-			this.addChild(new Spacer(1));
 			this.searchInput = new Input();
 			this.searchInput.onSubmit = () => {
 				this.selectList.handleInput("\r");
@@ -81,8 +79,7 @@ export class SelectSubmenu extends Container {
 			this.addChild(this.searchInput);
 		}
 
-		// Spacer
-		this.addChild(new Spacer(1));
+		if (description || submenuOptions?.searchable) this.addChild(new Spacer(1));
 
 		// Select list
 		this.selectList = this.buildSelectList(options, currentValue);
@@ -90,7 +87,6 @@ export class SelectSubmenu extends Container {
 		this.addChild(this.selectList);
 
 		// Hint
-		this.addChild(new Spacer(1));
 		const hint = `${submenuOptions?.searchable ? `${theme.fg("muted", "Type to filter")} · ` : ""}${keyHint("tui.select.confirm", "select")} · ${keyHint("tui.select.cancel", "go back")}`;
 		this.addChild(new Text(`  ${hint}`, 0, 0));
 	}

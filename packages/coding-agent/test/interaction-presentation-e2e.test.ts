@@ -15,13 +15,52 @@ type InteractiveState = {
 	pendingUserInputs: string[];
 };
 
+const tipMarkers = [
+	"psst, tap",
+	"in the Powerbar?",
+	"model picked?",
+	"curious about a model?",
+	"command time, yayy",
+	"need a hand?",
+	"find a file. there it is.",
+	"shell magic",
+	"model shortlist",
+	"fresh page",
+	"shell output just for you?",
+	"take the other path, babe",
+	"another life",
+	"big draft energy?",
+	"Terraria!",
+	"have some Candy",
+	"take a little Candy",
+	"stay determined, cutie",
+	"one more day on the farm",
+];
+
+function plainText(terminal: VirtualTerminal): string {
+	return terminal
+		.getViewport()
+		.join("\n")
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function homeFacts(text: string): string[] {
+	return text.split("\n").filter((line) => line.includes("Candy (") || line.includes("context ·"));
+}
+
+function homeTip(text: string): string | undefined {
+	return text.split("\n").find((line) => tipMarkers.some((marker) => line.includes(marker)));
+}
+
 let smoke: InteractiveSmoke | undefined;
 
-async function start(): Promise<{ state: InteractiveState; terminal: VirtualTerminal }> {
+async function start(
+	options: { empty?: boolean } = {},
+): Promise<{ state: InteractiveState; terminal: VirtualTerminal }> {
 	process.env.CANDY_OFFLINE = "1";
 	process.env.CANDY_SKIP_VERSION_CHECK = "1";
 	const terminal = new VirtualTerminal(80, 24);
-	smoke = await createInteractiveSmoke({ terminal, animations: false });
+	smoke = await createInteractiveSmoke({ terminal, animations: false, empty: options.empty });
 	await smoke.mode.init();
 	await terminal.waitForRender();
 	return { state: smoke.mode as unknown as InteractiveState, terminal };
@@ -221,26 +260,88 @@ describe("interactive presentation from terminal input", () => {
 		expect(state.presentation.surface).toBe("history");
 	});
 
-	it("returns from skill configuration to Skills and continues navigation", async () => {
+	it("opens Skills configuration directly and returns to Agent without a command submenu", async () => {
 		const { state, terminal } = await start();
 		terminal.sendInput("\x0c");
 		terminal.sendInput("\t");
 		terminal.sendInput("\x1b[B");
-		terminal.sendInput("Skills");
+		terminal.sendInput("\x1b[B");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("agent");
+		expect(plainText(terminal)).toContain("Skills");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
-		terminal.sendInput("\r");
-		await new Promise((resolve) => setTimeout(resolve, 100));
-		await terminal.waitForRender();
+		expect(plainText(terminal)).not.toContain("Show in Command");
+		expect(plainText(terminal)).not.toContain("Search: Skills");
 		terminal.sendInput("\x1b");
 		await terminal.waitForRender();
-		expect(terminal.getViewport().join("\n")).toContain("Show in Command");
-		terminal.sendInput("\x1b");
-		await terminal.waitForRender();
-		expect(terminal.getViewport().join("\n")).toContain("Search: Skills");
+		expect(state.presentation.surface).toBe("agent");
 		terminal.sendInput("\x1b");
 		await terminal.waitForRender();
 		expect(state.footer.getPowerbarSelector()).toBe("thinking");
+	});
+
+	it("reuses the empty-session home after New session and keeps its tip stable while redrawing", async () => {
+		const { state, terminal } = await start({ empty: true });
+		const previousSession = smoke!.runtime.session.sessionFile;
+		const initial = plainText(terminal);
+		const initialFacts = homeFacts(initial);
+		const initialTip = homeTip(initial);
+		expect(initialFacts).toHaveLength(2);
+		expect(initialTip).toBeDefined();
+		expect(initial).not.toContain("Loaded resources");
+		expect(initial).not.toContain("New session started");
+
+		terminal.resize(96, 30);
+		await terminal.waitForRender();
+		terminal.resize(80, 24);
+		await terminal.waitForRender();
+		expect(homeTip(plainText(terminal))).toBe(initialTip);
+
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\t");
+		terminal.sendInput("\x1b[A");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("history");
+		terminal.sendInput("New session");
+		terminal.sendInput("\r");
+		await vi.waitFor(() => expect(smoke!.runtime.session.sessionFile).not.toBe(previousSession));
+		await terminal.waitForRender();
+		const nextHome = plainText(terminal);
+		expect(homeFacts(nextHome)).toEqual(initialFacts);
+		expect(homeTip(nextHome)).toBeDefined();
+		expect(nextHome).not.toContain("Loaded resources");
+		expect(nextHome).not.toContain("New session started");
+		expect(state.presentation.surface).toBeUndefined();
+	});
+
+	it("keeps a submitted draft in the composer when no model is selected", async () => {
+		const { state, terminal } = await start({ empty: true });
+		smoke!.runtime.session.clearModel();
+		terminal.sendInput("keep this draft");
+		terminal.sendInput("\r");
+		await terminal.waitForRender();
+
+		expect(state.pendingUserInputs).toEqual([]);
+		expect(state.defaultEditor.getText()).toBe("keep this draft");
+		expect(plainText(terminal)).toContain("No model selected");
+	});
+
+	it("clearing quick selection from Sources clears the active model on exit", async () => {
+		const { state, terminal } = await start();
+		expect(smoke!.runtime.session.model).toBeDefined();
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\x1b[A");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("sources");
+		terminal.sendInput("Clear quick selection");
+		terminal.sendInput("\r");
+		await terminal.waitForRender();
+		terminal.sendInput("\x1b");
+		await vi.waitFor(() => expect(state.presentation.surface).toBeUndefined());
+		expect(smoke!.runtime.session.model).toBeUndefined();
+		await terminal.waitForRender();
+		expect(plainText(terminal)).toContain("No models selected");
 	});
 
 	it("returns to Thinking after switching sessions without inserting the old last user message", async () => {

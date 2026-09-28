@@ -20,7 +20,12 @@ if (process.argv.includes("--probe-isolation")) {
 		})}\n`,
 	);
 } else {
-	const smoke = await createInteractiveSmoke({ animations });
+	const smoke = await createInteractiveSmoke({
+		animations,
+		empty: process.argv.includes("--empty"),
+		theme: process.argv.includes("--light") ? "light" : "dark",
+		longModelName: process.argv.includes("--long-model-name"),
+	});
 	process.once("exit", () => rmSync(smoke.harness.tempDir, { recursive: true, force: true }));
 	await smoke.mode.run();
 }

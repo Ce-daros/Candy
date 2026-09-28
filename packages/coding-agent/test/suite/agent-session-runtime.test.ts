@@ -87,7 +87,12 @@ describe("AgentSessionRuntime characterization", () => {
 				noThemes: true,
 			},
 		};
+		let failNextRuntimeCreation = false;
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+			if (failNextRuntimeCreation) {
+				failNextRuntimeCreation = false;
+				throw new Error("runtime factory failed");
+			}
 			const services = await createAgentSessionServices({
 				...runtimeOptions,
 				cwd,
@@ -119,8 +124,48 @@ describe("AgentSessionRuntime characterization", () => {
 			}
 		});
 
-		return { runtime, faux, tempDir };
+		return {
+			runtime,
+			faux,
+			tempDir,
+			failNextRuntimeCreation() {
+				failNextRuntimeCreation = true;
+			},
+		};
 	}
+
+	it("preserves the current session when replacement creation fails", async () => {
+		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
+		const originalSession = runtime.session;
+		const rebound: unknown[] = [];
+		runtime.setRebindSession(async (session) => rebound.push(session));
+		failNextRuntimeCreation();
+
+		await expect(runtime.newSession()).rejects.toThrow("runtime factory failed");
+
+		expect(runtime.session).toBe(originalSession);
+		expect(originalSession.isDisposed).toBe(false);
+		expect(rebound).toEqual([]);
+	});
+
+	it("preserves the current session when replacement setup fails", async () => {
+		const { runtime } = await createRuntimeForTest(() => {});
+		const originalSession = runtime.session;
+		const rebound: unknown[] = [];
+		runtime.setRebindSession(async (session) => rebound.push(session));
+
+		await expect(
+			runtime.newSession({
+				setup: async () => {
+					throw new Error("new-session setup failed");
+				},
+			}),
+		).rejects.toThrow("new-session setup failed");
+
+		expect(runtime.session).toBe(originalSession);
+		expect(originalSession.isDisposed).toBe(false);
+		expect(rebound).toEqual([]);
+	});
 
 	it("persists message_end assistant replacements to the session manager", async () => {
 		const { runtime } = await createRuntimeForTest((candy: ExtensionAPI) => {
@@ -307,11 +352,17 @@ describe("AgentSessionRuntime characterization", () => {
 		});
 
 		await runtime.session.prompt("hello");
+		const originalSession = runtime.session;
 		const originalSessionFile = runtime.session.sessionFile;
+		const rebound: unknown[] = [];
+		runtime.setRebindSession(async (session) => rebound.push(session));
 
 		cancelReason = "new";
 		const newResult = await runtime.newSession();
 		expect(newResult.cancelled).toBe(true);
+		expect(runtime.session).toBe(originalSession);
+		expect(originalSession.isDisposed).toBe(false);
+		expect(rebound).toEqual([]);
 		expect(runtime.session.sessionFile).toBe(originalSessionFile);
 
 		events.length = 0;

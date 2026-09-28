@@ -3,6 +3,7 @@ import {
 	getKeybindings,
 	Input,
 	Markdown,
+	Text,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	truncateToWidth,
@@ -11,7 +12,7 @@ import {
 import { stripAnsi } from "../../../utils/ansi.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
-import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
+import { keyHint } from "./keybinding-hints.ts";
 
 export interface ReadingPanelRow {
 	category: string;
@@ -22,6 +23,7 @@ export interface ReadingPanelRow {
 export class ReadingPanelComponent implements Focusable {
 	private readonly title: string;
 	private readonly onClose: () => void;
+	private readonly onEdit?: () => void;
 	private readonly markdown: Markdown;
 	private readonly searchInput = new Input({ placeholder: "Search" });
 	private rows?: readonly ReadingPanelRow[];
@@ -29,7 +31,7 @@ export class ReadingPanelComponent implements Focusable {
 	private availableHeight = 20;
 	private offset = 0;
 	private selectedIndex = 0;
-	private region: "reading" | "search" = "reading";
+	private region: "reading" | "search" | "edit" | "close" = "reading";
 	private _focused = false;
 	private visibleRows = 0;
 	private firstBodyRow = 2;
@@ -44,9 +46,16 @@ export class ReadingPanelComponent implements Focusable {
 		this.searchInput.focused = value && this.region === "search";
 	}
 
-	constructor(title: string, content: string, onClose: () => void, rows?: readonly ReadingPanelRow[]) {
+	constructor(
+		title: string,
+		content: string,
+		onClose: () => void,
+		rows?: readonly ReadingPanelRow[],
+		onEdit?: () => void,
+	) {
 		this.title = title;
 		this.onClose = onClose;
+		this.onEdit = onEdit;
 		this.markdown = new Markdown(content, 0, 0, getMarkdownTheme(), undefined, {
 			onCopyCode: (code) => void copyToClipboard(code),
 		});
@@ -86,7 +95,14 @@ export class ReadingPanelComponent implements Focusable {
 	render(width: number): string[] {
 		const lines = [theme.bold(theme.fg("accent", this.title)), ""];
 		this.firstBodyRow = lines.length;
-		this.visibleRows = Math.max(2, this.availableHeight - (this.rows ? 6 : 4));
+		const footer = this.rows
+			? `${this.filteredRows.length} actions · ${keyHint("app.panel.focusNext", "search")} · ${keyHint("tui.select.cancel", "close")}`
+			: `${keyHint("tui.select.up", "up")} ${keyHint("tui.select.down", "down")} scroll · ${this.onEdit ? `${keyHint("app.panel.focusNext", this.region === "edit" ? "close" : this.region === "close" ? "read" : "Edit")} ${this.region === "edit" ? keyHint("tui.select.confirm", "edit") : this.region === "close" ? keyHint("tui.select.confirm", "close") : ""} · ` : ""}${keyHint("tui.select.cancel", "close")}`;
+		const footerLines = new Text(theme.fg("muted", footer), 0, 0).render(width);
+		const footerBudget = this.rows
+			? footerLines.length
+			: Math.max(footerLines.length, new Text(`99999–99999 / 99999 · ${footer}`, 0, 0).render(width).length);
+		this.visibleRows = Math.max(1, this.availableHeight - (this.rows ? 5 : 4) - footerBudget);
 		if (this.rows) {
 			const body: string[] = [];
 			let previousCategory = "";
@@ -131,21 +147,24 @@ export class ReadingPanelComponent implements Focusable {
 			if (selectedBodyIndex >= this.offset + this.visibleRows)
 				this.offset = selectedBodyIndex - this.visibleRows + 1;
 			lines.push(...body.slice(this.offset, this.offset + this.visibleRows));
-			while (lines.length < this.firstBodyRow + this.visibleRows) lines.push("");
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			this.lastSearchRow = lines.length;
 			lines.push(...this.searchInput.render(width));
-			lines.push(
-				`${theme.fg("muted", `${this.filteredRows.length} actions`)} · ${keyHint("app.panel.focusNext", "search")} · ${keyHint("tui.select.cancel", "close")}`,
-			);
+			lines.push(...footerLines);
 		} else {
 			const body = this.markdown.render(width);
 			this.offset = Math.max(0, Math.min(this.offset, Math.max(0, body.length - this.visibleRows)));
 			lines.push(...body.slice(this.offset, this.offset + this.visibleRows));
-			while (lines.length < this.firstBodyRow + this.visibleRows) lines.push("");
 			lines.push(theme.fg("borderMuted", "─".repeat(width)));
 			lines.push(
-				`${theme.fg("muted", `${Math.min(this.offset + 1, body.length)}–${Math.min(this.offset + this.visibleRows, body.length)} / ${body.length}`)} · ${rawKeyHint("↑↓", "scroll")} · ${keyHint("tui.select.cancel", "close")}`,
+				...new Text(
+					`${theme.fg(
+						"muted",
+						`${Math.min(this.offset + 1, body.length)}–${Math.min(this.offset + this.visibleRows, body.length)} / ${body.length}`,
+					)} · ${footer}`,
+					0,
+					0,
+				).render(width),
 			);
 		}
 		return lines;
@@ -157,9 +176,19 @@ export class ReadingPanelComponent implements Focusable {
 			this.onClose();
 			return;
 		}
-		if (this.rows && (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious"))) {
-			this.region = this.region === "reading" ? "search" : "reading";
+		if (kb.matches(data, "app.panel.focusNext") || kb.matches(data, "app.panel.focusPrevious") || data === "\t") {
+			if (this.onEdit)
+				this.region = this.region === "reading" ? "edit" : this.region === "edit" ? "close" : "reading";
+			else if (this.rows) this.region = this.region === "reading" ? "search" : "reading";
 			this.searchInput.focused = this._focused && this.region === "search";
+			return;
+		}
+		if (kb.matches(data, "tui.select.confirm") && this.region === "edit" && this.onEdit) {
+			this.onEdit();
+			return;
+		}
+		if (kb.matches(data, "tui.select.confirm") && this.region === "close") {
+			this.onClose();
 			return;
 		}
 		if (
@@ -180,7 +209,7 @@ export class ReadingPanelComponent implements Focusable {
 			else this.offset = Math.max(0, this.offset + delta);
 			return;
 		}
-		if (this.rows) {
+		if (this.rows && this.region !== "edit" && this.region !== "close") {
 			this.region = "search";
 			this.searchInput.focused = this._focused;
 			this.searchInput.handleInput(data);

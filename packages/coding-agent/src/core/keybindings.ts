@@ -29,6 +29,9 @@ export interface AppKeybindings {
 	"app.panel.focusNext": true;
 	"app.panel.focusPrevious": true;
 	"app.panel.scope": true;
+	"app.settings.reset": true;
+	"app.settings.previous": true;
+	"app.settings.next": true;
 	"app.model.select": true;
 	"app.tools.expand": true;
 	"app.thinking.toggle": true;
@@ -125,6 +128,9 @@ export const KEYBINDINGS = {
 	"app.panel.focusNext": { defaultKeys: "tab", description: "Focus next panel region" },
 	"app.panel.focusPrevious": { defaultKeys: "shift+tab", description: "Focus previous panel region" },
 	"app.panel.scope": { defaultKeys: "alt+s", description: "Switch directory or configuration scope" },
+	"app.settings.reset": { defaultKeys: "delete", description: "Restore inherited setting" },
+	"app.settings.previous": { defaultKeys: "left", description: "Previous setting value" },
+	"app.settings.next": { defaultKeys: "right", description: "Next setting value" },
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
 	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Expand or collapse details" },
 	"app.thinking.toggle": {

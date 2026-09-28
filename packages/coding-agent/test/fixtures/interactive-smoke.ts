@@ -25,14 +25,26 @@ export interface InteractiveSmoke {
 }
 
 export async function createInteractiveSmoke(
-	options: { terminal?: Terminal; animations?: boolean } = {},
+	options: {
+		terminal?: Terminal;
+		animations?: boolean;
+		empty?: boolean;
+		theme?: "dark" | "light";
+		longModelName?: boolean;
+	} = {},
 ): Promise<InteractiveSmoke> {
 	const harness = await createHarness({
 		models: [
-			{ id: "candy-reasoning", name: "Candy Reasoning", reasoning: true },
+			{
+				id: "candy-reasoning",
+				name: options.longModelName
+					? "Candy Reasoning · multilingual 中文模型 with a deliberately long display name"
+					: "Candy Reasoning",
+				reasoning: true,
+			},
 			{ id: "candy-off", name: "Candy Off", reasoning: false },
 		],
-		settings: { uiAnimations: options.animations ?? true, quietStartup: true },
+		settings: { uiAnimations: options.animations ?? true, quietStartup: true, theme: options.theme ?? "dark" },
 	});
 	harness.settingsManager.setScopedModels(
 		harness.models.map((model) => ({ provider: model.provider, modelId: model.id })),
@@ -40,17 +52,19 @@ export async function createInteractiveSmoke(
 	harness.setResponses(Array.from({ length: 20 }, () => fauxAssistantMessage("Faux response")));
 	const sessionDir = join(harness.tempDir, "sessions");
 	const sessionManager = SessionManager.create(harness.tempDir, sessionDir);
-	sessionManager.appendMessage(userMsg("First question"));
-	const firstAssistant = sessionManager.appendMessage(fauxAssistantMessage("First answer"));
-	sessionManager.appendMessage(userMsg("Second question"));
-	sessionManager.appendMessage(fauxAssistantMessage("Second answer"));
-	sessionManager.branch(firstAssistant);
-	sessionManager.appendMessage(userMsg("Branch question"));
-	sessionManager.appendMessage(fauxAssistantMessage("Branch answer"));
+	if (!options.empty) {
+		sessionManager.appendMessage(userMsg("First question"));
+		const firstAssistant = sessionManager.appendMessage(fauxAssistantMessage("First answer"));
+		sessionManager.appendMessage(userMsg("Second question"));
+		sessionManager.appendMessage(fauxAssistantMessage("Second answer"));
+		sessionManager.branch(firstAssistant);
+		sessionManager.appendMessage(userMsg("Branch question"));
+		sessionManager.appendMessage(fauxAssistantMessage("Branch answer"));
+	}
 	const otherSession = SessionManager.create(harness.tempDir, sessionDir);
 	otherSession.appendMessage(userMsg("Another session"));
 	otherSession.appendMessage(fauxAssistantMessage("Another answer"));
-	initTheme("dark", false);
+	initTheme(options.theme ?? "dark", false);
 	const services: AgentSessionServices = {
 		cwd: harness.tempDir,
 		agentDir: harness.tempDir,

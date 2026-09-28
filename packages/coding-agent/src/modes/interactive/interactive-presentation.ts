@@ -6,6 +6,7 @@ import type { AgentSession } from "../../core/agent-session.ts";
 import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
 import { CommandPanel, type CommandPanelAction, type CommandPanelOptions } from "./components/command-panel.ts";
+import { theme } from "./theme/theme.ts";
 
 export type PresentationSurface = "sources" | "details" | "history" | "agent" | "command";
 
@@ -15,7 +16,8 @@ export interface PresentationHost {
 	mount(panel: CommandPanel): void;
 	exit(): void;
 	render(): void;
-	read(title: string, content: string): void;
+	read(title: string, content: string, onEdit?: () => Promise<string | undefined>): void;
+	applyQuickSelection(signal: AbortSignal): Promise<void>;
 	edit(title: string, content: string): Promise<string | undefined>;
 	login(provider: string): Promise<void>;
 	reload(): Promise<void>;
@@ -51,6 +53,8 @@ export class InteractivePresentation {
 	private readonly host: PresentationHost;
 	private pages: PresentationPage[] = [];
 	private session: AgentSession | undefined;
+	private scopeChanged = false;
+	private closing = false;
 
 	constructor(host: PresentationHost) {
 		this.host = host;
@@ -112,9 +116,22 @@ export class InteractivePresentation {
 		}
 		this.pages = [];
 		this.session = undefined;
+		this.scopeChanged = false;
+		this.closing = false;
 	}
 
 	private back(): void {
+		if (this.closing) return;
+		if (this.pages.length === 1 && this.scopeChanged) {
+			const page = this.pages[0];
+			this.closing = true;
+			page.panel.suspend();
+			void this.host.applyQuickSelection(page.controller.signal).finally(() => {
+				if (page.controller.signal.aborted || this.session !== this.host.session()) return;
+				this.finish();
+			});
+			return;
+		}
 		const page = this.pages.pop();
 		page?.controller.abort();
 		page?.panel.dispose();
@@ -127,6 +144,7 @@ export class InteractivePresentation {
 		getActions: (page: PresentationPage) => CommandPanelAction[],
 		getDescription: () => string = () => "",
 		onSelectionChange?: CommandPanelOptions["onSelectionChange"],
+		searchable = kind === "command" || kind === "sources",
 	): PresentationPage {
 		this.pages.at(-1)?.panel.suspend();
 		const panel = new CommandPanel([], {
@@ -135,6 +153,7 @@ export class InteractivePresentation {
 			onMessage: () => this.finish(),
 			requestRender: () => this.host.render(),
 			onSelectionChange,
+			searchable,
 		});
 		const page: PresentationPage = {
 			kind,
@@ -181,10 +200,14 @@ export class InteractivePresentation {
 					),
 				).map((id) => action(id, id, async () => this.openProvider(id), "Unavailable")),
 				action("all", "Use all available models", async () => {
+					if (settings.getScopedModels() === undefined) return;
+					this.markScopeChanged();
 					settings.setScopedModels(undefined);
 					this.refresh(page);
 				}),
 				action("none", "Clear quick selection", async () => {
+					if (settings.getScopedModels()?.length === 0) return;
+					this.markScopeChanged();
 					settings.setScopedModels([]);
 					this.refresh(page);
 				}),
@@ -198,12 +221,19 @@ export class InteractivePresentation {
 		);
 	}
 
+	private markScopeChanged(): void {
+		const session = this.host.session();
+		if (session.isStreaming || session.isCompacting)
+			throw new Error("Wait for the current response or compaction to finish");
+		this.scopeChanged = true;
+	}
+
 	private openProvider(providerId: string): void {
 		const runtime = this.host.session().modelRuntime;
 		const settings = this.host.settings();
 		const provider = runtime.getProvider(providerId);
 		let catalogStatus = `${runtime.getModels(providerId).length} models`;
-		let credentialStatus = "";
+		let credentialStatus: CommandPanelAction["status"];
 		let savedCredentialType: string | undefined;
 		const loadCredentials = async (): Promise<void> => {
 			const credentials = await runtime.listCredentials({ signal: page.controller.signal });
@@ -216,6 +246,13 @@ export class InteractivePresentation {
 			const selected =
 				settings.getScopedModels() ??
 				runtime.getAvailableSnapshot().map((model) => ({ provider: model.provider, modelId: model.id }));
+			if (
+				[...modelIds].every(
+					(id) => selected.some((ref) => ref.provider === providerId && ref.modelId === id) === checked,
+				)
+			)
+				return;
+			this.markScopeChanged();
 			settings.setScopedModels([
 				...selected.filter((ref) => ref.provider !== providerId || !modelIds.has(ref.modelId)),
 				...(checked ? [...modelIds].map((modelId) => ({ provider: providerId, modelId })) : []),
@@ -240,23 +277,48 @@ export class InteractivePresentation {
 						? [
 								action("login", "Connect", async () => {
 									await this.host.login(providerId);
-									credentialStatus = "";
+									credentialStatus = undefined;
 									await loadCredentials();
 								}),
 								...(savedCredentialType
 									? [
 											action("logout", "Remove saved credentials", async () => {
 												await runtime.logout(providerId, { signal: current.controller.signal });
-												credentialStatus = "";
+												credentialStatus = undefined;
 												await loadCredentials();
 											}),
 										]
 									: []),
-								action("check", "Check authentication", async () => {
-									const auth = await runtime.checkAuth(providerId, { signal: current.controller.signal });
-									credentialStatus = auth ? `${auth.type} · ${auth.source ?? providerId}` : "Not connected";
-									this.refresh(current);
-								}),
+								{
+									...action("check", "Check authentication", async () => {
+										credentialStatus = { text: "Checking…", tone: "muted" };
+										this.refresh(current);
+										try {
+											const auth = await runtime.checkAuth(providerId, {
+												signal: current.controller.signal,
+											});
+											credentialStatus = auth
+												? { text: `${auth.type} · ${auth.source ?? providerId}`, tone: "success" }
+												: { text: "Not connected", tone: "error" };
+										} catch (error) {
+											if (current.controller.signal.aborted) return;
+											credentialStatus = {
+												text: "Check failed",
+												tone: "error",
+												detail: error instanceof Error ? error.message : String(error),
+											};
+										}
+										this.refresh(current);
+									}),
+									status:
+										credentialStatus ??
+										(runtime.getProviderAuthStatus(providerId).configured
+											? {
+													text: runtime.getProviderAuthStatus(providerId).label ?? "Configured",
+													tone: "muted" as const,
+												}
+											: { text: "Not connected", tone: "error" as const }),
+								},
 								action("refresh", "Refresh catalog", async () => {
 									const result = await runtime.refresh({
 										providers: [providerId],
@@ -306,126 +368,162 @@ export class InteractivePresentation {
 				];
 			},
 			() => {
-				const status = runtime.getProviderAuthStatus(providerId);
 				const scope = settings.getScopedModels();
 				const count =
 					scope === undefined
 						? runtime.getAvailableSnapshot().filter((model) => model.provider === providerId).length
 						: scope.filter((ref) => ref.provider === providerId).length;
-				return `${status.configured ? (status.label ?? status.source) : "Not connected"}${savedCredentialType ? ` · Saved: ${savedCredentialType}` : ""}\nCatalog: ${catalogStatus} · Selected: ${count}${credentialStatus ? `\n${credentialStatus}` : ""}`;
+				return `Catalog: ${catalogStatus} · Selected: ${count}`;
 			},
 			setSelected,
 		);
 		void loadCredentials().catch((error: unknown) => {
 			if (page.controller.signal.aborted) return;
-			credentialStatus = error instanceof Error ? error.message : String(error);
+			credentialStatus = {
+				text: "Credentials unavailable",
+				tone: "error",
+				detail: error instanceof Error ? error.message : String(error),
+			};
 			this.refresh(page);
 		});
 	}
 
 	private openDetails(model: Model<Api>): void {
 		const settings = this.host.settings();
-		const thinkingDescription = (): string => {
-			const thinking = settings.getModelThinkingSettingWithSource(model);
-			const requested = thinking.requested ?? DEFAULT_THINKING_LEVEL;
-			const effective = clampThinkingLevel(model, requested);
-			return `Thinking: ${effective} · ${thinking.source}${effective === requested ? "" : ` (requested ${requested})`} · Saved: ${thinking.savedGlobalOverride ?? "Inherited"}`;
-		};
-		this.page(
+		const sourceName = (source: string): string =>
+			source === "default" ? "Built-in" : source === "global" ? "User" : source === "project" ? "Project" : source;
+		const fact = (label: string, value: string): string => `${theme.fg("muted", label)} ${theme.fg("text", value)}`;
+		const page = this.page(
 			"details",
 			model.name,
-			(page) => [
-				action("default", "Set as default", async () => {
-					settings.setDefaultModelAndProvider(model.provider, model.id);
+			() => {
+				const thinking = settings.getModelThinkingSettingWithSource(model);
+				const requested = thinking.requested ?? DEFAULT_THINKING_LEVEL;
+				const effective = clampThinkingLevel(model, requested);
+				const cycleThinking = async (direction: 1 | -1): Promise<void> => {
+					const values = [undefined, ...getSupportedThinkingLevels(model)];
+					const current = settings.getModelThinkingSettingWithSource(model).savedGlobalOverride;
+					const index = values.indexOf(current);
+					const next = values[(index + direction + values.length) % values.length];
+					if (next === undefined) settings.removeModelThinkingLevel(model.provider, model.id);
+					else settings.setModelThinkingLevel(model.provider, model.id, next);
 					this.refresh(page);
-				}),
-				action("thinking", "Default thinking", async () => {
-					this.page(
-						"details",
-						`${model.name} · Thinking`,
-						(thinkingPage) => [
-							...getSupportedThinkingLevels(model).map((level) =>
-								action(level, level, async () => {
-									settings.setModelThinkingLevel(model.provider, model.id, level);
-									this.refresh(thinkingPage);
-								}),
-							),
-							action("clear", "Use global default", async () => {
-								settings.removeModelThinkingLevel(model.provider, model.id);
-								this.refresh(thinkingPage);
-							}),
-						],
-						thinkingDescription,
-					);
-				}),
-				...(["reserveTokens", "keepRecentTokens"] as const).flatMap((field) => [
+				};
+				return [
 					{
 						...action(
-							field,
-							field === "reserveTokens" ? "Compaction reserve tokens" : "Keep recent tokens",
-							async (args) => {
-								if (!/^\d+$/.test(args) || !Number.isSafeInteger(Number(args)))
-									throw new Error("Enter a non-negative whole number");
-								settings.setModelCompactionOverride(model.provider, model.id, field, Number(args));
-								this.refresh(page);
-							},
-							`${settings.getCompactionTokenSettingsWithSources(model)[field].value} · ${settings.getCompactionTokenSettingsWithSources(model)[field].source} · Saved: ${settings.getGlobalSettings().compaction?.modelOverrides?.[`${model.provider}/${model.id}`]?.[field] ?? "Inherited"}`,
-							"single",
+							"thinking",
+							"Default thinking",
+							() => cycleThinking(1),
+							`${effective} · ${sourceName(thinking.source)}${requested === effective ? "" : ` (requested ${requested})`}${thinking.savedGlobalOverride !== undefined && thinking.savedGlobalOverride !== requested ? ` · Saved ${thinking.savedGlobalOverride}` : ""}`,
 						),
-						initialArgs: String(settings.getCompactionTokenSettingsWithSources(model)[field].value),
+						cycle: cycleThinking,
+						reset:
+							thinking.savedGlobalOverride === undefined
+								? undefined
+								: async () => {
+										settings.removeModelThinkingLevel(model.provider, model.id);
+										this.refresh(page);
+									},
 					},
+					...(["reserveTokens", "keepRecentTokens"] as const).map((field) => {
+						const setting = settings.getCompactionTokenSettingsWithSources(model)[field];
+						const saved =
+							settings.getGlobalSettings().compaction?.modelOverrides?.[`${model.provider}/${model.id}`]?.[
+								field
+							];
+						return {
+							...action(
+								field,
+								field === "reserveTokens" ? "Reserve tokens" : "Keep recent tokens",
+								async (args) => {
+									if (!/^\d+$/.test(args) || !Number.isSafeInteger(Number(args)))
+										throw new Error("Enter a non-negative whole number");
+									settings.setModelCompactionOverride(model.provider, model.id, field, Number(args));
+									this.refresh(page);
+								},
+								`${setting.value.toLocaleString()} · ${sourceName(setting.source)}${saved !== undefined && saved !== setting.value ? ` · Saved ${saved.toLocaleString()}` : ""}`,
+								"single",
+							),
+							inline: true,
+							initialArgs: String(setting.value),
+							reset:
+								saved === undefined
+									? undefined
+									: async () => {
+											settings.setModelCompactionOverride(model.provider, model.id, field, undefined);
+											this.refresh(page);
+										},
+						};
+					}),
 					action(
-						`clear-${field}`,
-						field === "reserveTokens" ? "Use inherited reserve tokens" : "Use inherited recent tokens",
+						"default",
+						"Set as default",
 						async () => {
-							settings.setModelCompactionOverride(model.provider, model.id, field, undefined);
+							settings.setDefaultModelAndProvider(model.provider, model.id);
 							this.refresh(page);
 						},
+						settings.getDefaultProvider() === model.provider && settings.getDefaultModel() === model.id
+							? "Default"
+							: undefined,
 					),
-				]),
-			],
-			() => {
-				const defaults =
-					settings.getDefaultProvider() === model.provider && settings.getDefaultModel() === model.id;
-				const tokens = settings.getCompactionTokenSettingsWithSources(model);
-				return `${model.provider}/${model.id}${defaults ? " · Default" : ""}\nInput: ${model.input.join(", ")} · Reasoning: ${model.reasoning ? "Yes" : "No"}\nContext: ${model.contextWindow.toLocaleString()} · Output: ${model.maxTokens.toLocaleString()}\nPrice / 1M: input $${model.cost.input}, output $${model.cost.output}, cache read $${model.cost.cacheRead}, write $${model.cost.cacheWrite}\n${thinkingDescription()}\nCompaction: reserve ${tokens.reserveTokens.value} (${tokens.reserveTokens.source}), recent ${tokens.keepRecentTokens.value} (${tokens.keepRecentTokens.source})`;
+				];
 			},
+			() =>
+				[
+					`${model.provider} · ${model.id}`,
+					`${fact("Context", model.contextWindow.toLocaleString())}   ${fact("Output", model.maxTokens.toLocaleString())}`,
+					`${fact("Input", model.input.join(", "))}   ${fact("Reasoning", model.reasoning ? "Yes" : "No")}`,
+					`${fact("Price / 1M", `input $${model.cost.input} · output $${model.cost.output}`)}`,
+					fact("Cache / 1M", `read $${model.cost.cacheRead} · write $${model.cost.cacheWrite}`),
+				].join("\n"),
 		);
 	}
 
 	private openHistory(): void {
-		this.page("history", "History", () => [
-			...this.host.historyCommands(),
-			action("context", "Context", async () => {
-				const usage = this.host.session().getContextUsage();
-				this.host.read(
-					"Context",
-					usage
-						? `Tokens: ${usage.tokens ?? "Unknown"}\n\nContext window: ${usage.contextWindow}\n\nUsed: ${usage.percent === null ? "Unknown" : `${usage.percent.toFixed(1)}%`}`
-						: "Context usage unavailable",
-				);
-			}),
-			...(
-				[
-					["compact", "Compact", "single"],
-					["details", "Session details", "none"],
-					["rename", "Rename", "single"],
-					["tree", "Tree", "none"],
-					["fork", "Fork", "none"],
-					["clone", "Clone", "none"],
-					["resume", "Resume / Switch session", "none"],
-				] as const
-			).map(([id, name, mode]) => ({
-				...action(
-					id,
-					name,
-					async (args) => this.host.historyAction(id, args),
-					id === "rename" ? this.host.session().sessionManager.getSessionName() : undefined,
-					mode,
-				),
-				initialArgs: id === "rename" ? this.host.session().sessionManager.getSessionName() : undefined,
-			})),
-		]);
+		this.page(
+			"history",
+			"History",
+			() => [
+				...this.host
+					.historyCommands()
+					.map((item) => ({ ...item, group: item.id === "new" ? "Sessions" : "Files" })),
+				action("context", "Context", async () => {
+					const usage = this.host.session().getContextUsage();
+					this.host.read(
+						"Context",
+						usage
+							? `Tokens: ${usage.tokens ?? "Unknown"}\n\nContext window: ${usage.contextWindow}\n\nUsed: ${usage.percent === null ? "Unknown" : `${usage.percent.toFixed(1)}%`}`
+							: "Context usage unavailable",
+					);
+				}),
+				...(
+					[
+						["compact", "Compact", "single"],
+						["details", "Session details", "none"],
+						["rename", "Rename", "single"],
+						["tree", "Tree", "none"],
+						["fork", "Fork", "none"],
+						["clone", "Clone", "none"],
+						["resume", "Resume / Switch session", "none"],
+					] as const
+				).map(([id, name, mode]) => ({
+					...action(
+						id,
+						name,
+						async (args) => this.host.historyAction(id, args),
+						id === "rename" ? this.host.session().sessionManager.getSessionName() : undefined,
+						mode,
+					),
+					initialArgs: id === "rename" ? this.host.session().sessionManager.getSessionName() : undefined,
+					inline: id === "rename",
+					group: id === "details" || id === "compact" || id === "rename" ? "Current session" : "Sessions",
+				})),
+			],
+			undefined,
+			undefined,
+			true,
+		);
 	}
 
 	private openAgent(): void {
@@ -446,110 +544,83 @@ export class InteractivePresentation {
 			...loader.getAppendSystemPromptSources(),
 			...loader.getAgentsFiles().agentsFiles,
 		];
-		this.page("agent", "Instructions", () => [
-			action("effective", "Effective instructions", async () =>
-				this.host.read("Instructions", session.systemPrompt),
-			),
-			...files.map((file) =>
-				action(file.path, file.path, async () => {
-					this.page("agent", file.path, () => [
-						action("read", "View", async () => this.host.read(file.path, readFileSync(file.path, "utf8"))),
-						action("edit", "Edit", async () => {
+		this.page(
+			"agent",
+			"Instructions",
+			() => [
+				action("effective", "Effective instructions", async () =>
+					this.host.read("Instructions", session.systemPrompt),
+				),
+				...files.map((file) =>
+					action(file.path, file.path, async () => {
+						this.host.read(file.path, readFileSync(file.path, "utf8"), async () => {
 							const content = await this.host.edit(file.path, readFileSync(file.path, "utf8"));
-							if (content === undefined) return;
+							if (content === undefined || session !== this.host.session()) return;
 							if (session.isStreaming || session.isCompacting)
 								throw new Error("Wait for the current response or compaction to finish");
 							writeFileSync(file.path, content);
 							await this.host.reload();
-						}),
-					]);
-				}),
-			),
-		]);
+							return content;
+						});
+					}),
+				),
+			],
+			undefined,
+			undefined,
+			true,
+		);
 	}
 
-	private openSkills(): void {
-		const session = this.host.session();
-		const settings = this.host.settings();
-		this.page("agent", "Skills", (page) => [
-			action("configure", "Enable / disable skills", async () => this.host.skills()),
-			action("commands", `Show in Command: ${settings.getEnableSkillCommands() ? "On" : "Off"}`, async () => {
-				settings.setEnableSkillCommands(!settings.getEnableSkillCommands());
-				this.refresh(page);
-			}),
-			...session.resourceLoader
-				.getSkills()
-				.skills.map((skill) =>
-					action(
-						skill.filePath,
-						skill.name,
-						async () => this.host.read(skill.name, readFileSync(skill.filePath, "utf8")),
-						skill.filePath,
-					),
-				),
-		]);
+	private async openSkills(): Promise<void> {
+		await this.host.skills();
 	}
 
 	private openTools(): void {
 		const session = this.host.session();
-		const savedTools = (): string => {
-			const settings = this.host.settings();
-			const saved = settings.getGlobalSettings().defaultTools;
-			const effective = settings.getDefaultTools();
-			return `Saved: ${saved === undefined ? "Inherited" : saved.length ? saved.join(", ") : "None"} · Next session: ${effective === undefined ? "Built-in defaults" : effective.length ? effective.join(", ") : "None"}`;
-		};
-		this.page("agent", "Tools", (toolsPage) => [
-			action(
-				"save",
-				"Save current tools as default",
-				async () => {
+		this.page(
+			"agent",
+			"Tools",
+			(page) => [
+				action("save", "Save current tools as default", async () => {
 					this.host.settings().setDefaultTools(session.getActiveToolNames());
-					this.refresh(toolsPage);
-				},
-				savedTools(),
-			),
-			action("clear-default", "Use inherited default tools", async () => {
-				this.host.settings().setDefaultTools(undefined);
-				this.refresh(toolsPage);
-			}),
-			...session.getAllTools().map((tool) =>
-				action(
-					tool.name,
-					`${session.getActiveToolNames().includes(tool.name) ? "[x]" : "[ ]"} ${tool.name}`,
-					async () => {
-						this.page(
-							"agent",
-							tool.name,
-							(page) => [
-								action("description", "Description and parameters", async () =>
-									this.host.read(
-										tool.name,
-										`${tool.description}\n\n\`\`\`json\n${JSON.stringify(tool.parameters, null, 2)}\n\`\`\``,
-									),
-								),
-								action(
-									"toggle",
-									session.getActiveToolNames().includes(tool.name) ? "Disable" : "Enable",
-									async () => {
-										if (session.isStreaming || session.isCompacting)
-											throw new Error("Wait for the current response or compaction to finish");
-										const active = session.getActiveToolNames();
-										session.setActiveToolsByName(
-											active.includes(tool.name)
-												? active.filter((name) => name !== tool.name)
-												: [...active, tool.name],
-										);
-										this.refresh(page);
-									},
-								),
-							],
-							() => tool.description,
+					this.refresh(page);
+				}),
+				action("clear-default", "Use inherited default tools", async () => {
+					this.host.settings().setDefaultTools(undefined);
+					this.refresh(page);
+				}),
+				...session.getAllTools().map((tool) => ({
+					...action(
+						tool.name,
+						tool.name,
+						async () =>
+							this.host.read(
+								tool.name,
+								`${tool.description}\n\n\`\`\`json\n${JSON.stringify(tool.parameters, null, 2)}\n\`\`\``,
+							),
+						tool.sourceInfo?.path,
+					),
+					checked: session.getActiveToolNames().includes(tool.name),
+					toggle: async () => {
+						if (session.isStreaming || session.isCompacting)
+							throw new Error("Wait for the current response or compaction to finish");
+						const active = session.getActiveToolNames();
+						session.setActiveToolsByName(
+							active.includes(tool.name) ? active.filter((name) => name !== tool.name) : [...active, tool.name],
 						);
+						this.refresh(page);
 					},
-					tool.sourceInfo?.path,
-				),
-			),
-		]);
+				})),
+			],
+			() => {
+				const settings = this.host.settings();
+				const saved = settings.getGlobalSettings().defaultTools;
+				const effective = settings.getDefaultTools();
+				return `Next session: ${effective === undefined ? "Built-in defaults" : effective.length ? effective.join(", ") : "None"}${saved === undefined ? " · Inherited" : ""}`;
+			},
+			undefined,
+			true,
+		);
 	}
 
 	private openBehavior(): void {
@@ -572,14 +643,15 @@ export class InteractivePresentation {
 
 	private openCommand(): void {
 		this.page("command", "Command", (page) => [
-			...this.host.localCommands(),
-			...this.host.settingsActions(),
+			...this.host.localCommands().map((item) => ({ ...item, group: "Commands" })),
+			...this.host.settingsActions().map((item) => ({ ...item, group: "Settings" })),
 			...this.host
 				.session()
 				.getCommands()
 				.filter((command) => command.source !== "skill" || this.host.settings().getEnableSkillCommands())
 				.map((command) => ({
 					id: `${command.source}:${command.name}`,
+					group: "Resources",
 					name: command.name,
 					description: command.description,
 					source: command.sourceInfo?.path ?? command.source,
@@ -596,6 +668,9 @@ export class InteractivePresentation {
 						return (await this.host.completeArguments?.(text, signal, force)) ?? null;
 					},
 					execute: async (args: string) => {
+						if (command.source !== "extension" && !this.host.session().model) {
+							throw new Error("Select a model before sending a message");
+						}
 						await this.host.session().executeCommand(
 							{ source: command.source, name: command.name, args },
 							{

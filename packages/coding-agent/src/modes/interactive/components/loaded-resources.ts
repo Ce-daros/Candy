@@ -30,13 +30,8 @@ export class LoadedResourcesComponent implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const count = this.sections.reduce((sum, section) => sum + section.entries.length, 0);
-		const counts = this.sections
-			.map((section) => `${section.entries.length} ${section.name.toLocaleLowerCase()}`)
-			.join(" · ");
-		const heading = `Loaded resources · ${count}${counts ? `  ${counts}` : ""}`;
-		const lines = [truncateToWidth(theme.fg("accent", heading), width)];
-		if (!this.expanded) return lines;
+		if (!this.expanded) return [];
+		const lines: string[] = [];
 		for (const section of this.sections) {
 			lines.push(theme.fg("customMessageLabel", `  ${section.name}  ${section.entries.length}`));
 			for (const entry of section.entries) {

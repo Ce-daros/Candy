@@ -94,4 +94,12 @@ describe("ReadingPanelComponent", () => {
 		panel.handleMouse(event(0));
 		expect(clipboardCopy).toHaveBeenCalledOnce();
 	});
+
+	it("shows an Edit action in the reading panel and invokes it without a detour", () => {
+		const edit = vi.fn();
+		const panel = new ReadingPanelComponent("Instructions", "Read me", vi.fn(), undefined, edit);
+		panel.handleInput("\t");
+		panel.handleInput("\r");
+		expect(edit).toHaveBeenCalledOnce();
+	});
 });

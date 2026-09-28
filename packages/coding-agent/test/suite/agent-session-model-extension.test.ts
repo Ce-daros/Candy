@@ -416,8 +416,8 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.prompt("/inspect-options");
-		await harness.session.prompt("/inspect-options");
+		await harness.session.executeCommand({ source: "extension", name: "inspect-options", args: "" });
+		await harness.session.executeCommand({ source: "extension", name: "inspect-options", args: "" });
 
 		expect(seenOptions).toHaveLength(2);
 		expect(seenOptions[0]).toBe(seenOptions[1]);

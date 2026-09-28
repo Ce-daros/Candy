@@ -337,6 +337,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		return () => {
 			const currentModel = agent.state.model;
 			const currentMessages = agent.state.messages;
+			if (!currentModel) return false;
 			return (
 				currentModel.provider === requestModel.provider &&
 				currentModel.id === requestModel.id &&

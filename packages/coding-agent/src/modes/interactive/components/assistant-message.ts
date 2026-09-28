@@ -6,7 +6,6 @@ import {
 	type MarkdownTheme,
 	MouseRegion,
 	Spacer,
-	Text,
 	type TuiMouseEvent,
 	truncateToWidth,
 } from "@candy/tui";
@@ -14,6 +13,7 @@ import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
+import { TranscriptNotice } from "./transcript-notice.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -62,6 +62,8 @@ export class AssistantMessageComponent extends Container {
 	private hasToolCalls = false;
 	private isStreaming = false;
 	private thinkingVisibilityOverrides = new Map<number, boolean>();
+	private notices: TranscriptNotice[] = [];
+	private expanded = false;
 
 	constructor(
 		message?: AssistantMessage,
@@ -125,6 +127,11 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	setExpanded(expanded: boolean): void {
+		this.expanded = expanded;
+		for (const notice of this.notices) notice.setExpanded(expanded);
+	}
+
 	override render(width: number): string[] {
 		const lines = super.render(width);
 		if (this.hasToolCalls || lines.length === 0) {
@@ -142,6 +149,7 @@ export class AssistantMessageComponent extends Container {
 
 		// Clear content container
 		this.contentContainer.clear();
+		this.notices = [];
 
 		const hasVisibleContent = message.content.some(
 			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
@@ -259,23 +267,24 @@ export class AssistantMessageComponent extends Container {
 		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
 		this.hasToolCalls = hasToolCalls;
 		if (message.stopReason === "length") {
-			this.contentContainer.addChild(new Spacer(1));
-			this.contentContainer.addChild(
-				new Text(theme.fg("error", "Response was truncated before completion."), this.outputPad, 0),
-			);
+			this.addNotice("warning", "Response incomplete", "Response was truncated before completion.");
 		} else if (!hasToolCalls) {
 			if (message.stopReason === "aborted") {
 				const abortMessage =
-					message.errorMessage && message.errorMessage !== "Request was aborted"
-						? message.errorMessage
-						: "Operation aborted";
-				this.contentContainer.addChild(new Spacer(1));
-				this.contentContainer.addChild(new Text(theme.fg("warning", abortMessage), this.outputPad, 0));
+					message.errorMessage && message.errorMessage !== "Request was aborted" ? message.errorMessage : "";
+				this.addNotice("info", "Cancelled", abortMessage);
 			} else if (message.stopReason === "error") {
 				const errorMsg = message.errorMessage || "Unknown error";
-				this.contentContainer.addChild(new Spacer(1));
-				this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), this.outputPad, 0));
+				this.addNotice("error", "Response failed", errorMsg);
 			}
 		}
+	}
+
+	private addNotice(tone: "error" | "warning" | "info", title: string, body: string): void {
+		if (this.contentContainer.children.length > 0) this.contentContainer.addChild(new Spacer(1));
+		const notice = new TranscriptNotice({ tone, title, body });
+		notice.setExpanded(this.expanded);
+		this.notices.push(notice);
+		this.contentContainer.addChild(notice);
 	}
 }

@@ -6,7 +6,6 @@ import {
 	fauxToolCall,
 	getCurrentSystemPrompt,
 	getCurrentTools,
-	type Model,
 	type SimpleStreamOptions,
 	type TranscriptContext,
 } from "@candy/ai";
@@ -274,7 +273,7 @@ describe("AgentSession compaction characterization", () => {
 	it("throws when compacting without a model", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
-		harness.session.agent.state.model = undefined as unknown as Model<any>;
+		harness.session.clearModel();
 
 		await expect(harness.session.compact()).rejects.toThrow("No model selected");
 	});

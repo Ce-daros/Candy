@@ -52,7 +52,7 @@ describe("composer redesign", () => {
 		panel.setOptions(false, "moderate");
 		panel.show({ render: () => ["Settings"], invalidate: () => {} } satisfies Component);
 		const rows = panel.render(120);
-		expect(rows).toHaveLength(40);
+		expect(rows).toHaveLength(4);
 		expect(rows.every((line) => visibleWidth(line) === 120)).toBe(true);
 		expect(stripAnsi(rows[1]!)).toContain("Settings");
 		let closed = false;
@@ -116,8 +116,13 @@ describe("composer redesign", () => {
 		panel.show({ render: () => ["Model"], invalidate: () => {} });
 		vi.advanceTimersByTime(800);
 		const rendered = panel.render(80);
-		expect(rendered).toHaveLength(19);
+		expect(rendered).toHaveLength(4);
 		expect(rendered.map(stripAnsi).join("\n")).toContain("Model");
+		panel.show({ render: () => Array.from({ length: 100 }, (_, index) => `Row ${index}`), invalidate: () => {} });
+		const expanded = panel.render(80);
+		expect(expanded).toHaveLength(19);
+		expect(expanded.map(stripAnsi).join("\n")).toContain("Row 16");
+		expect(expanded.map(stripAnsi).join("\n")).not.toContain("Row 17");
 		expect(closed).not.toHaveBeenCalled();
 		panel.close(closed);
 		vi.advanceTimersByTime(584);

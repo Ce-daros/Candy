@@ -192,7 +192,9 @@ describe("createAgentSession stream options", () => {
 
 			// Equivalent shallow copies remain current, but removing the request prefix does not.
 			fixture.session.agent.state.messages = [...fixture.session.agent.state.messages];
-			fixture.session.agent.state.model = { ...fixture.session.agent.state.model };
+			const activeModel = fixture.session.agent.state.model;
+			if (!activeModel) throw new Error("Expected an active model");
+			fixture.session.agent.state.model = { ...activeModel };
 			expect(fixture.session.cacheWarmingStatus?.nextWarmAt).toBeGreaterThan(Date.now());
 			fixture.session.agent.state.messages = fixture.session.agent.state.messages.slice(1);
 			expect(fixture.session.cacheWarmingStatus?.reason).toBe("conversation context changed");

@@ -11,10 +11,10 @@ describe("LoadedResourcesComponent", () => {
 		{ name: "Themes", entries: [{ name: "soft", path: "/work/themes/soft.json" }] },
 	];
 
-	it("summarizes counts without rendering details", () => {
+	it("keeps compact rendering empty", () => {
 		const component = new LoadedResourcesComponent(sections);
 		const collapsed = stripAnsi(component.render(100).join("\n"));
-		expect(collapsed).toContain("Loaded resources · 2  1 skills · 1 themes");
+		expect(collapsed).toBe("");
 		expect(collapsed).not.toContain("/work/skills");
 	});
 
@@ -23,5 +23,6 @@ describe("LoadedResourcesComponent", () => {
 		const expanded = stripAnsi(component.render(100).join("\n"));
 		expect(expanded).toContain("review  · Project");
 		expect(expanded).toContain("/work/skills/review/SKILL.md");
+		expect(expanded).not.toContain("Loaded resources");
 	});
 });

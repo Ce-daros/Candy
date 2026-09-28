@@ -14,19 +14,26 @@
 - Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat, image, and classifier entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
 - Added classifier support to `ModelRuntime`, including `classify()`, classifier model accessors, runtime-resolved authentication, and the built-in TypeSafe `jev-latest` model.
 - Added `types=chat,image,classifier` to pi.dev model catalog requests so remote refreshes overlay every supported model type; entries of unknown model types are ignored.
-- Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `/debug-provider` example viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
+- Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `debug-provider` example command viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
 - Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, the session name, and a context line and percentage that follow usage.
-- Added a startup splash screen: the Candy logo renders as a Sixel image on supported terminals (including Windows Terminal) or a Unicode half-block sprite otherwise. The home view shows History, Command, Hotkeys, and one tip per session; it is dismissed when the first user message is submitted.
+- Added a startup splash screen with the Candy logo, version, counts for contexts, skills, prompts, and extensions, and one tip. Sixel-capable terminals use the image logo; other terminals use a Unicode half-block sprite.
 - Added the footer Powerbar: the model and thinking labels anchor inline selectors rendered in the editor's bottom border. Clicking a label or pressing `Ctrl+L` expands a track of options around the current value. The track uses ease-out per-frame positioning, edge markers, fuzzy model search, and preview. Left/Right browse; Tab switches selectors; Up opens Sources or History; Down opens Details or Agent.
 - Added explicit Shell and Shell · No Context input modes, scoped input histories, keyboard switching between footer selectors, and configurable editor animations.
 - Added Command mode for searchable local actions, settings, extensions, prompt templates, and skills. Added Sources for provider authentication and model quick-selection scope; Details for highlighted model metadata and defaults; History for session navigation and context; and Agent for instructions, skills, tools, and behavior.
 - Added scoped-model bulk actions for whole providers and search matches, mouse focus, path completion in command arguments, and prefilled History rename and model Details numeric fields. Agent Tools now confirms saved defaults and can restore inherited default tools.
+- Added persistent user-level model quick-selection scope, including an explicitly empty scope and unavailable model references. Model Details can save a default without switching the session, and set or clear per-model thinking and compaction defaults.
+- Added source-qualified command discovery and explicit extension, prompt, and skill execution across SDK, RPC, and experimental clients, including queued message execution.
+- Added an isolated faux-provider smoke launcher for Windows PTY and Linux/tmux interaction checks.
+- Added OKLCH theme colors and composable `Theme.style()` attributes with truecolor and indexed-terminal rendering.
+- Added `DESIGN.md` for Candy's product, navigation, color, motion, and interaction rules.
 
 ### Removed
 
 - Removed the retired author Easter-egg commands, project announcements, and model-specific automatic animation triggers.
 - Removed slash-text command matching from ordinary messages and the old editor slash-completion protocol.
+- Removed Powerbar Shift+Tab behavior, Shift+Tab thinking cycling, and selector Ctrl+S global-default saving. Authentication actions now live in Sources; conversation and session actions live in History.
+- Removed inherited contributor approval workflows, the contributor allowlist, and upstream contribution gates and contact links.
 
 ### Breaking Changes
 
@@ -37,6 +44,8 @@
 - Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
 - Removed the extension `setWorkingMessage` and `setWorkingIndicator` APIs; `setWorkingVisible` remains available.
 - Message APIs no longer interpret slash-prefixed text as commands or expand prompt templates. Use `executeCommand({ source, name, args })` in the SDK or RPC `execute_command` for explicit command execution.
+- Renamed `@earendil-works/pi-coding-agent` to `@candy/coding-agent`, the `pi` executable to `candy`, configuration directories from `.pi` to `.candy`, application environment variables from `PI_*` to `CANDY_*`, and application package metadata from `piConfig` to `candyConfig`. Update imports, launchers, and configuration paths.
+- Removed the `expandPromptTemplates` message option. Experimental main, micro, and mini clients now use explicit command execution; skills appear under their bare names with source identity.
 
 ### Changed
 
@@ -46,14 +55,23 @@
 - Composer autocomplete and selectors use Candy selection markers, inline file details, and panel layouts; settings are grouped into five searchable categories with region navigation.
 - Updated image, code, table, and heading presentation; Mermaid code blocks can switch between Diagram and Source, and code blocks expose a copy action.
 - Session details, Hotkeys, and changelog details use a shared reading panel. Ordinary transient notices fade after a short delay, while warnings and errors remain in the transcript.
-- Thinking levels now use progressively stronger Candy colors, a six-step meter, and level-sensitive composer and activity animations.
+- Thinking levels use progressively stronger Candy colors and level-sensitive composer and activity animations. The collapsed frame retains its meter; the expanded Thinking selector shows level names only. Model and Thinking tracks use tighter spacing to fit more choices.
 - Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage appears in the top bar as an occupied line and a percentage. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
 - Connected the model and thinking labels with a border line, added frame and activity animations, and applied the selected theme to CLI output and HTML exports.
 - Consolidated the built-in themes into 16 palette variables while retaining semantic color roles for custom themes.
 - Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).
 - Pressing `tab` in the footer powerbar now wraps between the model and thinking level selectors instead of stopping at the thinking level.
 - The composer prompt glyph is a half-width space followed by `◆` in normal mode (new `editorPrompt` theme color, pink by default) or `❯` in Shell modes (`bashMode`), and typed input text uses `text` (ink). Shell titles render with one space of padding on each side. The footer model label is purple, the picker `‹`/`›` arrows are cyan, and the `▼` selector chevrons are removed.
-- Loaded resources render as a static summary line. Clicking the summary no longer expands it, and the global details toggle leaves it unchanged; verbose startup still lists names and paths.
+- Startup and New session now share the same logo home with the version, four resource counts, and one tip; the History, Command, and Hotkeys links and separate loaded-resources line are removed.
+- Sources applies quick-selection reconciliation only when leaving its root after an edit. The current model stays when still available, otherwise the first available scoped model is selected; an empty available scope clears the active model. Starting or restoring a session keeps its model.
+- Model Details groups catalog facts and keeps defaults on their rows. Thinking cycles in place, token counts edit inline, and Delete restores inheritance for overridden values.
+- Command actions are grouped into Commands, Settings, and Resources; Boolean and enumerated settings can be changed from their rows. Agent Skills opens the selected skill file directly and returns to its previous list state; Agent Tools toggles on Space and opens descriptions and parameters on Enter.
+- Authentication status appears beside Check authentication and distinguishes checking, configured credentials, not connected, and failed checks with their reason.
+- Transcript errors and warnings use semantic markers, a side rail, and expandable long reasons; cancellation is muted. Composer panels fit short content and cap their height at 80 percent of terminal rows.
+- Shortcut hints now render the complete angle-bracket keycap in cyan, including status, search, dialogs, and experimental clients.
+- Rewrote the development philosophy and contribution process for Candy, and simplified `AGENTS.md` around complete workflows, coordinated refactors, independent implementation decisions, and proportionate verification.
+- Updated source launchers, workspace aliases, examples, and package tooling for Candy package names and configuration.
+- The reload-runtime example now rejects reload attempts from tools and directs users to explicit reload.
 
 ### Fixed
 
@@ -64,6 +82,13 @@
 - Fixed `RpcClient` skipping the next event listener when a listener unsubscribes while handling an event, which could make `waitForIdle()` time out after `collectEvents()` ([#9990](https://github.com/earendil-works/pi/issues/9990)).
 - Fixed full-file `read` calls rendering as `:1` when models send `null` for omitted `offset` and `limit` ([#9996](https://github.com/earendil-works/pi/issues/9996)).
 - Fixed new sessions being lost when pi exits before the first assistant response. The session file is now created when the first user message is sent ([#10000](https://github.com/earendil-works/pi/issues/10000)).
+- Fixed Sources checkbox toggling with Space, bulk actions on filtered lists, no-match selection, and authentication status distinguishing active credentials from stored entries.
+- Fixed nested navigation restoring selector search, highlighted identity, and browsing position. Models without reasoning retain an Off selector so History and Agent remain reachable.
+- Fixed late authentication and catalog callbacks changing focus after leaving their page, and composer panels failing to forward focus to their active child.
+- Fixed settings submenu height and search activation, child-dialog invalidation, cancelled import input, and relative import/export paths resolving against the session directory.
+- Fixed shortcut colors in status and animated titles, ANSI/CJK title widths, truncated Hotkeys alternatives at 80 columns, and reading-panel search matching ANSI sequences.
+- Fixed custom themes ignoring terminal truecolor support ([#9973](https://github.com/earendil-works/pi/issues/9973)).
+- Fixed experimental development clients resolving renamed Candy source packages.
 
 ## [0.87.1] - 2026-09-22
 

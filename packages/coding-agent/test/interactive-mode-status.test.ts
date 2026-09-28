@@ -448,6 +448,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 			settingsManager: {
 				getQuietStartup: () => options.quietStartup,
 			},
+			splashComponent: { setResources: vi.fn() },
+			getHomeResources: vi.fn(() => ({ context: 1, skills: 1, prompts: 1, extensions: 1 })),
 			sessionManager: {
 				getCwd: () => options.cwd ?? "/tmp/project",
 			},
@@ -617,9 +619,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		];
 	}
 
-	test("shows a compact resource listing by default", () => {
+	test("does not show a resource listing by default", () => {
 		const fakeThis = createShowLoadedResourcesThis({
-			quietStartup: false,
+			quietStartup: true,
 			skills: [{ filePath: "/tmp/skill/SKILL.md", name: "commit" }],
 		});
 
@@ -628,15 +630,33 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("Loaded resources · 1  1 skills");
+		expect(output).not.toContain("Loaded resources");
 		expect(output).not.toContain("commit");
 		expect(output).not.toContain("/tmp/skill/SKILL.md");
 	});
 
-	test("shows full resource listing when expanded", () => {
+	test("refreshes splash resource counts during quiet resource updates", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: true,
+			skills: [{ filePath: "/tmp/skill/SKILL.md", name: "commit" }],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, { force: false });
+
+		expect(fakeThis.getHomeResources).toHaveBeenCalledOnce();
+		expect(fakeThis.splashComponent.setResources).toHaveBeenCalledWith({
+			context: 1,
+			skills: 1,
+			prompts: 1,
+			extensions: 1,
+		});
+		expect(fakeThis.loadedResourcesContainer.children).toHaveLength(0);
+	});
+
+	test("shows full resource listing in verbose mode", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
-			toolOutputExpanded: true,
+			verbose: true,
 			skills: [{ filePath: "/tmp/skill/SKILL.md", name: "commit" }],
 		});
 
@@ -645,7 +665,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("Loaded resources · 1  1 skills");
+		expect(output).not.toContain("Loaded resources");
 		expect(output).toContain("Skills  1");
 		expect(output).toContain("commit");
 		expect(output).toContain("/tmp/skill/SKILL.md");
@@ -664,14 +684,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("Loaded resources · 1  1 skills");
+		expect(output).not.toContain("Loaded resources");
 		expect(output).toContain("commit");
 		expect(output).toContain("/tmp/skill/SKILL.md");
 	});
 
-	test("abbreviates extensions in compact listing", () => {
+	test("shows extension details only in verbose output", () => {
 		const fakeThis = createShowLoadedResourcesThis({
-			quietStartup: false,
+			quietStartup: true,
 			extensions: [{ path: "/tmp/extensions/answer.ts" }, { path: "/tmp/extensions/btw.ts" }],
 		});
 
@@ -680,14 +700,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("Loaded resources · 2  2 extensions");
+		expect(output).not.toContain("Loaded resources");
 		expect(output).not.toContain("answer.ts");
 		const details = normalizeResourceDetails(fakeThis);
 		expect(details).toContain("answer.ts");
 		expect(details).toContain("btw.ts");
 	});
 
-	test("captures mixed extension layouts in compact output", () => {
+	test("captures mixed extension layouts in verbose output", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions: createExtensionFixtures(),
@@ -699,8 +719,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 8  8 extensions
-			  Extensions  8
+			"Extensions  8
 			    answer.ts  · local
 			      /tmp/project/.candy/extensions/answer.ts
 			    local-index  · local
@@ -762,8 +781,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 3  3 extensions
-			  Extensions  3
+			"Extensions  3
 			    alpha/one  · cli
 			      /tmp/alpha/one/index.ts
 			    beta/one  · cli
@@ -797,8 +815,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 1  1 extensions
-			  Extensions  1
+			"Extensions  1
 			    plan-mode  · local
 			      /tmp/extensions/plan-mode/index.ts"
 		`);
@@ -828,8 +845,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 1  1 extensions
-			  Extensions  1
+			"Extensions  1
 			    plan-mode  · local
 			      /tmp/extensions/plan-mode/index.js"
 		`);
@@ -868,8 +884,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 2  2 extensions
-			  Extensions  2
+			"Extensions  2
 			    webfetch.ts  · local
 			      /tmp/extensions/webfetch.ts
 			    plan-mode  · local
@@ -910,8 +925,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 2  2 extensions
-			  Extensions  2
+			"Extensions  2
 			    foo  · local
 			      /tmp/extensions/foo/index.ts
 			    bar  · local
@@ -952,8 +966,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 2  2 extensions
-			  Extensions  2
+			"Extensions  2
 			    alpha/tools  · cli
 			      /tmp/alpha/tools/index.ts
 			    beta/tools  · cli
@@ -985,8 +998,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 1  1 extensions
-			  Extensions  1
+			"Extensions  1
 			    main.ts  · local
 			      /tmp/extensions/my-ext/main.ts"
 		`);
@@ -1019,8 +1031,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 1  1 extensions
-			  Extensions  1
+			"Extensions  1
 			    pi-markdown-preview  · npm:pi-markdown-preview
 			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts"
 		`);
@@ -1059,8 +1070,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 2  2 extensions
-			  Extensions  2
+			"Extensions  2
 			    primary-package  · npm:primary-package
 			      /tmp/project/.candy/npm/node_modules/primary-package/index.ts
 			    primary-package:../sibling-package  · npm:primary-package
@@ -1104,8 +1114,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 2  2 extensions
-			  Extensions  2
+			"Extensions  2
 			    primary-package  · npm:primary-package
 			      C:/Users/me/.candy/agent/npm/node_modules/primary-package/index.ts
 			    primary-package:../sibling-package  · npm:primary-package
@@ -1113,10 +1122,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 		`);
 	});
 
-	test("captures mixed extension layouts in expanded output", () => {
+	test("captures mixed extension layouts in verbose output", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
-			toolOutputExpanded: true,
+			verbose: true,
 			extensions: createExtensionFixtures(),
 			useRealScopeGroups: true,
 		});
@@ -1126,8 +1135,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
-			"Loaded resources · 8  8 extensions
-			  Extensions  8
+			"Extensions  8
 			    answer.ts  · local
 			      /tmp/project/.candy/extensions/answer.ts
 			    local-index  · local
@@ -1164,7 +1172,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const collapsed = renderAll(fakeThis.loadedResourcesContainer).replace(/\\/g, "/");
-		expect(collapsed).toContain("Loaded resources · 2  2 context");
+		expect(collapsed).not.toContain("Loaded resources");
 		expect(collapsed).not.toContain("AGENTS.md");
 		const details = normalizeResourceDetails(fakeThis);
 		expect(details).toContain("~/.candy/agent/AGENTS.md");
@@ -1192,12 +1200,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output.indexOf(".candy/APPEND_SYSTEM.md")).toBeLessThan(output.indexOf("AGENTS.md"));
 	});
 
-	test("shows full context paths when expanded", () => {
+	test("shows full context paths in verbose output", () => {
 		const home = homedir();
 		const cwd = path.join(home, "Development", "pi-mono");
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
-			toolOutputExpanded: true,
+			verbose: true,
 			cwd,
 			contextFiles: [
 				{ path: path.join(home, ".candy", "agent", "AGENTS.md") },
@@ -1243,7 +1251,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
-		expect(output).toContain("[Skill conflicts]");
+		expect(output).toContain("Skill conflicts");
 		expect(output).not.toContain("[Skills]");
 	});
 });

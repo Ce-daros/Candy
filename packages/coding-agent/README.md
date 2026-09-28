@@ -4,15 +4,12 @@
   </a>
 </p>
 <p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
   <a href="https://www.npmjs.com/package/@candy/coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@candy/coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
 </p>
 
-> New issues and PRs from new contributors are closed automatically. Maintainers review closed submissions daily. See [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md).
-
 # candy
 
-candy is a minimal, extensible AI agent for the terminal. Adapt candy to your workflow, not the other way around.
+Candy is an agent harness for daily work in the terminal. Its interface brings model selection, session history, agent resources, and explicit commands into a consistent workflow. Skills, prompt templates, and extensions adapt it to specialized work.
 
 Its fullscreen interface shows assistant text, thinking, and tool activity in a shared conversation. The Powerbar handles model and thinking selection; its Sources, Details, History, and Agent pages handle the surrounding tasks. Type `/` in an empty editor to search commands and settings. Read the [terminal guide](docs/usage.md) for the current controls.
 
@@ -65,7 +62,7 @@ npm run check
 ./test.sh
 ```
 
-Read [CONTRIBUTING.md](https://github.com/earendil-works/pi/blob/main/CONTRIBUTING.md) before opening an issue or pull request. It defines the contribution gate, issue quality bar, and required checks. Read [AGENTS.md](https://github.com/earendil-works/pi/blob/main/AGENTS.md) for repository-specific implementation, testing, dependency, and release rules.
+Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for development philosophy and contribution expectations, [DESIGN.md](../../DESIGN.md) for product and interaction design, and [AGENTS.md](../../AGENTS.md) for implementation, testing, dependency, and release rules.
 
 ## License
 

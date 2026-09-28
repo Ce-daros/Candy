@@ -108,6 +108,18 @@ describe("SettingsSelectorComponent", () => {
 		expect(onDefaultThinkingLevelChange).toHaveBeenCalledWith("high");
 	});
 
+	it("cycles a setting through the shared settings change path in either direction", () => {
+		const onShowImagesChange = vi.fn();
+		const selector = new SettingsSelectorComponent(
+			{ autoCompact: false, warnings: {} } as unknown as SettingsConfig,
+			{ onAutoCompactChange: onShowImagesChange, onCancel: () => {} } as unknown as SettingsCallbacks,
+		);
+		selector.cycleSetting("autocompact", 1);
+		expect(onShowImagesChange).toHaveBeenLastCalledWith(true);
+		selector.cycleSetting("autocompact", -1);
+		expect(onShowImagesChange).toHaveBeenLastCalledWith(false);
+	});
+
 	it("navigates five categories and searches settings from the bottom input", () => {
 		const config: SettingsConfig = {
 			autoCompact: true,

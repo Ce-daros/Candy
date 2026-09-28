@@ -20,7 +20,6 @@ export class ComposerPanel implements Component, Focusable {
 	private readonly transition: PanelTransition;
 	private content: PanelContent | undefined;
 	private inputTarget: Component | undefined;
-	private compact = false;
 	private heightRatio = 0.8;
 	private focusedValue = false;
 	private visibleRows = 0;
@@ -43,11 +42,10 @@ export class ComposerPanel implements Component, Focusable {
 		this.transition.setOptions(enabled, intensity);
 	}
 
-	show(content: PanelContent, compact = false, heightRatio = 0.8, inputTarget: Component = content): void {
+	show(content: PanelContent, _compact = false, heightRatio = 0.8, inputTarget: Component = content): void {
 		if (this.inputTarget && isFocusable(this.inputTarget)) this.inputTarget.focused = false;
 		this.content = content;
 		this.inputTarget = inputTarget;
-		this.compact = compact;
 		this.heightRatio = heightRatio;
 		if (isFocusable(inputTarget)) inputTarget.focused = this.focusedValue;
 		this.transition.setOpen(true);
@@ -89,7 +87,7 @@ export class ComposerPanel implements Component, Focusable {
 		const available = Math.max(3, Math.floor(this.ui.terminal.rows * this.heightRatio) - 2);
 		this.content.setAvailableHeight?.(available);
 		const lines = this.content.render(innerWidth);
-		const height = this.compact ? Math.min(available, lines.length) : available;
+		const height = Math.min(available, lines.length);
 		const progress = this.transition.value();
 		const { expanded, growth, topReveal } = panelPhase(progress);
 		this.visibleRows = Math.max(2, Math.round(2 + (height - 2) * growth));

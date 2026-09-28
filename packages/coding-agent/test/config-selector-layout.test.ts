@@ -50,7 +50,9 @@ describe("ConfigSelectorComponent viewport", () => {
 		expect(text).toContain("example.ts");
 		expect(text).toContain("C:/demo/.candy/extensions/example.ts");
 		rows = 45;
-		expect(selector.render(160).length).toBeGreaterThan(compact.length);
+		const resized = stripAnsi(selector.render(160).join("\n"));
+		expect(resized).toContain("example.ts");
+		expect(selector.render(160).length).toBeLessThanOrEqual(36);
 	});
 
 	it("limits Agent resource view to skills and reports toggles", async () => {
@@ -89,7 +91,7 @@ describe("ConfigSelectorComponent viewport", () => {
 			{ resourceTypes: ["skills"], onToggle: () => toggles++ },
 		);
 		const text = stripAnsi(selector.render(80).join("\n"));
-		expect(text).toContain("Skills");
+		expect(text).not.toContain("Skills");
 		expect(text).toContain("review");
 		expect(text).not.toContain("Extensions");
 		selector.getResourceList().handleInput(" ");

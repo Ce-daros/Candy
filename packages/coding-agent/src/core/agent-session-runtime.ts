@@ -66,10 +66,6 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
 
 /**
  * Owns the current AgentSession plus its cwd-bound services.
- *
- * Session replacement methods tear down the current runtime first, then create
- * and apply the next runtime. If creation fails, the error is propagated to the
- * caller. The caller is responsible for user-facing error handling.
  */
 export class AgentSessionRuntime {
 	private rebindSession?: (session: AgentSession) => Promise<void>;
@@ -242,19 +238,29 @@ export class AgentSessionRuntime {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
 
-		await this.teardownCurrent("new", sessionManager.getSessionFile());
-		this.apply(
-			await this.createRuntime({
-				cwd: this.cwd,
-				agentDir: this.services.agentDir,
-				sessionManager,
-				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
-			}),
-		);
-		if (options?.setup) {
-			await options.setup(this.session.sessionManager);
-			this.session.refreshContext();
+		const replacement = await this.createRuntime({
+			cwd: this.cwd,
+			agentDir: this.services.agentDir,
+			sessionManager,
+			sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
+		});
+		try {
+			if (options?.setup) {
+				await options.setup(replacement.session.sessionManager);
+				replacement.session.refreshContext();
+			}
+		} catch (error) {
+			replacement.session.dispose();
+			throw error;
 		}
+
+		try {
+			await this.teardownCurrent("new", sessionManager.getSessionFile());
+		} catch (error) {
+			replacement.session.dispose();
+			throw error;
+		}
+		this.apply(replacement);
 		await this.finishSessionReplacement(options?.withSession);
 		return { cancelled: false };
 	}
