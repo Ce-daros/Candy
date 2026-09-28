@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Renamed `@earendil-works/pi-session-backend-sqlite-node` to `@candy/session-backend-sqlite-node`. Update package dependencies and imports.
+
 ## [0.87.1] - 2026-09-22
 
 ## [0.87.0] - 2026-09-21

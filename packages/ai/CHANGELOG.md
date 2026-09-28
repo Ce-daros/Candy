@@ -8,6 +8,7 @@
 - Unified image models into the regular `Provider`/`Models` surface. The separate `ImagesModels` collection is removed: `createImagesModels()`, `createImagesProvider()`, `ImagesProvider`, `openrouterImagesProvider()`, `builtinImagesProviders()`, and `builtinImagesModels()` are gone. Use `builtinModels()`, `models.getModelOfType("image", ...)`, `models.generateImages()`, and `createProvider({ models, images })` instead. Existing unqualified reads remain chat-only.
 - Image models are now `ImageModel` with a required `type: "image"` and share `BaseModel` with chat models. The old plural image type names (`ImagesModel`, `ImagesApi`, `KnownImagesApi`, `KnownImagesProvider`, and `ImagesProviderId`) are removed. `generateImages()` accepts only image models. Output modalities (`output`) remain on image models only.
 - Generated model data schema is now version 6: every entry carries `type`, operation-specific catalogs include chat, image, and classifier models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate:model-data`.
+- Renamed `@earendil-works/pi-ai` to `@candy/ai` and `pi-ai` to `candy-ai`. Update imports and use `CANDY_CACHE_RETENTION` and `CANDY_OAUTH_CALLBACK_HOST` for the renamed environment settings.
 
 ### Added
 
@@ -28,6 +29,11 @@
 - Fixed model-level `samplingParams` being dropped by direct `stream()`/`complete()` calls on OpenAI-compatible APIs ([#9506](https://github.com/earendil-works/pi/issues/9506)).
 - Fixed Mistral GLM models producing empty text blocks and split thinking blocks from empty content deltas, which could make later requests fail with "Expected at most one leading ThinkChunk" ([#9674](https://github.com/earendil-works/pi/issues/9674)).
 - Fixed OpenAI Fast mode requests being priced at the standard rate when the response reports `service_tier: "fast"`, as GPT-6 models do ([#10034](https://github.com/earendil-works/pi/issues/10034)).
+- Fixed GitHub Copilot Claude Opus 5.5 reasoning-effort handling when upstream model metadata is incomplete.
+
+### Changed
+
+- Updated the OpenAI SDK to 7.23.0 and provider regression fixtures for current OpenCode Go and Zen catalogs.
 
 ## [0.87.1] - 2026-09-22
 
