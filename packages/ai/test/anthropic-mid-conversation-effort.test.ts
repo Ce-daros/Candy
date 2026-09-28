@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { stream } from "../src/api/anthropic-messages.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { AssistantMessage, Context, Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 interface WireMessage {
 	role: string;

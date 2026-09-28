@@ -1,7 +1,11 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { completeSimple, getModel } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const completeSimple = builtinRuntime.completeSimple.bind(builtinRuntime);
+
 import { getEnvApiKey } from "../src/env-api-keys.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, Context, Model, StopReason, Tool, ToolCall, ToolResultMessage } from "../src/types.ts";
 import { StringEnum } from "../src/utils/typebox-helpers.ts";
 import { hasBedrockCredentials } from "./bedrock-utils.ts";

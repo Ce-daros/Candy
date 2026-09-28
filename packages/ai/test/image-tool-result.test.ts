@@ -2,8 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/compat.ts";
-import { complete, getModel } from "../src/compat.ts";
+import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/types.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { StreamOptions } from "../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;

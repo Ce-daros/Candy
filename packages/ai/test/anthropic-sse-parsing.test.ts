@@ -3,8 +3,9 @@ import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
 import { transformMessages } from "../src/api/transform-messages.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, Model, ToolCall } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 function createSseResponse(events: Array<{ event: string; data: string }>): Response {
 	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");

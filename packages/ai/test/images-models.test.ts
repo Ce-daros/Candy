@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { AuthContext } from "../src/auth/types.ts";
-import { getModels as getCompatModels } from "../src/compat.ts";
 import {
 	type CreateProviderOptions,
 	createModels,
@@ -18,6 +17,7 @@ import {
 	getBuiltinImageModel,
 	getBuiltinImageModels,
 	getBuiltinModels,
+	getBuiltinModels as getCompatModels,
 } from "../src/providers/all.ts";
 import type {
 	AnyModel,

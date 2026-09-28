@@ -271,12 +271,7 @@ describe("pi-messages", () => {
 	});
 });
 
-describe("pi-messages api registration", () => {
-	it("is registered as a builtin api provider", async () => {
-		const { getApiProvider } = await import("../src/compat.ts");
-		expect(getApiProvider("pi-messages")).toBeDefined();
-	});
-
+describe("pi-messages API", () => {
 	it("is a known api usable on models", () => {
 		const api: Api = "pi-messages";
 		expect(api).toBe("pi-messages");

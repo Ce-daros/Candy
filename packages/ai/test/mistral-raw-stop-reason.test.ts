@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { stream as streamMistral } from "../src/api/mistral-conversations.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { FetchFunction } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const model = getModel("mistral", "devstral-medium-latest");
 const context = normalizeContext({

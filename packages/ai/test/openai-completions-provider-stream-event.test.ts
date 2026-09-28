@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { completeSimple } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const completeSimple = builtinRuntime.completeSimple.bind(builtinRuntime);
+
 import type { Model } from "../src/types.ts";
 
 const mockState = vi.hoisted(() => ({

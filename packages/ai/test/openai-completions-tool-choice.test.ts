@@ -1,8 +1,13 @@
 import { Type } from "typebox";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { convertMessages } from "../src/api/openai-completions.ts";
-import { getModel, normalizeContext, streamSimple } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { AssistantMessage, Model, SimpleStreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const mockState = vi.hoisted(() => ({
 	lastParams: undefined as unknown,

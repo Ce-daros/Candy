@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
 
 const bedrockMock = vi.hoisted(() => ({
 	constructorCalls: [] as Array<Record<string, unknown>>,
@@ -45,8 +46,9 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 });
 
 import type { BedrockOptions } from "../src/api/bedrock-converse-stream.ts";
-import { getModel, stream as streamBedrock } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Context, Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
@@ -88,7 +90,7 @@ async function captureClientConfig(
 	options: BedrockOptions = {},
 ): Promise<Record<string, unknown>> {
 	bedrockMock.constructorCalls.length = 0;
-	await streamBedrock(model, context, { cacheRetention: "none", ...options }).result();
+	await streamBedrock(model, normalizeContext(context), { cacheRetention: "none", ...options }).result();
 	expect(bedrockMock.constructorCalls).toHaveLength(1);
 	return bedrockMock.constructorCalls[0];
 }

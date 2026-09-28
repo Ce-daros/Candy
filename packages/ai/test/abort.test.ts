@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { complete, getModel, stream } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+const stream = builtinRuntime.stream.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, Context, Model, StreamOptions } from "../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;

@@ -2,8 +2,9 @@ import { arch, platform, release } from "node:os";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { stream as streamMistral } from "../src/api/mistral-conversations.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, FetchFunction, Model, ProviderResponse } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const CANDY_USER_AGENT = `candy (${platform()} ${release()}; ${arch()})`;
 

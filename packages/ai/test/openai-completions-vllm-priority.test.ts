@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 interface CapturedCompletionsPayload {
 	priority?: number;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { getModel, streamSimple } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Context, Model, SimpleStreamOptions } from "../src/types.ts";
+import { streamApiSimple as streamSimple } from "./api-runtime.ts";
 
 interface AnthropicTemperaturePayload {
 	temperature?: number;

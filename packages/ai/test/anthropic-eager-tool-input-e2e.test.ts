@@ -1,7 +1,12 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { type BuiltinProvider, complete, getModels, getProviders } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
 import { getEnvApiKey } from "../src/env-api-keys.ts";
+import type { BuiltinProvider } from "../src/providers/all.ts";
+import { getBuiltinModels as getModels, getBuiltinProviders as getProviders } from "../src/providers/all.ts";
 import type { Api, KnownProvider, Model, ProviderStreamOptions, Tool } from "../src/types.ts";
 import { resolveApiKey } from "./oauth.ts";
 

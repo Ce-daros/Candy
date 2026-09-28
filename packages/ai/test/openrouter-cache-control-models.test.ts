@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getModel } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 
 const OPENROUTER_ANTHROPIC_LATEST_MODEL_IDS = [
 	"~anthropic/claude-fable-latest",

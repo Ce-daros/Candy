@@ -1,6 +1,11 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { complete, getEnvApiKey, getModel } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
+import { getEnvApiKey } from "../src/env-api-keys.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { AssistantMessage, Context, Message, Tool, ToolCall } from "../src/types.ts";
 
 const testToolSchema = Type.Object({

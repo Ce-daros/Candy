@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
-import { streamSimple } from "../src/compat.ts";
 import type { Api, Context, Model, Tool } from "../src/types.ts";
+import { streamApiSimple as streamSimple } from "./api-runtime.ts";
 
 class PayloadCaptured extends Error {}
 

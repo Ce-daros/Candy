@@ -1,6 +1,10 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { getModel, stream } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const stream = builtinRuntime.stream.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Context, Tool } from "../src/types.ts";
 import { resolveApiKey } from "./oauth.ts";
 

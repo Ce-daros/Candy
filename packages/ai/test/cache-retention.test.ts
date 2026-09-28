@@ -2,9 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { getModel, normalizeContext, stream } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const stream = builtinRuntime.stream.bind(builtinRuntime);
+
 import { MODELS } from "../src/models.generated.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 class PayloadCaptured extends Error {
 	constructor() {

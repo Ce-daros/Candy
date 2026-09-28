@@ -17,7 +17,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { complete, getModels } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
+import { getBuiltinModels as getModels } from "../src/providers/all.ts";
 import type { Context } from "../src/types.ts";
 import { hasBedrockCredentials } from "./bedrock-utils.ts";
 

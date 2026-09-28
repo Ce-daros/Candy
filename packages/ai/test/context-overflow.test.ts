@@ -14,7 +14,11 @@
 import type { ChildProcess } from "child_process";
 import { execSync, spawn } from "child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { complete, getModel, getModels } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel, getBuiltinModels as getModels } from "../src/providers/all.ts";
 import type { AssistantMessage, Context, Model, Usage } from "../src/types.ts";
 import { isContextOverflow } from "../src/utils/overflow.ts";
 import { hasAzureOpenAICredentials } from "./azure-utils.ts";

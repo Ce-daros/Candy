@@ -92,8 +92,9 @@ vi.mock("@google/genai", () => {
 
 import { stream as streamGoogleGenerativeAi } from "../src/api/google-generative-ai.ts";
 import { stream as streamGoogleVertex } from "../src/api/google-vertex.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, Model, StreamOptions } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 beforeEach(() => {
 	googleGenAiMock.streamChunks = undefined;

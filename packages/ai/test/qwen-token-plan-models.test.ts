@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { getModels, streamSimple } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
+
 import { findEnvKeys } from "../src/env-api-keys.ts";
+import { getBuiltinModels as getModels } from "../src/providers/all.ts";
 
 vi.mock("openai", () => {
 	class FakeOpenAI {

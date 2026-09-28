@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { complete, getModel } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Context } from "../src/types.ts";
 
 describe.skipIf(!process.env.OPENAI_API_KEY)("openai responses cache affinity e2e", () => {

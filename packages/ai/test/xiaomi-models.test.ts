@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getModels } from "../src/compat.ts";
+import { getBuiltinModels as getModels } from "../src/providers/all.ts";
 
 const XIAOMI_PROVIDERS = ["xiaomi", "xiaomi-token-plan-cn", "xiaomi-token-plan-ams", "xiaomi-token-plan-sgp"] as const;
 const DEPRECATED_MODEL_IDS = ["mimo-v2-flash", "mimo-v2-omni", "mimo-v2-pro"] as const;

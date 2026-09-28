@@ -49,9 +49,10 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 });
 
 import { stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { AssistantMessage, Model } from "../src/types.ts";
 import type { AssistantMessageDiagnostic } from "../src/utils/diagnostics.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const DIAGNOSTIC_TYPE = "bedrock_response_failure";
 const VALIDATION_MESSAGE = "The provided model identifier is invalid.";

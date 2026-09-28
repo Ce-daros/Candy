@@ -88,7 +88,8 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 	};
 });
 
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const context = normalizeContext({
 	systemPrompt: "",

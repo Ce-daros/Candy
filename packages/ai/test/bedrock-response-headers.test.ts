@@ -1,8 +1,9 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Model, ProviderResponse } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 

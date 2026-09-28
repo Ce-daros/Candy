@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { stream, streamSimple } from "../src/compat.ts";
 import type { Api, Context, Model, StreamOptions } from "../src/types.ts";
+import { streamApi as stream, streamApiSimple as streamSimple } from "./api-runtime.ts";
 
 interface SamplingPayload {
 	temperature?: number;

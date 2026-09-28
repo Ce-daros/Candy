@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { streamSimple } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
+
 import type { Model, SimpleStreamOptions, ThinkingBudgets } from "../src/types.ts";
 
 const mockState = vi.hoisted(() => ({

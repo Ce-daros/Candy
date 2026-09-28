@@ -1,7 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 function createSseResponse(events: Array<{ event: string; data: string }>): Response {
 	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");

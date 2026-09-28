@@ -4,6 +4,9 @@
 
 ### Breaking Changes
 
+- Removed the unused deprecated `image-models.ts` catalog wrapper. Use the typed `getBuiltinImageModel()` and related accessors from `@candy/ai/providers/all`.
+- Removed the deprecated `@candy/ai/compat` entrypoint and its global stream/provider registry aliases. Use explicit provider factories with `Models`, or import a specific API implementation from `@candy/ai/api/*`.
+- Removed deprecated provider-specific `stream*` and `streamSimple*` aliases. Use the matching API implementation or a `Models` provider collection.
 - Removed the built-in Ant Ling, Baseten, and Radius providers, including Radius OAuth and model-catalog loading. The generic `pi-messages` API remains available to custom providers.
 - Unified image models into the regular `Provider`/`Models` surface. The separate `ImagesModels` collection is removed: `createImagesModels()`, `createImagesProvider()`, `ImagesProvider`, `openrouterImagesProvider()`, `builtinImagesProviders()`, and `builtinImagesModels()` are gone. Use `builtinModels()`, `models.getModelOfType("image", ...)`, `models.generateImages()`, and `createProvider({ models, images })` instead. Existing unqualified reads remain chat-only.
 - Image models are now `ImageModel` with a required `type: "image"` and share `BaseModel` with chat models. The old plural image type names (`ImagesModel`, `ImagesApi`, `KnownImagesApi`, `KnownImagesProvider`, and `ImagesProviderId`) are removed. `generateImages()` accepts only image models. Output modalities (`output`) remain on image models only.

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { getModel as getCompatModel } from "../src/compat.ts";
 import {
 	createModels,
 	createProvider,
@@ -10,7 +9,7 @@ import {
 	type Provider,
 } from "../src/models.ts";
 import { InMemoryModelsStore, type ModelsStoreEntry } from "../src/models-store.ts";
-import { getBuiltinModel } from "../src/providers/all.ts";
+import { getBuiltinModel, getBuiltinModel as getCompatModel } from "../src/providers/all.ts";
 import { fauxAssistantMessage, fauxProvider } from "../src/providers/faux.ts";
 import type { Api, ImageApi, ImageModel, Model } from "../src/types.ts";
 import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { complete } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
 import { MODELS } from "../src/models.generated.ts";
 import type { Model } from "../src/types.ts";
 

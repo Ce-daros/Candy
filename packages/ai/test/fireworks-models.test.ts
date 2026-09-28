@@ -3,11 +3,15 @@ import type { AddressInfo } from "node:net";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { normalizeContext, streamSimple } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
+
 import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
 import { getSupportedThinkingLevels, hasApi } from "../src/models.ts";
 import { getBuiltinModels } from "../src/providers/all.ts";
 import type { Api, Context, Model, ThinkingLevel, Tool } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const originalFireworksApiKey = process.env.FIREWORKS_API_KEY;
 

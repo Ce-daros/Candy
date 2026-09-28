@@ -1,11 +1,8 @@
 export type { Static, TSchema } from "typebox";
 export { Type } from "typebox";
 
-// Core only, side-effect free: no generated catalogs, no provider factories,
-// no api-registry, no OAuth implementations, no compat. Provider factories
-// live under "@candy/ai/providers/*", API implementations under
-// "@candy/ai/api/*", the old global API under
-// "@candy/ai/compat".
+// Core exports stay side-effect free. Provider factories live under
+// "@candy/ai/providers/*", and API implementations live under "@candy/ai/api/*".
 export type { AnthropicEffort, AnthropicOptions, AnthropicThinkingDisplay } from "./api/anthropic-messages.ts";
 export type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
 export type { BedrockOptions, BedrockThinkingDisplay } from "./api/bedrock-converse-stream.ts";

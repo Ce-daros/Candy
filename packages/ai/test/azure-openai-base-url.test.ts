@@ -3,8 +3,9 @@ import type { ResponseStreamEvent } from "openai/resources/responses/responses.j
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stream as streamAzureOpenAIResponses } from "../src/api/azure-openai-responses.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, Context, Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 interface CapturedAzureClientOptions {
 	apiKey: string;

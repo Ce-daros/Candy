@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getModels, getProviders } from "../src/compat.ts";
 import { hasApi } from "../src/models.ts";
+import { getBuiltinModels as getModels, getBuiltinProviders as getProviders } from "../src/providers/all.ts";
 import type { Api, Model } from "../src/types.ts";
 
 function getAllModels(): Model<Api>[] {

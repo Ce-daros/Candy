@@ -53,8 +53,9 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 
 import type { BedrockOptions } from "../src/api/bedrock-converse-stream.ts";
 import { stream as streamBedrock, streamSimple as streamSimpleBedrock } from "../src/api/bedrock-converse-stream.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const context = normalizeContext({
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getModel, streamSimple } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Api, Context, Model, SimpleStreamOptions } from "../src/types.ts";
 
 type SimpleOptionsWithExtras = SimpleStreamOptions & Record<string, unknown>;

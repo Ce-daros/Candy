@@ -54,7 +54,6 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Vertex AI](#vertex-ai)
   - [CLI Login](#cli-login)
   - [Programmatic OAuth](#programmatic-oauth)
-- [Migrating from the Old Global API](#migrating-from-the-old-global-api)
 - [Development](#development)
 - [License](#license)
 
@@ -829,19 +828,6 @@ const pixels = createProvider({
   },
 });
 models.setProvider(pixels);
-```
-
-The old global API (`getImageModel()` / `getImageModels()` / `getImageProviders()` / `generateImages()`) remains available on the [compat entrypoint](#migrating-from-the-old-global-api):
-
-```typescript
-import { getImageModel, generateImages } from '@candy/ai/compat';
-
-const model = getImageModel('openrouter', 'google/gemini-2.5-flash-image');
-const result = await generateImages(model, {
-  input: [{ type: 'text', text: 'Generate a red circle on a plain white background.' }]
-}, {
-  apiKey: process.env.OPENROUTER_API_KEY
-});
 ```
 
 Some models also support image input:
@@ -1625,8 +1611,6 @@ Rules:
 - Without code splitting, bundlers fold reachable lazy API implementations into the single bundle. A single-provider bundle then includes that provider's SDK; `providers/all` includes all statically visible SDKs. Bedrock is the exception: its AWS SDK implementation is loaded through a bundler-opaque Node-only import.
 - Importing `@candy/ai/api/<api-id>` directly loads that API implementation and its SDK immediately.
 
-Avoid `@candy/ai/compat` in new bundled apps; it preserves the old global API and imports the full built-in catalog surface.
-
 For single-file Node ESM bundles, some SDK dependencies may still use dynamic CommonJS `require()` internally. If you see errors such as `Dynamic require of "child_process" is not supported`, add a Node `require` shim to the bundle. With esbuild:
 
 ```bash
@@ -1768,33 +1752,6 @@ Provider notes:
 
 **GitHub Copilot**: If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
 
-## Migrating from the Old Global API
-
-Older versions exposed a global API: `stream()`/`complete()` dispatching on `model.api` via a global registry, sync `getModel()`/`getModels()`/`getProviders()` catalog reads, `registerApiProvider()`, `getEnvApiKey()`, and per-API lazy stream functions. That surface lives unchanged on the **compat entrypoint**:
-
-```typescript
-// Before
-import { getModel, complete } from '@candy/ai';
-
-// After (verbatim behavior, one import-path change)
-import { getModel, complete } from '@candy/ai/compat';
-```
-
-Compat is a strict superset of the root entrypoint, so a file can switch its import path wholesale. It will be removed in a future release; migrate to `createModels()` + provider factories:
-
-| Old | New |
-|-----|-----|
-| `getModel('openai', 'gpt-4o-mini')` | `models.getModel('openai', 'gpt-4o-mini')` or `getBuiltinModel()` from `providers/all` |
-| `getModels('anthropic')` / `getProviders()` | `models.getModels('anthropic')` / `models.getProviders()` or `getBuiltin*` |
-| `stream(model, ctx, opts)` (env-key injection) | `models.stream(model, ctx, opts)` (provider auth resolution) |
-| `registerApiProvider({ api, stream, streamSimple })` | `createProvider({ id, auth, models, api })` + `models.setProvider()` |
-| `getEnvApiKey('openai')` | `await models.getAuth(model.provider)` |
-| `streamAnthropic(model, ctx, opts)` | `stream` from `@candy/ai/api/anthropic-messages`, or a provider in a collection |
-| `registerFauxProvider()` | `fauxProvider()` + `models.setProvider()` |
-| `getImageModel('openrouter', id)` / `generateImages(model, ctx, { apiKey })` | `models.getModelOfType('image', 'openrouter', id)` / `models.generateImages(model, ctx)` |
-
-The separate `ImagesModels`/`ImagesProvider` collection that existed briefly (`createImagesModels()`, `createImagesProvider()`, `openrouterImagesProvider()`, `builtinImagesModels()`) is gone: image models now live on the regular provider. Replace `builtinImagesModels()` with `builtinModels()`, `imagesModels.getModel()` with `models.getModelOfType('image', ...)`, and `createImagesProvider({ models, api })` with `createProvider({ models, images })`. The old plural image type names are removed; use `ImageModel` and `ImageApi`, and add `type: "image"` to image model literals.
-
 ## Development
 
 ### Adding a New Provider
@@ -1830,7 +1787,7 @@ Add a lazy wrapper `src/api/<api-id>.lazy.ts` (`<name>Api()` via `lazyApi()`) so
 - `createProvider()` wiring catalog + auth + the lazy API wrapper
 - Auth: `envApiKeyAuth` for standard key providers, a custom `ApiKeyAuth` for ambient auth (AWS profiles, ADC), `lazyOAuth` where an OAuth flow exists
 - Register the factory in `src/providers/all.ts`
-- If it is a new API: register it in the builtin list in `src/compat.ts` and add the package subpath export in `package.json`
+- If it is a new API: add the package subpath export in `package.json`
 
 #### 5. Tests (`test/`)
 

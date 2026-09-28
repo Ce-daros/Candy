@@ -4,8 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { ResponseFunctionCallOutputItemList } from "openai/resources/responses/responses.js";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import type { Api, Context, Model, StreamOptions, Tool, ToolResultMessage } from "../src/compat.ts";
-import { complete, getModel } from "../src/compat.ts";
+import type { Api, Context, Model, StreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const complete = builtinRuntime.complete.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
 import { resolveApiKey } from "./oauth.ts";
 

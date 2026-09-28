@@ -1,8 +1,9 @@
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { getModel, normalizeContext } from "../src/compat.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 type CapturedHeaders = Headers | string[][] | Record<string, string | readonly string[]> | undefined;
 

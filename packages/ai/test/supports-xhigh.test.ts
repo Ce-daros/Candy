@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getModel, getSupportedThinkingLevels } from "../src/compat.ts";
+import { getSupportedThinkingLevels } from "../src/models.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 
 describe("getSupportedThinkingLevels", () => {
 	it("includes max but not xhigh for Anthropic Opus 4.6 on anthropic-messages API", () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getModel, getModels, streamSimple } from "../src/compat.ts";
 import { hasApi } from "../src/models.ts";
+import { getBuiltinModel as getModel, getBuiltinModels as getModels } from "../src/providers/all.ts";
 import type { AssistantMessage, Context, Model } from "../src/types.ts";
+import { streamApiSimple as streamSimple } from "./api-runtime.ts";
 
 interface AnthropicPayload {
 	messages?: Array<{

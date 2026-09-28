@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getModel, stream } from "../src/compat.ts";
+import { builtinRuntime } from "./builtin-runtime.ts";
+
+const stream = builtinRuntime.stream.bind(builtinRuntime);
+
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Context, Model } from "../src/types.ts";
 
 function makeContext(): Context {

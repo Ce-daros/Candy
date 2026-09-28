@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { streamSimple as streamSimpleOpenAICodexResponses } from "../src/api/openai-codex-responses.ts";
-import { clampThinkingLevel, getModel, getSupportedThinkingLevels, normalizeContext } from "../src/compat.ts";
+import { clampThinkingLevel, getSupportedThinkingLevels } from "../src/models.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import type { Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 function mockToken(): string {
 	const payload = Buffer.from(
