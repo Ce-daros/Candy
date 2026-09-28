@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import { getModel, normalizeContext } from "../src/compat.ts";
+import { hasApi } from "../src/models.ts";
+import { getBuiltinModels } from "../src/providers/all.ts";
 import type { Model } from "../src/types.ts";
 
 interface FakeOpenAIClientOptions {
@@ -171,15 +173,18 @@ describe("openai-completions prompt caching", () => {
 		expect(headers["x-session-affinity"]).toBe("session-affinity");
 	});
 
-	it.each(["accounts/fireworks/models/glm-5p2", "accounts/fireworks/routers/glm-5p2-fast"] as const)(
-		"sends Fireworks session affinity for %s",
-		async (modelId) => {
-			const model = getModel("fireworks", modelId);
-			const { headers } = await captureRequest({ sessionId: "fireworks-session" }, model);
+	// The generated catalog refreshes on every models.dev run, so iterate the current
+	// OpenAI-compatible Fireworks models instead of pinning ids.
+	it("sends Fireworks session affinity headers for OpenAI-compatible Fireworks models", async () => {
+		const models = getBuiltinModels("fireworks").filter((model) => hasApi(model, "openai-completions"));
+		expect(models.length).toBeGreaterThan(0);
 
-			expect(headers["x-session-affinity"]).toBe("fireworks-session");
-		},
-	);
+		for (const model of models) {
+			expect(model.compat?.sendSessionAffinityHeaders, model.id).toBe(true);
+			const { headers } = await captureRequest({ sessionId: "fireworks-session" }, model);
+			expect(headers["x-session-affinity"], model.id).toBe("fireworks-session");
+		}
+	});
 
 	it("sends Baseten session affinity for built-in catalog models", async () => {
 		const model = getModel("baseten", "zai-org/GLM-5.2");

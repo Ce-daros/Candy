@@ -6,6 +6,7 @@ import { getModel as getCompatModel, getModels as getCompatModels } from "../src
 import { createModels, createProvider, getSupportedThinkingLevels } from "../src/models.ts";
 import { InMemoryModelsStore } from "../src/models-store.ts";
 import {
+	type BuiltinProvider,
 	builtinModels,
 	builtinProviders,
 	getAllBuiltinModels,
@@ -159,63 +160,81 @@ describe("builtin providers", () => {
 		expect(getSupportedThinkingLevels(getBuiltinModel("google", "gemma-4-31b-it"))).toEqual(["minimal", "high"]);
 	});
 
+	// Mirrors the mid-conversation system message policy in scripts/generate-models.ts
+	// (supportsAnthropicMidConvoSystemMessages, applyOpenAICompletionsTranscriptMetadata,
+	// applyOpenAIResponsesTranscriptMetadata). Asserted against the whole generated
+	// catalog instead of pinned model ids, which churn on every models.dev refresh.
+	const ANTHROPIC_MID_CONVO_SYSTEM = [
+		/^claude-opus-(?:4[.-]8|5(?:[.-]5)?)(?:-\d{8})?$/,
+		/^claude-(?:fable|mythos)-5(?:[.-]1)?(?:-\d{8})?$/,
+	];
+	const OPENAI_MID_CONVO_SYSTEM_MODEL_IDS = new Set([
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.4-pro",
+		"gpt-5.5",
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"gpt-5.6-luna",
+		"gpt-6-astra",
+		"gpt-6-sol",
+		"gpt-6-luna",
+	]);
+	const MOONSHOT_MID_CONVO_SYSTEM_MODEL_IDS = new Set([
+		"kimi-k2.6",
+		"kimi-k2.7-code",
+		"kimi-k2.7-code-highspeed",
+		"kimi-k3",
+	]);
+	const midConvoSystemRules: Record<string, (model: { api: string; id: string }) => boolean> = {
+		anthropic: (model) =>
+			model.api === "anthropic-messages" && ANTHROPIC_MID_CONVO_SYSTEM.some((re) => re.test(model.id)),
+		deepseek: (model) => model.api === "openai-completions" && model.id === "deepseek-v4-pro",
+		fireworks: (model) => model.api === "openai-completions" && model.id.includes("kimi-k3"),
+		"github-copilot": (model) =>
+			(model.api === "anthropic-messages" && ANTHROPIC_MID_CONVO_SYSTEM.some((re) => re.test(model.id))) ||
+			(model.api === "openai-completions" && model.id === "kimi-k3") ||
+			(model.api === "openai-responses" && OPENAI_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id)),
+		moonshotai: (model) => model.api === "openai-completions" && MOONSHOT_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id),
+		"moonshotai-cn": (model) =>
+			model.api === "openai-completions" && MOONSHOT_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id),
+		openai: (model) => model.api === "openai-responses" && OPENAI_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id),
+		"openai-codex": (model) =>
+			model.api === "openai-codex-responses" && OPENAI_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id),
+		openrouter: (model) =>
+			model.api === "openai-completions" &&
+			model.id.startsWith("openai/") &&
+			OPENAI_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id.slice("openai/".length)),
+		opencode: (model) =>
+			(model.api === "anthropic-messages" && ANTHROPIC_MID_CONVO_SYSTEM.some((re) => re.test(model.id))) ||
+			(model.api === "openai-completions" && model.id === "kimi-k3") ||
+			(model.api === "openai-responses" && OPENAI_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id)),
+		"opencode-go": (model) =>
+			(model.api === "openai-completions" && model.id === "kimi-k3") ||
+			(model.api === "openai-responses" && OPENAI_MID_CONVO_SYSTEM_MODEL_IDS.has(model.id)),
+	};
+
+	// `compat` resolves to `never` for catalogs mixing APIs without a compat branch;
+	// read the flag structurally instead of through the conditional type.
+	function hasMidConvoSystemMessages(model: { compat?: unknown }): boolean {
+		const compat = model.compat as { supportsMidConvoSystemMessages?: boolean } | undefined;
+		return compat?.supportsMidConvoSystemMessages === true;
+	}
+
 	it("enables mid-conversation system messages only for verified models", () => {
-		const models = builtinModels();
-		const supported = [
-			["moonshotai", "kimi-k2.6"],
-			["moonshotai", "kimi-k2.7-code"],
-			["moonshotai", "kimi-k2.7-code-highspeed"],
-			["moonshotai", "kimi-k3"],
-			["moonshotai-cn", "kimi-k2.6"],
-			["moonshotai-cn", "kimi-k2.7-code"],
-			["moonshotai-cn", "kimi-k2.7-code-highspeed"],
-			["moonshotai-cn", "kimi-k3"],
-			["fireworks", "accounts/fireworks/models/kimi-k3"],
-			["fireworks", "accounts/fireworks/routers/kimi-k3-fast"],
-			["openai", "gpt-5.4"],
-			["openai", "gpt-5.5"],
-			["openai", "gpt-6-astra"],
-			["openai-codex", "gpt-5.5"],
-			["anthropic", "claude-opus-5"],
-			["opencode", "gpt-5.4"],
-			["opencode", "gpt-5.6-terra"],
-			["opencode-go", "gpt-5.6-luna"],
-			["opencode", "claude-opus-4-8"],
-			["opencode", "claude-opus-5"],
-			["opencode", "kimi-k3"],
-			["opencode-go", "kimi-k3"],
-			["github-copilot", "gpt-5.6-terra"],
-			["github-copilot", "claude-opus-5"],
-			["github-copilot", "claude-opus-4.8"],
-			["github-copilot", "kimi-k3"],
-			["deepseek", "deepseek-v4-pro"],
-			["openrouter", "openai/gpt-5.6-terra"],
-		] as const;
-		const unsupported = [
-			["fireworks", "accounts/fireworks/models/kimi-k2p6"],
-			["openai", "gpt-4.1"],
-			["openai", "gpt-5.2"],
-			["anthropic", "claude-sonnet-4-5"],
-			["google", "gemini-2.5-pro"],
-			["opencode", "gpt-5.2"],
-			["opencode", "claude-sonnet-4-5"],
-			["github-copilot", "claude-sonnet-4.6"],
-			["deepseek", "deepseek-flash"],
-			["openrouter", "anthropic/claude-opus-5"],
-			["openrouter", "moonshotai/kimi-k3"],
-			["openrouter", "openai/gpt-5.6-terra:batch"],
-		] as const;
-		for (const [provider, modelId] of supported) {
-			expect(models.getModel(provider, modelId), `${provider}/${modelId}`).toHaveProperty(
-				"compat.supportsMidConvoSystemMessages",
-				true,
-			);
+		let verifiedCount = 0;
+		let unverifiedCount = 0;
+		for (const [provider, isVerified] of Object.entries(midConvoSystemRules)) {
+			for (const model of getBuiltinModels(provider as BuiltinProvider)) {
+				const verified = isVerified(model);
+				if (verified) verifiedCount++;
+				else unverifiedCount++;
+				expect(hasMidConvoSystemMessages(model), `${provider}/${model.id}`).toBe(verified);
+			}
 		}
-		for (const [provider, modelId] of unsupported) {
-			expect(models.getModel(provider, modelId), `${provider}/${modelId}`).not.toHaveProperty(
-				"compat.supportsMidConvoSystemMessages",
-			);
-		}
+		// Guard against the rules silently matching nothing after upstream churn.
+		expect(verifiedCount).toBeGreaterThan(0);
+		expect(unverifiedCount).toBeGreaterThan(0);
 	});
 
 	it("routes proxied tool changes through verified transports only", () => {

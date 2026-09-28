@@ -1,47 +1,52 @@
 import { describe, expect, it } from "vitest";
 import { getModels, getProviders } from "../src/compat.ts";
+import { hasApi } from "../src/models.ts";
 import type { Api, Model } from "../src/types.ts";
-
-const EXPECTED_CURRENT_ADAPTIVE_THINKING_MODELS = [
-	"anthropic/claude-fable-5",
-	"anthropic/claude-opus-4-8",
-	"anthropic/claude-opus-5",
-	"anthropic/claude-sonnet-5",
-	"cloudflare-ai-gateway/claude-fable-5",
-	"fireworks/accounts/fireworks/models/deepseek-v4-flash-0731",
-	"fireworks/accounts/fireworks/models/gpt-oss-120b",
-	"fireworks/accounts/fireworks/models/qwen3p8-max",
-	"kimi-coding/kimi-for-coding",
-	"kimi-coding/k3",
-	"kimi-coding/kimi-for-coding-highspeed",
-	"opencode/claude-opus-4-8",
-	"opencode/claude-opus-5",
-	"vercel-ai-gateway/anthropic/claude-opus-4.8",
-	"vercel-ai-gateway/anthropic/claude-opus-5",
-	"vercel-ai-gateway/anthropic/claude-sonnet-5",
-];
 
 function getAllModels(): Model<Api>[] {
 	return getProviders().flatMap((provider) => getModels(provider) as Model<Api>[]);
 }
 
+// Mirrors isAnthropicAdaptiveThinkingModel() in scripts/generate-models.ts: the
+// generator flags Messages models by id pattern, so the test asserts the same
+// patterns against the whole generated catalog instead of pinning model ids
+// (the catalog refreshes on every models.dev run and exact ids churn).
+const ADAPTIVE_FAMILIES = /claude-(opus-4[.-][678]|opus[.-]5|sonnet-4[.-]6|sonnet[.-]5|fable-5|mythos-5)/;
+// Families the generator deliberately keeps on budget-based thinking.
+const NON_ADAPTIVE_FAMILIES = /claude-(haiku|opus-4[.-]5|sonnet-4[.-]5)/;
+
 describe("Anthropic adaptive thinking model metadata", () => {
 	it("marks built-in Anthropic Messages models that use adaptive thinking", () => {
-		const flaggedModels = getAllModels()
-			.filter((model): model is Model<"anthropic-messages"> => model.api === "anthropic-messages")
-			.filter((model) => model.compat?.forceAdaptiveThinking === true)
-			.map((model) => `${model.provider}/${model.id}`)
-			.sort();
+		const messagesModels = getAllModels().filter((model) => hasApi(model, "anthropic-messages"));
+		expect(messagesModels.length).toBeGreaterThan(0);
 
-		expect(flaggedModels).toEqual(expect.arrayContaining([...EXPECTED_CURRENT_ADAPTIVE_THINKING_MODELS].sort()));
-		expect(flaggedModels).toEqual(
-			flaggedModels.filter(
-				(modelId) =>
-					// Regression for #9323: Fireworks uses catalog effort metadata and
-					// verified fallbacks, not a fixed set of adaptive model names.
-					modelId.startsWith("fireworks/") ||
-					/(opus[-.](4[-.][678]|5)|sonnet[-.]4[-.]6|sonnet[-.]5|fable[-.]5|kimi-coding\/)/.test(modelId),
-			),
-		);
+		let flaggedCount = 0;
+		for (const model of messagesModels) {
+			const flagged = model.compat?.forceAdaptiveThinking === true;
+			if (flagged) flaggedCount++;
+
+			if (NON_ADAPTIVE_FAMILIES.test(model.id)) {
+				expect(flagged, model.id).toBe(false);
+			} else if (ADAPTIVE_FAMILIES.test(model.id)) {
+				expect(flagged, model.id).toBe(true);
+			}
+
+			// A flag outside the pattern-based claude families is only justified
+			// for providers whose policy comes from catalog metadata instead of
+			// names: Fireworks derives it from effort reasoning options, and
+			// Kimi Coding is always adaptive (#9323).
+			if (flagged) {
+				expect(
+					ADAPTIVE_FAMILIES.test(model.id) || model.provider === "fireworks" || model.provider === "kimi-coding",
+					model.id,
+				).toBe(true);
+			}
+		}
+		expect(flaggedCount).toBeGreaterThan(0);
+
+		// Kimi Coding is always adaptive (generator sets the flag unconditionally).
+		for (const model of messagesModels.filter((candidate) => candidate.provider === "kimi-coding")) {
+			expect(model.compat?.forceAdaptiveThinking, model.id).toBe(true);
+		}
 	});
 });

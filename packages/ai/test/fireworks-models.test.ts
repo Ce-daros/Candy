@@ -3,10 +3,11 @@ import type { AddressInfo } from "node:net";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { getModel, normalizeContext, streamSimple } from "../src/compat.ts";
+import { normalizeContext, streamSimple } from "../src/compat.ts";
 import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
-import { getSupportedThinkingLevels } from "../src/models.ts";
-import type { Context, Model, Tool } from "../src/types.ts";
+import { getSupportedThinkingLevels, hasApi } from "../src/models.ts";
+import { getBuiltinModels } from "../src/providers/all.ts";
+import type { Api, Context, Model, ThinkingLevel, Tool } from "../src/types.ts";
 
 const originalFireworksApiKey = process.env.FIREWORKS_API_KEY;
 
@@ -18,175 +19,150 @@ afterEach(() => {
 	}
 });
 
-describe("Fireworks models", () => {
-	it("registers the default Kimi K2.6 model via Anthropic-compatible Messages API", () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/kimi-k2p6");
+/** Fireworks chat models, grouped by API. The generated catalog refreshes on
+ * every models.dev run, so tests assert provider invariants over the whole
+ * catalog instead of pinning individual model ids. */
+function fireworksMessagesModels(): Model<"anthropic-messages">[] {
+	return getBuiltinModels("fireworks").filter((model) => hasApi(model, "anthropic-messages"));
+}
 
-		expect(model).toBeDefined();
-		expect(model.api).toBe("anthropic-messages");
-		expect(model.provider).toBe("fireworks");
-		expect(model.baseUrl).toBe("https://api.fireworks.ai/inference");
-		expect(model.reasoning).toBe(true);
-		expect(model.input).toEqual(["text", "image"]);
-		expect(model.contextWindow).toBe(262000);
-		expect(model.maxTokens).toBe(262000);
-		expect(model.cost).toEqual({
-			input: 0.95,
-			output: 4,
-			cacheRead: 0.16,
-			cacheWrite: 0,
-		});
-	});
+function fireworksCompletionsModels(): Model<"openai-completions">[] {
+	return getBuiltinModels("fireworks").filter((model) => hasApi(model, "openai-completions"));
+}
 
-	it("aligns GLM 5.2 Fast with GLM 5.2's OpenAI-compatible config", () => {
-		const base = getModel("fireworks", "accounts/fireworks/models/glm-5p2");
-		const fast = getModel("fireworks", "accounts/fireworks/routers/glm-5p2-fast");
-
-		expect(fast.api).toBe(base.api);
-		expect(fast.baseUrl).toBe(base.baseUrl);
-		expect(fast.compat).toEqual(base.compat);
-		expect(fast.thinkingLevelMap).toEqual(base.thinkingLevelMap);
-	});
-
-	it.each(["accounts/fireworks/models/glm-5p2", "accounts/fireworks/routers/glm-5p2-fast"] as const)(
-		"omits unsupported long cache retention for %s",
-		async (modelId) => {
-			const model = getModel("fireworks", modelId);
-			let payload: Record<string, unknown> | undefined;
-			const response = streamSimple(
-				model,
-				{ messages: [{ role: "user", content: "test", timestamp: 0 }] },
-				{
-					apiKey: "test-fireworks-key",
-					cacheRetention: "long",
-					sessionId: "test-fireworks-session",
-					onPayload: (value) => {
-						payload = value as Record<string, unknown>;
-						throw new Error("payload captured");
-					},
-				},
-			);
-			await response.result();
-
-			expect(payload).toBeDefined();
-			expect(payload?.prompt_cache_retention).toBeUndefined();
-		},
-	);
-
-	it("routes Kimi K3 through the OpenAI-compatible API with native effort controls", async () => {
-		const base = getModel("fireworks", "accounts/fireworks/models/kimi-k3");
-		const fast = getModel("fireworks", "accounts/fireworks/routers/kimi-k3-fast");
-		const compat = {
-			supportsStore: false,
-			supportsDeveloperRole: false,
-			supportsStrictMode: true,
-			requiresReasoningContentOnAssistantMessages: true,
-			thinkingFormat: "openai",
-			supportsMidConvoSystemMessages: true,
-			supportsMidConvoToolAdditions: true,
-			sendSessionAffinityHeaders: true,
-			supportsLongCacheRetention: false,
-		};
-		const thinkingLevelMap = {
-			off: null,
-			minimal: null,
-			low: "low",
-			medium: null,
-			high: "high",
-			xhigh: null,
-			max: "max",
-		};
-
-		expect(base.api).toBe("openai-completions");
-		expect(base.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
-		expect(base.compat).toEqual(compat);
-		expect(base.thinkingLevelMap).toEqual(thinkingLevelMap);
-		expect(fast.api).toBe(base.api);
-		expect(fast.baseUrl).toBe(base.baseUrl);
-		expect(fast.compat).toEqual(compat);
-		expect(fast.thinkingLevelMap).toEqual(thinkingLevelMap);
-
-		let payload: Record<string, unknown> | undefined;
-		const response = streamSimple(
-			base,
-			{ messages: [{ role: "user", content: "test", timestamp: 0 }] },
-			{
-				apiKey: "test-fireworks-key",
-				reasoning: "max",
-				onPayload: (value) => {
-					payload = value as Record<string, unknown>;
-					throw new Error("payload captured");
-				},
+async function capturePayload(
+	model: Model<Api>,
+	options: { reasoning?: ThinkingLevel },
+): Promise<Record<string, unknown>> {
+	let payload: Record<string, unknown> | undefined;
+	await streamSimple(
+		model,
+		{ messages: [{ role: "user", content: "test", timestamp: 0 }] },
+		{
+			apiKey: "test-fireworks-key",
+			reasoning: options.reasoning,
+			onPayload: (value) => {
+				payload = value as Record<string, unknown>;
+				throw new Error("payload captured");
 			},
-		);
-		await response.result();
+		},
+	).result();
+	if (!payload) throw new Error("Expected payload capture before request");
+	return payload;
+}
 
-		expect(payload?.reasoning_effort).toBe("max");
-	});
+describe("Fireworks models", () => {
+	it("registers Fireworks Messages models via the Anthropic-compatible Messages API", () => {
+		const models = fireworksMessagesModels();
+		expect(models.length).toBeGreaterThan(0);
 
-	// Regression for #9323: native effort must reach Messages without budget-based fallback.
-	it.each([
-		["accounts/fireworks/models/deepseek-v4-flash-0731", ["off", "low", "high", "max"]],
-		["accounts/fireworks/models/deepseek-v4-flash-vision-exp", ["off", "low", "high", "max"]],
-		["accounts/fireworks/models/deepseek-v4-pro-0813", ["off", "low", "high", "max"]],
-		["accounts/fireworks/models/qwen3p8-max", ["off", "low", "medium", "xhigh"]],
-		["accounts/fireworks/models/qwen3p8-2p4t-a95b", ["off", "low", "medium", "xhigh"]],
-	] as const)("sends native Messages effort levels for %s", async (modelId, levels) => {
-		const model = getModel("fireworks", modelId);
-		expect(model.api).toBe("anthropic-messages");
-		expect(model.compat?.forceAdaptiveThinking).toBe(true);
-		expect(getSupportedThinkingLevels(model)).toEqual(levels);
-
-		for (const level of levels) {
-			let payload: Record<string, unknown> | undefined;
-			await streamSimple(
-				model,
-				{ messages: [{ role: "user", content: "test", timestamp: 0 }] },
-				{
-					apiKey: "test-fireworks-key",
-					reasoning: level === "off" ? undefined : level,
-					onPayload: (value) => {
-						payload = value as Record<string, unknown>;
-						throw new Error("payload captured");
-					},
-				},
-			).result();
-			expect(payload).toBeDefined();
-			expect(payload?.thinking).toEqual(
-				level === "off" ? { type: "disabled" } : { type: "adaptive", display: "summarized" },
-			);
-			expect(payload?.output_config).toEqual(level === "off" ? undefined : { effort: level });
+		for (const model of models) {
+			expect(model.api).toBe("anthropic-messages");
+			expect(model.provider).toBe("fireworks");
+			expect(model.baseUrl).toBe("https://api.fireworks.ai/inference");
+			expect(model.reasoning).toBe(true);
+			expect(model.input).toContain("text");
+			expect(model.contextWindow).toBeGreaterThan(0);
+			expect(model.maxTokens).toBeGreaterThan(0);
+			expect(model.cost.input).toBeGreaterThan(0);
+			expect(model.cost.output).toBeGreaterThan(0);
 		}
 	});
 
-	// Regression for #9323: accepted aliases are not distinct native effort levels.
-	it.each([
-		["accounts/fireworks/models/glm-5p2", ["off", "high", "max"]],
-		["accounts/fireworks/routers/glm-5p2-fast", ["off", "high", "max"]],
-		["accounts/fireworks/models/kimi-k3", ["low", "high", "max"]],
-		["accounts/fireworks/routers/kimi-k3-fast", ["low", "high", "max"]],
-	] as const)("exposes distinct native effort levels for %s", (modelId, levels) => {
-		expect(getSupportedThinkingLevels(getModel("fireworks", modelId))).toEqual(levels);
+	it("aligns -fast router models with their base model's OpenAI-compatible config", () => {
+		const models = fireworksCompletionsModels();
+		const fastRouters = models.filter((model) => model.id.endsWith("-fast"));
+		expect(fastRouters.length).toBeGreaterThan(0);
+
+		for (const fast of fastRouters) {
+			// Bases live under /models/, so map router paths before stripping the suffix.
+			const suffixless = fast.id.slice(0, -"-fast".length).replace("/routers/", "/models/");
+			const base = models.find((model) => model.id === suffixless);
+			expect(base, `${fast.id} has no base model`).toBeDefined();
+			if (!base) continue;
+			expect(fast.api).toBe(base.api);
+			expect(fast.baseUrl).toBe(base.baseUrl);
+			expect(fast.compat).toEqual(base.compat);
+			expect(fast.thinkingLevelMap).toEqual(base.thinkingLevelMap);
+		}
+	});
+
+	it("omits unsupported long cache retention for OpenAI-compatible Fireworks models", async () => {
+		const models = fireworksCompletionsModels();
+		expect(models.length).toBeGreaterThan(0);
+
+		for (const model of models) {
+			expect(model.compat?.supportsLongCacheRetention).toBe(false);
+			const payload = await capturePayload(model, { reasoning: "high" });
+			expect(payload.prompt_cache_retention, model.id).toBeUndefined();
+		}
+	});
+
+	it("routes OpenAI-thinking-format Fireworks models through the OpenAI-compatible API with native effort controls", async () => {
+		const models = fireworksCompletionsModels().filter((model) => model.compat?.thinkingFormat === "openai");
+		expect(models.length).toBeGreaterThan(0);
+
+		for (const model of models) {
+			expect(model.api).toBe("openai-completions");
+			expect(model.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
+			expect(model.compat).toEqual({
+				supportsStore: false,
+				supportsDeveloperRole: false,
+				supportsStrictMode: true,
+				requiresReasoningContentOnAssistantMessages: true,
+				thinkingFormat: "openai",
+				supportsMidConvoSystemMessages: true,
+				supportsMidConvoToolAdditions: true,
+				sendSessionAffinityHeaders: true,
+				supportsLongCacheRetention: false,
+			});
+
+			for (const level of getSupportedThinkingLevels(model)) {
+				if (level === "off") continue;
+				const payload = await capturePayload(model, { reasoning: level });
+				expect(payload.reasoning_effort, `${model.id} at ${level}`).toBe(level);
+			}
+		}
+	});
+
+	// Regression for #9323: native effort must reach Messages without budget-based fallback.
+	it("sends native Messages effort levels for adaptive-thinking Fireworks models", async () => {
+		const models = fireworksMessagesModels().filter((model) => model.compat?.forceAdaptiveThinking === true);
+		expect(models.length).toBeGreaterThan(0);
+
+		for (const model of models) {
+			const levels = getSupportedThinkingLevels(model);
+			expect(levels.length, model.id).toBeGreaterThan(1);
+			// Native effort levels map to themselves; aliases (e.g. medium -> high)
+			// must not appear as distinct levels.
+			for (const level of levels) {
+				if (level === "off") continue;
+				expect(model.thinkingLevelMap?.[level], `${model.id} at ${level}`).toBe(level);
+			}
+
+			for (const level of levels) {
+				const payload = await capturePayload(model, { reasoning: level === "off" ? undefined : level });
+				expect(payload.thinking, `${model.id} at ${level}`).toEqual(
+					level === "off" ? { type: "disabled" } : { type: "adaptive", display: "summarized" },
+				);
+				expect(payload.output_config, `${model.id} at ${level}`).toEqual(
+					level === "off" ? undefined : { effort: level },
+				);
+			}
+		}
 	});
 
 	it("keeps toggle-only Messages models without a verified fallback on budget-based thinking", async () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/kimi-k2p6");
-		expect(model.compat?.forceAdaptiveThinking).toBeUndefined();
-		let payload: Record<string, unknown> | undefined;
-		await streamSimple(
-			model,
-			{ messages: [{ role: "user", content: "test", timestamp: 0 }] },
-			{
-				apiKey: "test-fireworks-key",
-				reasoning: "high",
-				onPayload: (value) => {
-					payload = value as Record<string, unknown>;
-					throw new Error("payload captured");
-				},
-			},
-		).result();
-		expect(payload?.thinking).toEqual({ type: "enabled", budget_tokens: 16384, display: "summarized" });
-		expect(payload?.output_config).toBeUndefined();
+		const models = fireworksMessagesModels().filter(
+			(model) => model.reasoning && !model.compat?.forceAdaptiveThinking && !model.thinkingLevelMap,
+		);
+		expect(models.length).toBeGreaterThan(0);
+
+		for (const model of models) {
+			const payload = await capturePayload(model, { reasoning: "high" });
+			expect(payload.thinking, model.id).toEqual({ type: "enabled", budget_tokens: 16384, display: "summarized" });
+			expect(payload.output_config, model.id).toBeUndefined();
+		}
 	});
 
 	it("resolves FIREWORKS_API_KEY from the environment", () => {
@@ -197,14 +173,17 @@ describe("Fireworks models", () => {
 	});
 
 	it("sets Fireworks-specific compat for session affinity and unsupported tool fields", () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/kimi-k2p6");
+		const models = fireworksMessagesModels();
+		expect(models.length).toBeGreaterThan(0);
 
-		expect(model.compat).toBeDefined();
-		expect(model.compat?.sendSessionAffinityHeaders).toBe(true);
-		expect(model.compat?.supportsEagerToolInputStreaming).toBe(false);
-		expect(model.compat?.supportsCacheControlOnTools).toBe(false);
-		expect(model.compat?.supportsLongCacheRetention).toBe(false);
-		expect(model.compat?.allowEmptySignature).toBe(true);
+		for (const model of models) {
+			expect(model.compat).toBeDefined();
+			expect(model.compat?.sendSessionAffinityHeaders, model.id).toBe(true);
+			expect(model.compat?.supportsEagerToolInputStreaming, model.id).toBe(false);
+			expect(model.compat?.supportsCacheControlOnTools, model.id).toBe(false);
+			expect(model.compat?.supportsLongCacheRetention, model.id).toBe(false);
+			expect(model.compat?.allowEmptySignature, model.id).toBe(true);
+		}
 	});
 });
 
