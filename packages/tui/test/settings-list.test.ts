@@ -27,7 +27,9 @@ describe("SettingsList", () => {
 			items.map((item) => ({ ...item })),
 			10,
 			testTheme,
-			(id, value) => changes.push({ id, value }),
+			(id, value) => {
+				changes.push({ id, value });
+			},
 			() => {},
 			{ enableSearch: true },
 		);
@@ -47,7 +49,9 @@ describe("SettingsList", () => {
 			items.map((item) => ({ ...item })),
 			10,
 			testTheme,
-			(id, value) => changes.push({ id, value }),
+			(id, value) => {
+				changes.push({ id, value });
+			},
 			() => {},
 			{ enableSearch: true },
 		);
@@ -55,5 +59,23 @@ describe("SettingsList", () => {
 		list.handleInput(" ");
 
 		assert.deepStrictEqual(changes, [{ id: "tui-mode", value: "fullscreen" }]);
+	});
+
+	it("restores the previous value and renders async save failures", async () => {
+		const list = new SettingsList(
+			items.map((item) => ({ ...item })),
+			10,
+			testTheme,
+			async () => {
+				throw new Error("Could not save settings");
+			},
+			() => {},
+		);
+
+		list.handleInput("\r");
+		await new Promise((resolve) => setImmediate(resolve));
+
+		assert.match(list.render(80).join("\n"), /Error: Could not save settings/);
+		assert.match(list.render(80)[0] ?? "", /regular/);
 	});
 });

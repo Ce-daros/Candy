@@ -105,7 +105,9 @@ describe("mouse-aware components", () => {
 			],
 			3,
 			settingsTheme,
-			(id, value) => changes.push({ id, value }),
+			(id, value) => {
+				changes.push({ id, value });
+			},
 			() => {},
 		);
 
@@ -161,7 +163,9 @@ describe("mouse-aware components", () => {
 				})),
 				5,
 				settingsTheme,
-				(id, value) => changes.push({ id, value }),
+				(id, value) => {
+					changes.push({ id, value });
+				},
 				() => {},
 				{ enableSearch: true },
 			);

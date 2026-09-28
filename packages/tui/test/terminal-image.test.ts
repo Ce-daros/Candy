@@ -42,6 +42,7 @@ const ENV_KEYS = [
 	"WEZTERM_PANE",
 	"ITERM_SESSION_ID",
 	"WT_SESSION",
+	"WT_PROFILE_ID",
 	"CMUX_WORKSPACE_ID",
 	"WARP_SESSION_ID",
 	"WARP_TERMINAL_SESSION_UUID",
@@ -417,6 +418,12 @@ describe("detectCapabilities", () => {
 			assert.strictEqual(caps.trueColor, true);
 			assert.strictEqual(caps.hyperlinks, true);
 			assert.strictEqual(caps.images, "sixel");
+		});
+	});
+
+	it("recognizes Windows Terminal by its profile ID when the session ID is absent", () => {
+		withEnv({ WT_PROFILE_ID: "profile", TERM: "xterm-256color" }, () => {
+			assert.deepStrictEqual(detectCapabilities(), { images: "sixel", trueColor: true, hyperlinks: true });
 		});
 	});
 

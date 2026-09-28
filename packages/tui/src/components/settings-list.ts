@@ -37,6 +37,8 @@ export interface SettingsListOptions {
 	enableSearch?: boolean;
 }
 
+export type SettingsListOnChange = (id: string, newValue: string) => void | Promise<void>;
+
 export class SettingsList implements Component {
 	private items: SettingItem[];
 	private filteredItems: SettingItem[];
@@ -44,10 +46,12 @@ export class SettingsList implements Component {
 	private selectedIndex = 0;
 	private mousePressedIndex: number | undefined;
 	private maxVisible: number;
-	private onChange: (id: string, newValue: string) => void;
+	private onChange: SettingsListOnChange;
 	private onCancel: () => void;
 	private searchInput?: Input;
 	private searchEnabled: boolean;
+	private changeGeneration = 0;
+	private changeError: string | undefined;
 
 	// Submenu state
 	private submenuComponent: (Component & { setAvailableHeight?(height: number): void }) | null = null;
@@ -59,7 +63,7 @@ export class SettingsList implements Component {
 		items: SettingItem[],
 		maxVisible: number,
 		theme: SettingsListTheme,
-		onChange: (id: string, newValue: string) => void,
+		onChange: SettingsListOnChange,
 		onCancel: () => void,
 		options: SettingsListOptions = {},
 	) {
@@ -193,6 +197,7 @@ export class SettingsList implements Component {
 				lines.push(this.theme.description(`  ${line}`));
 			}
 		}
+		if (this.changeError) lines.push(this.theme.hint(truncateToWidth(`  Error: ${this.changeError}`, width)));
 
 		// Add hint
 		this.addHintLine(lines, width);
@@ -296,8 +301,7 @@ export class SettingsList implements Component {
 				item.currentValue,
 				(selectedValue?: string, options?: { navigateTo?: string }) => {
 					if (selectedValue !== undefined) {
-						item.currentValue = selectedValue;
-						this.onChange(item.id, selectedValue);
+						void this.commitValue(item, selectedValue);
 					}
 					if (options?.navigateTo) {
 						this.navigateAfterClose = options.navigateTo;
@@ -311,8 +315,21 @@ export class SettingsList implements Component {
 			const currentIndex = item.values.indexOf(item.currentValue);
 			const nextIndex = (currentIndex + 1) % item.values.length;
 			const newValue = item.values[nextIndex];
-			item.currentValue = newValue;
-			this.onChange(item.id, newValue);
+			void this.commitValue(item, newValue);
+		}
+	}
+
+	private async commitValue(item: SettingItem, newValue: string): Promise<void> {
+		const previousValue = item.currentValue;
+		const generation = ++this.changeGeneration;
+		item.currentValue = newValue;
+		this.changeError = undefined;
+		try {
+			await this.onChange(item.id, newValue);
+		} catch (error) {
+			if (generation !== this.changeGeneration) return;
+			item.currentValue = previousValue;
+			this.changeError = error instanceof Error ? error.message : String(error);
 		}
 	}
 

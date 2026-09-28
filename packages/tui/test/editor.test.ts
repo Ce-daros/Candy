@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { type AutocompleteProvider, CombinedAutocompleteProvider } from "../src/autocomplete.ts";
-import { Editor, wordWrapLine } from "../src/components/editor.ts";
+import { Editor } from "../src/components/editor.ts";
+import { wordWrapLine } from "../src/components/text-layout.ts";
 import type { TUI, TuiMouseEvent } from "../src/tui.ts";
 import { TuiMainScreen } from "../src/tui-main-screen.ts";
 import { visibleWidth } from "../src/utils.ts";
@@ -3888,6 +3889,35 @@ describe("Editor component", () => {
 
 			assert.match(editor.getText(), /\[paste #\d+ \+\d+ lines\]/);
 			assert.strictEqual(editor.getExpandedText(), pastedText);
+		});
+
+		it("returns attached image paths in marker order", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.handleInput(`\x1b[200~${"pasted text ".repeat(100)}\x1b[201~`);
+			editor.insertImageAtCursor("first.png", { width: 2, height: 2 });
+			editor.insertImageAtCursor("second.png", { width: 3, height: 3 });
+			assert.deepStrictEqual(editor.getPastePaths(), ["first.png", "second.png"]);
+			assert.match(editor.getPromptText(), /pasted text pasted text/);
+			assert.match(editor.getPromptText(), /\[Image #\d+ 2×2\]/);
+			assert.doesNotMatch(editor.getPromptText(), /first\.png|second\.png/);
+			editor.setText("cleared");
+			assert.deepStrictEqual(editor.getPastePaths(), []);
+		});
+
+		it("passes image paths and image-free prompt text before clearing the editor", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.insertImageAtCursor("attached.png", { width: 2, height: 2 });
+			let submission: [string, string[] | undefined, string | undefined] | undefined;
+			editor.onSubmit = (text, imagePaths, promptText) => {
+				submission = [text, imagePaths, promptText];
+			};
+
+			editor.handleInput("\r");
+
+			assert.equal(submission?.[0], "attached.png");
+			assert.deepStrictEqual(submission?.[1], ["attached.png"]);
+			assert.match(submission?.[2] ?? "", /\[Image #\d+ 2×2\]/);
+			assert.deepStrictEqual(editor.getPastePaths(), []);
 		});
 
 		it("snaps to the paste marker start when navigating down into it", () => {

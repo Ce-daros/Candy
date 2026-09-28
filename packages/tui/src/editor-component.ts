@@ -27,7 +27,7 @@ export interface EditorComponent extends Component {
 	// =========================================================================
 
 	/** Called when user submits (e.g., Enter key) */
-	onSubmit?: (text: string) => void;
+	onSubmit?: (text: string, imagePaths?: string[], promptText?: string) => void;
 
 	/** Called when text changes */
 	onChange?: (text: string) => void;
@@ -51,6 +51,14 @@ export interface EditorComponent extends Component {
 	 * Falls back to getText() if not implemented.
 	 */
 	getExpandedText?(): string;
+
+	/** Paths attached to image markers in the current editor value. */
+	getPastePaths?(): string[];
+
+	/** Expand text pastes while retaining image markers for attachment context. */
+	getPromptText?(): string;
+
+	insertImageAtCursor?(path: string, dimensions: { width: number; height: number }): void;
 
 	// =========================================================================
 	// Autocomplete support (optional)

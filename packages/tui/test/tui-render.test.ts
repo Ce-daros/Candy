@@ -279,7 +279,7 @@ describe("TUI Kitty image cleanup", () => {
 				{ widthPx: 20, heightPx: 20 },
 			);
 			const imageLines = image.render(40);
-			const imageSequence = imageLines[0];
+			const imageSequence = imageLines[1];
 			component.lines = ["before", ...imageLines, "after"];
 			tui.requestRender();
 			await terminal.waitForRender();
@@ -360,7 +360,7 @@ describe("TUI Kitty image cleanup", () => {
 				{ widthPx: 30, heightPx: 30 },
 			);
 			const imageLines = image.render(40);
-			const imageSequence = imageLines[0];
+			const imageSequence = imageLines[1];
 			component.lines = ["l0", "l1", "l2", "l3", "l4", ...imageLines, "after"];
 			tui.requestRender();
 			await terminal.waitForRender();

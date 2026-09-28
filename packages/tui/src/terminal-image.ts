@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
+import { isAbsolute, normalize, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { TerminalColorMode } from "./colors.ts";
 
@@ -108,7 +108,7 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink: () => boolean)
 	}
 
 	// Windows Terminal 1.22+ supports the Sixel graphics protocol.
-	if (process.env.WT_SESSION) {
+	if (process.env.WT_SESSION || process.env.WT_PROFILE_ID) {
 		return { images: "sixel", trueColor: true, hyperlinks: true };
 	}
 
@@ -721,10 +721,11 @@ export function hyperlink(text: string, url: string): string {
 
 /** Shorten home-prefixed absolute paths to ~/... for compact display. */
 function shortenImagePath(filename: string): string {
-	const home = homedir();
-	if (home && (filename === home || filename.startsWith(`${home}/`) || filename.startsWith(`${home}\\`))) {
+	const home = normalize(homedir());
+	const normalizedFilename = normalize(filename);
+	if (normalizedFilename === home || normalizedFilename.startsWith(`${home}${sep}`)) {
 		// Normalize Windows separators so the display form is ~/... everywhere.
-		return `~${filename.slice(home.length).replaceAll("\\", "/")}`;
+		return `~${normalizedFilename.slice(home.length).replaceAll("\\", "/")}`;
 	}
 	return filename;
 }

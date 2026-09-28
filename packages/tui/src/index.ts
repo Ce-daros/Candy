@@ -65,10 +65,16 @@ export {
 	type SelectListTheme,
 	type SelectListTruncatePrimaryContext,
 } from "./components/select-list.ts";
-export { type SettingItem, SettingsList, type SettingsListTheme } from "./components/settings-list.ts";
+export {
+	type SettingItem,
+	SettingsList,
+	type SettingsListOnChange,
+	type SettingsListTheme,
+} from "./components/settings-list.ts";
 export { SixelImage } from "./components/sixel-image.ts";
 export { Spacer } from "./components/spacer.ts";
 export { Text } from "./components/text.ts";
+export { type TextChunk, wordWrapLine } from "./components/text-layout.ts";
 export { TruncatedText } from "./components/truncated-text.ts";
 export {
 	type StackChild,
@@ -111,6 +117,7 @@ export {
 export { type RenderLatexOptions, renderLatex } from "./latex.ts";
 // Native platform integration
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
+export { moveSelection, moveViewport } from "./selection.ts";
 // Input buffering for batch splitting
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
 // Terminal interface and implementations
