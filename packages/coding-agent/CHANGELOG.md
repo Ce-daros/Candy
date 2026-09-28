@@ -26,6 +26,7 @@
 
 ### Breaking Changes
 
+- Removed Ant Ling, Baseten, and Radius from provider selection. Removed `/ir`, `/tui`, `/deslop`, `/is`, `/cl`, `/sa`, `/pr`, `/bug`, and `/share`, their bundled resources, and the issue-analysis workflow. Removed Radius relay and bug-report uploads.
 - Removed the built-in llama.cpp provider, `/llama` command, and integrated router model discovery and management. Configure compatible model endpoints in `models.json`.
 - Removed interactive model cycling and scoped model selection: the top-level `--models` flag, `enabledModels`, `/scoped-models`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use `--model`, the default model setting, `/model`, or the footer selector. `candy update --models` remains the model-catalog refresh command.
 - Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.

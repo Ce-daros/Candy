@@ -255,10 +255,10 @@ Content`,
 		it("should auto-discover project prompts with overrides", async () => {
 			const promptsDir = join(tempDir, ".candy", "prompts");
 			mkdirSync(promptsDir, { recursive: true });
-			const promptPath = join(promptsDir, "is.md");
-			writeFileSync(promptPath, "Is prompt");
+			const promptPath = join(promptsDir, "hidden.md");
+			writeFileSync(promptPath, "Hidden prompt");
 
-			settingsManager.setProjectPromptTemplatePaths(["!prompts/is.md"]);
+			settingsManager.setProjectPromptTemplatePaths(["!prompts/hidden.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
