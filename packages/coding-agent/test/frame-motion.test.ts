@@ -131,6 +131,21 @@ describe("editor frame motion", () => {
 		expect(motion.getModeTitle()).toBe("Command");
 	});
 
+	it("sweeps the Help frame into cyan and reverses from the current color", () => {
+		motion.beginFrame();
+		vi.advanceTimersByTime(520);
+		motion.setMode("help");
+		vi.advanceTimersByTime(120);
+		const before = motion.paintBorder("─", 8, 0);
+		motion.setMode("normal");
+		expect(motion.paintBorder("─", 8, 0)).toBe(before);
+		vi.advanceTimersByTime(360);
+		motion.setOptions(false, "moderate");
+		motion.setMode("help");
+		expect(motion.paintBorder("─", 8, 0)).toContain(theme.getFgAnsi("borderAccent"));
+		expect(motion.getModeTitle()).toBe("Help");
+	});
+
 	it("releases a Command transition timer on disposal", () => {
 		motion.beginFrame();
 		motion.setMode("command");
@@ -218,6 +233,12 @@ describe("editor frame motion", () => {
 		expect(stripAnsi(command[0]!)).toContain(" Command ");
 		expect(stripAnsi(command[1]!)).toMatch(/^│ \/ /);
 		expect(command[1]!).toContain(theme.getFgAnsi("accent"));
+
+		editor.setInputMode("help");
+		const help = editor.render(40);
+		expect(stripAnsi(help[0]!)).toContain(" Help ");
+		expect(stripAnsi(help[1]!)).toMatch(/^│ \? /);
+		expect(help[1]!).toContain(theme.getFgAnsi("borderAccent"));
 		editor.dispose();
 	});
 

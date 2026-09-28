@@ -69,12 +69,7 @@ export class CommandPanel implements Component, Focusable {
 		this.actions = actions;
 		this.options = options;
 		this.searchInput = new Input({
-			prompt:
-				options.title === undefined || options.title === "Command"
-					? "/ "
-					: options.title === "Help"
-						? "? "
-						: "Search: ",
+			prompt: options.title === undefined || options.title === "Command" ? "/ " : "Search: ",
 		});
 		this.description = options.description ?? "";
 		this.list = this.buildList(actions);

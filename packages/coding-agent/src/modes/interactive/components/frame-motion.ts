@@ -53,10 +53,16 @@ interface Transition {
 
 type Ink = "hidden" | "base" | "dim" | number;
 
-const MODE_STEPS = RAMP_STEPS * 2;
+const MODE_STEPS = RAMP_STEPS * 3;
 
 function modeStep(mode: InputMode): number {
-	return mode === "normal" ? 0 : mode === "command" || mode === "help" ? MODE_STEPS : RAMP_STEPS;
+	return mode === "normal"
+		? 0
+		: mode === "shell" || mode === "shell-no-context"
+			? RAMP_STEPS
+			: mode === "command"
+				? RAMP_STEPS * 2
+				: MODE_STEPS;
 }
 
 function modeTitle(mode: InputMode): string {
@@ -88,7 +94,7 @@ export class FrameMotion {
 	private paletteKey = "";
 	private borderRamp: string[] = [];
 	private statusRamps: string[][] = [];
-	private titleRamps: Record<"shell" | "command", string[]> = { shell: [], command: [] };
+	private titleRamps: Record<"shell" | "command" | "help", string[]> = { shell: [], command: [], help: [] };
 	private labelRamps: Record<"text" | "muted" | "accent", string[]> = { text: [], muted: [], accent: [] };
 	private width = 80;
 	private rows = 4;
@@ -251,7 +257,13 @@ export class FrameMotion {
 	paintTitle(text: string): string {
 		if (!this.enabled)
 			return theme.fg(
-				this.mode === "normal" ? "border" : this.mode === "command" || this.mode === "help" ? "accent" : "bashMode",
+				this.mode === "normal"
+					? "border"
+					: this.mode === "help"
+						? "borderAccent"
+						: this.mode === "command"
+							? "accent"
+							: "bashMode",
 				text,
 			);
 		this.refreshPalette();
@@ -269,7 +281,12 @@ export class FrameMotion {
 		const rest = " ".repeat(width - visibleWidth(shown));
 		const titleStep = Math.max(1, Math.round((exiting ? 1 - progress : progress) * RAMP_STEPS));
 		const titleMode = exiting ? this.transition!.from : this.mode;
-		const ramp = titleMode === "command" || titleMode === "help" ? this.titleRamps.command : this.titleRamps.shell;
+		const ramp =
+			titleMode === "help"
+				? this.titleRamps.help
+				: titleMode === "command"
+					? this.titleRamps.command
+					: this.titleRamps.shell;
 		return `${ramp[titleStep]}${shown}\x1b[39m${rest}`;
 	}
 
@@ -459,6 +476,7 @@ export class FrameMotion {
 					"text",
 					"muted",
 					"accent",
+					"borderAccent",
 				] as const
 			)
 				.map((name) => theme.getFgAnsi(name))
@@ -504,6 +522,9 @@ export class FrameMotion {
 			...Array.from({ length: RAMP_STEPS }, (_, index) =>
 				mixColors(colors.bashMode, colors.accent, (index + 1) / RAMP_STEPS, "srgb"),
 			),
+			...Array.from({ length: RAMP_STEPS }, (_, index) =>
+				mixColors(colors.accent, colors.borderAccent, (index + 1) / RAMP_STEPS, "srgb"),
+			),
 		]);
 		this.borderRamp = palette.map((color) => foregroundAnsi(color, mode));
 		this.statusRamps = palette.map((color) => {
@@ -513,7 +534,11 @@ export class FrameMotion {
 				foregroundAnsi(oklchColor(l + ((high - l) * brightness) / RAMP_STEPS, c * (1 - brightness / 16), h), mode),
 			);
 		});
-		this.titleRamps = { shell: ramp(colors.dim, colors.bashMode), command: ramp(colors.dim, colors.accent) };
+		this.titleRamps = {
+			shell: ramp(colors.dim, colors.bashMode),
+			command: ramp(colors.dim, colors.accent),
+			help: ramp(colors.dim, colors.borderAccent),
+		};
 		this.labelRamps = {
 			text: ramp(colors.dim, colors.text),
 			muted: ramp(colors.dim, colors.muted),

@@ -7,7 +7,7 @@ import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
 import { CommandPanel, type CommandPanelAction, type CommandPanelOptions } from "./components/command-panel.ts";
 
-export type PresentationSurface = "sources" | "details" | "history" | "agent" | "command" | "help";
+export type PresentationSurface = "sources" | "details" | "history" | "agent" | "command";
 
 export interface PresentationHost {
 	session(): AgentSession;
@@ -23,7 +23,6 @@ export interface PresentationHost {
 	settingsActions(): CommandPanelAction[];
 	localCommands(): CommandPanelAction[];
 	historyCommands(): CommandPanelAction[];
-	helpCommands(): CommandPanelAction[];
 	completeArguments?(text: string, signal: AbortSignal, force?: boolean): Promise<AutocompleteItem[] | null>;
 	historyAction(
 		action: "compact" | "details" | "rename" | "tree" | "fork" | "clone" | "resume",
@@ -83,9 +82,6 @@ export class InteractivePresentation {
 				break;
 			case "command":
 				this.openCommand();
-				break;
-			case "help":
-				this.openHelp();
 				break;
 		}
 	}
@@ -619,9 +615,5 @@ export class InteractivePresentation {
 					},
 				})),
 		]);
-	}
-
-	private openHelp(): void {
-		this.page("help", "Help", () => this.host.helpCommands());
 	}
 }

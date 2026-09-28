@@ -178,7 +178,13 @@ export class CustomEditor extends Editor {
 				return (
 					this.frameMotion.paintBorder(before, 0, row) +
 					theme.fg(
-						mode === "normal" ? "editorPrompt" : mode === "command" || mode === "help" ? "accent" : "bashMode",
+						mode === "normal"
+							? "editorPrompt"
+							: mode === "help"
+								? "borderAccent"
+								: mode === "command"
+									? "accent"
+									: "bashMode",
 						glyph,
 					) +
 					(after ? this.frameMotion.paintBorder(after, index + glyph.length, row) : "")

@@ -40,7 +40,6 @@ describe("interactive presentation", () => {
 			settingsActions: () => [],
 			localCommands: () => [],
 			historyCommands: () => [],
-			helpCommands: () => [],
 			historyAction: vi.fn(async () => {}),
 		};
 		presentation = new InteractivePresentation(host);

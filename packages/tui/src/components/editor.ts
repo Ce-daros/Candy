@@ -476,10 +476,10 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
-	setAutocompleteProvider(provider: AutocompleteProvider): void {
+	setAutocompleteProvider(provider: AutocompleteProvider | undefined): void {
 		this.cancelAutocomplete();
 		this.autocompleteProvider = provider;
-		this.setAutocompleteTriggerCharacters(provider.triggerCharacters ?? []);
+		this.setAutocompleteTriggerCharacters(provider?.triggerCharacters ?? []);
 	}
 
 	/**

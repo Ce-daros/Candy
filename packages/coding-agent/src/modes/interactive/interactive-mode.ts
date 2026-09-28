@@ -126,6 +126,7 @@ import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent, formatTokens, modelDisplayName } from "./components/footer.ts";
 import type { InputMode } from "./components/frame-motion.ts";
+import { HelpPanel } from "./components/help-panel.ts";
 import { keycap, keyDisplayText, keyHint, rawKeyHint } from "./components/keybinding-hints.ts";
 import { type LoadedResourceSection, LoadedResourcesComponent } from "./components/loaded-resources.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
@@ -379,6 +380,7 @@ export class InteractiveMode {
 	private notification: TransientNotification;
 	private defaultEditor: CustomEditor;
 	private composerPanel: ComposerPanel;
+	private helpPanel: HelpPanel | undefined;
 	private transcriptSearch: Component | undefined;
 	private panelGeneration = 0;
 	private editor: EditorComponent;
@@ -621,8 +623,8 @@ export class InteractiveMode {
 	private openPresentation(surface: PresentationSurface, model?: Model<any>): void {
 		this.cancelActiveLogin();
 		this.disposeActiveSelector();
-		if (surface === "command" || surface === "help") {
-			this.setInputMode(surface);
+		if (surface === "command") {
+			this.setInputMode("command");
 		} else {
 			if (this.footer.isPowerbarIdle()) {
 				if (surface === "history" || surface === "agent") this.footer.openPowerbarThinking();
@@ -687,20 +689,6 @@ export class InteractiveMode {
 			},
 			localCommands: () => this.getLocalCommandActions(),
 			historyCommands: () => this.getHistoryCommandActions(),
-			helpCommands: () => [
-				{
-					id: "help:hotkeys",
-					name: "Hotkeys",
-					argumentMode: "none" as const,
-					execute: async () => this.handleHotkeysCommand(),
-				},
-				{
-					id: "help:changelog",
-					name: "Changelog",
-					argumentMode: "none",
-					execute: async () => this.handleChangelogCommand(),
-				},
-			],
 			completeArguments: (input, signal, force) => this.completeCommandArguments(input, signal, force),
 			historyAction: async (action, args) => {
 				switch (action) {
@@ -1857,7 +1845,8 @@ export class InteractiveMode {
 		const session = this.session;
 		this.cancelActiveLogin();
 		if (this.presentation.active) this.presentation.finish();
-		this.setInputMode("normal");
+		if (this.inputMode === "help") this.exitHelpMode();
+		else this.setInputMode("normal");
 
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
@@ -2520,7 +2509,8 @@ export class InteractiveMode {
 	 */
 	private setCustomEditorComponent(factory: EditorFactory | undefined): void {
 		if (!factory && this.editor === this.defaultEditor) return;
-		if (factory) this.setInputMode("normal");
+		if (this.inputMode === "help") this.exitHelpMode();
+		else if (factory) this.setInputMode("normal");
 		this.editorComponentFactory = factory;
 
 		// Save text from current editor before switching
@@ -2726,6 +2716,8 @@ export class InteractiveMode {
 		this.defaultEditor.onEscape = () => {
 			if (this.session.isBashRunning) {
 				this.session.abortBash();
+			} else if (this.inputMode === "help") {
+				this.exitHelpMode();
 			} else if (this.inputMode !== "normal") {
 				this.setInputMode(this.inputMode === "shell-no-context" ? "shell" : "normal");
 			} else if (this.session.isStreaming) {
@@ -2801,14 +2793,75 @@ export class InteractiveMode {
 		this.updateEditorBorderColor();
 	}
 
+	private enterHelpMode(): void {
+		this.setInputMode("help");
+		this.defaultEditor.setAutocompleteProvider(undefined);
+		if (!this.helpPanel) {
+			this.helpPanel = new HelpPanel(
+				this.ui,
+				() => this.defaultEditor.getText(),
+				(id) => {
+					if (id === "hotkeys") this.handleHotkeysCommand();
+					else this.handleChangelogCommand();
+				},
+			);
+			this.helpPanel.setOptions(
+				this.settingsManager.getUiAnimations(),
+				this.settingsManager.getAnimationIntensity(),
+			);
+		}
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.helpPanel);
+		this.editorContainer.addChild(this.defaultEditor);
+		this.ui.setFocus(this.defaultEditor);
+		this.helpPanel.open();
+		this.ui.requestRender();
+	}
+
+	private exitHelpMode(): void {
+		this.setInputMode("normal");
+		this.defaultEditor.setText("");
+		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
+		const panel = this.helpPanel!;
+		panel.close(() => {
+			if (this.helpPanel !== panel) return;
+			this.editorContainer.removeChild(panel);
+			this.helpPanel = undefined;
+			panel.dispose();
+			this.ui.requestRender();
+		});
+	}
+
 	private handleModeInput(data: string): boolean {
-		if (this.editor !== this.defaultEditor || this.editor.getText().length !== 0) return false;
+		if (this.editor !== this.defaultEditor) return false;
+		if (this.inputMode === "help") {
+			if (this.keybindings.matches(data, "tui.input.newLine")) return true;
+			if (this.keybindings.matches(data, "tui.select.up") || this.keybindings.matches(data, "tui.select.down")) {
+				this.helpPanel!.move(data);
+				return true;
+			}
+			if (this.keybindings.matches(data, "tui.input.submit")) {
+				this.helpPanel!.select();
+				return true;
+			}
+			if (
+				this.keybindings.matches(data, "app.interrupt") ||
+				this.keybindings.matches(data, "app.clear") ||
+				(this.editor.getText().length === 0 && this.keybindings.matches(data, "tui.editor.deleteCharBackward"))
+			) {
+				this.exitHelpMode();
+				return true;
+			}
+			if (this.keybindings.matches(data, "app.reload")) this.exitHelpMode();
+			return false;
+		}
+		if (this.editor.getText().length !== 0) return false;
 		if (this.inputMode === "normal" && this.keybindings.matches(data, "app.command.enter")) {
 			this.openPresentation("command");
 			return true;
 		}
 		if (this.inputMode === "normal" && this.keybindings.matches(data, "app.help.enter")) {
-			this.openPresentation("help");
+			this.enterHelpMode();
 			return true;
 		}
 		if (
@@ -2881,6 +2934,7 @@ export class InteractiveMode {
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
+			if (this.inputMode === "help") return;
 
 			if (this.inputMode === "shell" || this.inputMode === "shell-no-context") {
 				if (this.session.isBashRunning) {
@@ -4015,7 +4069,9 @@ export class InteractiveMode {
 
 	private updateEditorBorderColor(): void {
 		this.defaultEditor.setThinkingLevel(this.session.thinkingLevel || "off");
-		if (this.inputMode !== "normal") {
+		if (this.inputMode === "help") {
+			this.editor.borderColor = (text) => theme.fg("borderAccent", text);
+		} else if (this.inputMode !== "normal") {
 			this.editor.borderColor = theme.getBashModeBorderColor();
 		} else {
 			const level = this.session.thinkingLevel || "off";
@@ -4296,6 +4352,7 @@ export class InteractiveMode {
 		this.composerPanel.close(() => {
 			if (this.panelGeneration !== generation) return;
 			this.editorContainer.clear();
+			if (this.inputMode === "help" && this.helpPanel) this.editorContainer.addChild(this.helpPanel);
 			this.editorContainer.addChild(this.editor);
 			this.ui.setFocus(this.editor);
 			this.ui.requestRender();
@@ -4435,6 +4492,7 @@ export class InteractiveMode {
 					this.settingsManager.setUiAnimations(enabled);
 					this.defaultEditor.setAnimationOptions(enabled, this.settingsManager.getAnimationIntensity());
 					this.composerPanel.setOptions(enabled, this.settingsManager.getAnimationIntensity());
+					this.helpPanel?.setOptions(enabled, this.settingsManager.getAnimationIntensity());
 					this.topBar.setAnimations(enabled);
 					this.footer.setAnimationOptions(enabled, this.settingsManager.getAnimationIntensity());
 				},
@@ -4442,6 +4500,7 @@ export class InteractiveMode {
 					this.settingsManager.setAnimationIntensity(intensity);
 					this.defaultEditor.setAnimationOptions(this.settingsManager.getUiAnimations(), intensity);
 					this.composerPanel.setOptions(this.settingsManager.getUiAnimations(), intensity);
+					this.helpPanel?.setOptions(this.settingsManager.getUiAnimations(), intensity);
 					this.footer.setAnimationOptions(this.settingsManager.getUiAnimations(), intensity);
 				},
 				onHideThinkingBlockChange: (hidden) => {
@@ -6030,6 +6089,7 @@ export class InteractiveMode {
 		this.footer.dispose();
 		this.defaultEditor.dispose();
 		this.composerPanel.dispose();
+		this.helpPanel?.dispose();
 		this.topBar.dispose();
 		this.notification.dispose();
 		this.footerDataProvider.dispose();

@@ -46,7 +46,6 @@ describe("Sources catalog lifecycle", () => {
 			settingsActions: () => [],
 			localCommands: () => [],
 			historyCommands: () => [],
-			helpCommands: () => [],
 			historyAction: async () => {},
 		};
 		const presentation = new InteractivePresentation(host);
@@ -90,7 +89,6 @@ describe("Sources catalog lifecycle", () => {
 			settingsActions: () => [],
 			localCommands: () => [],
 			historyCommands: () => [],
-			helpCommands: () => [],
 			historyAction: async () => {},
 		};
 		const presentation = new InteractivePresentation(host);
