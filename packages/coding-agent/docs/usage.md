@@ -95,6 +95,6 @@ Use the transcript search shortcut from [Keybindings](keybindings.md#fullscreen)
 
 ## Collect diagnostic information
 
-When troubleshooting terminal rendering or conversation state, choose **Debug** in Command. candy writes the rendered terminal lines and current session messages to `pi-debug.log` in your [agent directory](configuration.md#agent-directory).
+When troubleshooting terminal rendering or conversation state, choose **Debug** in Command. candy writes the rendered terminal lines and current session messages to `candy-debug.log` in your [agent directory](configuration.md#agent-directory).
 
 Review this file before sharing it. It can contain prompts, model responses, tool output, file contents, and terminal data.

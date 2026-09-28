@@ -119,7 +119,7 @@ Use `toolCallId` to correlate the lifecycle. `partialResult` is the latest parti
 | Event | Fields | Meaning |
 |---|---|---|
 | `queue_update` | `steering`, `followUp` | The pending steering or follow-up queue changed. Both fields contain the complete current queue. |
-| `entry_appended` | `entry` | An extension appended a custom session entry through `pi.appendEntry()`. |
+| `entry_appended` | `entry` | An extension appended a custom session entry through `candy.appendEntry()`. |
 | `session_info_changed` | `name` | The session display name changed. An absent `name` means it was cleared. |
 | `thinking_level_changed` | `level` | The active thinking level changed. |
 
@@ -215,7 +215,7 @@ type JsonAgentSessionEvent =
     };
 ```
 
-Use the exported `JsonAgentSessionEvent` type from `@candy/coding-agent`. Its implementation is in [`json-event.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/json-event.ts).
+Use the exported `JsonAgentSessionEvent` type from `@candy/coding-agent`. Its implementation is in [`json-event.ts`](../src/modes/json-event.ts).
 
 ## Example
 

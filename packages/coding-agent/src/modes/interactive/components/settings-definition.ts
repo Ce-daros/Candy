@@ -579,8 +579,8 @@ export function createSettingsDefinition(
 		},
 		{
 			id: "install-telemetry",
-			label: "Install telemetry",
-			description: "Send an anonymous version/update ping after changelog-detected updates",
+			label: "Provider attribution",
+			description: "Attach candy attribution headers to requests for OpenRouter, NVIDIA NIM, and Cloudflare",
 			currentValue: config.enableInstallTelemetry ? "true" : "false",
 			values: ["true", "false"],
 		},

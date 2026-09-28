@@ -9,8 +9,8 @@ A package is an ordinary directory or npm package. It can expose conventional re
 Install from npm, git, or a local path:
 
 ```bash
-candy install npm:@example/pi-tools@1.0.0
-candy install git:github.com/example/pi-tools@v1
+candy install npm:@example/candy-tools@1.0.0
+candy install git:github.com/example/candy-tools@v1
 candy install ./local-package
 ```
 
@@ -23,17 +23,17 @@ Project packages are installed and loaded only after project trust is resolved. 
 Use `--extension` or `-e` to try a package for one invocation without adding it to settings:
 
 ```bash
-candy -e npm:@example/pi-tools
+candy -e npm:@example/candy-tools
 ```
 
 ## Choose a source
 
 | Source | Example | Behavior |
 |---|---|---|
-| npm | `npm:@example/pi-tools@1.0.0` | Installed under the candy npm directory |
-| git | `git:github.com/example/pi-tools@v1` | Cloned and reconciled to the selected ref |
-| URL | `https://github.com/example/pi-tools` | Treated as a git source |
-| Local | `./pi-tools` | Loaded from the resolved path without copying |
+| npm | `npm:@example/candy-tools@1.0.0` | Installed under the candy npm directory |
+| git | `git:github.com/example/candy-tools@v1` | Cloned and reconciled to the selected ref |
+| URL | `https://github.com/example/candy-tools` | Treated as a git source |
+| Local | `./candy-tools` | Loaded from the resolved path without copying |
 
 Versioned npm specifications are pinned. Git tags and commits are also pinned; package updates reconcile the checkout but do not move a configured ref.
 
@@ -44,7 +44,7 @@ Relative local paths resolve from the settings file that contains them. A file p
 The simplest package uses conventional directories:
 
 ```text
-my-pi-package/
+my-candy-package/
 ├── package.json
 ├── extensions/
 ├── skills/
@@ -58,8 +58,8 @@ Use an explicit manifest when resources live elsewhere or need filtering:
 
 ```json
 {
-  "name": "my-pi-package",
-  "keywords": ["pi-package"],
+  "name": "my-candy-package",
+  "keywords": ["candy-package"],
   "candy": {
     "extensions": ["./src/extension.ts"],
     "skills": ["./resources/skills"],
@@ -71,7 +71,7 @@ Use an explicit manifest when resources live elsewhere or need filtering:
 
 Paths are relative to the package root. Arrays accept glob patterns and exclusions. List dot-prefixed or symlinked resource roots directly when traversal through a glob would not discover them.
 
-The `pi-package` keyword makes an npm package eligible for discovery in the [candy package gallery](https://pi.dev/packages). Optional `pi.image` and `pi.video` fields add gallery previews.
+The `candy-package` keyword marks an npm package as a candy package.
 
 ## Declare dependencies
 
@@ -99,7 +99,7 @@ The object form in settings narrows which resources load from a package:
 {
   "packages": [
     {
-      "source": "npm:@example/pi-tools",
+      "source": "npm:@example/candy-tools",
       "extensions": ["extensions/*.ts", "!extensions/legacy.ts"],
       "skills": [],
       "prompts": ["prompts/review.md"]

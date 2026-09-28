@@ -18,7 +18,7 @@ A provider extension is an [extension](extensions.md), so it follows the same lo
 
 ## Register a provider
 
-Call `pi.registerProvider()` from the extension factory. candy waits for asynchronous factories before startup continues, so providers registered there are available to startup model selection and `candy --list-models`.
+Call `candy.registerProvider()` from the extension factory. candy waits for asynchronous factories before startup continues, so providers registered there are available to startup model selection and `candy --list-models`.
 
 There are two registration forms:
 
@@ -32,7 +32,7 @@ Registering only `baseUrl` or `headers` for an existing provider preserves its b
 For example, a mixed-operation provider can register non-chat models and their implementations together:
 
 ```typescript
-pi.registerProvider("media-tools", {
+candy.registerProvider("media-tools", {
   apiKey: "$MEDIA_TOOLS_API_KEY",
   models: [
     {
@@ -67,7 +67,7 @@ pi.registerProvider("media-tools", {
 
 Model-level `baseUrl` values take precedence over the provider endpoint. If no `models` list is supplied, built-in models of every operation remain registered. Equal model IDs in different operations remain distinct, including their model-specific headers.
 
-Calls made after initial extension loading take effect immediately. Use `pi.unregisterProvider()` to remove the dynamic provider and restore built-in behavior that it replaced.
+Calls made after initial extension loading take effect immediately. Use `candy.unregisterProvider()` to remove the dynamic provider and restore built-in behavior that it replaced.
 
 See the checked [GitLab Duo provider](../examples/extensions/custom-provider-gitlab-duo/) for a complete registration that delegates streaming to built-in API implementations.
 
@@ -119,7 +119,7 @@ This is safer than copying a stream implementation because it preserves candy’
 
 ## Implement custom streaming
 
-Implement `streamSimple` only when no existing API implementation can represent the service. Study the implementations under [`packages/ai/src/api`](https://github.com/earendil-works/pi/tree/main/packages/ai/src/api) first.
+Implement `streamSimple` only when no existing API implementation can represent the service. Study the implementations under [`packages/ai/src/api`](../../ai/src/api) first.
 
 The stream receives a normalized `TranscriptContext`. System prompts and tool declarations live in transcript system messages, so read them with `getCurrentSystemPrompt(context.messages)` and `getCurrentTools(context.messages)` rather than expecting `context.systemPrompt` or `context.tools`. A model that supports mid-conversation system messages can receive them in place; otherwise call `collapseSystemMessages(context)` to fold later system messages into the leading one.
 
@@ -168,6 +168,6 @@ Test at least:
 - cross-provider session handoff
 - authentication refresh and cancellation
 
-The provider tests under [`packages/ai/test`](https://github.com/earendil-works/pi/tree/main/packages/ai/test) define the behavior expected from built-in providers. Adapt the relevant suites rather than relying only on manual prompts.
+The provider tests under [`packages/ai/test`](../../ai/test) define the behavior expected from built-in providers. Adapt the relevant suites rather than relying only on manual prompts.
 
 Run the extension directly while developing, then move it to a discovered extension location or distribute it through a [candy package](packages.md). Use **Reload** in Command after changing a discovered provider extension in an active session.

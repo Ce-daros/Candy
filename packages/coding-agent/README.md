@@ -1,9 +1,4 @@
 <p align="center">
-  <a href="https://pi.dev">
-    <img alt="candy logo" src="https://pi.dev/logo-auto.svg" width="128">
-  </a>
-</p>
-<p align="center">
   <a href="https://www.npmjs.com/package/@candy/coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@candy/coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
 </p>
 
@@ -25,12 +20,6 @@ npm install -g --ignore-scripts @candy/coding-agent
 
 This requires Node.js 22.19 or newer. candy does not require dependency lifecycle scripts for a normal npm installation.
 
-On macOS or Linux, you can instead use the installer:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
-
 Start candy in the directory where you want it to work:
 
 ```bash
@@ -44,11 +33,11 @@ See the [documentation](docs/index.md) for full setup and usage instructions.
 
 ## Development
 
-Clone the repository, install its dependencies, and run candy from source:
+Clone this repository, install its dependencies, and run candy from source:
 
 ```bash
-git clone https://github.com/earendil-works/pi
-cd candy
+git clone <this repository>
+cd Candy
 npm install --ignore-scripts
 npm run build
 ```

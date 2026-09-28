@@ -24,7 +24,7 @@ Applications can use the in-memory reference or provide an adapter for OpenTelem
 - [Typed Schemas](#typed-schemas)
   - [Start and Completion Attributes](#start-and-completion-attributes)
 - [Schema Metadata](#schema-metadata)
-- [candy Package Integration](#pi-package-integration)
+- [candy Package Integration](#candy-package-integration)
 - [Security and Portability](#security-and-portability)
 - [API Reference](#api-reference)
 - [Development](#development)
@@ -366,21 +366,20 @@ Adapters do not need to understand schema objects. Instrumentation helpers and t
 
 Package ownership is intentionally split:
 
-- `@candy/telemetry` owns the vendor-neutral contract, no-op and in-memory reference contexts, schema utilities, and adapter conformance suite;
+- `@candy/telemetry` owns the vendor-neutral contract (`TelemetryContext`, `TelemetrySpan`), schema utilities such as `defineTelemetrySchema()` and `createTypedSpanStarter()`, the no-op and in-memory reference contexts, and the adapter conformance suite;
 - `@candy/ai` accepts and propagates `telemetryContext` in provider request options but owns no telemetry schema;
-- `@candy/agent-core` owns and exports the candy AI-request and harness schemas, their combined readonly schema tuple, and typed span helpers.
+- `@candy/agent-core` re-exports the telemetry contract for agent consumers and defines no telemetry schemas of its own.
 
 ```typescript
 import {
-  AGENT_TELEMETRY_SCHEMAS,
-  AI_TELEMETRY_SCHEMA,
-  HARNESS_TELEMETRY_SCHEMA,
-  startAiSpan,
-  startHarnessSpan,
+  createTypedSpanStarter,
+  defineTelemetrySchema,
+  InMemoryTelemetryContext,
+  NOOP_TELEMETRY_CONTEXT,
 } from '@candy/agent-core';
 ```
 
-The candy schemas use pi-owned `pi.ai.*`, `pi.harness.*`, and `pi.session.*` names. Adapters may translate them to backend conventions without changing the emitted candy vocabulary.
+Schemas are application-defined. Declare span names and attributes with `defineTelemetrySchema()`, then start typed spans through a `TypedSpanStarter` built with `createTypedSpanStarter()`. Adapters may translate attribute names to backend conventions without changing the emitted application vocabulary.
 
 ## Security and Portability
 

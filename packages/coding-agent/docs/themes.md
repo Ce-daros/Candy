@@ -37,7 +37,7 @@ See [CLI resources](cli.md#resources) for the command-line option.
 
 ## Create a custom theme
 
-Copy one of the [built-in themes](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/src/modes/interactive/theme) or create a new JSON file conforming to the [schema](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json).
+Copy one of the [built-in themes](../src/modes/interactive/theme) or create a new JSON file conforming to the [schema](../src/modes/interactive/theme/theme-schema.json).
 
 1. Save the file as `<agent-dir>/themes/my-theme.json`. The agent directory defaults to `~/.candy/agent`.
 2. Set its `name` to `my-theme`.
@@ -71,7 +71,7 @@ Terminal default colors render as the terminal's own colors. Where candy needs a
 
 candy resolves chained variable references. A missing variable or circular reference makes the theme invalid. candy uses truecolor when available, gamut-maps OKLCH to sRGB, and approximates colors for 256-color terminals. If colors differ from their source values, check your terminal's truecolor detection and contrast settings. See [Configure Your Terminal](terminal-setup.md#override-detected-capabilities).
 
-Use the [theme JSON schema](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json) for the exact properties, required colors, and accepted value types.
+Use the [theme JSON schema](../src/modes/interactive/theme/theme-schema.json) for the exact properties, required colors, and accepted value types.
 
 candy reports invalid theme files during startup and **Reload**.
 

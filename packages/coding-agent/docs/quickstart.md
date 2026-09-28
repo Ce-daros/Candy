@@ -6,13 +6,7 @@ For native Windows setup, read [Windows Setup](windows.md). For Android, read [T
 
 ## 1. Install candy
 
-On macOS or Linux, you can use the installer:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
-
-Alternatively, install candy from npm. This requires Node.js 22.19 or newer:
+Install candy from npm. This requires Node.js 22.19 or newer:
 
 ```bash
 npm install -g --ignore-scripts @candy/coding-agent
@@ -105,12 +99,6 @@ If you installed candy with npm, run:
 
 ```bash
 npm uninstall -g @candy/coding-agent
-```
-
-If you used the installer, run it again and choose **Uninstall candy**:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
 ```
 
 Neither method removes configuration, credentials, sessions, or installed candy packages from `~/.candy/agent/`.

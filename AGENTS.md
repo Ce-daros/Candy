@@ -1,6 +1,6 @@
 # Working on Candy
 
-Candy is an independent agent harness, originally forked from pi. Evaluate and cherry-pick useful upstream changes individually. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development philosophy and [DESIGN.md](DESIGN.md) for product design.
+Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated individually and cherry-picked when they serve this product. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development philosophy and [DESIGN.md](DESIGN.md) for product design.
 
 ## Working style
 
@@ -45,7 +45,7 @@ Candy is an independent agent harness, originally forked from pi. Evaluate and c
 - Once relevant tests and required checks pass, finish the task. Expand or repeat verification only for new changes, failures, or concrete unresolved concerns.
 - For terminal input, focus, layout, or motion changes, follow the [interactive testing guide](.candy/skills/interactive-testing.md), including Windows PTY and Linux/tmux as appropriate to the affected behavior. Report what was actually exercised.
 - Documentation-only changes need a factual, link, and diff review. Update affected package Unreleased entries using the [changelog notes](CONTRIBUTING.md#changelogs).
-- Report the result, relevant validation, and material limitations. Never claim a behavior was verified without evidence. Follow the [release skill](.candy/skills/release.md) for release work.
+- Report the result, relevant validation, and material limitations. Never claim a behavior was verified without evidence.
 
 ## Workspace safety
 

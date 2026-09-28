@@ -50,7 +50,7 @@ ENTRYPOINT ["candy"]
 Build it from the directory containing the file:
 
 ```bash
-docker build -t pi-sandbox -f Dockerfile.candy .
+docker build -t candy-sandbox -f Dockerfile.candy .
 ```
 
 ### Start candy
@@ -61,11 +61,11 @@ From the working folder you want candy to access, run:
 docker run --rm -it \
   -e ANTHROPIC_API_KEY \
   -v "$PWD:/workspace" \
-  -v pi-agent-home:/root/.candy/agent \
-  pi-sandbox
+  -v candy-agent-home:/root/.candy/agent \
+  candy-sandbox
 ```
 
-Replace `ANTHROPIC_API_KEY` with the credential required by your provider. The named `pi-agent-home` volume keeps container-local settings, credentials, and sessions between runs.
+Replace `ANTHROPIC_API_KEY` with the credential required by your provider. The named `candy-agent-home` volume keeps container-local settings, credentials, and sessions between runs.
 
 Do not mount the host's `~/.candy/agent` unless the container should have access to your host candy configuration and credentials.
 
@@ -107,7 +107,7 @@ For an Anthropic API key, use `sbx secret set anthropic` instead.
 Run this from the working folder you want mounted:
 
 ```bash
-sbx run --kit "docker.io/sbx/pi-kit:latest" candy
+sbx run --kit <candy-kit-image> candy
 ```
 
 For an existing sandbox, run candy non-interactively with:
@@ -116,7 +116,7 @@ For an existing sandbox, run candy non-interactively with:
 sbx exec <sandbox-name> -- candy -p "list the failing tests"
 ```
 
-See the [candy kit documentation](https://github.com/docker/sbx-kits-contrib/tree/main/pi) for other providers, troubleshooting, and image pinning.
+Pin a specific kit image tag and configure kit secrets with `sbx secret` as shown above; see the [Docker Sandboxes documentation](https://docs.docker.com/ai/sandboxes/) for kit details.
 
 ## Run candy with OpenShell
 
@@ -134,7 +134,7 @@ openshell gateway select <name>
 ### Create the sandbox
 
 ```bash
-openshell sandbox create --name pi-sandbox --from candy -- candy
+openshell sandbox create --name candy-sandbox --from candy -- candy
 ```
 
 candy, its built-in tools, `!` commands, and extension tools run inside the OpenShell boundary.
@@ -144,8 +144,8 @@ candy, its built-in tools, `!` commands, and extension tools run inside the Open
 A remote gateway does not bind-mount your host working folder. Clone the repository inside the sandbox or transfer files explicitly:
 
 ```bash
-openshell sandbox upload pi-sandbox ./working-folder /workspace
-openshell sandbox download pi-sandbox /workspace/working-folder ./working-folder-out
+openshell sandbox upload candy-sandbox ./working-folder /workspace
+openshell sandbox download candy-sandbox /workspace/working-folder ./working-folder-out
 ```
 
 OpenShell inference routing can keep raw model credentials outside the sandbox. When configured, point candy at the corresponding OpenAI-compatible or Anthropic-compatible endpoint exposed by the gateway.

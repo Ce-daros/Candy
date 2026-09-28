@@ -2,7 +2,7 @@
 
 Candy is an agent harness built for daily work in the terminal. It should feel quick, capable, and considered, from the first keystroke to the last tool result.
 
-Candy began as a fork of pi and is developed independently. We choose its direction from the needs of this product. Upstream changes are evaluated individually and cherry-picked when useful.
+Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated individually and cherry-picked when they serve this product.
 
 This document explains engineering decisions and contributions. [DESIGN.md](DESIGN.md) defines the product and interaction design. [AGENTS.md](AGENTS.md) contains the implementation, testing, dependency, and Git rules.
 
@@ -110,4 +110,4 @@ Regenerate the coding-agent shrinkwrap with `node scripts/generate-coding-agent-
 
 Record changes in the affected package's `CHANGELOG.md`, under `## [Unreleased]`. Read the existing section, reuse its `Breaking Changes`, `Added`, `Changed`, `Fixed`, and `Removed` headings, and describe the resulting behavior. Include migration instructions for breaking APIs. Do not duplicate entries or modify released sections.
 
-Add entries on `main` or a pull-request branch. Link related issues or pull requests when available and credit external contributors. Use the current repository for new links; preserve historical attribution. Follow the [release skill](.candy/skills/release.md) for versioning and publishing.
+Add entries on `main` or a pull-request branch. Link related issues or pull requests when available and credit external contributors. Use the current repository for new links; preserve historical attribution.

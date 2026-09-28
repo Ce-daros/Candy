@@ -2,8 +2,7 @@
 set -euo pipefail
 
 # Developer wrapper that runs candy from this checkout's latest `npm run build`.
-# Pass --stable to use the next candy executable on PATH; `candy update` also uses stable so self-update
-# works.
+# Pass --stable to use the next candy executable on PATH.
 #
 # From the repository root, install with:
 #   mkdir -p "$HOME/.local/bin"

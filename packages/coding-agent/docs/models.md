@@ -12,7 +12,7 @@ For a built-in provider, open Sources to connect it, then choose a model in the 
 | An OpenAI-, Anthropic-, or Google-compatible endpoint | Add it to `models.json` |
 | A provider with a custom protocol or authentication flow | Build or install a provider extension |
 
-Browse the [model catalog](https://pi.dev/models) for current providers, model IDs, capabilities, context limits, and pricing. candy starts with its bundled catalog and can overlay newer catalog data from pi.dev. Cached catalog data remains available offline; run `candy update --models` to force a refresh.
+candy starts with its bundled model catalog covering providers, model IDs, capabilities, context limits, and pricing. Cached catalog data remains available offline; run `candy update --models` to force a refresh of configured providers.
 
 ## Authenticate
 

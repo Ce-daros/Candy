@@ -16,7 +16,7 @@ import {
 	isStringLiteral,
 } from "typescript/unstable/ast/is";
 import { API } from "typescript/unstable/sync";
-import { getPublicWorkspacePackages } from "./release-packages.mjs";
+import { getPublicWorkspacePackages } from "./package-workspaces.mjs";
 
 // Packages without tsconfig.build.json are checked against a synthetic config.
 const fallbackConfigName = "tsconfig.runtime-deps-fallback.json";

@@ -74,7 +74,7 @@ Use the established session, tree, and user-message selectors. Keep their summar
 | Tools | Inspect descriptions and parameters; manage session tools and saved defaults. |
 | Behavior | Configure steering delivery, follow-up queuing, and automatic retry. |
 
-Use the existing resource and reload mechanisms. If an operation cannot apply during a run, preserve the edit and show the specific reason. Profiles and Plan / Act are not part of the current model.
+Use the existing resource and reload mechanisms. If an operation cannot apply during a run, preserve the edit and show the specific reason.
 
 ## Input has explicit modes
 

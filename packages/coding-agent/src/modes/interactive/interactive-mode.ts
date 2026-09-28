@@ -90,14 +90,12 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { type SessionEntry, SessionManager, type UsageEntry } from "../../core/session-manager.ts";
 import { type FullscreenExitOutput, SettingsManager } from "../../core/settings-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
-import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
 import { type AppKeybinding, KEYBINDINGS, KeybindingsManager } from "../../presentation/keybindings.ts";
 import { exportSessionHtml } from "../../presentation/session-html-export.ts";
 import { withBuiltInRenderers } from "../../presentation/tool-renderers/index.ts";
-import { getCandyUserAgent } from "../../utils/candy-user-agent.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -107,7 +105,6 @@ import { getCwdRelativePath, resolvePath } from "../../utils/paths.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { loadAllHighlightLanguages } from "../../utils/syntax-highlight.ts";
 import { ensureTool, type ToolStatus } from "../../utils/tools-manager.ts";
-import { checkForNewCandyVersion, type LatestCandyRelease } from "../../utils/version-check.ts";
 import { createChatViewport } from "./chat-viewport.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
@@ -1021,13 +1018,6 @@ export class InteractiveMode {
 				.finally(() => clearTimeout(timeout));
 		}
 
-		// Start version check asynchronously
-		checkForNewCandyVersion(this.version).then((newRelease) => {
-			if (newRelease) {
-				this.showNewVersionNotification(newRelease);
-			}
-		});
-
 		// Start package update check asynchronously
 		this.checkForPackageUpdates()
 			.then((updates) => {
@@ -1199,39 +1189,18 @@ export class InteractiveMode {
 		const entries = parseChangelog(changelogPath);
 
 		if (!lastVersion) {
-			// Fresh install - record the version, send telemetry, don't show changelog
+			// Fresh install - record the version and don't show changelog
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
 			return undefined;
 		}
 
 		const newEntries = getNewEntries(entries, lastVersion);
 		if (newEntries.length > 0) {
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
 			return newEntries.map((e) => normalizeChangelogLinks(e.content, e)).join("\n\n");
 		}
 
 		return undefined;
-	}
-
-	private reportInstallTelemetry(version: string): void {
-		if (process.env.CANDY_OFFLINE) {
-			return;
-		}
-
-		if (!isInstallTelemetryEnabled(this.settingsManager)) {
-			return;
-		}
-
-		void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
-			headers: {
-				"User-Agent": getCandyUserAgent(version),
-			},
-			signal: AbortSignal.timeout(5000),
-		})
-			.then(() => undefined)
-			.catch(() => undefined);
 	}
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
@@ -4105,15 +4074,6 @@ export class InteractiveMode {
 	showWarning(warningMessage: string, title = "Warning"): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new TranscriptNotice({ tone: "warning", title, body: warningMessage }));
-		this.ui.requestRender();
-	}
-
-	showNewVersionNotification(release: LatestCandyRelease): void {
-		const title = `Update available · v${release.version}`;
-		const content = `Installed: v${this.version}\n\nRun \`${APP_NAME} update\`.${release.note ? `\n\n${release.note}` : ""}`;
-		this.chatContainer.addChild(
-			new TranscriptNotice({ tone: "info", title, body: "", onOpen: () => this.showReader(title, content) }),
-		);
 		this.ui.requestRender();
 	}
 

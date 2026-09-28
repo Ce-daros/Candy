@@ -25,7 +25,6 @@ describe("assistant transcript interaction", () => {
 		"links thinking runs and reveals TPS only from the reply marker (animations %s)",
 		async (animations) => {
 			process.env.CANDY_OFFLINE = "1";
-			process.env.CANDY_SKIP_VERSION_CHECK = "1";
 			const terminal = new VirtualTerminal(80, 30);
 			smoke = await createInteractiveSmoke({ terminal, empty: true, transcript: true, animations });
 			await smoke.mode.init();

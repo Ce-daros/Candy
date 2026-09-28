@@ -9,7 +9,7 @@ candy [options] [--] [@files...] [messages...]
 candy install <source> [options]
 candy remove <source> [options]
 candy uninstall <source> [options]
-candy update [target] [options]
+candy update [options]
 candy list
 candy config [options]
 candy auth <check|print-api-key|print-bearer-token> [options]
@@ -216,25 +216,21 @@ See [candy Packages](packages.md) for source formats, filtering, installation, a
 
 Add `--local` or `-l` to `install`, `remove`, `uninstall`, or `config` to use project settings instead of global settings.
 
-### Update candy or packages
+### Update packages
 
-Running `candy update` without a target updates candy itself.
+candy does not update itself. Upgrade it with your package manager, for example:
+`npm install -g @candy/coding-agent@latest`.
 
 | Task | Command |
 |---|---|
-| Update candy | `candy update` |
 | Update all installed packages | `candy update --extensions` |
 | Update one installed package | `candy update <source>` |
 | Refresh model catalogs | `candy update --models` |
-| Update candy and all installed packages | `candy update --all` |
-
-Add `--force` to reinstall candy when the selected update includes the CLI.
 
 ### Aliases and command options
 
 - `candy uninstall <source>` is an alias for `candy remove <source>`.
-- `candy update --self`, `candy update self`, and `candy update candy` are aliases for `candy update`.
-- `candy update --extension <source>` is an alias for `candy update <source>`.
+- `candy update --extension <source>` is an alias for `candy update <source>`. Running `candy update` without a target, `candy update --self`, `candy update self`, or `candy update candy` prints the manual upgrade instruction.
 - `-a`, `--approve` trusts project-local files for one command. `-na`, `--no-approve` ignores trust-gated project-local files.
 - Append `-h` or `--help` to a command for its exact usage and option constraints.
 

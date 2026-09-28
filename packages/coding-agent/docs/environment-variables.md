@@ -82,8 +82,6 @@ These variables are read by candy itself:
 | `CANDY_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
 | `CANDY_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
 | `CANDY_OFFLINE` | Disable automatic network activity, including model catalog refreshes |
-| `CANDY_SKIP_VERSION_CHECK` | Disable the `pi.dev` latest-version request |
-| `CANDY_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no` |
 | `CANDY_CACHE_RETENTION` | Set to `long` for extended provider prompt caching where supported |
 | `CANDY_HARDWARE_CURSOR` | Set to `1` to show the hardware cursor; see [Terminal setup](terminal-setup.md) |
 | `CANDY_HYPERLINKS` | Override OSC 8 hyperlink detection with `1`, `0`, or `auto` |

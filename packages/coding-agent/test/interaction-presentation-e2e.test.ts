@@ -58,7 +58,6 @@ async function start(
 	options: { empty?: boolean } = {},
 ): Promise<{ state: InteractiveState; terminal: VirtualTerminal }> {
 	process.env.CANDY_OFFLINE = "1";
-	process.env.CANDY_SKIP_VERSION_CHECK = "1";
 	const terminal = new VirtualTerminal(80, 24);
 	smoke = await createInteractiveSmoke({ terminal, animations: false, empty: options.empty });
 	await smoke.mode.init();

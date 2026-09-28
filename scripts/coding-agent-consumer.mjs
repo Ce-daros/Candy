@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getPublicWorkspacePackages } from "./release-packages.mjs";
+import { getPublicWorkspacePackages } from "./package-workspaces.mjs";
 
 const codingAgentName = "@candy/coding-agent";
 
@@ -103,7 +103,7 @@ for (const subpath of ["/client", "/experimental/plugin"]) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	if (process.argv.length !== 2) throw new Error("Usage: node scripts/coding-agent-consumer.mjs");
-	const root = mkdtempSync(join(tmpdir(), "pi-package-consumer-"));
+	const root = mkdtempSync(join(tmpdir(), "candy-package-consumer-"));
 	try {
 		const tarballs = packReleasePackages(getPublicWorkspacePackages(), join(root, "tarballs"));
 		const directory = join(root, "consumer");

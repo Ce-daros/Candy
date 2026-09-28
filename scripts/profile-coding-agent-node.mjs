@@ -397,7 +397,7 @@ async function runTuiBenchmarkRun({ runtime, runIndex, measuredIndex, options, p
 	const runNumber = runIndex + 1;
 	const suffix = String(runNumber).padStart(3, "0");
 	const profileName = `${options.label}-${suffix}.cpuprofile`;
-	const tempRoot = options.isolatedAgentDir ? mkdtempSync(join(tmpdir(), "pi-startup-benchmark-")) : undefined;
+	const tempRoot = options.isolatedAgentDir ? mkdtempSync(join(tmpdir(), "candy-startup-benchmark-")) : undefined;
 	const isolatedAgentDir = tempRoot ? join(tempRoot, "agent") : undefined;
 	if (isolatedAgentDir) {
 		mkdirSync(isolatedAgentDir, { recursive: true });
@@ -457,7 +457,7 @@ async function runRpcBenchmarkRun({ runtime, runIndex, measuredIndex, options, p
 	const runNumber = runIndex + 1;
 	const suffix = String(runNumber).padStart(3, "0");
 	const profileName = `${options.label}-${suffix}.cpuprofile`;
-	const tempRoot = options.isolatedAgentDir ? mkdtempSync(join(tmpdir(), "pi-startup-benchmark-")) : undefined;
+	const tempRoot = options.isolatedAgentDir ? mkdtempSync(join(tmpdir(), "candy-startup-benchmark-")) : undefined;
 	const isolatedAgentDir = tempRoot ? join(tempRoot, "agent") : undefined;
 	if (isolatedAgentDir) {
 		mkdirSync(isolatedAgentDir, { recursive: true });

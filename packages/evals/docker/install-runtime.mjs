@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installCodingAgentConsumer, packReleasePackages } from "../../../scripts/coding-agent-consumer.mjs";
-import { getPublicWorkspacePackages } from "../../../scripts/release-packages.mjs";
+import { getPublicWorkspacePackages } from "../../../scripts/package-workspaces.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const outputDirectory = process.argv[2];

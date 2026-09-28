@@ -72,18 +72,18 @@ Automatic retries, recovery, compaction, or queued work can continue afterward.
 
 | Capability | Main API |
 |---|---|
-| Observe or modify lifecycle behavior | `pi.on()` |
-| Add a model-callable operation | `pi.registerTool()` |
+| Observe or modify lifecycle behavior | `candy.on()` |
+| Add a model-callable operation | `candy.registerTool()` |
 | Add a Command entry | `candy.registerCommand()` |
-| Add a shortcut or CLI flag | `pi.registerShortcut()` or `pi.registerFlag()` |
-| Send user or custom messages | `pi.sendUserMessage()` or `pi.sendMessage()` |
-| Persist non-context session data | `pi.appendEntry()` |
+| Add a shortcut or CLI flag | `candy.registerShortcut()` or `candy.registerFlag()` |
+| Send user or custom messages | `candy.sendUserMessage()` or `candy.sendMessage()` |
+| Persist non-context session data | `candy.appendEntry()` |
 | Change active tools, model, or thinking level | Session control methods on `candy` |
-| Add a model provider | `pi.registerProvider()` |
+| Add a model provider | `candy.registerProvider()` |
 | Add terminal rendering | Renderer registration and `ctx.ui` |
-| Communicate with another extension | `pi.events` |
+| Communicate with another extension | `candy.events` |
 
-Use the exported declarations in [`extensions/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/extensions/types.ts) for exact event, context, tool, and result types.
+Use the exported declarations in [`extensions/types.ts`](../src/core/extensions/types.ts) for exact event, context, tool, and result types.
 
 ## Follow the extension contracts
 
@@ -92,7 +92,7 @@ Use the exported declarations in [`extensions/types.ts`](https://github.com/eare
 
 ### Events and concurrency
 
-Handlers run in extension load and registration order. `pi.on()` returns a function that unsubscribes that registration; changes do not affect a dispatch already in progress.
+Handlers run in extension load and registration order. `candy.on()` returns a function that unsubscribes that registration; changes do not affect a dispatch already in progress.
 Some events notify; others transform data, replace results, or cancel an operation.
 Use each event’s declared result type rather than assuming every return value has an effect.
 
@@ -145,7 +145,7 @@ See [`hello.ts`](../examples/extensions/hello.ts), [`todo.ts`](../examples/exten
 
 ### Activate tools dynamically
 
-Register every tool first, keep optional tools inactive, and use `pi.setActiveTools()` from a loader tool to select the desired active tools. Names must already be registered; unknown names are ignored.
+Register every tool first, keep optional tools inactive, and use `candy.setActiveTools()` from a loader tool to select the desired active tools. Names must already be registered; unknown names are ignored.
 
 candy records the initial prompt and tool set in the transcript's first system message, then appends tool and prompt changes before the next model request. Providers that cannot represent the transition receive a complete transcript checkpoint, which can invalidate the cached prefix.
 
@@ -173,8 +173,8 @@ Choose storage based on how state participates in the conversation:
 | State | Storage |
 |---|---|
 | Tool state that follows the active branch | Tool-result `details` |
-| Durable data excluded from model context | `pi.appendEntry()` |
-| Custom content stored and sent to the model | `pi.sendMessage()` |
+| Durable data excluded from model context | `candy.appendEntry()` |
+| Custom content stored and sent to the model | `candy.sendMessage()` |
 | Data outside one session | External storage |
 
 Reconstruct branch-sensitive state from `ctx.sessionManager.getBranch()` during `session_start`.

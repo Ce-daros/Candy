@@ -17,6 +17,11 @@
 - Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package now publishes the SDK and RPC entrypoints only.
 - First-time setup now runs for the official distribution whenever the default agent directory has no settings file; `CANDY_EXPERIMENTAL` no longer gates setup.
 - Session reads report malformed JSONL records with their file and line number and do not modify files. Legacy records and missing final newlines are rewritten atomically on the next save.
+- Removed the pi.dev release infrastructure from the product: the automatic version check, the self-update installer (`candy update` managed/npm/pnpm/yarn/bun self-update paths), and the install-report ping. Upgrade candy with your package manager, for example `npm install -g @candy/coding-agent@latest`.
+- `candy update` no longer updates candy itself. It handles `--extensions`, `--extension <source>`, and `--models` only; running it without a target, `--self`, `self`, or `candy` prints the manual upgrade instruction, and `--all`/`--force` were removed.
+- Removed the `CANDY_SKIP_VERSION_CHECK` and `CANDY_TELEMETRY` environment variables. The `enableInstallTelemetry` setting now only controls provider attribution headers.
+- Removed the pi.dev remote model-catalog overlay; `candy update --models` and startup refreshes use the bundled catalog and locally configured providers only.
+- OpenRouter requests now attribute to Candy (`HTTP-Referer: https://github.com/Ce-daros/Candy`, `X-OpenRouter-Title: Candy`, `X-OpenRouter-Categories: cli-agent`) instead of pi.dev.
 
 ### Added
 
@@ -29,7 +34,6 @@
 - Added per-input disposition to successful RPC `prompt`, `steer`, and `follow_up` responses, `AgentSession.steer()`/`followUp()`, and `RpcClient.prompt()`/`steer()`/`followUp()`; `RpcClient.prompt()` also accepts `streamingBehavior` ([#9098](https://github.com/earendil-works/pi/issues/9098), [#9803](https://github.com/earendil-works/pi/issues/9803)).
 - Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat, image, and classifier entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
 - Added classifier support to `ModelRuntime`, including `classify()`, classifier model accessors, runtime-resolved authentication, and the built-in TypeSafe `jev-latest` model.
-- Added `types=chat,image,classifier` to pi.dev model catalog requests so remote refreshes overlay every supported model type; entries of unknown model types are ignored.
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `debug-provider` example command viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
 - Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, the session name, and a context line and percentage that follow usage.

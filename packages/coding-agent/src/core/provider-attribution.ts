@@ -1,6 +1,5 @@
 import type { Api, Model, ProviderHeaders } from "@candy/ai";
 import type { SettingsManager } from "./settings-manager.ts";
-import { isInstallTelemetryEnabled } from "./telemetry.ts";
 
 const OPENROUTER_HOST = "openrouter.ai";
 const NVIDIA_NIM_HOST = "integrate.api.nvidia.com";
@@ -37,14 +36,14 @@ function getDefaultAttributionHeaders(
 	model: Model<Api>,
 	settingsManager: SettingsManager,
 ): Record<string, string> | undefined {
-	if (!isInstallTelemetryEnabled(settingsManager)) {
+	if (!settingsManager.getEnableInstallTelemetry()) {
 		return undefined;
 	}
 
 	if (isOpenRouterModel(model)) {
 		return {
-			"HTTP-Referer": "https://pi.dev",
-			"X-OpenRouter-Title": "candy",
+			"HTTP-Referer": "https://github.com/Ce-daros/Candy",
+			"X-OpenRouter-Title": "Candy",
 			"X-OpenRouter-Categories": "cli-agent",
 		};
 	}
