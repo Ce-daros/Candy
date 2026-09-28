@@ -2,10 +2,8 @@ import { CLASSIFIER_MODELS, IMAGE_MODELS, MODELS } from "../models.generated.ts"
 import { type CreateModelsOptions, createModels, type MutableModels, type Provider } from "../models.ts";
 import type { AnyModel, Api, ClassifierApi, ClassifierModel, ImageApi, ImageModel, Model } from "../types.ts";
 import { amazonBedrockProvider } from "./amazon-bedrock.ts";
-import { antLingProvider } from "./ant-ling.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { azureOpenAIResponsesProvider } from "./azure-openai-responses.ts";
-import { basetenProvider } from "./baseten.ts";
 import { cerebrasProvider } from "./cerebras.ts";
 import { cloudflareAIGatewayProvider } from "./cloudflare-ai-gateway.ts";
 import { cloudflareWorkersAIProvider } from "./cloudflare-workers-ai.ts";
@@ -33,7 +31,6 @@ import { openrouterProvider } from "./openrouter.ts";
 import { qwenTokenPlanProvider } from "./qwen-token-plan.ts";
 import { qwenTokenPlanCnProvider } from "./qwen-token-plan-cn.ts";
 import { qwenTokenPlanIndividualProvider } from "./qwen-token-plan-individual.ts";
-import { radiusProvider } from "./radius.ts";
 import { togetherProvider } from "./together.ts";
 import { typesafeProvider } from "./typesafe.ts";
 import { vercelAIGatewayProvider } from "./vercel-ai-gateway.ts";
@@ -45,11 +42,7 @@ import { xiaomiTokenPlanSgpProvider } from "./xiaomi-token-plan-sgp.ts";
 import { zaiProvider } from "./zai.ts";
 import { zaiCodingCnProvider } from "./zai-coding-cn.ts";
 
-export { radiusProvider };
-
-/** Providers present in the generated catalog. `KnownProvider` additionally
- * includes purely dynamic providers (e.g. "radius") that have no static
- * catalog entry. */
+/** Providers present in the generated catalog. */
 export type BuiltinProvider = keyof typeof MODELS;
 
 type BuiltinChatModelId<TProvider extends BuiltinProvider> = keyof (typeof MODELS)[TProvider];
@@ -136,10 +129,8 @@ export function getAllBuiltinModels<TProvider extends BuiltinProvider>(provider:
 export function builtinProviders(): Provider[] {
 	return [
 		amazonBedrockProvider(),
-		antLingProvider(),
 		anthropicProvider(),
 		azureOpenAIResponsesProvider(),
-		basetenProvider(),
 		cerebrasProvider(),
 		cloudflareAIGatewayProvider(),
 		cloudflareWorkersAIProvider(),
@@ -166,7 +157,6 @@ export function builtinProviders(): Provider[] {
 		qwenTokenPlanProvider(),
 		qwenTokenPlanCnProvider(),
 		qwenTokenPlanIndividualProvider(),
-		radiusProvider(),
 		togetherProvider(),
 		typesafeProvider(),
 		vercelAIGatewayProvider(),

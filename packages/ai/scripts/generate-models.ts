@@ -36,11 +36,6 @@ import {
 	validateGeneratedModelData,
 	validateModelDataDirectory,
 } from "./model-data.ts";
-import {
-	DEFAULT_RADIUS_GATEWAY,
-	getRadiusModelsFromConfig,
-	loadRadiusGatewayConfig,
-} from "../src/providers/radius-config.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -343,14 +338,6 @@ const KIMI_CODING_IMPLIED_COSTS: Record<string, Model<Api>["cost"]> = {
 };
 const OPENROUTER_KIMI_K3_MODEL_IDS = new Set(["moonshotai/kimi-k3", "~moonshotai/kimi-latest"]);
 
-const ANT_LING_RING_THINKING_LEVEL_MAP = {
-	off: null,
-	minimal: null,
-	low: null,
-	medium: null,
-	high: "high",
-	xhigh: "xhigh",
-} as const;
 
 const BEDROCK_INFERENCE_PROFILE_ONLY_MODEL_IDS = new Set(["anthropic.claude-opus-5"]);
 const MODELS_DEV_OPENAI_UNSUPPORTED_MODEL_IDS = new Set(["gpt-5.6"]);
@@ -648,7 +635,6 @@ const OPENAI_COMPLETIONS_DEFAULT_COMPAT = {
 	openRouterRouting: {},
 	vercelGatewayRouting: {},
 	chatTemplateKwargs: {},
-	chatTemplateArgs: {},
 	zaiToolStream: false,
 	supportsStrictMode: false,
 	supportsOpenAIGrammarTools: false,
@@ -689,7 +675,6 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 	const isCloudflareWorkersAI = provider === "cloudflare-workers-ai" || baseUrl.includes("api.cloudflare.com");
 	const isCloudflareAiGateway = provider === "cloudflare-ai-gateway" || baseUrl.includes("gateway.ai.cloudflare.com");
 	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
-	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
 	const isCerebras = provider === "cerebras" || baseUrl.includes("cerebras.ai");
 	const isTogetherReasoningOnly = isTogether && TOGETHER_REASONING_ONLY_MODELS.has(model.id);
 	const isDeepSeek = provider === "deepseek" || baseUrl.toLowerCase().includes("deepseek.com");
@@ -707,8 +692,7 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai") ||
 		isCloudflareWorkersAI ||
-		isCloudflareAiGateway ||
-		isAntLing;
+		isCloudflareAiGateway;
 
 	const useMaxTokens =
 		baseUrl.includes("chutes.ai") ||
@@ -717,7 +701,6 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 		isCloudflareAiGateway ||
 		isTogether ||
 		isNvidia ||
-		isAntLing ||
 		isZai;
 
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
@@ -730,7 +713,7 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: isOpenRouterDeveloperRoleModel || (!isNonStandard && !isOpenRouter),
 		supportsReasoningEffort:
-			!isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isAntLing,
+			!isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia,
 		supportsUsageInStreaming: true,
 		supportsFinishReason: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
@@ -742,17 +725,14 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 			? "deepseek"
 			: isZai
 				? "zai"
-				: isTogether && !isTogetherReasoningOnly
-					? "together"
-					: isAntLing
-						? "ant-ling"
-						: isOpenRouter
-							? "openrouter"
-							: "openai",
+			: isTogether && !isTogetherReasoningOnly
+				? "together"
+				: isOpenRouter
+					? "openrouter"
+					: "openai",
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
 		chatTemplateKwargs: {},
-		chatTemplateArgs: {},
 		zaiToolStream: false,
 		// Preserve built-in behavior as explicit metadata against the conservative runtime default.
 		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isCerebras,
@@ -765,8 +745,7 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 			isTogether ||
 			isCloudflareWorkersAI ||
 			isCloudflareAiGateway ||
-			isNvidia ||
-			isAntLing
+			isNvidia
 		),
 	};
 }
@@ -1176,10 +1155,6 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 		// OpenCode Zen Grok Build reasons by default but rejects explicit reasoningEffort.
 		mergeThinkingLevelMap(model, { off: null, minimal: null, low: null, medium: null });
 	}
-	if (model.provider === "ant-ling" && model.reasoning) {
-		// Ring reasons by default. Only high/xhigh have documented explicit effort controls.
-		mergeThinkingLevelMap(model, ANT_LING_RING_THINKING_LEVEL_MAP);
-	}
 	if (model.provider === "github-copilot") {
 		const override = GITHUB_COPILOT_THINKING_LEVEL_OVERRIDES[model.id];
 		if (override) {
@@ -1305,21 +1280,6 @@ async function fetchOpenRouterModels(): Promise<OpenRouterCatalog> {
 	}
 }
 
-async function fetchRadiusModels(): Promise<Model<"pi-messages">[]> {
-	try {
-		console.log("Fetching models from Radius API...");
-		const config = await loadRadiusGatewayConfig(DEFAULT_RADIUS_GATEWAY);
-		const models = getRadiusModelsFromConfig("radius", config);
-		if (models.length === 0) throw new Error("Radius API returned no models");
-		console.log(`Fetched ${models.length} models from Radius`);
-		return models;
-	} catch (error) {
-		console.error("Failed to fetch Radius models:", error);
-		if (generatorOptions.strict) throw error;
-		return [];
-	}
-}
-
 async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from Vercel AI Gateway API...");
@@ -1436,106 +1396,6 @@ function processZaiModels(data: ModelsDevCatalog): Model<Api>[] {
 			});
 			recordModelsDevReasoningOptions(provider, modelId, m);
 		}
-	}
-
-	return models;
-}
-
-function processBasetenModels(provider: ModelsDevProvider | undefined): Model<Api>[] {
-	if (!provider?.models) return [];
-
-	const baseUrl = "https://inference.baseten.co/v1";
-	const baseCompat: OpenAICompletionsCompat = {
-		supportsStore: false,
-		supportsDeveloperRole: false,
-		supportsReasoningEffort: false,
-		supportsUsageInStreaming: true,
-		maxTokensField: "max_tokens",
-		supportsStrictMode: true,
-		// Baseten automatic prompt caching needs session affinity so related
-		// requests land on the same replica. See:
-		// https://docs.baseten.co/inference/model-apis/pricing-and-limits
-		sendSessionAffinityHeaders: true,
-		supportsLongCacheRetention: false,
-	};
-	const reasoningEffortCompat: OpenAICompletionsCompat = {
-		...baseCompat,
-		supportsReasoningEffort: true,
-		thinkingFormat: "openai",
-	};
-	const toggleReasoningCompat: OpenAICompletionsCompat = {
-		...baseCompat,
-		thinkingFormat: "baseten",
-		chatTemplateArgs: { enable_thinking: { $var: "thinking.enabled" } },
-	};
-	const toggleReasoningEffortCompat: OpenAICompletionsCompat = {
-		...reasoningEffortCompat,
-		thinkingFormat: "baseten",
-		chatTemplateArgs: { enable_thinking: { $var: "thinking.enabled" } },
-	};
-	const toggleThinkingLevelMap = {
-		off: "off",
-		minimal: null,
-		low: null,
-		medium: null,
-		high: "high",
-		xhigh: null,
-		max: null,
-	} as const;
-	const glm52ThinkingLevelMap = {
-		off: "none",
-		minimal: null,
-		low: null,
-		medium: null,
-		high: "high",
-		xhigh: null,
-		max: "max",
-	} as const;
-	const models: Model<Api>[] = [];
-
-	for (const [modelId, model] of Object.entries(provider.models)) {
-		if (model.status === "deprecated") continue;
-
-		const reasoning = model.reasoning === true;
-		const reasoningOptions = model.reasoning_options ?? [];
-		const isGlm52 = modelId === "zai-org/GLM-5.2" || modelId === "zai-org/GLM-5.2-Fast";
-		const supportsToggle = reasoningOptions.some((option) => option.type === "toggle") || isGlm52;
-		const supportsEffort = reasoningOptions.some((option) => option.type === "effort") || isGlm52;
-		const compat =
-			supportsToggle && supportsEffort
-				? toggleReasoningEffortCompat
-				: supportsToggle
-					? toggleReasoningCompat
-					: supportsEffort
-						? reasoningEffortCompat
-						: baseCompat;
-		const thinkingLevelMap = isGlm52
-			? glm52ThinkingLevelMap
-			: supportsToggle
-				? toggleThinkingLevelMap
-				: getEffortThinkingLevelMap(reasoningOptions);
-		// Baseten's GLM-5.2 endpoints are text-only despite models.dev reporting image input.
-		const supportsImageInput = !isGlm52 && model.modalities?.input?.includes("image");
-
-		models.push({
-			id: modelId,
-			name: model.name || modelId,
-			api: "openai-completions",
-			provider: "baseten",
-			baseUrl,
-			reasoning,
-			...(thinkingLevelMap ? { thinkingLevelMap } : {}),
-			input: supportsImageInput ? ["text", "image"] : ["text"],
-			cost: {
-				input: model.cost?.input || 0,
-				output: model.cost?.output || 0,
-				cacheRead: model.cost?.cache_read || 0,
-				cacheWrite: model.cost?.cache_write || 0,
-			},
-			compat,
-			contextWindow: model.limit?.context || 4096,
-			maxTokens: model.limit?.output || 4096,
-		});
 	}
 
 	return models;
@@ -2169,8 +2029,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		models.push(...processBasetenModels(data.baseten));
-
 		// Process OpenCode models (Zen and Go)
 		// API mapping based on provider.npm field:
 		// - @ai-sdk/openai → openai-responses
@@ -2672,15 +2530,13 @@ async function generateModels() {
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras, and others
 	// OpenRouter: its tool-capable routed catalog
 	// AI Gateway: OpenAI-compatible catalog with tool-capable models
-	// Radius: its unauthenticated public catalog; authenticated clients overlay it at runtime
 	const modelsDevModels = await loadModelsDevData();
 	const modelsDevClassifierModels = await loadModelsDevClassifierModels();
 	const openRouterCatalog = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
-	const radiusModels = await fetchRadiusModels();
 
 	// Combine chat models (models.dev has priority where sources overlap).
-	const allModels = [...modelsDevModels, ...openRouterCatalog.chat, ...aiGatewayModels, ...radiusModels].filter(
+	const allModels = [...modelsDevModels, ...openRouterCatalog.chat, ...aiGatewayModels].filter(
 		(model) =>
 			!(model.provider === "xai" && XAI_BUILTIN_EXCLUDED_MODEL_IDS.has(model.id)) &&
 			!((model.provider === "opencode" || model.provider === "opencode-go") && model.id === "gpt-5.3-codex-spark"),
@@ -2994,56 +2850,6 @@ async function generateModels() {
 		},
 	];
 	allModels.push(...deepseekModels);
-
-	const antLingCompat: OpenAICompletionsCompat = {
-		supportsStore: false,
-		supportsDeveloperRole: false,
-		supportsReasoningEffort: false,
-		maxTokensField: "max_tokens",
-		supportsLongCacheRetention: false,
-	};
-	const antLingModels: Model<"openai-completions">[] = [
-		{
-			id: "Ling-2.6-flash",
-			name: "Ling 2.6 Flash",
-			api: "openai-completions",
-			baseUrl: "https://api.ant-ling.com/v1",
-			provider: "ant-ling",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0.01, output: 0.02, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 262144,
-			maxTokens: 65536,
-			compat: antLingCompat,
-		},
-		{
-			id: "Ling-2.6-1T",
-			name: "Ling 2.6 1T",
-			api: "openai-completions",
-			baseUrl: "https://api.ant-ling.com/v1",
-			provider: "ant-ling",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0.06, output: 0.25, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 262144,
-			maxTokens: 65536,
-			compat: antLingCompat,
-		},
-		{
-			id: "Ring-2.6-1T",
-			name: "Ring 2.6 1T",
-			api: "openai-completions",
-			baseUrl: "https://api.ant-ling.com/v1",
-			provider: "ant-ling",
-			reasoning: true,
-			input: ["text"],
-			cost: { input: 0.06, output: 0.25, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 262144,
-			maxTokens: 65536,
-			compat: { ...antLingCompat, thinkingFormat: "ant-ling" },
-		},
-	];
-	allModels.push(...antLingModels);
 
 	for (const candidate of allModels) {
 		if (

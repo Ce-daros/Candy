@@ -2,10 +2,8 @@
 // Do not edit manually - run 'npm run generate-models' to update
 
 import { AMAZON_BEDROCK_CLASSIFIER_MODELS, AMAZON_BEDROCK_IMAGE_MODELS, AMAZON_BEDROCK_MODELS } from "./providers/amazon-bedrock.models.ts";
-import { ANT_LING_CLASSIFIER_MODELS, ANT_LING_IMAGE_MODELS, ANT_LING_MODELS } from "./providers/ant-ling.models.ts";
 import { ANTHROPIC_CLASSIFIER_MODELS, ANTHROPIC_IMAGE_MODELS, ANTHROPIC_MODELS } from "./providers/anthropic.models.ts";
 import { AZURE_OPENAI_RESPONSES_CLASSIFIER_MODELS, AZURE_OPENAI_RESPONSES_IMAGE_MODELS, AZURE_OPENAI_RESPONSES_MODELS } from "./providers/azure-openai-responses.models.ts";
-import { BASETEN_CLASSIFIER_MODELS, BASETEN_IMAGE_MODELS, BASETEN_MODELS } from "./providers/baseten.models.ts";
 import { CEREBRAS_CLASSIFIER_MODELS, CEREBRAS_IMAGE_MODELS, CEREBRAS_MODELS } from "./providers/cerebras.models.ts";
 import { CLOUDFLARE_AI_GATEWAY_CLASSIFIER_MODELS, CLOUDFLARE_AI_GATEWAY_IMAGE_MODELS, CLOUDFLARE_AI_GATEWAY_MODELS } from "./providers/cloudflare-ai-gateway.models.ts";
 import { CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS, CLOUDFLARE_WORKERS_AI_IMAGE_MODELS, CLOUDFLARE_WORKERS_AI_MODELS } from "./providers/cloudflare-workers-ai.models.ts";
@@ -32,7 +30,6 @@ import { OPENROUTER_CLASSIFIER_MODELS, OPENROUTER_IMAGE_MODELS, OPENROUTER_MODEL
 import { QWEN_TOKEN_PLAN_CLASSIFIER_MODELS, QWEN_TOKEN_PLAN_IMAGE_MODELS, QWEN_TOKEN_PLAN_MODELS } from "./providers/qwen-token-plan.models.ts";
 import { QWEN_TOKEN_PLAN_CN_CLASSIFIER_MODELS, QWEN_TOKEN_PLAN_CN_IMAGE_MODELS, QWEN_TOKEN_PLAN_CN_MODELS } from "./providers/qwen-token-plan-cn.models.ts";
 import { QWEN_TOKEN_PLAN_INDIVIDUAL_CLASSIFIER_MODELS, QWEN_TOKEN_PLAN_INDIVIDUAL_IMAGE_MODELS, QWEN_TOKEN_PLAN_INDIVIDUAL_MODELS } from "./providers/qwen-token-plan-individual.models.ts";
-import { RADIUS_CLASSIFIER_MODELS, RADIUS_IMAGE_MODELS, RADIUS_MODELS } from "./providers/radius.models.ts";
 import { TOGETHER_CLASSIFIER_MODELS, TOGETHER_IMAGE_MODELS, TOGETHER_MODELS } from "./providers/together.models.ts";
 import { TYPESAFE_CLASSIFIER_MODELS, TYPESAFE_IMAGE_MODELS, TYPESAFE_MODELS } from "./providers/typesafe.models.ts";
 import { VERCEL_AI_GATEWAY_CLASSIFIER_MODELS, VERCEL_AI_GATEWAY_IMAGE_MODELS, VERCEL_AI_GATEWAY_MODELS } from "./providers/vercel-ai-gateway.models.ts";
@@ -46,10 +43,8 @@ import { ZAI_CODING_CN_CLASSIFIER_MODELS, ZAI_CODING_CN_IMAGE_MODELS, ZAI_CODING
 
 export const MODELS: {
 	readonly "amazon-bedrock": typeof AMAZON_BEDROCK_MODELS;
-	readonly "ant-ling": typeof ANT_LING_MODELS;
 	readonly "anthropic": typeof ANTHROPIC_MODELS;
 	readonly "azure-openai-responses": typeof AZURE_OPENAI_RESPONSES_MODELS;
-	readonly "baseten": typeof BASETEN_MODELS;
 	readonly "cerebras": typeof CEREBRAS_MODELS;
 	readonly "cloudflare-ai-gateway": typeof CLOUDFLARE_AI_GATEWAY_MODELS;
 	readonly "cloudflare-workers-ai": typeof CLOUDFLARE_WORKERS_AI_MODELS;
@@ -76,7 +71,6 @@ export const MODELS: {
 	readonly "qwen-token-plan": typeof QWEN_TOKEN_PLAN_MODELS;
 	readonly "qwen-token-plan-cn": typeof QWEN_TOKEN_PLAN_CN_MODELS;
 	readonly "qwen-token-plan-individual": typeof QWEN_TOKEN_PLAN_INDIVIDUAL_MODELS;
-	readonly "radius": typeof RADIUS_MODELS;
 	readonly "together": typeof TOGETHER_MODELS;
 	readonly "typesafe": typeof TYPESAFE_MODELS;
 	readonly "vercel-ai-gateway": typeof VERCEL_AI_GATEWAY_MODELS;
@@ -89,10 +83,8 @@ export const MODELS: {
 	readonly "zai-coding-cn": typeof ZAI_CODING_CN_MODELS;
 } = {
 	"amazon-bedrock": AMAZON_BEDROCK_MODELS,
-	"ant-ling": ANT_LING_MODELS,
 	"anthropic": ANTHROPIC_MODELS,
 	"azure-openai-responses": AZURE_OPENAI_RESPONSES_MODELS,
-	"baseten": BASETEN_MODELS,
 	"cerebras": CEREBRAS_MODELS,
 	"cloudflare-ai-gateway": CLOUDFLARE_AI_GATEWAY_MODELS,
 	"cloudflare-workers-ai": CLOUDFLARE_WORKERS_AI_MODELS,
@@ -119,7 +111,6 @@ export const MODELS: {
 	"qwen-token-plan": QWEN_TOKEN_PLAN_MODELS,
 	"qwen-token-plan-cn": QWEN_TOKEN_PLAN_CN_MODELS,
 	"qwen-token-plan-individual": QWEN_TOKEN_PLAN_INDIVIDUAL_MODELS,
-	"radius": RADIUS_MODELS,
 	"together": TOGETHER_MODELS,
 	"typesafe": TYPESAFE_MODELS,
 	"vercel-ai-gateway": VERCEL_AI_GATEWAY_MODELS,
@@ -134,10 +125,8 @@ export const MODELS: {
 
 export const IMAGE_MODELS: {
 	readonly "amazon-bedrock": typeof AMAZON_BEDROCK_IMAGE_MODELS;
-	readonly "ant-ling": typeof ANT_LING_IMAGE_MODELS;
 	readonly "anthropic": typeof ANTHROPIC_IMAGE_MODELS;
 	readonly "azure-openai-responses": typeof AZURE_OPENAI_RESPONSES_IMAGE_MODELS;
-	readonly "baseten": typeof BASETEN_IMAGE_MODELS;
 	readonly "cerebras": typeof CEREBRAS_IMAGE_MODELS;
 	readonly "cloudflare-ai-gateway": typeof CLOUDFLARE_AI_GATEWAY_IMAGE_MODELS;
 	readonly "cloudflare-workers-ai": typeof CLOUDFLARE_WORKERS_AI_IMAGE_MODELS;
@@ -164,7 +153,6 @@ export const IMAGE_MODELS: {
 	readonly "qwen-token-plan": typeof QWEN_TOKEN_PLAN_IMAGE_MODELS;
 	readonly "qwen-token-plan-cn": typeof QWEN_TOKEN_PLAN_CN_IMAGE_MODELS;
 	readonly "qwen-token-plan-individual": typeof QWEN_TOKEN_PLAN_INDIVIDUAL_IMAGE_MODELS;
-	readonly "radius": typeof RADIUS_IMAGE_MODELS;
 	readonly "together": typeof TOGETHER_IMAGE_MODELS;
 	readonly "typesafe": typeof TYPESAFE_IMAGE_MODELS;
 	readonly "vercel-ai-gateway": typeof VERCEL_AI_GATEWAY_IMAGE_MODELS;
@@ -177,10 +165,8 @@ export const IMAGE_MODELS: {
 	readonly "zai-coding-cn": typeof ZAI_CODING_CN_IMAGE_MODELS;
 } = {
 	"amazon-bedrock": AMAZON_BEDROCK_IMAGE_MODELS,
-	"ant-ling": ANT_LING_IMAGE_MODELS,
 	"anthropic": ANTHROPIC_IMAGE_MODELS,
 	"azure-openai-responses": AZURE_OPENAI_RESPONSES_IMAGE_MODELS,
-	"baseten": BASETEN_IMAGE_MODELS,
 	"cerebras": CEREBRAS_IMAGE_MODELS,
 	"cloudflare-ai-gateway": CLOUDFLARE_AI_GATEWAY_IMAGE_MODELS,
 	"cloudflare-workers-ai": CLOUDFLARE_WORKERS_AI_IMAGE_MODELS,
@@ -207,7 +193,6 @@ export const IMAGE_MODELS: {
 	"qwen-token-plan": QWEN_TOKEN_PLAN_IMAGE_MODELS,
 	"qwen-token-plan-cn": QWEN_TOKEN_PLAN_CN_IMAGE_MODELS,
 	"qwen-token-plan-individual": QWEN_TOKEN_PLAN_INDIVIDUAL_IMAGE_MODELS,
-	"radius": RADIUS_IMAGE_MODELS,
 	"together": TOGETHER_IMAGE_MODELS,
 	"typesafe": TYPESAFE_IMAGE_MODELS,
 	"vercel-ai-gateway": VERCEL_AI_GATEWAY_IMAGE_MODELS,
@@ -222,10 +207,8 @@ export const IMAGE_MODELS: {
 
 export const CLASSIFIER_MODELS: {
 	readonly "amazon-bedrock": typeof AMAZON_BEDROCK_CLASSIFIER_MODELS;
-	readonly "ant-ling": typeof ANT_LING_CLASSIFIER_MODELS;
 	readonly "anthropic": typeof ANTHROPIC_CLASSIFIER_MODELS;
 	readonly "azure-openai-responses": typeof AZURE_OPENAI_RESPONSES_CLASSIFIER_MODELS;
-	readonly "baseten": typeof BASETEN_CLASSIFIER_MODELS;
 	readonly "cerebras": typeof CEREBRAS_CLASSIFIER_MODELS;
 	readonly "cloudflare-ai-gateway": typeof CLOUDFLARE_AI_GATEWAY_CLASSIFIER_MODELS;
 	readonly "cloudflare-workers-ai": typeof CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS;
@@ -252,7 +235,6 @@ export const CLASSIFIER_MODELS: {
 	readonly "qwen-token-plan": typeof QWEN_TOKEN_PLAN_CLASSIFIER_MODELS;
 	readonly "qwen-token-plan-cn": typeof QWEN_TOKEN_PLAN_CN_CLASSIFIER_MODELS;
 	readonly "qwen-token-plan-individual": typeof QWEN_TOKEN_PLAN_INDIVIDUAL_CLASSIFIER_MODELS;
-	readonly "radius": typeof RADIUS_CLASSIFIER_MODELS;
 	readonly "together": typeof TOGETHER_CLASSIFIER_MODELS;
 	readonly "typesafe": typeof TYPESAFE_CLASSIFIER_MODELS;
 	readonly "vercel-ai-gateway": typeof VERCEL_AI_GATEWAY_CLASSIFIER_MODELS;
@@ -265,10 +247,8 @@ export const CLASSIFIER_MODELS: {
 	readonly "zai-coding-cn": typeof ZAI_CODING_CN_CLASSIFIER_MODELS;
 } = {
 	"amazon-bedrock": AMAZON_BEDROCK_CLASSIFIER_MODELS,
-	"ant-ling": ANT_LING_CLASSIFIER_MODELS,
 	"anthropic": ANTHROPIC_CLASSIFIER_MODELS,
 	"azure-openai-responses": AZURE_OPENAI_RESPONSES_CLASSIFIER_MODELS,
-	"baseten": BASETEN_CLASSIFIER_MODELS,
 	"cerebras": CEREBRAS_CLASSIFIER_MODELS,
 	"cloudflare-ai-gateway": CLOUDFLARE_AI_GATEWAY_CLASSIFIER_MODELS,
 	"cloudflare-workers-ai": CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS,
@@ -295,7 +275,6 @@ export const CLASSIFIER_MODELS: {
 	"qwen-token-plan": QWEN_TOKEN_PLAN_CLASSIFIER_MODELS,
 	"qwen-token-plan-cn": QWEN_TOKEN_PLAN_CN_CLASSIFIER_MODELS,
 	"qwen-token-plan-individual": QWEN_TOKEN_PLAN_INDIVIDUAL_CLASSIFIER_MODELS,
-	"radius": RADIUS_CLASSIFIER_MODELS,
 	"together": TOGETHER_CLASSIFIER_MODELS,
 	"typesafe": TYPESAFE_CLASSIFIER_MODELS,
 	"vercel-ai-gateway": VERCEL_AI_GATEWAY_CLASSIFIER_MODELS,

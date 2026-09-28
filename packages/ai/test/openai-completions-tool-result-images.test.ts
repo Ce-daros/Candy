@@ -29,7 +29,6 @@ const compat: Omit<Required<OpenAICompletionsCompat>, "thinkingTokenBudgetField"
 	openRouterRouting: {},
 	vercelGatewayRouting: {},
 	chatTemplateKwargs: {},
-	chatTemplateArgs: {},
 	zaiToolStream: false,
 	supportsThinkingTokenBudget: false,
 	thinkingTokenBudgetField: undefined,

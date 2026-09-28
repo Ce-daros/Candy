@@ -71,10 +71,9 @@ describe("builtin providers", () => {
 			expect(list.length).toBeGreaterThan(0);
 			expect(list.every((m) => m.provider === provider.id)).toBe(true);
 		}
-		expect(getBuiltinModel("radius", "balanced")).toMatchObject({
-			api: "pi-messages",
-			provider: "radius",
-		});
+		expect(providers.map((provider) => provider.id)).not.toEqual(
+			expect.arrayContaining(["ant-ling", "baseten", "radius"]),
+		);
 	});
 
 	it("returns empty results for unknown provider ids", () => {
