@@ -6,6 +6,7 @@
 
 - Removed slash-command and `skill:` autocomplete from the generic editor. Applications can provide command navigation separately; editor text beginning with `/` is submitted literally.
 - `SettingsListTheme` now requires a `keycap` renderer for shortcut hints.
+- Renamed `@earendil-works/pi-tui` to `@candy/tui`. Update imports and use `CANDY_IMAGE_PROTOCOL`, `CANDY_TRUE_COLOR`, and `CANDY_HYPERLINKS` for terminal capability overrides.
 
 ### Added
 
@@ -21,6 +22,9 @@
 - Added `MarkdownOptions.onCopyCode`, `codeBlockView`, and `maxProseWidth`, plus heading-level, code-label, and table-header theme hooks for copyable code blocks, alternate diagrams, and width-aware prose.
 - Added masked `Input` rendering and image-aware `Editor` hooks: colored paths and markers, viewport-limited editor height, `insertImageAtCursor()`, and `onImagePath` for marker activation.
 - Added viewport-bounded, expandable `Image` previews and additional `SelectList`/`SettingsList` layout and selection-detail hooks.
+- Added typed RGB, indexed, and OKLCH colors, color conversion and mixing, ANSI styling, and terminal color-mode detection.
+- Exported reusable alt-screen search components, indexing types, and helpers.
+- Added `SettingsList.setAvailableHeight()` and optional submenu height propagation.
 
 ### Fixed
 
@@ -29,6 +33,12 @@
 - Fixed the shell cursor staying hidden after exit when an extension closed an overlay during shutdown ([#10026](https://github.com/earendil-works/pi/issues/10026)).
 - Fixed image fallback paths showing Windows backslash separators (now normalized to `~/...`).
 - Fixed Sixel images being erased by partial repaints that left the image rows unchanged.
+- Fixed settings submenus overflowing the available viewport.
+
+### Changed
+
+- Shortcut hints use shared angle-bracket keycap rendering.
+- `SettingsList` forwards its available viewport height to active nested controls so submenus can keep their content and footer within the panel.
 
 ## [0.87.1] - 2026-09-22
 

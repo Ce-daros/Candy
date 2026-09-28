@@ -13,6 +13,7 @@ export interface SelectItem {
 	value: string;
 	label: string;
 	description?: string;
+	selectable?: boolean;
 }
 
 export interface SelectListTheme {
@@ -67,7 +68,14 @@ export class SelectList implements Component {
 	}
 
 	setSelectedIndex(index: number): void {
-		this.selectedIndex = Math.max(0, Math.min(index, this.filteredItems.length - 1));
+		this.selectedIndex = this.findSelectable(Math.max(0, Math.min(index, this.filteredItems.length - 1)), 1);
+	}
+
+	setSelectedValue(value: string): boolean {
+		const index = this.filteredItems.findIndex((item) => item.value === value);
+		if (index < 0) return false;
+		this.setSelectedIndex(index);
+		return true;
 	}
 
 	setMaxVisible(count: number): void {
@@ -111,16 +119,16 @@ export class SelectList implements Component {
 
 		const selected = this.filteredItems[this.selectedIndex];
 		const detail = selected && this.layout.selectedDetail?.(selected);
-		if (detail) lines.push(this.theme.description(truncateToWidth(detail, width, "…")));
+		if (detail) lines.push(this.renderDescription(truncateToWidth(detail, width, "…")));
 		return lines;
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (this.filteredItems.length === 0) return undefined;
 		if (event.type === "wheel" && event.wheelDelta) {
-			const delta = event.wheelDelta < 0 ? -1 : 1;
+			const delta: 1 | -1 = event.wheelDelta < 0 ? -1 : 1;
 			const previousIndex = this.selectedIndex;
-			this.selectedIndex = Math.max(0, Math.min(this.filteredItems.length - 1, this.selectedIndex + delta));
+			this.selectedIndex = this.findSelectable(this.selectedIndex + delta, delta);
 			if (this.selectedIndex !== previousIndex) this.notifySelectionChange();
 			return { handled: true, render: this.selectedIndex !== previousIndex };
 		}
@@ -131,6 +139,7 @@ export class SelectList implements Component {
 		if (itemIndex < startIndex || itemIndex >= endIndex) return undefined;
 
 		if (event.type === "press") {
+			if (this.filteredItems[itemIndex]?.selectable === false) return { handled: true };
 			this.mousePressedIndex = itemIndex;
 			if (this.selectedIndex !== itemIndex) {
 				this.selectedIndex = itemIndex;
@@ -141,6 +150,7 @@ export class SelectList implements Component {
 		if (event.type === "click") {
 			const clickedIndex = this.mousePressedIndex ?? itemIndex;
 			this.mousePressedIndex = undefined;
+			if (this.filteredItems[clickedIndex]?.selectable === false) return { handled: true };
 			const changed = this.selectedIndex !== clickedIndex;
 			this.selectedIndex = clickedIndex;
 			if (changed) this.notifySelectionChange();
@@ -155,12 +165,12 @@ export class SelectList implements Component {
 		const kb = getKeybindings();
 		// Up arrow - wrap to bottom when at top
 		if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = this.selectedIndex === 0 ? this.filteredItems.length - 1 : this.selectedIndex - 1;
+			this.selectedIndex = this.findSelectable(this.selectedIndex - 1, -1);
 			this.notifySelectionChange();
 		}
 		// Down arrow - wrap to top when at bottom
 		else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = this.selectedIndex === this.filteredItems.length - 1 ? 0 : this.selectedIndex + 1;
+			this.selectedIndex = this.findSelectable(this.selectedIndex + 1, 1);
 			this.notifySelectionChange();
 		}
 		// Enter
@@ -189,6 +199,15 @@ export class SelectList implements Component {
 		};
 	}
 
+	private findSelectable(start: number, direction: 1 | -1): number {
+		if (this.filteredItems.length === 0) return 0;
+		for (let offset = 0; offset < this.filteredItems.length; offset++) {
+			const index = (start + offset * direction + this.filteredItems.length * 2) % this.filteredItems.length;
+			if (this.filteredItems[index]?.selectable !== false) return index;
+		}
+		return this.selectedIndex;
+	}
+
 	private renderItem(
 		item: SelectItem,
 		isSelected: boolean,
@@ -201,12 +220,14 @@ export class SelectList implements Component {
 		const prefixWidth = visibleWidth(prefix);
 		const suffixWidth = visibleWidth(suffix);
 
-		if (descriptionSingleLine && width > 40) {
+		if (descriptionSingleLine) {
 			const effectivePrimaryColumnWidth = Math.max(1, Math.min(primaryColumnWidth, width - prefixWidth - 4));
-			const maxPrimaryWidth = Math.max(1, effectivePrimaryColumnWidth - PRIMARY_COLUMN_GAP - 2);
+			const maxPrimaryWidth = Math.max(1, effectivePrimaryColumnWidth - PRIMARY_COLUMN_GAP);
 			const truncatedValue = this.truncatePrimary(item, isSelected, maxPrimaryWidth, effectivePrimaryColumnWidth);
 			const truncatedValueWidth = visibleWidth(truncatedValue);
-			const spacing = " ".repeat(Math.max(1, effectivePrimaryColumnWidth - truncatedValueWidth - suffixWidth));
+			const spacing = " ".repeat(
+				Math.max(isSelected ? 0 : 1, effectivePrimaryColumnWidth - truncatedValueWidth - suffixWidth),
+			);
 			const descriptionStart = prefixWidth + truncatedValueWidth + suffixWidth + spacing.length;
 			const remainingWidth = width - descriptionStart - 2; // -2 for safety
 
@@ -226,11 +247,11 @@ export class SelectList implements Component {
 						prefix +
 						this.theme.selectedText(truncatedValue) +
 						suffix +
-						this.theme.description(gap + truncatedDesc)
+						this.renderDescription(gap + truncatedDesc)
 					);
 				}
 
-				const descText = this.theme.description(gap + truncatedDesc);
+				const descText = this.renderDescription(gap + truncatedDesc);
 				return prefix + truncatedValue + descText;
 			}
 		}
@@ -242,6 +263,10 @@ export class SelectList implements Component {
 		}
 
 		return prefix + truncatedValue;
+	}
+
+	private renderDescription(text: string): string {
+		return /\u001b\[[0-9;]*m/.test(text) ? text : this.theme.description(text);
 	}
 
 	private getPrimaryColumnWidth(): number {

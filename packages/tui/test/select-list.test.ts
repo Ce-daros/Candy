@@ -132,4 +132,26 @@ describe("SelectList", () => {
 		assert.equal(after[2], "src/components/second.ts");
 		assert.ok([...before, ...after].every((line) => visibleWidth(line) <= 80));
 	});
+
+	it("skips non-selectable group labels during keyboard navigation", () => {
+		const list = new SelectList(
+			[
+				{ value: "group", label: "Connection", selectable: false },
+				{ value: "first", label: "First" },
+				{ value: "second", label: "Second" },
+			],
+			5,
+			testTheme,
+		);
+		list.setSelectedIndex(0);
+		assert.equal(list.getSelectedItem()?.value, "first");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.value, "second");
+	});
+
+	it("preserves ANSI styling already present in inline descriptions", () => {
+		const styled = "\u001b[31mNot connected\u001b[0m";
+		const list = new SelectList([{ value: "provider", label: "Provider", description: styled }], 5, testTheme);
+		assert.ok(list.render(80)[0].includes(styled));
+	});
 });
