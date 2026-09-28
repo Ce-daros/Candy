@@ -3,20 +3,13 @@ import {
 	type AssistantMessageEvent,
 	EventStream,
 	getCurrentSystemMessage,
-	getModel,
 	toToolDeclaration,
 	type UserMessage,
-} from "@candy/ai/compat";
+} from "@candy/ai";
+import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import {
-	Agent,
-	type AgentEvent,
-	type AgentTool,
-	type AgentToolUpdateCallback,
-	type StreamFn,
-	setDefaultStreamFn,
-} from "../src/index.ts";
+import { Agent, type AgentEvent, type AgentTool, type AgentToolUpdateCallback, type StreamFn } from "../src/index.ts";
 
 // Mock stream that mimics AssistantMessageEventStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -111,29 +104,6 @@ function createDeferred(): {
 }
 
 describe("Agent", () => {
-	it("uses the configured default when a legacy caller omits streamFn", async () => {
-		let calls = 0;
-		setDefaultStreamFn(() => {
-			calls++;
-			const stream = new MockAssistantStream();
-			queueMicrotask(() => {
-				const message = createAssistantMessage("fallback");
-				stream.push({ type: "done", reason: "stop", message });
-			});
-			return stream;
-		});
-
-		try {
-			const agent = Reflect.construct(Agent, [
-				{ initialState: { model: getModel("openai", "gpt-4o-mini") } },
-			]) as Agent;
-			await agent.prompt("Hello");
-			expect(calls).toBe(1);
-		} finally {
-			setDefaultStreamFn(undefined);
-		}
-	});
-
 	it("should create an agent instance with default state", () => {
 		const agent = new Agent({ streamFn: unusedStreamFunction });
 

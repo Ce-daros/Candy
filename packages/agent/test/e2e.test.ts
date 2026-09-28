@@ -1,26 +1,20 @@
 import {
 	type AssistantMessage,
-	type FauxProviderRegistration,
 	fauxAssistantMessage,
 	fauxText,
 	fauxThinking,
 	fauxToolCall,
 	type Model,
-	registerFauxProvider,
-	streamSimple,
 	type ToolResultMessage,
 	type UserMessage,
-} from "@candy/ai/compat";
-import { afterEach, describe, expect, it } from "vitest";
-import { Agent, type AgentEvent } from "../src/index.ts";
+} from "@candy/ai";
+import { type FauxProviderHandle, fauxProvider } from "@candy/ai/providers/faux";
+import { describe, expect, it } from "vitest";
+import { Agent, type AgentEvent, type StreamFn } from "../src/index.ts";
 import { calculateTool } from "./utils/calculate.ts";
 
-const registrations: FauxProviderRegistration[] = [];
-
-function createFauxRegistration(options: Parameters<typeof registerFauxProvider>[0] = {}): FauxProviderRegistration {
-	const registration = registerFauxProvider(options);
-	registrations.push(registration);
-	return registration;
+function createFauxProvider(options: Parameters<typeof fauxProvider>[0] = {}): FauxProviderHandle {
+	return fauxProvider(options);
 }
 
 function getTextContent(message: AssistantMessage | ToolResultMessage): string {
@@ -30,15 +24,9 @@ function getTextContent(message: AssistantMessage | ToolResultMessage): string {
 		.join("\n");
 }
 
-afterEach(() => {
-	while (registrations.length > 0) {
-		registrations.pop()?.unregister();
-	}
-});
-
-async function basicPrompt(model: Model<string>) {
+async function basicPrompt(model: Model<string>, streamFn: StreamFn) {
 	const agent = new Agent({
-		streamFn: streamSimple,
+		streamFn,
 		initialState: {
 			systemPrompt: "You are a helpful assistant. Keep your responses concise.",
 			model,
@@ -60,9 +48,9 @@ async function basicPrompt(model: Model<string>) {
 	expect(getTextContent(assistantMessage)).toContain("4");
 }
 
-async function toolExecution(model: Model<string>) {
+async function toolExecution(model: Model<string>, streamFn: StreamFn) {
 	const agent = new Agent({
-		streamFn: streamSimple,
+		streamFn,
 		initialState: {
 			systemPrompt: "You are a helpful assistant. Always use the calculator tool for math.",
 			model,
@@ -100,9 +88,9 @@ async function toolExecution(model: Model<string>) {
 	]);
 }
 
-async function abortExecution(model: Model<string>) {
+async function abortExecution(model: Model<string>, streamFn: StreamFn) {
 	const agent = new Agent({
-		streamFn: streamSimple,
+		streamFn,
 		initialState: {
 			systemPrompt: "You are a helpful assistant.",
 			model,
@@ -128,9 +116,9 @@ async function abortExecution(model: Model<string>) {
 	expect(agent.state.errorMessage).toBe(lastMessage.errorMessage);
 }
 
-async function stateUpdates(model: Model<string>) {
+async function stateUpdates(model: Model<string>, streamFn: StreamFn) {
 	const agent = new Agent({
-		streamFn: streamSimple,
+		streamFn,
 		initialState: {
 			systemPrompt: "You are a helpful assistant.",
 			model,
@@ -161,9 +149,9 @@ async function stateUpdates(model: Model<string>) {
 	expect(agent.state.messages.length).toBe(3);
 }
 
-async function multiTurnConversation(model: Model<string>) {
+async function multiTurnConversation(model: Model<string>, streamFn: StreamFn) {
 	const agent = new Agent({
-		streamFn: streamSimple,
+		streamFn,
 		initialState: {
 			systemPrompt: "You are a helpful assistant.",
 			model,
@@ -185,13 +173,13 @@ async function multiTurnConversation(model: Model<string>) {
 
 describe("Agent integration with faux provider", () => {
 	it("handles a basic text prompt", async () => {
-		const faux = createFauxRegistration();
+		const faux = createFauxProvider();
 		faux.setResponses([fauxAssistantMessage("4")]);
-		await basicPrompt(faux.getModel());
+		await basicPrompt(faux.getModel(), faux.provider.streamSimple);
 	});
 
 	it("executes tools and tracks pending tool calls", async () => {
-		const faux = createFauxRegistration();
+		const faux = createFauxProvider();
 		faux.setResponses([
 			fauxAssistantMessage(
 				[
@@ -202,11 +190,11 @@ describe("Agent integration with faux provider", () => {
 			),
 			fauxAssistantMessage("The result is 56088."),
 		]);
-		await toolExecution(faux.getModel());
+		await toolExecution(faux.getModel(), faux.provider.streamSimple);
 	});
 
 	it("handles abort during streaming", async () => {
-		const faux = createFauxRegistration({
+		const faux = createFauxProvider({
 			tokensPerSecond: 20,
 			tokenSize: { min: 2, max: 2 },
 		});
@@ -215,17 +203,17 @@ describe("Agent integration with faux provider", () => {
 				"one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen",
 			),
 		]);
-		await abortExecution(faux.getModel());
+		await abortExecution(faux.getModel(), faux.provider.streamSimple);
 	});
 
 	it("emits lifecycle updates while streaming", async () => {
-		const faux = createFauxRegistration({ tokenSize: { min: 1, max: 1 } });
+		const faux = createFauxProvider({ tokenSize: { min: 1, max: 1 } });
 		faux.setResponses([fauxAssistantMessage("1 2 3 4 5")]);
-		await stateUpdates(faux.getModel());
+		await stateUpdates(faux.getModel(), faux.provider.streamSimple);
 	});
 
 	it("maintains context across multiple turns", async () => {
-		const faux = createFauxRegistration();
+		const faux = createFauxProvider();
 		faux.setResponses([
 			fauxAssistantMessage("Nice to meet you, Alice."),
 			(context) => {
@@ -237,15 +225,15 @@ describe("Agent integration with faux provider", () => {
 				return fauxAssistantMessage(hasAlice ? "Your name is Alice." : "I do not know your name.");
 			},
 		]);
-		await multiTurnConversation(faux.getModel());
+		await multiTurnConversation(faux.getModel(), faux.provider.streamSimple);
 	});
 
 	it("preserves thinking content blocks", async () => {
-		const faux = createFauxRegistration({ models: [{ id: "faux-reasoning", reasoning: true }] });
+		const faux = createFauxProvider({ models: [{ id: "faux-reasoning", reasoning: true }] });
 		faux.setResponses([fauxAssistantMessage([fauxThinking("step by step"), fauxText("4")])]);
 
 		const agent = new Agent({
-			streamFn: streamSimple,
+			streamFn: faux.provider.streamSimple,
 			initialState: {
 				systemPrompt: "You are a helpful assistant.",
 				model: faux.getModel(),
@@ -268,9 +256,9 @@ describe("Agent integration with faux provider", () => {
 describe("Agent.continue() with faux provider", () => {
 	describe("validation", () => {
 		it("throws when no messages in context", async () => {
-			const faux = createFauxRegistration();
+			const faux = createFauxProvider();
 			const agent = new Agent({
-				streamFn: streamSimple,
+				streamFn: faux.provider.streamSimple,
 				initialState: {
 					systemPrompt: "Test",
 					model: faux.getModel(),
@@ -281,10 +269,10 @@ describe("Agent.continue() with faux provider", () => {
 		});
 
 		it("throws when last message is assistant", async () => {
-			const faux = createFauxRegistration();
+			const faux = createFauxProvider();
 			const model = faux.getModel();
 			const agent = new Agent({
-				streamFn: streamSimple,
+				streamFn: faux.provider.streamSimple,
 				initialState: {
 					systemPrompt: "Test",
 					model,
@@ -316,10 +304,10 @@ describe("Agent.continue() with faux provider", () => {
 
 	describe("continue from user message", () => {
 		it("continues and gets a response when last message is user", async () => {
-			const faux = createFauxRegistration();
+			const faux = createFauxProvider();
 			faux.setResponses([fauxAssistantMessage("HELLO WORLD")]);
 			const agent = new Agent({
-				streamFn: streamSimple,
+				streamFn: faux.provider.streamSimple,
 				initialState: {
 					systemPrompt: "You are a helpful assistant. Follow instructions exactly.",
 					model: faux.getModel(),
@@ -350,11 +338,11 @@ describe("Agent.continue() with faux provider", () => {
 
 	describe("continue from tool result", () => {
 		it("continues and processes tool results", async () => {
-			const faux = createFauxRegistration();
+			const faux = createFauxProvider();
 			const model = faux.getModel();
 			faux.setResponses([fauxAssistantMessage("The answer is 8.")]);
 			const agent = new Agent({
-				streamFn: streamSimple,
+				streamFn: faux.provider.streamSimple,
 				initialState: {
 					systemPrompt:
 						"You are a helpful assistant. After getting a calculation result, state the answer clearly.",

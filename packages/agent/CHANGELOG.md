@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the unused Harness/Pico APIs, session backends, Chord services, and their package entrypoints. The package now exposes the Agent and Agent loop APIs used by Candy.
+- Removed the process-wide default stream function. Every `Agent` and low-level agent loop caller must pass its `streamFn` directly.
+
 ### Added
 
 - Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.

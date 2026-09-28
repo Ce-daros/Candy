@@ -12,7 +12,6 @@ import {
 	toToolDeclaration,
 } from "@candy/ai";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
-import { getDefaultStreamFn } from "./stream-fn.ts";
 import type {
 	AfterToolCallContext,
 	AfterToolCallResult,
@@ -215,29 +214,27 @@ export class Agent {
 	public toolExecution: ToolExecutionMode;
 
 	constructor(options: AgentOptions) {
-		// Older compiled consumers may omit options or streamFn even though the current API requires them.
-		const runtimeOptions: Partial<AgentOptions> = options ?? {};
-		this._state = createMutableAgentState(runtimeOptions.initialState);
-		this.convertToLlm = runtimeOptions.convertToLlm ?? defaultConvertToLlm;
-		this.transformContext = runtimeOptions.transformContext;
-		this.streamFunction = runtimeOptions.streamFn ?? getDefaultStreamFn();
-		this.getApiKey = runtimeOptions.getApiKey;
-		this.onPayload = runtimeOptions.onPayload;
-		this.onResponse = runtimeOptions.onResponse;
-		this.onProviderStreamEvent = runtimeOptions.onProviderStreamEvent;
-		this.beforeToolCall = runtimeOptions.beforeToolCall;
-		this.afterToolCall = runtimeOptions.afterToolCall;
-		this.finishTurn = runtimeOptions.finishTurn;
-		this.prepareRequest = runtimeOptions.prepareRequest;
-		this.prepareNextTurn = runtimeOptions.prepareNextTurn;
-		this.prepareNextTurnWithContext = runtimeOptions.prepareNextTurnWithContext;
-		this.steeringQueue = new PendingMessageQueue(runtimeOptions.steeringMode ?? "one-at-a-time");
-		this.followUpQueue = new PendingMessageQueue(runtimeOptions.followUpMode ?? "one-at-a-time");
-		this.sessionId = runtimeOptions.sessionId;
-		this.thinkingBudgets = runtimeOptions.thinkingBudgets;
-		this.transport = runtimeOptions.transport ?? "auto";
-		this.maxRetryDelayMs = runtimeOptions.maxRetryDelayMs;
-		this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
+		this._state = createMutableAgentState(options.initialState);
+		this.convertToLlm = options.convertToLlm ?? defaultConvertToLlm;
+		this.transformContext = options.transformContext;
+		this.streamFunction = options.streamFn;
+		this.getApiKey = options.getApiKey;
+		this.onPayload = options.onPayload;
+		this.onResponse = options.onResponse;
+		this.onProviderStreamEvent = options.onProviderStreamEvent;
+		this.beforeToolCall = options.beforeToolCall;
+		this.afterToolCall = options.afterToolCall;
+		this.finishTurn = options.finishTurn;
+		this.prepareRequest = options.prepareRequest;
+		this.prepareNextTurn = options.prepareNextTurn;
+		this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
+		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
+		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
+		this.sessionId = options.sessionId;
+		this.thinkingBudgets = options.thinkingBudgets;
+		this.transport = options.transport ?? "auto";
+		this.maxRetryDelayMs = options.maxRetryDelayMs;
+		this.toolExecution = options.toolExecution ?? "parallel";
 	}
 
 	/**
