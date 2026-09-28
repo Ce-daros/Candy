@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- Thinking blocks now fold by rendered cell width (CJK counts as two cells) against a three-line budget of the current viewport width, so long unwrapped paragraphs fold while short thoughts stay visible; resizing the terminal re-evaluates the fold.
+
 - Command panel section titles (Commands, Settings, History groups) now render flush-left in the palette warning color instead of muted, indented like list items.
 
 - Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.

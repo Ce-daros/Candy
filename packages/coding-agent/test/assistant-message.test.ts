@@ -162,21 +162,40 @@ describe("AssistantMessageComponent", () => {
 		expect(rendered).toContain("answer");
 	});
 
-	test("folds thinking only after the third line", () => {
+	test("folds thinking by rendered cell width, not raw line count", () => {
 		initTheme("dark");
-		const threeLines = new AssistantMessageComponent(
-			createAssistantMessage([{ type: "thinking", thinking: "one\ntwo\nthree" }]),
-			true,
-		);
-		const fourLines = new AssistantMessageComponent(
+		// Four short lines: under the width budget, stays visible.
+		const shortLines = new AssistantMessageComponent(
 			createAssistantMessage([{ type: "thinking", thinking: "one\ntwo\nthree\nfour" }]),
 			true,
 		);
+		// One long unwrapped paragraph: folds even without newlines.
+		const longParagraph = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "word ".repeat(60) }]),
+			true,
+		);
+		// CJK chars occupy two cells: 120 chars = 240 cells stays visible, 121 folds.
+		const cjkBoundary = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "思".repeat(120) }]),
+			true,
+		);
+		const cjkOver = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: `思${"思".repeat(120)}` }]),
+			true,
+		);
 
-		expect(stripAnsi(threeLines.render(80).join("\n"))).toContain("│ one");
-		const folded = stripAnsi(fourLines.render(80).join("\n"));
+		const shortRendered = stripAnsi(shortLines.render(80).join("\n"));
+		expect(shortRendered).toContain("│ one");
+		expect(shortRendered).not.toContain("▸");
+		const folded = stripAnsi(longParagraph.render(80).join("\n"));
 		expect(folded).toContain("▸");
-		expect(folded).not.toContain("│ one");
+		expect(folded).not.toContain("│ word");
+		// The same text fits the line budget on a wider viewport, so it stays visible.
+		const widened = stripAnsi(longParagraph.render(200).join("\n"));
+		expect(widened).toContain("│ word");
+		expect(widened).not.toContain("▸");
+		expect(stripAnsi(cjkBoundary.render(80).join("\n"))).toContain("│ 思");
+		expect(stripAnsi(cjkOver.render(80).join("\n"))).toContain("▸");
 	});
 
 	test("keeps a long folded thinking excerpt on one 80-column row", () => {
@@ -252,9 +271,9 @@ describe("AssistantMessageComponent", () => {
 		initTheme("dark");
 		const component = new AssistantMessageComponent(
 			createAssistantMessage([
-				{ type: "thinking", thinking: "first reasoning\nline two\nline three\nline four" },
+				{ type: "thinking", thinking: Array(8).fill("first reasoning stretches past the fold budget").join("\n") },
 				{ type: "text", text: "answer" },
-				{ type: "thinking", thinking: "second reasoning\nline two\nline three\nline four" },
+				{ type: "thinking", thinking: Array(8).fill("second reasoning stretches past the fold budget").join("\n") },
 			]),
 		);
 		const width = 80;
