@@ -232,7 +232,6 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
-	// Amazon Bedrock
 	// Expected pattern: "Input is too long for requested model"
 	// =============================================================================
 
