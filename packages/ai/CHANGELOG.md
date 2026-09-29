@@ -21,6 +21,9 @@
 
 ### Added
 
+- Added `isAbortError()` and `abortReason()` to `@candy/ai/utils/abort`, and made `raceWithAbortSignal()` accept an optional signal. `sleep()` now accepts an optional signal and rejects with the signal's own reason instead of a fixed message.
+- The context estimator in `@candy/ai/utils/estimate` now counts the agent-level transcript messages hosts add (bash executions, extension messages, and branch/compaction summaries), so one implementation serves both the runtime estimate and compaction decisions.
+
 - Added `ToolResultMessage.cancelled` as optional transcript metadata for agent-aborted tools. Provider requests continue to use the existing result content and error flag.
 - Added `Models.generateImages()` with provider-resolved auth, `Provider.generateImages?`, and `createProvider({ images })` keyed by `model.api`. `createProvider()` `models` and `fetchModels` accept models of every type, and `api` is optional when `images` is given.
 - Added an optional model `type` (`"chat"` or `"image"`). Chat models may omit it, so existing chat models, providers, and stores keep working unchanged. Narrow mixed lists with the new `isModelType()` guard or read the effective type with `getModelType()`.

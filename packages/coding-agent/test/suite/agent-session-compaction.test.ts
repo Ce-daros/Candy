@@ -9,9 +9,9 @@ import {
 	type SimpleStreamOptions,
 	type TranscriptContext,
 } from "@candy/ai";
+import { estimateMessageTokens } from "@candy/ai/utils/estimate";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { estimateTokens } from "../../src/core/compaction/index.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
 type SessionWithCompactionInternals = {
@@ -165,7 +165,10 @@ describe("AgentSession compaction characterization", () => {
 
 		const result = await harness.session.compact();
 		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
-		const estimatedTokensAfter = harness.session.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+		const estimatedTokensAfter = harness.session.messages.reduce(
+			(sum, message) => sum + estimateMessageTokens(message),
+			0,
+		);
 
 		expect(result.summary).toBe("summary from extension");
 		expect(result.usage).toEqual(summaryUsage);

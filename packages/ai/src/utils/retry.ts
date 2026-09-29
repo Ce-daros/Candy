@@ -1,4 +1,6 @@
 import type { AssistantMessage } from "../types.ts";
+import { isAbortError } from "./abort.ts";
+import { sleep } from "./sleep.ts";
 
 function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
 	return new RegExp(patterns.join("|"), "i");
@@ -131,30 +133,6 @@ export interface RetryCallbacks {
 	onRetryFinished?: (success: boolean, attempt: number, finalError?: string) => void | Promise<void>;
 }
 
-class RetrySleepAbortError extends Error {
-	constructor() {
-		super("Aborted");
-	}
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(new RetrySleepAbortError());
-			return;
-		}
-		const timeout = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			"abort",
-			() => {
-				clearTimeout(timeout);
-				reject(new RetrySleepAbortError());
-			},
-			{ once: true },
-		);
-	});
-}
-
 /**
  * Run a single assistant-producing call with bounded retry on transient errors.
  *
@@ -215,7 +193,7 @@ export async function retryAssistantCall(
 			await sleep(delayMs, signal);
 		} catch (error) {
 			await callbacks?.onRetryFinished?.(false, attempt, lastRetry.errorMessage);
-			if (error instanceof RetrySleepAbortError) {
+			if (isAbortError(error) || signal?.aborted) {
 				const { errorMessage: _errorMessage, ...rest } = response;
 				return { ...rest, stopReason: "aborted" };
 			}

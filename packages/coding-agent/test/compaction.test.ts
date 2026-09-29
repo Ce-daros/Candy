@@ -1,13 +1,13 @@
 import type { AgentMessage } from "@candy/agent-core";
 import type { AssistantMessage, Usage } from "@candy/ai";
+import { calculateContextTokens, estimateContextTokens } from "@candy/ai/utils/estimate";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionSettings,
-	calculateContextTokens,
 	DEFAULT_COMPACTION_SETTINGS,
-	estimateContextTokens,
+	estimateProjectedContextTokens,
 	findCutPoint,
 	getLastAssistantUsage,
 	prepareCompaction,
@@ -15,6 +15,7 @@ import {
 } from "../src/core/compaction/index.ts";
 import {
 	buildSessionContext,
+	buildSessionProjection,
 	type CompactionEntry,
 	type CustomMessageEntry,
 	type ModelChangeEntry,
@@ -266,6 +267,18 @@ describe("estimateContextTokens", () => {
 		expect(estimate.lastUsageIndex).toBe(1);
 		expect(estimate.trailingTokens).toBeGreaterThan(0);
 		expect(estimate.tokens).toBe(150 + estimate.trailingTokens);
+	});
+
+	it("matches the compaction projection for the same transcript", () => {
+		const entries: SessionEntry[] = [
+			createMessageEntry(createUserMessage("Hello")),
+			createMessageEntry(createAssistantMessage("Hi", createMockUsage(100, 50))),
+			createMessageEntry(createUserMessage("continue")),
+		];
+
+		const projection = buildSessionProjection(entries);
+
+		expect(estimateProjectedContextTokens(projection, entries)).toEqual(estimateContextTokens(projection.messages));
 	});
 });
 

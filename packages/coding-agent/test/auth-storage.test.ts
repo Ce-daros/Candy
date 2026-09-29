@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { type CredentialStore, createModels, type Provider } from "@candy/ai";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage, FileAuthStorageBackend } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { JsonFileStorage } from "../src/core/storage/json-file.ts";
 
 describe("AuthStorage", () => {
 	const tempDir = join(tmpdir(), `pi-test-auth-storage-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -244,7 +245,7 @@ describe("AuthStorage", () => {
 
 	test("retries a briefly contended file lock", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
-		const backend = new FileAuthStorageBackend(authJsonPath);
+		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });
 		const release = vi.fn(async () => {});
 		const lockSpy = vi
 			.spyOn(lockfile, "lock")
@@ -262,7 +263,7 @@ describe("AuthStorage", () => {
 
 	test("surfaces a compromised file storage lock", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
-		const backend = new FileAuthStorageBackend(authJsonPath);
+		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });
 		const update = vi.fn(async () => ({ result: undefined, next: JSON.stringify({}) }));
 		const compromised = new Error("lock compromised");
 		vi.spyOn(lockfile, "lock").mockImplementation(async (_file, options) => {
@@ -278,7 +279,7 @@ describe("AuthStorage", () => {
 	});
 
 	test("pre-aborted file operations do not create the backing file or run the mutation", async () => {
-		const backend = new FileAuthStorageBackend(authJsonPath);
+		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });
 		const controller = new AbortController();
 		controller.abort();
 		const update = vi.fn(async () => ({ result: undefined, next: JSON.stringify({}) }));
@@ -293,7 +294,7 @@ describe("AuthStorage", () => {
 	test("aborts while waiting for a held file lock without running the mutation later", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
 		const release = await lockfile.lock(authJsonPath, { realpath: false });
-		const backend = new FileAuthStorageBackend(authJsonPath);
+		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });
 		const controller = new AbortController();
 		const update = vi.fn(async () => ({ result: undefined, next: JSON.stringify({}) }));
 		const pending = backend.withLockAsync(update, { signal: controller.signal });
@@ -313,7 +314,7 @@ describe("AuthStorage", () => {
 
 	test("releases a file lock acquired concurrently with cancellation before mutation", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
-		const backend = new FileAuthStorageBackend(authJsonPath);
+		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });
 		const controller = new AbortController();
 		const release = vi.fn(async () => {});
 		vi.spyOn(lockfile, "lock").mockImplementation(async () => {
@@ -332,7 +333,7 @@ describe("AuthStorage", () => {
 
 	test("holds the file lock until a cancelled active callback settles without committing it", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
-		const backend = new FileAuthStorageBackend(authJsonPath);
+		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });
 		const controller = new AbortController();
 		let markStarted: (() => void) | undefined;
 		let finish: (() => void) | undefined;

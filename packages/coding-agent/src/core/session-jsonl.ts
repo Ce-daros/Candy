@@ -1,4 +1,14 @@
-import { closeSync, existsSync, openSync, readSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	appendFileSync,
+	closeSync,
+	existsSync,
+	openSync,
+	readSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { normalizePath } from "../utils/paths.ts";
 import type { FileEntry, SessionHeader } from "./session-manager.ts";
@@ -11,6 +21,42 @@ export class SessionHeaderScanLimitError extends Error {
 	constructor(filePath: string) {
 		super(`Session header exceeds ${MAX_SESSION_HEADER_SCAN_BYTES}-byte scan limit: ${filePath}`);
 		this.name = "SessionHeaderScanLimitError";
+	}
+}
+
+/**
+ * Session files are JSONL: this module owns both reading and writing them so
+ * `SessionManager` and export only decide which entries to persist.
+ */
+export function serializeSessionEntry(entry: unknown): string {
+	return `${JSON.stringify(entry)}
+`;
+}
+
+/** Write entries to a new file, or overwrite one, without touching other files. */
+export function writeSessionFile(filePath: string, entries: Iterable<unknown>, options: { flag: "w" | "wx" }): void {
+	const fd = openSync(filePath, options.flag);
+	try {
+		for (const entry of entries) writeFileSync(fd, serializeSessionEntry(entry));
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/** Append one entry to an existing session file. */
+export function appendSessionEntry(filePath: string, entry: unknown): void {
+	appendFileSync(filePath, serializeSessionEntry(entry));
+}
+
+/** Replace a session file with the current entries, atomically and without partial reads. */
+export function rewriteSessionFile(filePath: string, entries: Iterable<unknown>): void {
+	const temporaryFile = `${filePath}.${randomUUID()}.tmp`;
+	writeSessionFile(temporaryFile, entries, { flag: "wx" });
+	try {
+		renameSync(temporaryFile, filePath);
+	} catch (error) {
+		unlinkSync(temporaryFile);
+		throw error;
 	}
 }
 

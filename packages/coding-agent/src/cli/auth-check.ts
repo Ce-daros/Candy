@@ -1,7 +1,6 @@
-import type { CredentialStore } from "@candy/ai";
+import { type CredentialStore, InMemoryModelsStore } from "@candy/ai";
 import { resolveCliModel } from "../core/model-resolver.ts";
 import { ModelRuntime } from "../core/model-runtime.ts";
-import { InMemoryCodingAgentModelsStore } from "../core/models-store.ts";
 import type { Args } from "./args.ts";
 import { AuthCommandError, getAuthCredential, validateAuthCommandArgs } from "./auth-command.ts";
 
@@ -66,7 +65,7 @@ export async function getProviderCredential(
 export async function createAuthCheckModelRuntime(credentials: CredentialStore): Promise<ModelRuntime> {
 	return ModelRuntime.create({
 		credentials,
-		modelsStore: new InMemoryCodingAgentModelsStore(),
+		modelsStore: new InMemoryModelsStore(),
 		allowModelNetwork: false,
 		refreshOnCreate: false,
 	});

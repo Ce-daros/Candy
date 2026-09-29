@@ -1,10 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
-import { stripBom } from "../utils/text.ts";
+import { parseJsonFile, withLockedJsonFileSync } from "./storage/json-file.ts";
 
 export type ProjectTrustDecision = boolean | null;
 
@@ -98,14 +97,10 @@ export function getProjectTrustOptions(cwd: string, options?: { includeSessionOn
 	return trustOptions;
 }
 
-function readTrustFile(path: string): TrustFile {
-	if (!existsSync(path)) {
-		return {};
-	}
-
+function parseTrustFile(content: string | undefined, path: string): TrustFile {
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(stripBom(readFileSync(path, "utf-8")));
+		parsed = parseJsonFile(content, path, () => ({}));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`Failed to read trust store ${path}: ${message}`);
@@ -125,7 +120,7 @@ function readTrustFile(path: string): TrustFile {
 	return data;
 }
 
-function writeTrustFile(path: string, data: TrustFile): void {
+function serializeTrustFile(data: TrustFile): string {
 	const sorted: TrustFile = {};
 	for (const key of Object.keys(data).sort()) {
 		const value = data[key];
@@ -133,49 +128,18 @@ function writeTrustFile(path: string, data: TrustFile): void {
 			sorted[key] = value;
 		}
 	}
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`, "utf-8");
+	return `${JSON.stringify(sorted, null, 2)}\n`;
 }
 
-function acquireTrustLockSync(path: string): () => void {
-	const trustDir = dirname(path);
-	mkdirSync(trustDir, { recursive: true });
-	const maxAttempts = 10;
-	const delayMs = 20;
-	let lastError: unknown;
-
-	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-		try {
-			return lockfile.lockSync(trustDir, { realpath: false, lockfilePath: `${path}.lock` });
-		} catch (error) {
-			const code =
-				typeof error === "object" && error !== null && "code" in error
-					? String((error as { code?: unknown }).code)
-					: undefined;
-			if (code !== "ELOCKED" || attempt === maxAttempts) {
-				throw error;
-			}
-			lastError = error;
-			const start = Date.now();
-			while (Date.now() - start < delayMs) {
-				// Sleep synchronously to avoid changing trust store callers to async.
-			}
-		}
-	}
-
-	if (lastError instanceof Error) {
-		throw lastError;
-	}
-	throw new Error("Failed to acquire trust store lock");
-}
-
-function withTrustFileLock<T>(path: string, fn: () => T): T {
-	const release = acquireTrustLockSync(path);
-	try {
-		return fn();
-	} finally {
-		release();
-	}
+function withTrustFileLock<T>(path: string, update: (data: TrustFile) => { result: T; next?: TrustFile }): T {
+	return withLockedJsonFileSync(
+		path,
+		(content) => {
+			const { result, next } = update(parseTrustFile(content, path));
+			return { result, next: next === undefined ? undefined : serializeTrustFile(next) };
+		},
+		{ lockfilePath: `${path}.lock` },
+	);
 }
 
 /**
@@ -223,10 +187,7 @@ export class ProjectTrustStore {
 	}
 
 	getEntry(cwd: string): ProjectTrustStoreEntry | null {
-		return withTrustFileLock(this.trustPath, () => {
-			const data = readTrustFile(this.trustPath);
-			return findNearestTrustEntry(data, cwd);
-		});
+		return withTrustFileLock(this.trustPath, (data) => ({ result: findNearestTrustEntry(data, cwd) }));
 	}
 
 	set(cwd: string, decision: ProjectTrustDecision): void {
@@ -234,8 +195,7 @@ export class ProjectTrustStore {
 	}
 
 	setMany(decisions: ProjectTrustUpdate[]): void {
-		withTrustFileLock(this.trustPath, () => {
-			const data = readTrustFile(this.trustPath);
+		withTrustFileLock(this.trustPath, (data) => {
 			for (const { path, decision } of decisions) {
 				const key = normalizeCwd(path);
 				if (decision === null) {
@@ -244,7 +204,7 @@ export class ProjectTrustStore {
 					data[key] = decision;
 				}
 			}
-			writeTrustFile(this.trustPath, data);
+			return { result: undefined, next: data };
 		});
 	}
 }

@@ -23,6 +23,7 @@ import {
 	type ImageModel,
 	type ImagesContext,
 	type ImagesOptions,
+	InMemoryModelsStore,
 	lazyStream,
 	type Model,
 	type Models,
@@ -47,12 +48,12 @@ import {
 	type StreamOptions,
 } from "@candy/ai";
 import * as builtinProviderCatalog from "@candy/ai/providers/all";
+import { operationSignal, raceWithAbortSignal } from "@candy/ai/utils/abort";
 import { assertChatModel, assertImageModel, imageErrorResult } from "@candy/ai/utils/model-operations";
 import { getAgentDir } from "../config.ts";
-import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
 import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
 import { ModelConfig } from "./model-config.ts";
-import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
+import { FileModelsStore } from "./models-store.ts";
 import {
 	type AuthStatus,
 	composeModelProvider,
@@ -185,7 +186,7 @@ export class ModelRuntime implements Models {
 			options.modelsStore ??
 			(modelsPath
 				? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
-				: new InMemoryCodingAgentModelsStore());
+				: new InMemoryModelsStore());
 		const providers = builtinProviderCatalog.builtinProviders();
 		const runtime = new ModelRuntime(
 			credentials,

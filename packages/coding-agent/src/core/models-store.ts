@@ -1,10 +1,9 @@
 import { join } from "node:path";
 import type { ModelsStore, ModelsStoreEntry, ModelsStoreOperationOptions } from "@candy/ai";
+import { raceWithAbortSignal } from "@candy/ai/utils/abort";
 import { getAgentDir } from "../config.ts";
-import { raceWithAbortSignal } from "../utils/abort.ts";
 import { getFileRevision, normalizePath } from "../utils/paths.ts";
-import { stripBom } from "../utils/text.ts";
-import { type AuthStorageBackend, FileAuthStorageBackend } from "./auth-storage.ts";
+import { type JsonFileOptions, parseJsonFile, withLockedJsonFileAsync } from "./storage/json-file.ts";
 
 type StoredModels = Record<string, ModelsStoreEntry>;
 
@@ -20,38 +19,19 @@ type ModelsFileReadState = {
 	reload?: ModelsFileReload;
 };
 
+// The mode applies only on creation so administrator-managed modes and ACLs remain intact.
+const MODELS_FILE_OPTIONS: JsonFileOptions = { mode: 0o600, dirMode: 0o700, ensureFile: true };
+
 // Optimize the common path without retaining an unbounded set of custom paths.
 let sharedModelsFileReadState: { path: string; readState: ModelsFileReadState } | undefined;
 
-export class InMemoryCodingAgentModelsStore implements ModelsStore {
-	private readonly entries = new Map<string, ModelsStoreEntry>();
-
-	async read(providerId: string, options?: ModelsStoreOperationOptions): Promise<ModelsStoreEntry | undefined> {
-		options?.signal?.throwIfAborted();
-		const entry = this.entries.get(providerId);
-		return entry ? structuredClone(entry) : undefined;
-	}
-
-	async write(providerId: string, entry: ModelsStoreEntry, options?: ModelsStoreOperationOptions): Promise<void> {
-		options?.signal?.throwIfAborted();
-		this.entries.set(providerId, structuredClone(entry));
-	}
-
-	async delete(providerId: string, options?: ModelsStoreOperationOptions): Promise<void> {
-		options?.signal?.throwIfAborted();
-		this.entries.delete(providerId);
-	}
-}
-
 /** Locked JSON-backed storage for dynamically refreshed provider catalogs. */
 export class FileModelsStore implements ModelsStore {
-	private readonly storage: AuthStorageBackend;
 	private readonly path: string;
 	private readonly readState: ModelsFileReadState;
 
 	constructor(path: string = join(getAgentDir(), "models-store.json")) {
 		this.path = normalizePath(path);
-		this.storage = new FileAuthStorageBackend(this.path);
 		this.readState =
 			sharedModelsFileReadState?.path === this.path ? sharedModelsFileReadState.readState : { data: {} };
 		if (!sharedModelsFileReadState) {
@@ -60,7 +40,7 @@ export class FileModelsStore implements ModelsStore {
 	}
 
 	private parse(content: string | undefined): StoredModels {
-		return content ? (JSON.parse(stripBom(content)) as StoredModels) : {};
+		return parseJsonFile(content, this.path, () => ({}));
 	}
 
 	private updateReadState(readState: ModelsFileReadState, data: StoredModels, revision?: string): void {
@@ -72,11 +52,15 @@ export class FileModelsStore implements ModelsStore {
 		readState: ModelsFileReadState,
 		options?: ModelsStoreOperationOptions,
 	): Promise<StoredModels> {
-		return this.storage.withLockAsync(async (content) => {
-			const data = this.parse(content);
-			this.updateReadState(readState, data, getFileRevision(this.path));
-			return { result: data };
-		}, options);
+		return withLockedJsonFileAsync(
+			this.path,
+			(content) => {
+				const data = this.parse(content);
+				this.updateReadState(readState, data, getFileRevision(this.path));
+				return { result: data };
+			},
+			{ ...MODELS_FILE_OPTIONS, signal: options?.signal },
+		);
 	}
 
 	private async readLatest(
@@ -125,23 +109,31 @@ export class FileModelsStore implements ModelsStore {
 
 	async write(providerId: string, entry: ModelsStoreEntry, options?: ModelsStoreOperationOptions): Promise<void> {
 		let latest: StoredModels | undefined;
-		await this.storage.withLockAsync(async (content) => {
-			const current = this.parse(content);
-			current[providerId] = structuredClone(entry);
-			latest = current;
-			return { result: undefined, next: JSON.stringify(current, null, 2) };
-		}, options);
+		await withLockedJsonFileAsync(
+			this.path,
+			(content) => {
+				const current = this.parse(content);
+				current[providerId] = structuredClone(entry);
+				latest = current;
+				return { result: undefined, next: JSON.stringify(current, null, 2) };
+			},
+			{ ...MODELS_FILE_OPTIONS, signal: options?.signal },
+		);
 		if (latest) this.updateReadState(this.readState, latest);
 	}
 
 	async delete(providerId: string, options?: ModelsStoreOperationOptions): Promise<void> {
 		let latest: StoredModels | undefined;
-		await this.storage.withLockAsync(async (content) => {
-			const current = this.parse(content);
-			delete current[providerId];
-			latest = current;
-			return { result: undefined, next: JSON.stringify(current, null, 2) };
-		}, options);
+		await withLockedJsonFileAsync(
+			this.path,
+			(content) => {
+				const current = this.parse(content);
+				delete current[providerId];
+				latest = current;
+				return { result: undefined, next: JSON.stringify(current, null, 2) };
+			},
+			{ ...MODELS_FILE_OPTIONS, signal: options?.signal },
+		);
 		if (latest) this.updateReadState(this.readState, latest);
 	}
 }

@@ -32,9 +32,10 @@ import {
 	type RetryCallbacks,
 	retryDelayMs,
 } from "@candy/ai";
+import { calculateContextTokens, estimateContextTokens, estimateMessageTokens } from "@candy/ai/utils/estimate";
+import { sleep } from "@candy/ai/utils/sleep";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { processImage } from "../utils/image-process.ts";
-import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { AgentInputQueue } from "./agent-input-queue.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
@@ -44,12 +45,9 @@ import type { CommandInfo, CommandInvocation } from "./commands.ts";
 import {
 	type CompactionPreparation,
 	type CompactionResult,
-	calculateContextTokens,
 	collectEntriesForBranchSummary,
 	compact,
-	estimateContextTokens,
 	estimateProjectedContextTokens,
-	estimateTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
@@ -289,7 +287,7 @@ interface ToolDefinitionEntry {
 function estimateMessagesTokens(messages: AgentMessage[]): number {
 	let tokens = 0;
 	for (const message of messages) {
-		tokens += estimateTokens(message);
+		tokens += estimateMessageTokens(message);
 	}
 	return tokens;
 }

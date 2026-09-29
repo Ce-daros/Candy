@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- `estimateTokens` is `estimateMessageTokens` from `@candy/ai/utils/estimate`. The context estimate, per-message estimate, and usage-based context total now have one implementation shared with the runtime.
+- Removed `FileAuthStorageBackend` and `InMemoryCodingAgentModelsStore`. Locked JSON access lives in `core/storage/json-file.ts`, and the in-memory model store is `InMemoryModelsStore` from `@candy/ai`.
 - Removed unused SDK and internal helpers: `isBunRuntime`, `getModelsPath`, `getToolsDir`, `getPromptsDir`, `restoreModelFromSession`, `getConfigValueEnvVarName`, `resolveHeaders`, the unused plural tool-definition factories and wrapper, `getModelSearchText`, `isLightTheme`, `RpcCommandType`, `ToolRenderResultLike`, `BashRenderState`, and the unused deprecation utility.
 - Command panel toggle actions now render their checkbox through `SelectItem.checked` with the shared green/dim checkbox glyph instead of an uncolored `[x]`/`[ ]` prefix baked into the label.
 

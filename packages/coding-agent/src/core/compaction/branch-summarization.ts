@@ -8,6 +8,7 @@
 import type { AgentMessage, StreamFn } from "@candy/agent-core";
 import type { Model, RetryCallbacks, RetryPolicy, SimpleStreamOptions, Usage } from "@candy/ai";
 import { contentText, normalizeContext } from "@candy/ai";
+import { estimateMessageTokens } from "@candy/ai/utils/estimate";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -15,7 +16,7 @@ import {
 	createCustomMessage,
 } from "../messages.ts";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.ts";
-import { completeSummarization, estimateTokens, getSummarizationFailure } from "./compaction.ts";
+import { completeSummarization, getSummarizationFailure } from "./compaction.ts";
 import {
 	computeFileLists,
 	createFileOps,
@@ -223,7 +224,7 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 		// Extract file ops from assistant messages (tool calls)
 		extractFileOpsFromMessage(message, fileOps);
 
-		const tokens = estimateTokens(message);
+		const tokens = estimateMessageTokens(message);
 
 		// Check budget before adding
 		if (tokenBudget > 0 && totalTokens + tokens > tokenBudget) {

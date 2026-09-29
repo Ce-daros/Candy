@@ -1,6 +1,19 @@
 import type { AssistantMessage, ImageContent, Message, TextContent, TranscriptContext, Usage } from "../types.ts";
 import { getSystemMessageText } from "./text.ts";
 
+/**
+ * Everything the estimator can count: LLM messages plus the agent-level messages
+ * a session transcript adds (bash executions, extension messages, summaries).
+ * Declared structurally so `@candy/agent-core` and its hosts stay assignable
+ * without this package depending on them.
+ */
+export type EstimatableMessage =
+	| Message
+	| { readonly role: "custom"; readonly content: string | (TextContent | ImageContent)[]; readonly timestamp: number }
+	| { readonly role: "bashExecution"; readonly command: string; readonly output: string; readonly timestamp: number }
+	| { readonly role: "branchSummary"; readonly summary: string; readonly timestamp: number }
+	| { readonly role: "compactionSummary"; readonly summary: string; readonly timestamp: number };
+
 export interface ContextUsageEstimate {
 	/** Estimated total context tokens. */
 	tokens: number;
@@ -43,32 +56,42 @@ export function estimateTextAndImageContentTokens(content: string | Array<TextCo
 	return Math.ceil(estimateTextAndImageContentChars(content) / CHARS_PER_TOKEN);
 }
 
-export function estimateMessageTokens(message: Message): number {
-	let chars = 0;
-
-	if (message.role === "system") {
-		return (
-			estimateTextTokens(getSystemMessageText(message)) +
-			estimateToolsTokens(message.toolsAdded) +
-			estimateToolsTokens(message.toolsRemoved)
-		);
-	}
-	if (message.role === "user") return estimateTextAndImageContentTokens(message.content);
-	if (message.role === "toolResult") return estimateTextAndImageContentTokens(message.content);
-
-	for (const block of message.content) {
-		if (block.type === "text") {
-			chars += block.text.length;
-		} else if (block.type === "thinking") {
-			chars += block.thinking.length;
-		} else {
-			chars += block.name.length + safeJsonStringify(block.arguments).length;
+export function estimateMessageTokens(message: EstimatableMessage): number {
+	switch (message.role) {
+		case "system":
+			return (
+				estimateTextTokens(getSystemMessageText(message)) +
+				estimateToolsTokens(message.toolsAdded) +
+				estimateToolsTokens(message.toolsRemoved)
+			);
+		case "user":
+		case "toolResult":
+		case "custom":
+			return estimateTextAndImageContentTokens(message.content);
+		case "bashExecution":
+			return estimateTextTokens(message.command + message.output);
+		case "branchSummary":
+		case "compactionSummary":
+			return estimateTextTokens(message.summary);
+		default: {
+			let chars = 0;
+			for (const block of message.content) {
+				if (block.type === "text") {
+					chars += block.text.length;
+				} else if (block.type === "thinking") {
+					chars += block.thinking.length;
+				} else {
+					chars += block.name.length + safeJsonStringify(block.arguments).length;
+				}
+			}
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 	}
-	return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
-function getLastAssistantUsageInfo(messages: readonly Message[]): { usage: Usage; index: number } | undefined {
+function getLastAssistantUsageInfo(
+	messages: readonly EstimatableMessage[],
+): { usage: Usage; index: number } | undefined {
 	let latestPrefixTimestamp = Number.NEGATIVE_INFINITY;
 	let usageInfo: { usage: Usage; index: number } | undefined;
 
@@ -94,7 +117,9 @@ function getLastAssistantUsageInfo(messages: readonly Message[]): { usage: Usage
 	return usageInfo;
 }
 
-export function estimateContextTokens(context: TranscriptContext | readonly Message[]): ContextUsageEstimate {
+export function estimateContextTokens(
+	context: TranscriptContext | readonly EstimatableMessage[],
+): ContextUsageEstimate {
 	const messages = "messages" in context ? context.messages : context;
 	const usageInfo = getLastAssistantUsageInfo(messages);
 	if (usageInfo) {

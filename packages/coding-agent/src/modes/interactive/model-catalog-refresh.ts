@@ -1,6 +1,6 @@
 import type { ModelsRefreshResult } from "@candy/ai";
+import { raceWithAbortSignal } from "@candy/ai/utils/abort";
 import type { ModelRuntime } from "../../core/model-runtime.ts";
-import { raceWithAbortSignal } from "../../utils/abort.ts";
 
 type ModelCatalogRuntime = Pick<ModelRuntime, "refresh">;
 
