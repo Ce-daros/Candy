@@ -2,6 +2,7 @@ import { existsSync, globSync, readdirSync, readFileSync, statSync } from "node:
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
+import { toPosixPath } from "../utils/paths.ts";
 import { readCandyManifest } from "./candy-manifest.ts";
 
 export interface PackageFilter {
@@ -26,10 +27,6 @@ const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
 
 type IgnoreMatcher = ReturnType<typeof ignore>;
-
-function toPosixPath(p: string): string {
-	return p.split(sep).join("/");
-}
 
 function prefixIgnorePattern(line: string, prefix: string): string | null {
 	const trimmed = line.trim();

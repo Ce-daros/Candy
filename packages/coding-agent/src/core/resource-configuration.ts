@@ -1,6 +1,6 @@
 import { dirname, join, relative } from "node:path";
 import { CONFIG_DIR_NAME } from "../config.ts";
-import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { canonicalizePath, isLocalPath, resolvePath, toPosixPath } from "../utils/paths.ts";
 import type { PathMetadata, ResolvedPaths } from "./package-manager.ts";
 import type { PackageSource, SettingsManager } from "./settings-manager.ts";
 
@@ -77,10 +77,7 @@ export class ResourceConfiguration {
 		const enablePattern = `+${pattern}`;
 
 		// Filter out existing patterns for this resource
-		const updated = current.filter((p) => {
-			const stripped = p.startsWith("!") || p.startsWith("+") || p.startsWith("-") ? p.slice(1) : p;
-			return stripped !== pattern;
-		});
+		const updated = current.filter((p) => this.getPatternEntryTarget(p) !== pattern);
 
 		if (enabled) {
 			updated.push(enablePattern);
@@ -142,10 +139,7 @@ export class ResourceConfiguration {
 		const enablePattern = `+${pattern}`;
 
 		// Filter out existing patterns for this resource
-		const updated = current.filter((p) => {
-			const stripped = p.startsWith("!") || p.startsWith("+") || p.startsWith("-") ? p.slice(1) : p;
-			return stripped !== pattern;
-		});
+		const updated = current.filter((p) => this.getPatternEntryTarget(p) !== pattern);
 
 		if (enabled) {
 			updated.push(enablePattern);
@@ -178,7 +172,9 @@ export class ResourceConfiguration {
 
 	private setProjectTopLevelOverride(item: ResourceConfigurationItem, state: ProjectOverrideState): boolean {
 		const current = (this.settingsManager.getProjectSettings()[item.resourceType] ?? []) as string[];
-		const pattern = this.isInheritedGlobalItem(item) ? item.path : this.getResourcePatternForScope(item, "project");
+		const pattern = this.isInheritedGlobalItem(item)
+			? toPosixPath(item.path)
+			: this.getResourcePatternForScope(item, "project");
 		const patterns = this.getTopLevelOverridePatterns(item, "project");
 		const updated = current.filter((entry) => {
 			const target = this.getPatternEntryTarget(entry);
@@ -294,18 +290,18 @@ export class ResourceConfiguration {
 		const baseDir = this.getTopLevelBaseDir(scope);
 		const patterns = new Set<string>([
 			this.getResourcePatternForScope(item, scope),
-			item.path,
-			relative(baseDir, item.path),
+			toPosixPath(item.path),
+			toPosixPath(relative(baseDir, item.path)),
 		]);
-		if (item.metadata.baseDir) patterns.add(relative(item.metadata.baseDir, item.path));
+		if (item.metadata.baseDir) patterns.add(toPosixPath(relative(item.metadata.baseDir, item.path)));
 		return patterns;
 	}
 
 	private getResourcePatternForScope(item: ResourceConfigurationItem, scope: SettingsScope): string {
 		const sourceScope = this.getItemScope(item);
-		if (scope !== sourceScope) return item.path;
+		if (scope !== sourceScope) return toPosixPath(item.path);
 		const baseDir = item.metadata.baseDir ?? this.getTopLevelBaseDir(sourceScope);
-		return relative(baseDir, item.path);
+		return toPosixPath(relative(baseDir, item.path));
 	}
 
 	private createPackageOverrideSource(item: ResourceConfigurationItem): PackageSource {
@@ -347,7 +343,9 @@ export class ResourceConfiguration {
 	}
 
 	private getPatternEntryTarget(entry: string): string {
-		return entry.startsWith("!") || entry.startsWith("+") || entry.startsWith("-") ? entry.slice(1) : entry;
+		return toPosixPath(
+			entry.startsWith("!") || entry.startsWith("+") || entry.startsWith("-") ? entry.slice(1) : entry,
+		);
 	}
 
 	private getResourceItemKey(item: ResourceConfigurationItem): string {
@@ -365,11 +363,11 @@ export class ResourceConfiguration {
 	private getResourcePattern(item: ResourceConfigurationItem): string {
 		const scope = item.metadata.scope as "user" | "project";
 		const baseDir = item.metadata.baseDir ?? this.getTopLevelBaseDir(scope);
-		return relative(baseDir, item.path);
+		return toPosixPath(relative(baseDir, item.path));
 	}
 
 	private getPackageResourcePattern(item: ResourceConfigurationItem): string {
 		const baseDir = item.metadata.baseDir ?? dirname(item.path);
-		return relative(baseDir, item.path);
+		return toPosixPath(relative(baseDir, item.path));
 	}
 }

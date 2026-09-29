@@ -6,6 +6,11 @@ import { spawnProcessSync } from "./child-process.ts";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
+/** Convert native path separators to `/` so settings entries stay portable across operating systems. */
+export function toPosixPath(path: string): string {
+	return path.split(sep).join("/");
+}
+
 export interface PathInputOptions {
 	/** Trim leading/trailing whitespace before normalization. */
 	trim?: boolean;

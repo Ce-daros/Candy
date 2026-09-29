@@ -68,6 +68,7 @@
 
 ### Fixed
 
+- Resource filter patterns written by the config selector (`+`/`-` entries in settings package extensions/skills/prompts/themes arrays) now use `/` separators on Windows, so project settings stay portable across operating systems; previously stored backslash entries keep matching and are replaced on the next toggle.
 - Render the home logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals, preserving every source pixel and its transparent background.
 
 ### Removed

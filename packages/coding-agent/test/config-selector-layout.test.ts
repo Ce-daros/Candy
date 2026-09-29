@@ -1,4 +1,3 @@
-import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import {
@@ -97,8 +96,6 @@ describe("ConfigSelectorComponent viewport", () => {
 		selector.getResourceList().handleInput(" ");
 		await settings.flush();
 		expect(toggles).toBe(1);
-		expect(settings.getGlobalSettings().skills).toEqual([
-			`-${relative("C:/demo/.candy", "C:/demo/.candy/skills/review/SKILL.md")}`,
-		]);
+		expect(settings.getGlobalSettings().skills).toEqual(["-skills/review/SKILL.md"]);
 	});
 });

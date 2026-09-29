@@ -18,7 +18,7 @@ describe("resource configuration", () => {
 	it("saves global skill toggles and supports project inherit, unload and load states", async () => {
 		const manager = SettingsManager.inMemory();
 		const configuration = new ResourceConfiguration(manager, cwd, agentDir, resolved);
-		const pattern = join("skills", "deploy", "SKILL.md");
+		const pattern = "skills/deploy/SKILL.md";
 		expect(configuration.toggleResource(skill)).toBe(false);
 		await manager.flush();
 		expect(manager.getGlobalSettings().skills).toEqual([`-${pattern}`]);
@@ -56,13 +56,13 @@ describe("resource configuration", () => {
 		expect(configuration.toggleResource(packagedSkill)).toBe(false);
 		await manager.flush();
 		expect(manager.getGlobalSettings().packages).toEqual([
-			{ source: "npm:tools", skills: [`-${join("skills", "review", "SKILL.md")}`] },
+			{ source: "npm:tools", skills: ["-skills/review/SKILL.md"] },
 		]);
 		configuration.setWriteScope("project");
 		expect(configuration.toggleResource(packagedSkill)).toBe(false);
 		await manager.flush();
 		expect(manager.getProjectSettings().packages).toEqual([
-			{ source: "npm:tools", autoload: false, skills: [`-${join("skills", "review", "SKILL.md")}`] },
+			{ source: "npm:tools", autoload: false, skills: ["-skills/review/SKILL.md"] },
 		]);
 	});
 });
