@@ -1,7 +1,4 @@
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-
-const telemetrySrcIndex = fileURLToPath(new URL("../telemetry/src/index.ts", import.meta.url));
 
 /**
  * Live provider verification. These tests call real provider endpoints with
@@ -18,8 +15,5 @@ export default defineConfig({
 		testTimeout: 180000,
 		hookTimeout: 60000,
 		reporters: ["dot"],
-	},
-	resolve: {
-		alias: [{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex }],
 	},
 });

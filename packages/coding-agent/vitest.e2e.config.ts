@@ -1,5 +1,5 @@
 import { configDefaults, defineConfig, mergeConfig } from "vitest/config";
-import baseConfig, { workspaceSourcePaths } from "../../vitest.base.ts";
+import baseConfig from "../../vitest.base.ts";
 
 export default mergeConfig(
 	baseConfig,
@@ -19,16 +19,6 @@ export default mergeConfig(
 					external: [/@silvia-odwyer\/photon-node/],
 				},
 			},
-		},
-		resolve: {
-			alias: [
-				{ find: /^@earendil-works\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },
-				{ find: /^@earendil-works\/pi-agent-core$/, replacement: workspaceSourcePaths.agentIndex },
-				{ find: /^@mariozechner\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },
-				{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: workspaceSourcePaths.aiOAuth },
-				{ find: /^@mariozechner\/pi-agent-core$/, replacement: workspaceSourcePaths.agentIndex },
-				{ find: /^@mariozechner\/pi-tui$/, replacement: workspaceSourcePaths.tuiIndex },
-			],
 		},
 	}),
 );
