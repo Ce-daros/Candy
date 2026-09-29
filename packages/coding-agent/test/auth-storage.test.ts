@@ -243,6 +243,46 @@ describe("AuthStorage", () => {
 		});
 	});
 
+	test("serializes concurrent synchronous first writers to a missing file", () => {
+		const path = join(tempDir, "settings.json");
+		const first = new JsonFileStorage(path);
+		const second = new JsonFileStorage(path);
+		first.withLock((content) => {
+			const data = JSON.parse(content ?? "{}");
+			data.first = true;
+			return { result: undefined, next: JSON.stringify(data) };
+		});
+		second.withLock((content) => {
+			const data = JSON.parse(content ?? "{}");
+			data.second = true;
+			return { result: undefined, next: JSON.stringify(data) };
+		});
+		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ first: true, second: true });
+	});
+
+	test("serializes concurrent first writers to a missing file", async () => {
+		const first = new JsonFileStorage(authJsonPath, { ensureFile: true });
+		const second = new JsonFileStorage(authJsonPath, { ensureFile: true });
+		const update = async (key: string) =>
+			first.withLockAsync(async (content) => {
+				const data = JSON.parse(content ?? "{}");
+				await new Promise((resolve) => setTimeout(resolve, 5));
+				data[key] = true;
+				return { result: undefined, next: JSON.stringify(data) };
+			});
+
+		await Promise.all([
+			update("first"),
+			second.withLockAsync(async (content) => {
+				const data = JSON.parse(content ?? "{}");
+				data.second = true;
+				return { result: undefined, next: JSON.stringify(data) };
+			}),
+		]);
+
+		expect(JSON.parse(readFileSync(authJsonPath, "utf8"))).toEqual({ first: true, second: true });
+	});
+
 	test("retries a briefly contended file lock", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
 		const backend = new JsonFileStorage(authJsonPath, { ensureFile: true });

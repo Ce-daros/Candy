@@ -7,8 +7,9 @@
  * for callers that cannot await (settings and project trust).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import lockfile from "proper-lockfile";
 import { stripBom } from "../../utils/text.ts";
@@ -84,6 +85,16 @@ function ensureFile(path: string, options: JsonFileOptions): void {
 	writeFileSync(path, "{}", { encoding: "utf-8", mode: options.mode });
 }
 
+function writeAtomically(path: string, content: string, mode?: number): void {
+	const temporaryPath = join(dirname(path), `.${randomUUID()}.tmp`);
+	try {
+		writeFileSync(temporaryPath, content, { encoding: "utf-8", mode });
+		renameSync(temporaryPath, path);
+	} finally {
+		if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
+	}
+}
+
 function acquireLockSync(path: string, options: JsonFileOptions): () => void {
 	for (let attempt = 0; ; attempt++) {
 		try {
@@ -133,17 +144,30 @@ export function withLockedJsonFileSync<T>(
 	update: (current: string | undefined) => LockedJsonUpdate<T>,
 	options: JsonFileOptions = {},
 ): T {
-	const fileExists = existsSync(path);
-	let release = fileExists ? acquireLockSync(path, options) : undefined;
+	let release: (() => void) | undefined;
 	try {
-		const current = fileExists ? readFileSync(path, "utf-8") : undefined;
-		const { result, next } = update(current);
-		if (next !== undefined) {
+		if (options.ensureFile && !existsSync(path)) {
 			ensureParentDir(path, options);
-			release ??= acquireLockSync(path, options);
-			writeFileSync(path, next, { encoding: "utf-8", mode: options.mode });
+			ensureFile(path, options);
 		}
-		return result;
+		if (existsSync(path)) {
+			release = acquireLockSync(path, options);
+			const { result, next } = update(readFileSync(path, "utf-8"));
+			if (next !== undefined) writeAtomically(path, next, options.mode);
+			return result;
+		}
+
+		// A missing file cannot be locked until its parent exists. Evaluate once to
+		// avoid creating directories for read-only calls; if it writes, acquire the
+		// lock and evaluate again against the latest content before committing.
+		const initial = update(undefined);
+		if (initial.next === undefined) return initial.result;
+		ensureParentDir(path, options);
+		release = acquireLockSync(path, options);
+		const current = existsSync(path) ? readFileSync(path, "utf-8") : undefined;
+		const committed = update(current);
+		if (committed.next !== undefined) writeAtomically(path, committed.next, options.mode);
+		return committed.result;
 	} finally {
 		release?.();
 	}
@@ -178,7 +202,7 @@ export async function withLockedJsonFileAsync<T>(
 		throwIfCompromised();
 		options.signal?.throwIfAborted();
 
-		if (next !== undefined) writeFileSync(path, next, { encoding: "utf-8", mode: options.mode });
+		if (next !== undefined) writeAtomically(path, next, options.mode);
 		throwIfCompromised();
 		return result;
 	} finally {
