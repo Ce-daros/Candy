@@ -11,14 +11,11 @@ import {
 	CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL,
 	CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL,
 	CLOUDFLARE_WORKERS_AI_BASE_URL,
-	CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
 } from "../src/api/cloudflare.ts";
 import type {
 	AnthropicMessagesCompat,
 	AnyModel,
 	Api,
-	ClassifierApi,
-	ClassifierModel,
 	ImageApi,
 	ImageModel,
 	KnownProvider,
@@ -128,14 +125,6 @@ interface ModelsDevModel {
 
 interface ModelsDevProvider {
 	models?: Record<string, ModelsDevModel>;
-}
-
-interface ModelsDevMetadata {
-	id: string;
-	type?: string;
-	name: string;
-	limit?: { context?: number };
-	modalities?: { input?: string[] };
 }
 
 type ModelsDevCatalog = Record<string, ModelsDevProvider>;
@@ -340,7 +329,6 @@ const KIMI_CODING_IMPLIED_COSTS: Record<string, Model<Api>["cost"]> = {
 const OPENROUTER_KIMI_K3_MODEL_IDS = new Set(["moonshotai/kimi-k3", "~moonshotai/kimi-latest"]);
 
 
-const BEDROCK_INFERENCE_PROFILE_ONLY_MODEL_IDS = new Set(["anthropic.claude-opus-5"]);
 const MODELS_DEV_OPENAI_UNSUPPORTED_MODEL_IDS = new Set(["gpt-5.6"]);
 const OPENAI_TOOL_SEARCH_MODEL_IDS = new Set([
 	"gpt-5.4",
@@ -508,7 +496,6 @@ function supportsDirectReasoningEffort(model: Model<Api>): boolean {
 	if (model.api === "anthropic-messages") return model.compat?.forceAdaptiveThinking === true;
 	if (
 		model.api === "openai-responses" ||
-		model.api === "azure-openai-responses" ||
 		model.api === "openai-codex-responses"
 	) {
 		return true;
@@ -563,7 +550,6 @@ function supportsOpenAiMax(model: Model<Api>): boolean {
 	return (
 		(model.id.includes("gpt-5.6") || model.id.includes("gpt-6")) &&
 		(model.api === "openai-responses" ||
-			model.api === "azure-openai-responses" ||
 			model.api === "openai-codex-responses" ||
 			model.api === "openai-completions")
 	);
@@ -830,22 +816,17 @@ function applyStrictToolCompatMetadata(model: Model<Api>): void {
 }
 
 // Responses endpoints verified (OpenAI, ChatGPT Codex backend, GitHub Copilot,
-// opencode zen) or documented (Azure OpenAI, Cloudflare AI Gateway) to pass
+// opencode zen) or documented (Cloudflare AI Gateway) to pass
 // OpenAI custom grammar tools through. OpenAI rejects `type: "custom"` tools
 // for pre-GPT-5 models (gpt-4.x, gpt-4o, o-series).
 const OPENAI_GRAMMAR_TOOL_PROVIDERS = new Set([
 	"openai",
 	"openai-codex",
-	"azure-openai-responses",
 	"github-copilot",
 	"opencode",
 	"cloudflare-ai-gateway",
 ]);
-const OPENAI_GRAMMAR_TOOL_APIS = new Set<Api>([
-	"openai-responses",
-	"azure-openai-responses",
-	"openai-codex-responses",
-]);
+const OPENAI_GRAMMAR_TOOL_APIS = new Set<Api>(["openai-responses", "openai-codex-responses"]);
 
 function applyOpenAIGrammarToolCompatMetadata(model: Model<Api>): void {
 	if (!OPENAI_GRAMMAR_TOOL_APIS.has(model.api) || !OPENAI_GRAMMAR_TOOL_PROVIDERS.has(model.provider)) return;
@@ -957,9 +938,7 @@ function applyImageInputMetadata(model: AnyModel): void {
 					maxRequestBytes: 32 * 1024 * 1024,
 					images: { maxPerRequest: model.type !== "image" && model.contextWindow === 200000 ? 100 : 600 },
 				}
-			: model.provider === "amazon-bedrock"
-				? { images: { maxPerMessage: 20 } }
-				: model.provider === "openai"
+			: model.provider === "openai"
 					? { maxRequestBytes: 512 * 1024 * 1024, images: { maxPerRequest: 1500 } }
 					: model.provider === "google"
 						? { maxRequestBytes: 20 * 1024 * 1024, images: { maxPerRequest: 3600 } }
@@ -994,16 +973,14 @@ function getGoogleThinkingLevelMap(
 
 function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (
-		(model.api === "openai-responses" || model.api === "azure-openai-responses") &&
+		model.api === "openai-responses" &&
 		model.id.startsWith("gpt-5")
 	) {
 		mergeThinkingLevelMap(model, { off: null });
 	}
 	if (
 		(model.id === "gpt-6-astra" || model.id === "gpt-6-sol" || model.id === "gpt-6-luna") &&
-		(model.api === "openai-responses" ||
-			model.api === "azure-openai-responses" ||
-			model.api === "openai-codex-responses")
+		(model.api === "openai-responses" || model.api === "openai-codex-responses")
 	) {
 		mergeThinkingLevelMap(model, {
 			off: model.id === "gpt-6-astra" ? null : "none",
@@ -1191,12 +1168,6 @@ function getAnthropicMessagesCompat(provider: string, modelId: string): Anthropi
 	return Object.keys(compat).length > 0 ? compat : undefined;
 }
 
-function getBedrockBaseUrl(modelId: string): string {
-	return modelId.startsWith("eu.")
-		? "https://bedrock-runtime.eu-central-1.amazonaws.com"
-		: "https://bedrock-runtime.us-east-1.amazonaws.com";
-}
-
 function normalizeNvidiaModelId(modelId: string): string {
 	return modelId.toLowerCase().replaceAll("_", ".");
 }
@@ -1261,15 +1232,12 @@ async function fetchOpenRouterList(query: string): Promise<OpenRouterModelListIt
 async function fetchOpenRouterModels(): Promise<OpenRouterCatalog> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
-		const [listed, imageListed, decisionListed] = await Promise.all([
+		const [listed, imageListed] = await Promise.all([
 			fetchOpenRouterList(""),
 			fetchOpenRouterList("?output_modalities=image"),
-			fetchOpenRouterList("?output_modalities=decisions"),
 		]);
-		const catalog = buildOpenRouterCatalog(listed, imageListed, decisionListed);
-		console.log(
-			`Fetched ${catalog.chat.length} tool-capable, ${catalog.images.length} image, and ${catalog.classifiers.length} classifier models from OpenRouter`,
-		);
+		const catalog = buildOpenRouterCatalog(listed, imageListed);
+		console.log(`Fetched ${catalog.chat.length} tool-capable and ${catalog.images.length} image models from OpenRouter`);
 		if (generatorOptions.strict && catalog.images.length === 0) {
 			throw new Error("OpenRouter API returned no usable image models");
 		}
@@ -1277,7 +1245,7 @@ async function fetchOpenRouterModels(): Promise<OpenRouterCatalog> {
 	} catch (error) {
 		console.error("Failed to fetch OpenRouter models:", error);
 		if (generatorOptions.strict) throw error;
-		return { chat: [], images: [], classifiers: [] };
+		return { chat: [], images: [] };
 	}
 }
 
@@ -1575,47 +1543,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 
 		const models: Model<any>[] = [];
 		const nvidiaNimModelIds = data.nvidia?.models ? await fetchNvidiaNimModelIds() : new Map<string, string>();
-
-		// Process Amazon Bedrock models
-		if (data["amazon-bedrock"]?.models) {
-			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-				if (BEDROCK_INFERENCE_PROFILE_ONLY_MODEL_IDS.has(modelId)) continue;
-
-				let id = modelId;
-
-				if (id.startsWith("ai21.jamba")) {
-					// These models doesn't support tool use in streaming mode
-					continue;
-				}
-
-				if (id.startsWith("mistral.mistral-7b-instruct-v0")) {
-					// These models doesn't support system messages
-					continue;
-				}
-
-				models.push({
-					id,
-					name: m.name || id,
-					api: "bedrock-converse-stream" as const,
-					provider: "amazon-bedrock" as const,
-					baseUrl: getBedrockBaseUrl(id),
-					reasoning: m.reasoning === true,
-					input: (m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"]) as ("text" | "image")[],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-					...(m.structured_output === true && { compat: { supportsStrictMode: true } }),
-				});
-				recordModelsDevReasoningOptions("amazon-bedrock" as const, id, m);
-			}
-		}
 
 		// Process Anthropic models
 		if (data.anthropic?.models) {
@@ -2478,61 +2405,12 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 	}
 }
 
-async function loadModelsDevClassifierModels(): Promise<ClassifierModel<"typesafe-system-one">[]> {
-	try {
-		console.log("Fetching classifier models from models.dev API...");
-		const response = await fetch("https://models.dev/models.json?type=decision");
-		if (!response.ok) throw new Error(`models.dev classifier API returned ${response.status}`);
-		const data = (await response.json()) as Record<string, ModelsDevMetadata>;
-		const metadata = data["typesafe/jev-latest"];
-		if (!metadata || metadata.type !== "decision") {
-			throw new Error("models.dev did not return decision model typesafe/jev-latest");
-		}
-		return [
-			{
-				type: "classifier",
-				id: "jev-latest",
-				name: metadata.name,
-				api: "typesafe-system-one",
-				provider: "typesafe",
-				baseUrl: "https://api.typesafe.ai/v1/",
-				input: metadata.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-				// The canonical models.dev entry has no direct-provider pricing and System One reports no token usage.
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: metadata.limit?.context || 64000,
-			},
-		];
-	} catch (error) {
-		console.error("Failed to load models.dev classifier data:", error);
-		if (generatorOptions.strict) throw error;
-		return [];
-	}
-}
-
-// Workers AI has no unauthenticated catalog and models.dev does not list its
-// System One models yet. Cloudflare publishes pricing only in the dashboard.
-// https://developers.cloudflare.com/ai/models/typesafe/jev/
-const CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS: ClassifierModel<"cloudflare-workers-ai-system-one">[] = [
-	{
-		type: "classifier",
-		id: "typesafe/jev",
-		name: "Jev",
-		api: "cloudflare-workers-ai-system-one",
-		provider: "cloudflare-workers-ai",
-		baseUrl: CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 32000,
-	},
-];
-
 async function generateModels() {
 	// Fetch models from all upstream catalogs.
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras, and others
 	// OpenRouter: its tool-capable routed catalog
 	// AI Gateway: OpenAI-compatible catalog with tool-capable models
 	const modelsDevModels = await loadModelsDevData();
-	const modelsDevClassifierModels = await loadModelsDevClassifierModels();
 	const openRouterCatalog = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
 
@@ -2675,7 +2553,7 @@ async function generateModels() {
 			if (standardCost) candidate.cost = withOpenAiLongContextPricing(standardCost);
 		}
 		// models.dev reports gpt-5-pro output as 272000 (a duplicate of the input sub-limit);
-		// the actual max output is 128000. Also propagates to the derived Azure clone.
+		// the actual max output is 128000.
 		if (candidate.provider === "openai" && candidate.id === "gpt-5-pro") {
 			candidate.maxTokens = 128000;
 		}
@@ -3061,32 +2939,6 @@ async function generateModels() {
 		});
 	}
 
-	// Azure Foundry deploys these with larger context windows than OpenAI's own short-tier defaults.
-	// See models-sold-directly-by-azure docs.
-	const AZURE_CONTEXT_WINDOW_OVERRIDES: Record<string, number> = {
-		"gpt-5.4": 1050000,
-		"gpt-5.5": 1050000,
-		"gpt-5.6-luna": 1050000,
-		"gpt-5.6-sol": 1050000,
-		"gpt-5.6-terra": 1050000,
-	};
-	const azureOpenAiModels: Model<Api>[] = allModels
-		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
-		.map((model) => ({
-			...model,
-			api: "azure-openai-responses",
-			provider: "azure-openai-responses",
-			baseUrl: "",
-			cost: {
-				input: model.cost.input,
-				output: model.cost.output,
-				cacheRead: model.cost.cacheRead,
-				cacheWrite: model.cost.cacheWrite,
-			},
-			contextWindow: AZURE_CONTEXT_WINDOW_OVERRIDES[model.id] ?? model.contextWindow,
-		}));
-	allModels.push(...azureOpenAiModels);
-
 	for (const model of allModels) {
 		applyOpenAICompletionsCompatMetadata(model);
 		applyAnthropicMessagesCompatMetadata(model);
@@ -3108,33 +2960,22 @@ async function generateModels() {
 	type ProviderCatalog = {
 		chat: Record<string, Model<Api>>;
 		image: Record<string, ImageModel<ImageApi>>;
-		classifier: Record<string, ClassifierModel<ClassifierApi>>;
 	};
 	const providers: Record<string, ProviderCatalog> = {};
 	for (const model of allModels) {
-		providers[model.provider] ??= { chat: {}, image: {}, classifier: {} };
+		providers[model.provider] ??= { chat: {}, image: {} };
 		// Only add if not already present (models.dev takes priority over OpenRouter).
 		providers[model.provider].chat[model.id] ??= { ...model, type: "chat" };
 	}
 	for (const model of openRouterCatalog.images) {
 		applyImageInputMetadata(model);
-		providers[model.provider] ??= { chat: {}, image: {}, classifier: {} };
+		providers[model.provider] ??= { chat: {}, image: {} };
 		providers[model.provider].image[model.id] ??= model;
-	}
-	const classifierModels: ClassifierModel<ClassifierApi>[] = [
-		...modelsDevClassifierModels,
-		...openRouterCatalog.classifiers,
-		...CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS,
-	];
-	for (const model of classifierModels) {
-		providers[model.provider] ??= { chat: {}, image: {}, classifier: {} };
-		providers[model.provider].classifier[model.id] ??= model;
 	}
 
 	const sortedProviderIds = Object.keys(providers).sort();
 	const jsonChatProviders: Record<string, Record<string, Model<Api>>> = {};
 	const jsonImageProviders: Record<string, Record<string, ImageModel<ImageApi>>> = {};
-	const jsonClassifierProviders: Record<string, Record<string, ClassifierModel<ClassifierApi>>> = {};
 	const jsonAllProviders: Record<string, AnyModel[]> = {};
 	for (const providerId of sortedProviderIds) {
 		jsonChatProviders[providerId] = Object.fromEntries(
@@ -3143,13 +2984,9 @@ async function generateModels() {
 		jsonImageProviders[providerId] = Object.fromEntries(
 			Object.entries(providers[providerId].image).sort(([left], [right]) => left.localeCompare(right)),
 		);
-		jsonClassifierProviders[providerId] = Object.fromEntries(
-			Object.entries(providers[providerId].classifier).sort(([left], [right]) => left.localeCompare(right)),
-		);
 		jsonAllProviders[providerId] = [
 			...Object.values(jsonChatProviders[providerId]),
 			...Object.values(jsonImageProviders[providerId]),
-			...Object.values(jsonClassifierProviders[providerId]),
 		];
 	}
 
@@ -3260,7 +3097,7 @@ async function generateModels() {
 
 	for (const [provider, models] of Object.entries(providers)) {
 		console.log(
-			`  ${provider}: ${Object.keys(models.chat).length} chat models, ${Object.keys(models.image).length} image models, ${Object.keys(models.classifier).length} classifier models`,
+			`  ${provider}: ${Object.keys(models.chat).length} chat models, ${Object.keys(models.image).length} image models`,
 		);
 	}
 }

@@ -13,7 +13,6 @@ import {
 } from "@candy/ai";
 import { randomUUID } from "crypto";
 import {
-	appendFileSync,
 	closeSync,
 	createReadStream,
 	existsSync,
@@ -21,11 +20,8 @@ import {
 	openSync,
 	readdirSync,
 	readSync,
-	renameSync,
 	type Stats,
 	statSync,
-	unlinkSync,
-	writeFileSync,
 } from "fs";
 import { readdir, stat } from "fs/promises";
 import { basename, join, resolve } from "path";
@@ -34,11 +30,14 @@ import { APP_NAME, getAgentDir as getDefaultAgentDir, getSessionsDir } from "../
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import {
+	appendSessionEntry,
 	loadEntriesFromFile,
 	parseSessionEntryLine,
 	readSessionHeader,
 	readSessionHeaderForDiscovery,
+	rewriteSessionFile,
 	SessionHeaderScanLimitError,
+	writeSessionFile,
 } from "./session-jsonl.ts";
 import { buildContextEntries, buildSessionProjection } from "./session-projection.ts";
 
@@ -793,24 +792,7 @@ export class SessionManager {
 
 	private _rewriteFile(): void {
 		if (!this.persist || !this.sessionFile) return;
-		const temporaryFile = `${this.sessionFile}.${randomUUID()}.tmp`;
-		const fd = openSync(temporaryFile, "wx");
-		try {
-			for (const entry of this.fileEntries) {
-				writeFileSync(fd, `${JSON.stringify(entry)}\n`);
-			}
-		} catch (error) {
-			closeSync(fd);
-			unlinkSync(temporaryFile);
-			throw error;
-		}
-		closeSync(fd);
-		try {
-			renameSync(temporaryFile, this.sessionFile);
-		} catch (error) {
-			unlinkSync(temporaryFile);
-			throw error;
-		}
+		rewriteSessionFile(this.sessionFile, this.fileEntries);
 		this.pendingFileRewrite = false;
 	}
 
@@ -855,20 +837,13 @@ export class SessionManager {
 
 		if (!this.flushed) {
 			if (!this._hasConversation()) return;
-			const fd = openSync(this.sessionFile, this.emptyExistingFile ? "w" : "wx");
-			try {
-				for (const e of this.fileEntries) {
-					writeFileSync(fd, `${JSON.stringify(e)}\n`);
-				}
-			} finally {
-				closeSync(fd);
-			}
+			writeSessionFile(this.sessionFile, this.fileEntries, { flag: this.emptyExistingFile ? "w" : "wx" });
 			this.flushed = true;
 			this.emptyExistingFile = false;
 		} else if (this.pendingFileRewrite) {
 			this._rewriteFile();
 		} else {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+			appendSessionEntry(this.sessionFile, entry);
 		}
 	}
 
@@ -1532,14 +1507,10 @@ export class SessionManager {
 			cwd: resolvedTargetCwd,
 			parentSession: resolvedSourcePath,
 		};
-		writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" });
-
-		// Copy all non-header entries from source
-		for (const entry of sourceEntries) {
-			if (entry.type !== "session") {
-				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
-			}
-		}
+		// Write the new header first, then every non-header entry from the source.
+		writeSessionFile(newSessionFile, [newHeader, ...sourceEntries.filter((entry) => entry.type !== "session")], {
+			flag: "wx",
+		});
 
 		return new SessionManager(resolvedTargetCwd, dir, newSessionFile, true);
 	}

@@ -2,7 +2,7 @@
 
 Unified LLM API with provider collections, automatic auth resolution, token and cost tracking, and simple context persistence and hand-off to other models mid-session.
 
-**Note**: The chat catalog only includes models that support tool calling (function calling), as this is essential for agentic workflows. Image and classifier catalogs use their operation-specific capabilities.
+**Note**: The chat catalog only includes models that support tool calling (function calling), as this is essential for agentic workflows. The image catalog uses its operation-specific capabilities.
 
 ## Table of Contents
 
@@ -29,7 +29,6 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Compact Assistant Message Frames](#compact-assistant-message-frames)
 - [Image Input](#image-input)
 - [Image Generation](#image-generation)
-- [Classification](#classification)
 - [Thinking/Reasoning](#thinkingreasoning)
   - [Unified Interface](#unified-interface-streamsimplecompletesimple)
   - [Provider-Specific Options](#provider-specific-options-streamcomplete)
@@ -60,9 +59,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 ## Supported Providers
 
 - **OpenAI**
-- **Azure OpenAI (Responses)**
 - **OpenAI Codex** (ChatGPT Plus/Pro subscription, requires OAuth, see below)
-- **TypeSafe** (System One classifier API)
 - **DeepSeek**
 - **NVIDIA NIM**
 - **Anthropic**
@@ -82,7 +79,6 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 - **Hugging Face**
 - **Moonshot AI** (with separate China provider)
 - **GitHub Copilot** (requires OAuth, see below)
-- **Amazon Bedrock**
 - **OpenCode Zen**
 - **OpenCode Go**
 - **Fireworks** (uses OpenAI- and Anthropic-compatible APIs)
@@ -244,7 +240,6 @@ For apps that only need specific providers, there is one factory per built-in pr
 import { anthropicProvider } from '@candy/ai/providers/anthropic';
 import { openaiProvider } from '@candy/ai/providers/openai';
 import { openrouterProvider } from '@candy/ai/providers/openrouter';
-import { amazonBedrockProvider } from '@candy/ai/providers/amazon-bedrock';
 // ...one module per provider in the Supported Providers list
 
 const models = createModels();
@@ -292,12 +287,11 @@ The unqualified reads `getModels()`/`getModel()`/`getAvailable()` return chat mo
 ```typescript
 const images = models.getModelsOfType('image', 'openrouter');           // ImageModel[]
 const flux = models.getModelOfType('image', 'openrouter', 'black-forest-labs/flux.2-pro');
-const jev = models.getModelOfType('classifier', 'typesafe', 'jev-latest');
 const availableImages = await models.getAvailableOfType('image');
 const everything = models.getAllModels();                               // AnyModel[]
 ```
 
-The model's `type` decides which operation accepts it: chat models stream, `type: "image"` models generate images, and `type: "classifier"` models classify structured state. `type` is optional on chat models, so a model without `type` is a chat model. Do not compare `type` directly; narrow mixed lists with `isModelType()` or read the effective type with `getModelType()`:
+The model's `type` decides which operation accepts it: chat models stream and `type: "image"` models generate images. `type` is optional on chat models, so a model without `type` is a chat model. Do not compare `type` directly; narrow mixed lists with `isModelType()` or read the effective type with `getModelType()`:
 
 ```typescript
 import { isModelType } from '@candy/ai';
@@ -330,8 +324,6 @@ For tooling that wants the generated built-in catalog with full literal typing (
 ```typescript
 import {
   getAllBuiltinModels,
-  getBuiltinClassifierModel,
-  getBuiltinClassifierModels,
   getBuiltinImageModel,
   getBuiltinImageModels,
   getBuiltinModel,
@@ -341,11 +333,9 @@ import {
 
 const model = getBuiltinModel('openai', 'gpt-4o-mini'); // typed Model<'openai-responses'>
 const flux = getBuiltinImageModel('openrouter', 'black-forest-labs/flux.2-pro');
-const jev = getBuiltinClassifierModel('typesafe', 'jev-latest');
 const providers = getBuiltinProviders();
 const openrouterChat = getBuiltinModels('openrouter');        // Model[]
 const openrouterImages = getBuiltinImageModels('openrouter'); // ImageModel[]
-const typesafeClassifiers = getBuiltinClassifierModels('typesafe'); // ClassifierModel[]
 const openrouterAll = getAllBuiltinModels('openrouter');      // AnyModel[]
 ```
 
@@ -449,9 +439,7 @@ Built-in providers resolve these env vars (Node.js; in browsers pass `apiKey` ex
 | Provider | Environment Variable(s) |
 |----------|------------------------|
 | OpenAI | `OPENAI_API_KEY` |
-| Azure OpenAI | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` (e.g. `https://{resource}.ai.azure.com`) or `AZURE_OPENAI_RESOURCE_NAME`. Supports `*.openai.azure.com`, `*.cognitiveservices.azure.com` and `*.ai.azure.com`; root endpoints auto-normalize to `/openai/v1`. Optional: `AZURE_OPENAI_API_VERSION` (default `v1`), `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`. |
 | Anthropic | `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN` |
-| TypeSafe | `TYPESAFE_API_KEY` |
 | DeepSeek | `DEEPSEEK_API_KEY` |
 | NVIDIA NIM | `NVIDIA_API_KEY` |
 | Google | `GEMINI_API_KEY` |
@@ -489,7 +477,7 @@ Built-in providers resolve these env vars (Node.js; in browsers pass `apiKey` ex
 subscriptions, while the existing provider retains its broader catalog for backward compatibility.
 Stored credentials remain provider-scoped, so save the key under the provider ID you register.
 
-Amazon Bedrock resolves ambient AWS credentials (`AWS_PROFILE`, access key pairs, `AWS_BEARER_TOKEN_BEDROCK`, ECS task roles, web identity tokens); its provider-owned login flow supports bearer tokens, AWS profiles, and the existing credential chain. Vertex AI resolves either an explicit key or gcloud Application Default Credentials plus project/location, with a provider-owned login flow for API keys, ADC, and service-account files.
+Vertex AI resolves either an explicit key or gcloud Application Default Credentials plus project/location, with a provider-owned login flow for API keys, ADC, and service-account files.
 
 ## Tools
 
@@ -541,7 +529,7 @@ const strictTool: Tool = {
 };
 ```
 
-Strict JSON-schema constrained sampling is supported for OpenAI, Anthropic, supported Amazon Bedrock Converse models, Mistral, and Gemini 3 tool calls through the Google Generative AI and Vertex adapters. Google uses `VALIDATED` function-calling mode (or `ANY` when explicitly requested); earlier Gemini versions fall back for `strict: 'prefer'` and reject `strict: 'require'` because they do not enforce required parameters. Bedrock strict-tool capability is generated from model structured-output metadata; custom Bedrock models can override `compat.supportsStrictMode`. OpenAI Responses and Chat Completions can also emit grammar-constrained custom tools with OpenAI Lark or regex grammar variants. If multiple OpenAI variants are supplied, Lark is preferred over regex. Grammar constraints are enforced when the active model supports grammar tools; otherwise the tool falls back to normal function/JSON-schema handling. Grammar tool capability is model metadata: the generated catalog sets `compat.supportsOpenAIGrammarTools` for GPT-5+ models on endpoints that pass OpenAI custom tools through (OpenAI, OpenAI Codex, Azure OpenAI Responses, GitHub Copilot, opencode, and Cloudflare AI Gateway). OpenAI rejects `type: "custom"` tools for pre-GPT-5 models, and gateways that normalize tool schemas (e.g. OpenRouter) mangle them, so the flag stays off elsewhere. Custom model definitions can opt in via `compat`. Grammar-capable models reject grammar configurations without a non-empty supported variant. Native grammar tools must have an object parameter schema with exactly one required string property:
+Strict JSON-schema constrained sampling is supported for OpenAI, Anthropic, Mistral, and Gemini 3 tool calls through the Google Generative AI and Vertex adapters. Google uses `VALIDATED` function-calling mode (or `ANY` when explicitly requested); earlier Gemini versions fall back for `strict: 'prefer'` and reject `strict: 'require'` because they do not enforce required parameters. Strict-tool capability is generated from model structured-output metadata; custom models can override `compat.supportsStrictMode`. OpenAI Responses and Chat Completions can also emit grammar-constrained custom tools with OpenAI Lark or regex grammar variants. If multiple OpenAI variants are supplied, Lark is preferred over regex. Grammar constraints are enforced when the active model supports grammar tools; otherwise the tool falls back to normal function/JSON-schema handling. Grammar tool capability is model metadata: the generated catalog sets `compat.supportsOpenAIGrammarTools` for GPT-5+ models on endpoints that pass OpenAI custom tools through (OpenAI, OpenAI Codex, GitHub Copilot, opencode, and Cloudflare AI Gateway). OpenAI rejects `type: "custom"` tools for pre-GPT-5 models, and gateways that normalize tool schemas (e.g. OpenRouter) mangle them, so the flag stays off elsewhere. Custom model definitions can opt in via `compat`. Grammar-capable models reject grammar configurations without a non-empty supported variant. Native grammar tools must have an object parameter schema with exactly one required string property:
 
 ```typescript
 const patchTool: Tool = {
@@ -862,63 +850,6 @@ console.log(model.output); // ['image'] or ['image', 'text']
 - If you want a model to analyze images in a conversation or call tools, use the regular chat APIs with a model that supports image input.
 - At the moment, image generation is available through only one provider, OpenRouter.
 
-## Classification
-
-Classifier models consume structured JSON state and answer one or more typed questions. They do not use chat or image-generation APIs. TypeSafe's Jev model is available from these built-in providers:
-
-| Provider | Model IDs | Auth |
-| --- | --- | --- |
-| `typesafe` | `jev-latest` | `TYPESAFE_API_KEY` |
-| `openrouter` | `typesafe/jev-1.13`, `~typesafe/jev-latest` | `OPENROUTER_API_KEY` or OpenRouter OAuth |
-| `cloudflare-workers-ai` | `typesafe/jev` | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` |
-
-```typescript
-import { builtinModels } from '@candy/ai/providers/all';
-
-const models = builtinModels();
-const model = models.getModelOfType('classifier', 'typesafe', 'jev-latest')!;
-const result = await models.classify(model, {
-  state: { message: 'The change works perfectly, thanks.' },
-  questions: {
-    category: {
-      type: 'choice',
-      instructions: 'Classify the message.',
-      criteria: {
-        approval: 'The user approves of the result',
-        correction: 'The user requests a correction'
-      }
-    },
-    satisfaction: {
-      type: 'score',
-      instructions: 'Score user satisfaction.',
-      criteria: ['dissatisfied', 'neutral', 'satisfied']
-    },
-    approved: {
-      type: 'bool',
-      instructions: 'Does the user approve?',
-      criteria: { true: 'Approval', false: 'No approval' }
-    }
-  }
-});
-
-console.log(result.answers);
-```
-
-The public contract uses `bool` questions and `{ type: "bool", probability }` answers. The TypeSafe adapter translates those to and from its `noul` wire representation. Like image generation, `classify()` resolves to a result with `stopReason: "error"` instead of rejecting for provider, authentication, or response errors.
-
-Custom providers register classifier models and implementations by API ID:
-
-```typescript
-createProvider({
-  id: 'classifier-service',
-  auth,
-  models: [model],
-  classifiers: {
-    'classifier-api': { classify: async (model, context, options) => result }
-  }
-});
-```
-
 ## Thinking/Reasoning
 
 Many models support thinking/reasoning capabilities where they can show their internal thought process. You can check if a model supports reasoning via the `reasoning` property. If you pass reasoning options to a non-reasoning model, they are silently ignored.
@@ -1150,7 +1081,7 @@ Callbacks are awaited in stream order, so slow callbacks delay stream consumptio
 
 ### createProvider()
 
-`createProvider()` builds a provider from parts: identity, auth, a model list, and an API implementation (`api` for chat models, `images` for image generation, `classifiers` for classification; at least one is required, see [Image Generation](#image-generation)). Use it for local inference servers, proxies, or any OpenAI/Anthropic-compatible endpoint:
+`createProvider()` builds a provider from parts: identity, auth, a model list, and an API implementation (`api` for chat models, `images` for image generation; at least one is required, see [Image Generation](#image-generation)). Use it for local inference servers, proxies, or any OpenAI/Anthropic-compatible endpoint:
 
 ```typescript
 import { createModels, createProvider, envApiKeyAuth, type Model } from '@candy/ai';
@@ -1311,11 +1242,9 @@ Built-in API implementations live under `./api/<api-id>`:
 | `openai-completions` | `OpenAICompletionsOptions` |
 | `openai-responses` | `OpenAIResponsesOptions` |
 | `openai-codex-responses` | `OpenAICodexResponsesOptions` |
-| `azure-openai-responses` | `AzureOpenAIResponsesOptions` |
 | `google-generative-ai` | `GoogleOptions` |
 | `google-vertex` | `GoogleVertexOptions` |
 | `mistral-conversations` | `MistralOptions` |
-| `bedrock-converse-stream` | `BedrockOptions` |
 
 Importing an implementation module loads its SDK. The `./api/<id>.lazy` wrappers (used by the provider factories) defer that load to the first request when the runtime or bundler supports dynamic import chunking. Legacy raw API subpaths from older releases (`./anthropic`, `./google`, `./mistral`, `./openai-completions`, ...) were removed; use `@candy/ai/api/<api-id>`.
 
@@ -1586,9 +1515,8 @@ const response = await models.complete(model, {
 
 Browser compatibility notes:
 
-- Amazon Bedrock (`bedrock-converse-stream`) is not supported in browser environments. It can still appear in model lists; calls fail at runtime.
 - OAuth login flows are Node-only. They are lazy-loaded behind bundler-opaque imports, so registering an OAuth-capable provider does not pull Node-only code into a browser bundle — only actually logging in would.
-- Use a server-side proxy or backend service if you need Bedrock or OAuth-based auth from a web app.
+- Use a server-side proxy or backend service if you need OAuth-based auth from a web app.
 
 ## Bundling and Tree Shaking
 
@@ -1608,7 +1536,7 @@ Rules:
 - `@candy/ai/providers/<provider>` imports that provider's catalog and lazy API wrapper only.
 - `@candy/ai/providers/all` imports every built-in provider factory and all catalogs. Use it only when you want the full built-in set.
 - With code splitting, provider SDKs stay in lazy chunks and load on first request.
-- Without code splitting, bundlers fold reachable lazy API implementations into the single bundle. A single-provider bundle then includes that provider's SDK; `providers/all` includes all statically visible SDKs. Bedrock is the exception: its AWS SDK implementation is loaded through a bundler-opaque Node-only import.
+- Without code splitting, bundlers fold reachable lazy API implementations into the single bundle. A single-provider bundle then includes that provider's SDK; `providers/all` includes all statically visible SDKs.
 - Importing `@candy/ai/api/<api-id>` directly loads that API implementation and its SDK immediately.
 
 For single-file Node ESM bundles, some SDK dependencies may still use dynamic CommonJS `require()` internally. If you see errors such as `Dynamic require of "child_process" is not supported`, add a Node `require` shim to the bundle. With esbuild:
@@ -1621,30 +1549,9 @@ esbuild app.js --bundle --platform=node --format=esm \
 
 This is only for Node bundles; it is not a browser or Cloudflare Workers workaround.
 
-Bedrock is Node-only. Add it like any other provider:
-
-```typescript
-import { createModels } from '@candy/ai';
-import { amazonBedrockProvider } from '@candy/ai/providers/amazon-bedrock';
-
-const models = createModels();
-models.setProvider(amazonBedrockProvider());
-```
-
-In normal Node package usage and code-split bundles, Bedrock loads its AWS SDK implementation lazily. For a standalone single-file bundle that must include Bedrock support, register the implementation module explicitly:
-
-```typescript
-import { setBedrockProviderModule } from '@candy/ai/api/bedrock-converse-stream.lazy';
-import { bedrockProviderModule } from '@candy/ai/bedrock-provider';
-
-setBedrockProviderModule(bedrockProviderModule);
-```
-
-That explicit override bundles the AWS SDK. Without it, Bedrock's opaque runtime import expects the package's Bedrock implementation file to be available at runtime.
-
 ### Provider-Scoped Environment Overrides
 
-Pass `env` in stream options to scope provider configuration to a request. Values in `env` are used before process environment variables for provider auth and configuration such as Cloudflare account IDs, Azure OpenAI settings, Vertex project/location, Bedrock settings, `CANDY_CACHE_RETENTION`, and `HTTP_PROXY`/`HTTPS_PROXY`.
+Pass `env` in stream options to scope provider configuration to a request. Values in `env` are used before process environment variables for provider auth and configuration such as Cloudflare account IDs, Vertex project/location, `CANDY_CACHE_RETENTION`, and `HTTP_PROXY`/`HTTPS_PROXY`.
 
 ```typescript
 const models = builtinModels();
@@ -1748,8 +1655,6 @@ Provider notes:
 
 **OpenAI Codex**: Requires a ChatGPT Plus or Pro subscription. Provides access to GPT-5.x Codex models with extended context windows and reasoning capabilities. The library automatically handles session-based prompt caching when `sessionId` is provided in stream options unless `cacheRetention` is `"none"`. You can set `transport` in stream options to `"sse"`, `"websocket"`, or `"auto"` for Codex Responses transport selection. When using WebSocket with a `sessionId` and cache retention enabled, connections are reused per session and expire after 5 minutes of inactivity. Call `cleanupSessionResources(sessionId)` when finished so the pooled connection does not keep the process alive.
 
-**Azure OpenAI (Responses)**: Uses the Responses API only. Set `AZURE_OPENAI_API_KEY` and either `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME`. `AZURE_OPENAI_BASE_URL` supports both `https://<resource>.openai.azure.com` and `https://<resource>.cognitiveservices.azure.com`; root endpoints are normalized to `.../openai/v1` automatically. Use `AZURE_OPENAI_API_VERSION` (defaults to `v1`) to override the API version if needed. Deployment names are treated as model IDs by default, override with `azureDeploymentName` or `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` using comma-separated `model-id=deployment` pairs (for example `gpt-4o-mini=my-deployment,gpt-4o=prod`). Legacy deployment-based URLs are intentionally unsupported.
-
 **GitHub Copilot**: If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
 
 ## Development
@@ -1762,15 +1667,15 @@ Adding a new LLM provider requires changes across multiple files. The layered la
 
 #### 1. Core Types (`src/types.ts`)
 
-- Add the API identifier to `KnownApi` (for example `"bedrock-converse-stream"`), if it is a new API
-- Add the provider name to `KnownProvider` (for example `"amazon-bedrock"`)
+- Add the API identifier to `KnownApi` (for example `"mistral-conversations"`), if it is a new API
+- Add the provider name to `KnownProvider` (for example `"mistral"`)
 - Add the options type to `ApiOptionsMap`
 
 #### 2. API Implementation (`src/api/<api-id>.ts`, only for a new API)
 
-Create a new API implementation file (for example `bedrock-converse-stream.ts`) that exports exactly `stream` and `streamSimple`, plus:
+Create a new API implementation file (for example `mistral-conversations.ts`) that exports exactly `stream` and `streamSimple`, plus:
 
-- An options interface extending `StreamOptions` (for example `BedrockOptions`)
+- An options interface extending `StreamOptions` (for example `MistralOptions`)
 - Message conversion functions to transform the `TranscriptContext` messages to provider format; read the prompt and tools from the transcript with `getInitialSystemMessage()`, `getCurrentTools()`, and `resolveTranscript()`
 - Tool conversion if the provider supports tools
 - Response parsing to emit standardized events (`text`, `tool_call`, `thinking`, `usage`, `stop`)
@@ -1780,7 +1685,7 @@ Add a lazy wrapper `src/api/<api-id>.lazy.ts` (`<name>Api()` via `lazyApi()`) so
 #### 3. Model Generation (`scripts/generate-models.ts`)
 
 - Add logic to fetch and parse models from the provider's source (e.g., models.dev API)
-- Map chat/tool-capable provider data to `Model`, image-generation data to `ImageModel`, and models.dev `type: "decision"` entries to `ClassifierModel`; hydration groups the ignored `src/providers/data/<id>.json` values by API while stable `src/providers/<id>.models.ts` wrappers derive exact model/API types directly from those JSON keys
+- Map chat/tool-capable provider data to `Model` and image-generation data to `ImageModel`; hydration groups the ignored `src/providers/data/<id>.json` values by API while stable `src/providers/<id>.models.ts` wrappers derive exact model/API types directly from those JSON keys
 - Keep model ids unique within each provider and model type; emit separate entries when an upstream model supports multiple operations
 - Handle provider-specific quirks (pricing format, capability flags, model ID transformations)
 
@@ -1811,7 +1716,7 @@ Live provider verification runs against real endpoints and ambient credentials. 
 
 For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (for example GPT and Claude), add at least one pair per family.
 
-For providers with non-standard auth (AWS, Google Vertex), create a utility like `bedrock-utils.ts` with credential detection helpers.
+For providers with non-standard auth (for example Google Vertex), create a utility with credential detection helpers.
 
 #### 6. Coding Agent Integration (`../coding-agent/`)
 

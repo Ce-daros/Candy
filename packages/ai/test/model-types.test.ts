@@ -83,7 +83,6 @@ describe("chat models without a type", () => {
 		const mixed = [chatModel("p", "c"), { ...chatModel("p", "typed"), type: "chat" as const }, imageModel("p", "i")];
 		expect(mixed.filter((model) => isModelType(model, "chat")).map((model) => model.id)).toEqual(["c", "typed"]);
 		expect(mixed.filter((model) => isModelType(model, "image")).map((model) => model.id)).toEqual(["i"]);
-		expect(mixed.filter((model) => isModelType(model, "classifier"))).toEqual([]);
 	});
 });
 

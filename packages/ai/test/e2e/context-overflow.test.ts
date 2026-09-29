@@ -21,8 +21,6 @@ const complete = builtinRuntime.complete.bind(builtinRuntime);
 import { getBuiltinModel as getModel, getBuiltinModels as getModels } from "../../src/providers/all.ts";
 import type { AssistantMessage, Context, Model, Usage } from "../../src/types.ts";
 import { isContextOverflow } from "../../src/utils/overflow.ts";
-import { hasAzureOpenAICredentials } from "../azure-utils.ts";
-import { hasBedrockCredentials } from "../bedrock-utils.ts";
 import { resolveApiKey } from "../oauth.ts";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -189,18 +187,6 @@ describe("Context overflow error handling", () => {
 		}, 120000);
 	});
 
-	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses", () => {
-		it("gpt-4o-mini - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("azure-openai-responses", "gpt-4o-mini");
-			const result = await testContextOverflow(model, process.env.AZURE_OPENAI_API_KEY!);
-			logResult(result);
-
-			expect(result.stopReason).toBe("error");
-			expect(result.errorMessage).toMatch(/context|maximum/i);
-			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-		}, 120000);
-	});
-
 	// =============================================================================
 	// Google
 	// Expected pattern: "input token count (X) exceeds the maximum"
@@ -246,20 +232,8 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
-	// Amazon Bedrock
 	// Expected pattern: "Input is too long for requested model"
 	// =============================================================================
-
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
-		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-			const result = await testContextOverflow(model, "");
-			logResult(result);
-
-			expect(result.stopReason).toBe("error");
-			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-		}, 120000);
-	});
 
 	// =============================================================================
 	// xAI

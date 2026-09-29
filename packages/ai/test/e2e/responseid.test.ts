@@ -5,7 +5,6 @@ const complete = builtinRuntime.complete.bind(builtinRuntime);
 
 import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
 import type { Api, Context, Model, StreamOptions } from "../../src/types.ts";
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
 import { resolveApiKey } from "../oauth.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
@@ -78,16 +77,6 @@ describe("responseId E2E Tests", () => {
 
 		it("should expose responseId", { retry: 3, timeout: 30000 }, async () => {
 			await expectResponseId(llm);
-		});
-	});
-
-	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider", () => {
-		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
-		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
-		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
-
-		it("should expose responseId", { retry: 3, timeout: 30000 }, async () => {
-			await expectResponseId(llm, azureOptions);
 		});
 	});
 

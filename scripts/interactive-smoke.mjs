@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { workspacePackages } from "./lib/workspace-paths.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = join(root, "node_modules", ".cache");
@@ -28,14 +29,19 @@ for (const directory of [isolatedHome, isolatedWorkspace, isolatedTemp]) mkdirSy
 mkdirSync(join(isolatedWorkspace, ".git"));
 mkdirSync(join(isolatedTemp, ".git"));
 const packageDir = join(root, "packages", "coding-agent");
-const source = (name, file) => join(root, "packages", name, "src", file);
+const workspaceSources = workspacePackages();
+const source = (name, file) => {
+	const sourceRoot = workspaceSources.get(name);
+	if (!sourceRoot) throw new Error(`Unknown workspace package ${name}`);
+	return join(root, sourceRoot, file);
+};
 const aliases = new Map([
-	["@candy/telemetry", source("telemetry", "index.ts")],
-	["@candy/ai", source("ai", "index.ts")],
-	["@candy/ai/oauth", source("ai", "oauth.ts")],
-	["@candy/agent-core", source("agent", "index.ts")],
-	["@candy/agent-core/node", source("agent", "node.ts")],
-	["@candy/tui", source("tui", "index.ts")],
+	["@candy/telemetry", source("@candy/telemetry", "index.ts")],
+	["@candy/ai", source("@candy/ai", "index.ts")],
+	["@candy/ai/oauth", source("@candy/ai", "oauth.ts")],
+	["@candy/agent-core", source("@candy/agent-core", "index.ts")],
+	["@candy/agent-core/node", source("@candy/agent-core", "node.ts")],
+	["@candy/tui", source("@candy/tui", "index.ts")],
 ]);
 
 const aliasesPlugin = {
@@ -45,7 +51,7 @@ const aliasesPlugin = {
 			const exact = aliases.get(path);
 			if (exact) return { path: exact };
 			const aiSubpath = /^@candy\/ai\/(api|providers|utils)\/(.+)$/.exec(path);
-			if (aiSubpath) return { path: source("ai", `${aiSubpath[1]}/${aiSubpath[2]}.ts`) };
+			if (aiSubpath) return { path: source("@candy/ai", `${aiSubpath[1]}/${aiSubpath[2]}.ts`) };
 			throw new Error(`Missing smoke alias for ${path}`);
 		});
 	},

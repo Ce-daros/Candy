@@ -1,4 +1,4 @@
-import type { ClassifierModel, ImageModel, Model, ModelCost } from "../src/types.ts";
+import type { ImageModel, Model, ModelCost } from "../src/types.ts";
 import { getOpenRouterThinkingLevelMap, type OpenRouterReasoningMetadata } from "./openrouter-reasoning-options.ts";
 
 export interface OpenRouterModelListItem {
@@ -23,7 +23,6 @@ export interface OpenRouterModelListItem {
 export interface OpenRouterCatalog {
 	chat: Model<"anthropic-messages" | "openai-completions">[];
 	images: ImageModel<"openrouter-images">[];
-	classifiers: ClassifierModel<"typesafe-system-one">[];
 }
 
 function roundCost(value: number): number {
@@ -56,7 +55,6 @@ function cost(model: OpenRouterModelListItem): ModelCost {
 export function buildOpenRouterCatalog(
 	listed: readonly OpenRouterModelListItem[],
 	imageListed: readonly OpenRouterModelListItem[],
-	decisionListed: readonly OpenRouterModelListItem[],
 ): OpenRouterCatalog {
 	const chat: OpenRouterCatalog["chat"] = [];
 
@@ -106,25 +104,5 @@ export function buildOpenRouterCatalog(
 		});
 	}
 
-	// Decision models such as TypeSafe's Jev are served through OpenRouter's
-	// TypeSafe-compatible System One endpoint.
-	const classifiers: OpenRouterCatalog["classifiers"] = [];
-	for (const model of decisionListed) {
-		if (classifiers.some((entry) => entry.id === model.id)) continue;
-		if (!model.architecture?.output_modalities?.includes("decisions")) continue;
-		const input = modalities(model.architecture.input_modalities);
-		classifiers.push({
-			type: "classifier",
-			id: model.id,
-			name: model.name,
-			api: "typesafe-system-one",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			input: input.length > 0 ? input : ["text"],
-			cost: cost(model),
-			contextWindow: model.top_provider?.context_length || model.context_length || 4096,
-		});
-	}
-
-	return { chat, images, classifiers };
+	return { chat, images };
 }

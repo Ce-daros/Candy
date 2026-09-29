@@ -1,4 +1,4 @@
-import type { ProviderClassifier, ProviderEnv, ProviderStreams } from "../types.ts";
+import type { ProviderEnv, ProviderStreams } from "../types.ts";
 
 const CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID";
 const CLOUDFLARE_GATEWAY_ID = "CLOUDFLARE_GATEWAY_ID";
@@ -24,13 +24,5 @@ export function cloudflareStreams(streams: ProviderStreams): ProviderStreams {
 			streams.stream(resolveCloudflareModel(model, options?.env), context, options),
 		streamSimple: (model, context, options) =>
 			streams.streamSimple(resolveCloudflareModel(model, options?.env), context, options),
-	};
-}
-
-/** Classifier counterpart of {@link cloudflareStreams}. */
-export function cloudflareClassifier(classifier: ProviderClassifier): ProviderClassifier {
-	return {
-		classify: (model, context, options) =>
-			classifier.classify(resolveCloudflareModel(model, options?.env), context, options),
 	};
 }

@@ -1,10 +1,5 @@
 import { stream as streamAnthropic, streamSimple as streamAnthropicSimple } from "../src/api/anthropic-messages.ts";
 import {
-	stream as streamAzureOpenAIResponses,
-	streamSimple as streamAzureOpenAIResponsesSimple,
-} from "../src/api/azure-openai-responses.ts";
-import { stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
-import {
 	stream as streamOpenAICompletions,
 	streamSimple as streamOpenAICompletionsSimple,
 } from "../src/api/openai-completions.ts";
@@ -18,8 +13,6 @@ import { normalizeContext } from "../src/utils/transcript.ts";
 
 const streams: Partial<Record<Api, ProviderStreams>> = {
 	"anthropic-messages": { stream: streamAnthropic, streamSimple: streamAnthropicSimple },
-	"bedrock-converse-stream": { stream: streamBedrock, streamSimple: streamBedrock },
-	"azure-openai-responses": { stream: streamAzureOpenAIResponses, streamSimple: streamAzureOpenAIResponsesSimple },
 	"openai-completions": { stream: streamOpenAICompletions, streamSimple: streamOpenAICompletionsSimple },
 	"openai-responses": { stream: streamOpenAIResponses, streamSimple: streamOpenAIResponsesSimple },
 };

@@ -1,7 +1,5 @@
 import type { TelemetryContext } from "@candy/telemetry";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
-import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
-import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
 import type { GoogleOptions } from "./api/google-generative-ai.ts";
 import type { GoogleVertexOptions } from "./api/google-vertex.ts";
 import type { MistralOptions } from "./api/mistral-conversations.ts";
@@ -18,10 +16,8 @@ export type KnownApi =
 	| "openai-completions"
 	| "mistral-conversations"
 	| "openai-responses"
-	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
-	| "bedrock-converse-stream"
 	| "google-generative-ai"
 	| "google-vertex"
 	| "pi-messages";
@@ -32,17 +28,11 @@ export type KnownImageApi = "openrouter-images";
 
 export type ImageApi = KnownImageApi | (string & {});
 
-export type KnownClassifierApi = "typesafe-system-one" | "cloudflare-workers-ai-system-one";
-
-export type ClassifierApi = KnownClassifierApi | (string & {});
-
 export type KnownProvider =
-	| "amazon-bedrock"
 	| "anthropic"
 	| "google"
 	| "google-vertex"
 	| "openai"
-	| "azure-openai-responses"
 	| "openai-codex"
 	| "typesafe"
 	| "nvidia"
@@ -155,9 +145,6 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; caller values override default headers.
-	 * On AWS Bedrock these are injected via a Smithy `build`-step middleware so
-	 * they are covered by SigV4 signing; reserved headers (`x-amz-*`,
-	 * `authorization`, `host`) are silently ignored to preserve SigV4 / bearer auth.
 	 * A null value suppresses a provider/API default header with the same name.
 	 */
 	headers?: ProviderHeaders;
@@ -199,7 +186,7 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	 * fields, so keys here override them. Lets custom OpenAI-compatible servers (llama.cpp, vLLM,
 	 * SGLang, ...) receive parameters candy does not model, e.g. `top_p`, `top_k`, `min_p`,
 	 * `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
-	 * OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
+	 * OpenAI-compatible adapters (completions, responses); other APIs ignore it.
 	 */
 	samplingParams?: Record<string, unknown>;
 	maxTokens?: number;
@@ -256,11 +243,9 @@ export interface ApiOptionsMap {
 	"openai-completions": OpenAICompletionsOptions;
 	"openai-responses": OpenAIResponsesOptions;
 	"openai-codex-responses": OpenAICodexResponsesOptions;
-	"azure-openai-responses": AzureOpenAIResponsesOptions;
 	"google-generative-ai": GoogleOptions;
 	"google-vertex": GoogleVertexOptions;
 	"mistral-conversations": MistralOptions;
-	"bedrock-converse-stream": BedrockOptions;
 	"pi-messages": CandyMessagesOptions;
 }
 
@@ -308,17 +293,6 @@ export interface ProviderImages {
 		options?: ImagesOptions,
 	): Promise<AssistantImages>;
 }
-
-/** The uniform contract implemented by classifier API modules. */
-export interface ProviderClassifier {
-	classify(
-		model: ClassifierModel<ClassifierApi>,
-		context: ClassifierContext,
-		options?: ClassifierOptions,
-	): Promise<ClassifierResult>;
-}
-
-export interface ClassifierOptions extends ProviderRequestOptions<ClassifierModel<ClassifierApi>> {}
 
 export interface ImagesOptions extends ProviderRequestOptions<ImageModel<ImageApi>> {
 	/**
@@ -369,12 +343,6 @@ export type ImagesFunction<TOptions extends ImagesOptions = ImagesOptions> = (
 	context: ImagesContext,
 	options?: TOptions,
 ) => Promise<AssistantImages>;
-
-export type ClassifierFunction<TOptions extends ClassifierOptions = ClassifierOptions> = (
-	model: ClassifierModel<ClassifierApi>,
-	context: ClassifierContext,
-	options?: TOptions,
-) => Promise<ClassifierResult>;
 
 export interface TextSignatureV1 {
 	v: 1;
@@ -592,62 +560,6 @@ export interface AssistantImages {
 	responseId?: string;
 	usage?: Usage;
 	stopReason: ImagesStopReason;
-	errorMessage?: string;
-	timestamp: number; // Unix timestamp in milliseconds
-}
-
-export interface ClassifierChoiceQuestion {
-	type: "choice";
-	instructions: string;
-	criteria: Record<string, string>;
-}
-
-export interface ClassifierScoreQuestion {
-	type: "score";
-	instructions: string;
-	criteria: string[];
-}
-
-export interface ClassifierBoolQuestion {
-	type: "bool";
-	instructions: string;
-	criteria: { true: string; false: string };
-}
-
-export type ClassifierQuestion = ClassifierChoiceQuestion | ClassifierScoreQuestion | ClassifierBoolQuestion;
-
-export interface ClassifierContext {
-	state: JsonObject;
-	questions: Record<string, ClassifierQuestion>;
-}
-
-export interface ClassifierChoiceAnswer {
-	type: "choice";
-	choice: string;
-	probabilities: Record<string, number>;
-	confidence: number;
-}
-
-export interface ClassifierScoreAnswer {
-	type: "score";
-	score: number;
-	confidence: number;
-}
-
-export interface ClassifierBoolAnswer {
-	type: "bool";
-	probability: number;
-}
-
-export type ClassifierAnswer = ClassifierChoiceAnswer | ClassifierScoreAnswer | ClassifierBoolAnswer;
-export type ClassifierStopReason = "stop" | "error" | "aborted";
-
-export interface ClassifierResult {
-	api: ClassifierApi;
-	provider: ProviderId;
-	model: string;
-	answers: Record<string, ClassifierAnswer>;
-	stopReason: ClassifierStopReason;
 	errorMessage?: string;
 	timestamp: number; // Unix timestamp in milliseconds
 }
@@ -914,12 +826,6 @@ export interface AnthropicMessagesCompat {
 	allowedFallbackModels?: AnthropicAllowedFallbackModel[];
 }
 
-/** Compatibility settings for Amazon Bedrock models. */
-export interface BedrockCompat {
-	/** Whether the model supports Bedrock strict tool schemas. Default: false. */
-	supportsStrictMode?: boolean;
-}
-
 /** Compatibility settings for the Mistral chat API. */
 export interface MistralConversationsCompat {
 	/** Whether the exact model accepts system messages after the conversation has started. When false, later system messages are folded into the leading system message. Default: false. */
@@ -1090,15 +996,13 @@ export interface Model<TApi extends Api> extends BaseModel<TApi> {
 	/** Compatibility overrides for OpenAI-compatible APIs. If not set, auto-detected from baseUrl. */
 	compat?: TApi extends "openai-completions"
 		? OpenAICompletionsCompat
-		: TApi extends "openai-responses" | "azure-openai-responses" | "openai-codex-responses"
+		: TApi extends "openai-responses" | "openai-codex-responses"
 			? OpenAIResponsesCompat
 			: TApi extends "anthropic-messages"
 				? AnthropicMessagesCompat
-				: TApi extends "bedrock-converse-stream"
-					? BedrockCompat
-					: TApi extends "mistral-conversations"
-						? MistralConversationsCompat
-						: never;
+				: TApi extends "mistral-conversations"
+					? MistralConversationsCompat
+					: never;
 }
 
 /** Image-generation model: usable with `generateImages()` only. */
@@ -1108,17 +1012,10 @@ export interface ImageModel<TApi extends ImageApi> extends BaseModel<TApi> {
 	output: ("text" | "image")[];
 }
 
-/** Structured classifier model: usable with `classify()` only. */
-export interface ClassifierModel<TApi extends ClassifierApi> extends BaseModel<TApi> {
-	type: "classifier";
-	contextWindow: number;
-}
-
 /** Model shape for each model type. */
 export interface ModelTypeMap {
 	chat: Model<Api>;
 	image: ImageModel<ImageApi>;
-	classifier: ClassifierModel<ClassifierApi>;
 }
 
 /** What a catalog entry is for. Decides which `Models` operation accepts it. */

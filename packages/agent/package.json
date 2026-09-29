@@ -38,7 +38,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/Ce-daros/Candy.git",
 		"directory": "packages/agent"
 	},
 	"engines": {

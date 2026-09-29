@@ -14,16 +14,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { workspacePackages } from "./lib/workspace-paths.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Workspace package name -> its source root, so cross-package imports are followed. */
-const WORKSPACE = {
-	"@candy/ai": "packages/ai/src",
-	"@candy/agent-core": "packages/agent/src",
-	"@candy/telemetry": "packages/telemetry/src",
-	"@candy/tui": "packages/tui/src",
-};
+const WORKSPACE = Object.fromEntries(
+	// Publishable libraries only: the coding-agent app is not an entry of these graphs.
+	[...workspacePackages()].filter(([name]) => name !== "@candy/coding-agent"),
+);
 
 /**
  * Budgets are deliberate. `.` and `./node` are batteries-included entries and stay unbounded; every

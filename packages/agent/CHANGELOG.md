@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Removed the `@candy/telemetry` type re-exports and the `uuidv7` re-export from the package entrypoint. Import them from `@candy/telemetry` and `@candy/ai` directly.
 - Removed the unused session-search type entrypoint (`SearchQuery`, `SessionSearchHit`, `EntrySearchHit`, and `SessionSearchService`).
 - Removed the unused Harness/Pico APIs, session backends, Chord services, and their package entrypoints. The package now exposes the Agent and Agent loop APIs used by Candy.
 - Removed the process-wide default stream function. Every `Agent` and low-level agent loop caller must pass its `streamFn` directly.

@@ -13,7 +13,6 @@ import { InMemoryModelsStore } from "../src/models-store.ts";
 import {
 	builtinModels,
 	getAllBuiltinModels,
-	getBuiltinClassifierModels,
 	getBuiltinImageModel,
 	getBuiltinImageModels,
 	getBuiltinModels,
@@ -176,7 +175,6 @@ describe("Models with image models", () => {
 		expect(models.getModelsOfType("chat").map((m) => m.id)).toEqual(["c1"]);
 		expect(models.getModelsOfType("image").map((m) => m.id)).toEqual(["i1", "i2", "i3"]);
 		expect(models.getModelsOfType("image", "p1").map((m) => m.id)).toEqual(["i1", "i2"]);
-		expect(models.getModelsOfType("classifier")).toEqual([]);
 		expect(models.getAllModels().map((m) => m.id)).toEqual(["c1", "i1", "i2", "i3"]);
 
 		expect(models.getModel("p1", "c1")?.id).toBe("c1");
@@ -329,7 +327,7 @@ describe("Models with image models", () => {
 	});
 
 	it("requires at least one concrete operation implementation", () => {
-		const createEmptyProvider = (implementations: Pick<CreateProviderOptions, "api" | "images" | "classifiers">) =>
+		const createEmptyProvider = (implementations: Pick<CreateProviderOptions, "api" | "images">) =>
 			createProvider({
 				id: "empty",
 				auth: { apiKey: { name: "Test", resolve: async () => ({ auth: {} }) } },
@@ -337,11 +335,10 @@ describe("Models with image models", () => {
 				...implementations,
 			});
 
-		const message = 'at least one of "api", "images", or "classifiers"';
+		const message = 'at least one of "api" or "images"';
 		expect(() => createEmptyProvider({})).toThrow(message);
 		expect(() => createEmptyProvider({ api: {} })).toThrow(message);
 		expect(() => createEmptyProvider({ images: {} })).toThrow(message);
-		expect(() => createEmptyProvider({ classifiers: {} })).toThrow(message);
 	});
 
 	it("supports dynamic providers listing image models via refresh", async () => {
@@ -382,7 +379,7 @@ describe("Models with image models", () => {
 		expect(all.some((model) => isModelType(model, "image"))).toBe(true);
 		expect(compat).toEqual(chat);
 		expect(chat.every((model) => model.contextWindow > 0)).toBe(true);
-		expect(chat.length + images.length + getBuiltinClassifierModels("openrouter").length).toBe(all.length);
+		expect(chat.length + images.length).toBe(all.length);
 		expect(getBuiltinImageModel("openrouter", "black-forest-labs/flux.2-pro").type).toBe("image");
 	});
 

@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- `estimateTokens` is `estimateMessageTokens` from `@candy/ai/utils/estimate`. The context estimate, per-message estimate, and usage-based context total now have one implementation shared with the runtime.
+- Removed `FileAuthStorageBackend` and `InMemoryCodingAgentModelsStore`. Locked JSON access lives in `core/storage/json-file.ts`, and the in-memory model store is `InMemoryModelsStore` from `@candy/ai`.
 - Removed unused SDK and internal helpers: `isBunRuntime`, `getModelsPath`, `getToolsDir`, `getPromptsDir`, `restoreModelFromSession`, `getConfigValueEnvVarName`, `resolveHeaders`, the unused plural tool-definition factories and wrapper, `getModelSearchText`, `isLightTheme`, `RpcCommandType`, `ToolRenderResultLike`, `BashRenderState`, and the unused deprecation utility.
 - Command panel toggle actions now render their checkbox through `SelectItem.checked` with the shared green/dim checkbox glyph instead of an uncolored `[x]`/`[ ]` prefix baked into the label.
 
@@ -51,8 +53,7 @@
 - Added collapsible transcript previews for long user messages, queued messages, skills, summaries, and tool output, with per-item expansion alongside the global details toggle.
 - Added composer-hosted transcript search, image paste markers, masked API-key input, panel region navigation, and a reading panel for changelog content.
 - Added per-input disposition to successful RPC `prompt`, `steer`, and `follow_up` responses, `AgentSession.steer()`/`followUp()`, and `RpcClient.prompt()`/`steer()`/`followUp()`; `RpcClient.prompt()` also accepts `streamingBehavior` ([#9098](https://github.com/earendil-works/pi/issues/9098), [#9803](https://github.com/earendil-works/pi/issues/9803)).
-- Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat, image, and classifier entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
-- Added classifier support to `ModelRuntime`, including `classify()`, classifier model accessors, runtime-resolved authentication, and the built-in TypeSafe `jev-latest` model.
+- Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat and image entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
 - Added the `provider_stream_event` extension event for observing parsed provider events before normalization, with an opt-in `debug-provider` example command viewer ([#9784](https://github.com/earendil-works/pi/issues/9784)).
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
 - Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, the session name, and a context line and percentage that follow usage.
@@ -73,11 +74,15 @@
 
 ### Fixed
 
+- In-app changelog links, the extension migration guide, the extensions documentation link, and theme `$schema` URLs now resolve to this repository instead of the upstream project. Absolute historical upstream links are left untouched, so old entries keep pointing at the commits and issues they describe.
 - Resource filter patterns written by the config selector (`+`/`-` entries in settings package extensions/skills/prompts/themes arrays) now use `/` separators on Windows, so project settings stay portable across operating systems; previously stored backslash entries keep matching and are replaced on the next toggle.
 - Render the home logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals, preserving every source pixel and its transparent background.
 
 ### Removed
 
+- Removed classifier support from `ModelRuntime` and the extension provider API: `classify()`, the `classifiers` provider field, and `ProviderClassifierModelConfig`.
+- Removed the Amazon Bedrock and Azure OpenAI Responses providers, their login hints, and their environment-variable documentation.
+- Removed `docs/containerization.md` and the `packages/evals` container runner (`docker/`, `src/docker.ts`, `src/cli.ts`, and the `*.docs.eval.ts` suites).
 - Removed the retired author Easter-egg commands, project announcements, and model-specific automatic animation triggers.
 - Removed slash-text command matching from ordinary messages and the old editor slash-completion protocol.
 - Removed Powerbar Shift+Tab behavior, Shift+Tab thinking cycling, and selector Ctrl+S global-default saving. Authentication actions now live in Sources; conversation and session actions live in History.

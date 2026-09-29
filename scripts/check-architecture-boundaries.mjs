@@ -2,16 +2,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { transformSync } from "esbuild";
+import { workspacePackages } from "./lib/workspace-paths.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(SCRIPT_PATH), "..");
-const WORKSPACE = new Map([
-	["@candy/ai", "packages/ai/src"],
-	["@candy/agent-core", "packages/agent/src"],
-	["@candy/coding-agent", "packages/coding-agent/src"],
-	["@candy/telemetry", "packages/telemetry/src"],
-	["@candy/tui", "packages/tui/src"],
-]);
+const WORKSPACE = workspacePackages();
 const SOURCE_ROOTS = [...WORKSPACE.values()];
 
 export function normalizeWorkspacePath(filePath) {

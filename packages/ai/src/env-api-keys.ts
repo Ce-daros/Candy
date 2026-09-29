@@ -81,7 +81,6 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		"qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
 		"qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
 		openai: "OPENAI_API_KEY",
-		"azure-openai-responses": "AZURE_OPENAI_API_KEY",
 		nvidia: "NVIDIA_API_KEY",
 		deepseek: "DEEPSEEK_API_KEY",
 		google: "GEMINI_API_KEY",
@@ -89,7 +88,6 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		groq: "GROQ_API_KEY",
 		cerebras: "CEREBRAS_API_KEY",
 		xai: "XAI_API_KEY",
-		typesafe: "TYPESAFE_API_KEY",
 		openrouter: "OPENROUTER_API_KEY",
 		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
 		zai: "ZAI_API_KEY",
@@ -159,26 +157,6 @@ export function getEnvApiKey(provider: string, env?: ProviderEnv): string | unde
 		const hasLocation = !!getProviderEnvValue("GOOGLE_CLOUD_LOCATION", env);
 
 		if (hasCredentials && hasProject && hasLocation) {
-			return "<authenticated>";
-		}
-	}
-
-	if (provider === "amazon-bedrock") {
-		// Amazon Bedrock supports multiple credential sources:
-		// 1. AWS_PROFILE - named profile from ~/.aws/credentials
-		// 2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY - standard IAM keys
-		// 3. AWS_BEARER_TOKEN_BEDROCK - Bedrock bearer token
-		// 4. AWS_CONTAINER_CREDENTIALS_RELATIVE_URI - ECS task roles
-		// 5. AWS_CONTAINER_CREDENTIALS_FULL_URI - ECS task roles (full URI)
-		// 6. AWS_WEB_IDENTITY_TOKEN_FILE - IRSA (IAM Roles for Service Accounts)
-		if (
-			getProviderEnvValue("AWS_PROFILE", env) ||
-			(getProviderEnvValue("AWS_ACCESS_KEY_ID", env) && getProviderEnvValue("AWS_SECRET_ACCESS_KEY", env)) ||
-			getProviderEnvValue("AWS_BEARER_TOKEN_BEDROCK", env) ||
-			getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", env) ||
-			getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_FULL_URI", env) ||
-			getProviderEnvValue("AWS_WEB_IDENTITY_TOKEN_FILE", env)
-		) {
 			return "<authenticated>";
 		}
 	}

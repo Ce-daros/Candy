@@ -1,13 +1,12 @@
-import type { CredentialStore } from "@candy/ai";
+import { type CredentialStore, InMemoryModelsStore } from "@candy/ai";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
-import { InMemoryCodingAgentModelsStore } from "../src/core/models-store.ts";
 
 /** Load optional models.json configuration without introducing file-backed catalog locks into unit tests. */
 export async function createTestModelRuntime(credentials: CredentialStore, modelsPath?: string): Promise<ModelRuntime> {
 	return ModelRuntime.create({
 		credentials,
 		modelsPath,
-		modelsStore: new InMemoryCodingAgentModelsStore(),
+		modelsStore: new InMemoryModelsStore(),
 		allowModelNetwork: false,
 	});
 }

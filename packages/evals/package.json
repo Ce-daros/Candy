@@ -5,9 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"clean": "shx rm -rf .eval",
-		"eval": "npm run eval:host && npm run eval:docs --",
+		"eval": "npm run eval:host",
 		"eval:host": "vitest run --config vitest.evals.config.ts --project host",
-		"eval:docs": "node --experimental-strip-types src/cli.ts",
 		"test": "vitest run --config vitest.test.config.ts"
 	},
 	"devDependencies": {

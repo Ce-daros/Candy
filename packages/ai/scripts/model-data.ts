@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-export const MODEL_DATA_SCHEMA_VERSION = 7;
+export const MODEL_DATA_SCHEMA_VERSION = 6;
 export const MODEL_DATA_MANIFEST_FILE = ".manifest.json";
 
 export type ModelDataStructure = Record<string, Record<string, string>>;
@@ -11,7 +11,7 @@ export interface ModelDataManifest {
 }
 
 const MODEL_DATA_IMPORT_PATTERN =
-	/^import \{ [A-Z][A-Z0-9_]*_CLASSIFIER_MODELS, [A-Z][A-Z0-9_]*_IMAGE_MODELS, [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
+	/^import \{ [A-Z][A-Z0-9_]*_IMAGE_MODELS, [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
 
 function sortedRecord<T>(entries: Iterable<readonly [string, T]>): Record<string, T> {
 	return Object.fromEntries(Array.from(entries).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
@@ -152,16 +152,8 @@ function validateModelValue(
 		if (typeof value.maxTokens !== "number" || !Number.isFinite(value.maxTokens) || value.maxTokens <= 0) {
 			errors.push(`${label} has invalid maxTokens`);
 		}
-	} else if (value.type === "classifier") {
-		if (
-			typeof value.contextWindow !== "number" ||
-			!Number.isFinite(value.contextWindow) ||
-			value.contextWindow <= 0
-		) {
-			errors.push(`${label} has invalid contextWindow`);
-		}
 	} else if (value.type !== "image") {
-		errors.push(`${label} has type ${JSON.stringify(value.type)}, expected "chat", "image", or "classifier"`);
+		errors.push(`${label} has type ${JSON.stringify(value.type)}, expected "chat" or "image"`);
 	}
 	if (!isRecord(value.cost)) {
 		errors.push(`${label} has invalid cost metadata`);

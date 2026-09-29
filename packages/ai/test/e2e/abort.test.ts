@@ -9,8 +9,6 @@ import type { Api, Context, Model, StreamOptions } from "../../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
-import { hasBedrockCredentials } from "../bedrock-utils.ts";
 import { resolveApiKey } from "../oauth.ts";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -73,35 +71,6 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: S
 	expect(response.stopReason).toBe("aborted");
 }
 
-async function testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
-	// First request: abort immediately before any response content arrives
-	const controller = new AbortController();
-	controller.abort();
-
-	const context: Context = {
-		messages: [{ role: "user", content: "Hello, how are you?", timestamp: Date.now() }],
-	};
-
-	const abortedResponse = await complete(llm, context, { ...options, signal: controller.signal });
-	expect(abortedResponse.stopReason).toBe("aborted");
-	// The aborted message has empty content since we aborted before anything arrived
-	expect(abortedResponse.content.length).toBe(0);
-
-	// Add the aborted assistant message to context (this is what happens in the real coding agent)
-	context.messages.push(abortedResponse);
-
-	// Second request: send a new message - this should work even with the aborted message in context
-	context.messages.push({
-		role: "user",
-		content: "What is 2 + 2?",
-		timestamp: Date.now(),
-	});
-
-	const followUp = await complete(llm, context, options);
-	expect(followUp.stopReason).toBe("stop");
-	expect(followUp.content.length).toBeGreaterThan(0);
-}
-
 describe("AI Providers Abort Tests", () => {
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider Abort", () => {
 		const llm = getModel("google", "gemini-2.5-flash");
@@ -141,20 +110,6 @@ describe("AI Providers Abort Tests", () => {
 
 		it("should handle immediate abort", { retry: 3 }, async () => {
 			await testImmediateAbort(llm);
-		});
-	});
-
-	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider Abort", () => {
-		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
-		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
-		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
-
-		it("should abort mid-stream", { retry: 3 }, async () => {
-			await testAbortSignal(llm, azureOptions);
-		});
-
-		it("should handle immediate abort", { retry: 3 }, async () => {
-			await testImmediateAbort(llm, azureOptions);
 		});
 	});
 
@@ -323,22 +278,6 @@ describe("AI Providers Abort Tests", () => {
 		it.skipIf(!openaiCodexToken)("should handle immediate abort", { retry: 3 }, async () => {
 			const llm = getModel("openai-codex", "gpt-5.5");
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
-		});
-	});
-
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Abort", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		it("should abort mid-stream", { retry: 3 }, async () => {
-			await testAbortSignal(llm, { reasoning: "medium" });
-		});
-
-		it("should handle immediate abort", { retry: 3 }, async () => {
-			await testImmediateAbort(llm);
-		});
-
-		it("should handle abort then new message", { retry: 3 }, async () => {
-			await testAbortThenNewMessage(llm);
 		});
 	});
 });

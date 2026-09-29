@@ -32,7 +32,6 @@ const completeSimple = builtinRuntime.completeSimple.bind(builtinRuntime);
 import { getEnvApiKey } from "../../src/env-api-keys.ts";
 import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
 import type { Api, AssistantMessage, Message, Model, Tool, ToolResultMessage } from "../../src/types.ts";
-import { hasAzureOpenAICredentials } from "../azure-utils.ts";
 import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "../cloudflare-utils.ts";
 import { resolveApiKey } from "../oauth.ts";
 
@@ -69,7 +68,6 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 		apiOverride: "openai-completions",
 	},
 	{ provider: "openai", model: "gpt-5-mini", label: "openai-responses-gpt-5-mini" },
-	{ provider: "azure-openai-responses", model: "gpt-4o-mini", label: "azure-openai-responses-gpt-4o-mini" },
 	// OpenAI Codex
 	{ provider: "openai-codex", model: "gpt-5.5", label: "openai-codex-gpt-5.5" },
 	// GitHub Copilot
@@ -77,12 +75,6 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "github-copilot", model: "gpt-5.1-codex", label: "copilot-gpt-5.1-codex" },
 	{ provider: "github-copilot", model: "gemini-3-flash-preview", label: "copilot-gemini-3-flash-preview" },
 	{ provider: "github-copilot", model: "grok-code-fast-1", label: "copilot-grok-code-fast-1" },
-	// Amazon Bedrock
-	{
-		provider: "amazon-bedrock",
-		model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
-		label: "bedrock-claude-sonnet-4-5",
-	},
 	// xAI
 	{ provider: "xai", model: "grok-4.3", label: "xai-grok-4.3" },
 	// Cerebras
@@ -180,9 +172,6 @@ async function getApiKey(provider: string): Promise<string | undefined> {
  * Synchronous check for API key availability (env vars only, for skipIf)
  */
 function hasApiKey(pair: ProviderModelPair): boolean {
-	if (pair.provider === "azure-openai-responses") {
-		return hasAzureOpenAICredentials();
-	}
 	if (pair.provider === "cloudflare-workers-ai") {
 		return hasCloudflareWorkersAICredentials();
 	}

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { streamSimple as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { streamSimple as streamAzure } from "../src/api/azure-openai-responses.ts";
 import { streamSimple as streamGoogle } from "../src/api/google-generative-ai.ts";
 import { streamSimple as streamMistral } from "../src/api/mistral-conversations.ts";
 import { streamSimple as streamCodex } from "../src/api/openai-codex-responses.ts";
@@ -32,7 +31,6 @@ describe("direct API authentication", () => {
 	it("throws synchronously when auth is missing", () => {
 		const context = normalizeContext({ messages: [] });
 		expectMissingAuthThrows(() => streamAnthropic(model("anthropic-messages"), context, {}));
-		expectMissingAuthThrows(() => streamAzure(model("azure-openai-responses"), context, {}));
 		expectMissingAuthThrows(() => streamGoogle(model("google-generative-ai"), context, {}));
 		expectMissingAuthThrows(() => streamMistral(model("mistral-conversations"), context, {}));
 		expectMissingAuthThrows(() => streamCodex(model("openai-codex-responses"), context, {}));

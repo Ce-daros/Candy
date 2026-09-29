@@ -20,6 +20,7 @@ import type {
 	TranscriptContext,
 	Usage,
 } from "../types.ts";
+import { isAbortError } from "../utils/abort.ts";
 import { combineAbortSignals } from "../utils/abort-signals.ts";
 import { getCandyUserAgent } from "../utils/candy-user-agent.ts";
 import {
@@ -31,6 +32,7 @@ import { formatProviderError, normalizeProviderError } from "../utils/error-body
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
+import { sleep } from "../utils/sleep.ts";
 import { getSystemMessageText } from "../utils/text.ts";
 import {
 	getDeclaredTools,
@@ -173,20 +175,6 @@ function validateRetryDelayMs(delayMs: number, options?: StreamOptions): number 
 		);
 	}
 	return delayMs;
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(new Error("Request was aborted"));
-			return;
-		}
-		const timeout = setTimeout(resolve, ms);
-		signal?.addEventListener("abort", () => {
-			clearTimeout(timeout);
-			reject(new Error("Request was aborted"));
-		});
-	});
 }
 
 function normalizeTimeoutMs(value: number | undefined): number | undefined {
@@ -440,10 +428,9 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 					const info = await parseErrorResponse(fakeResponse);
 					throw new Error(info.friendlyMessage || info.message);
 				} catch (error) {
-					if (error instanceof Error) {
-						if (error.name === "AbortError" || error.message === "Request was aborted") {
-							throw new Error("Request was aborted");
-						}
+					// Aborts during a retry backoff are normalized to one message for callers.
+					if (isAbortError(error) || options?.signal?.aborted) {
+						throw new Error("Request was aborted");
 					}
 					lastError = error instanceof Error ? error : new Error(String(error));
 					// Network errors are retryable

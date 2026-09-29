@@ -1,3 +1,6 @@
+import { abortReason } from "./abort.ts";
+import { sleep } from "./sleep.ts";
+
 const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
 
 interface ProviderRetryOptions {
@@ -66,34 +69,6 @@ function getRetryDelayMs(error: ProviderError, retryIndex: number, maxRetryDelay
 	return exponentialDelay * (1 - Math.random() * 0.25);
 }
 
-function createAbortError(): Error {
-	const error = new Error("Request aborted");
-	error.name = "AbortError";
-	return error;
-}
-
-function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(createAbortError());
-			return;
-		}
-
-		const onAbort = () => {
-			clearTimeout(timeout);
-			reject(createAbortError());
-		};
-		const timeout = setTimeout(
-			() => {
-				signal?.removeEventListener("abort", onAbort);
-				resolve();
-			},
-			Math.max(0, ms),
-		);
-		signal?.addEventListener("abort", onAbort, { once: true });
-	});
-}
-
 /**
  * Reproduce the retry behavior used by the OpenAI and Anthropic SDKs while making
  * their backoff sleep interruptible. Their built-in retry timers ignore the
@@ -114,12 +89,12 @@ export async function retryProviderRequest<T>(
 			// Each retry is a fresh SDK request, so X-Stainless-Retry-Count remains zero.
 			return await request();
 		} catch (error) {
-			if (options.signal?.aborted) throw createAbortError();
+			if (options.signal?.aborted) throw abortReason(options.signal);
 			if (retriesRemaining <= 0 || !isProviderError(error) || !isRetryableProviderError(error)) throw error;
 
 			const retryIndex = maxRetries - retriesRemaining;
 			retriesRemaining--;
-			await abortableSleep(getRetryDelayMs(error, retryIndex, options.maxRetryDelayMs), options.signal);
+			await sleep(getRetryDelayMs(error, retryIndex, options.maxRetryDelayMs), options.signal);
 		}
 	}
 }

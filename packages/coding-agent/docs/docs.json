@@ -40,10 +40,6 @@
               "path": "security.md"
             },
             {
-              "title": "Isolate candy",
-              "path": "containerization.md"
-            },
-            {
               "title": "Configure Your Terminal",
               "path": "terminal-setup.md"
             },

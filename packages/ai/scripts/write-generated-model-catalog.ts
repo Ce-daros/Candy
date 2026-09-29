@@ -27,20 +27,16 @@ export function writeGeneratedModelCatalog(providersDir: string, packageRoot: st
 		const catalogConstName = (providerId: string) => `${providerId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_MODELS`;
 		const imageCatalogConstName = (providerId: string) =>
 			`${providerId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_IMAGE_MODELS`;
-		const classifierCatalogConstName = (providerId: string) =>
-			`${providerId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_CLASSIFIER_MODELS`;
 		const generatedShardFiles = new Set<string>();
 
 		for (const providerId of providerIds) {
 		let output = generatedHeader;
 		output += `import values from "./data/${providerId}.json" with { type: "json" };\n`;
-		output += `import { flattenChatModelCatalog, flattenClassifierModelCatalog, flattenImageModelCatalog, type ChatModelCatalog, type ClassifierModelCatalog, type ImageModelCatalog } from "../model-catalog.ts";\n\n`;
+		output += `import { flattenChatModelCatalog, flattenImageModelCatalog, type ChatModelCatalog, type ImageModelCatalog } from "../model-catalog.ts";\n\n`;
 		output += `export const ${catalogConstName(providerId)}: ChatModelCatalog<typeof values, ${JSON.stringify(providerId)}> =\n`;
 		output += `\tflattenChatModelCatalog(${JSON.stringify(providerId)}, values);\n\n`;
 		output += `export const ${imageCatalogConstName(providerId)}: ImageModelCatalog<typeof values, ${JSON.stringify(providerId)}> =\n`;
-		output += `\tflattenImageModelCatalog(${JSON.stringify(providerId)}, values);\n\n`;
-		output += `export const ${classifierCatalogConstName(providerId)}: ClassifierModelCatalog<typeof values, ${JSON.stringify(providerId)}> =\n`;
-		output += `\tflattenClassifierModelCatalog(${JSON.stringify(providerId)}, values);\n`;
+		output += `\tflattenImageModelCatalog(${JSON.stringify(providerId)}, values);\n`;
 		const filename = `${providerId}.models.ts`;
 		generatedShardFiles.add(filename);
 		writeFileSync(join(providersDir, filename), output);
@@ -51,7 +47,7 @@ export function writeGeneratedModelCatalog(providersDir: string, packageRoot: st
 
 		let output = generatedHeader;
 		for (const providerId of providerIds) {
-		output += `import { ${classifierCatalogConstName(providerId)}, ${imageCatalogConstName(providerId)}, ${catalogConstName(providerId)} } from "./providers/${providerId}.models.ts";\n`;
+		output += `import { ${imageCatalogConstName(providerId)}, ${catalogConstName(providerId)} } from "./providers/${providerId}.models.ts";\n`;
 		}
 		const appendCatalog = (catalogName: string, name: (providerId: string) => string) => {
 		output += `\nexport const ${catalogName}: {\n`;
@@ -66,7 +62,6 @@ export function writeGeneratedModelCatalog(providersDir: string, packageRoot: st
 		};
 		appendCatalog("MODELS", catalogConstName);
 		appendCatalog("IMAGE_MODELS", imageCatalogConstName);
-		appendCatalog("CLASSIFIER_MODELS", classifierCatalogConstName);
 		writeFileSync(aggregatorPath, output);
 		return restore;
 	} catch (error) {

@@ -113,11 +113,11 @@ describe("openrouter images", () => {
 			input: [{ type: "text", text: "Generate a dog" }],
 		};
 		const controller = new AbortController();
-		controller.abort();
+		controller.abort(new Error("cancelled by the user"));
 
 		const output = await generateImages(model, context, { apiKey: "test", signal: controller.signal });
 		expect(output.stopReason).toBe("aborted");
-		expect(output.errorMessage).toBe("Request aborted");
+		expect(output.errorMessage).toBe("cancelled by the user");
 		expect(mockState.lastRequestOptions).toMatchObject({ signal: controller.signal });
 	});
 

@@ -1,7 +1,4 @@
-import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig } from "vitest/config";
-
-const telemetrySrcIndex = fileURLToPath(new URL("../telemetry/src/index.ts", import.meta.url));
 
 export default defineConfig({
 	test: {
@@ -13,8 +10,5 @@ export default defineConfig({
 		exclude: [...configDefaults.exclude, "test/e2e/**"],
 		reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
 		silent: "passed-only",
-	},
-	resolve: {
-		alias: [{ find: /^@earendil-works\/pi-telemetry$/, replacement: telemetrySrcIndex }],
 	},
 });

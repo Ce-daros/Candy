@@ -1,13 +1,4 @@
-import type {
-	Api,
-	ClassifierApi,
-	ClassifierModel,
-	ImageApi,
-	ImageModel,
-	Model,
-	ModelType,
-	ProviderId,
-} from "./types.ts";
+import type { Api, ImageApi, ImageModel, Model, ModelType, ProviderId } from "./types.ts";
 
 export type ModelGroups = Record<string, Record<string, object>>;
 
@@ -41,15 +32,6 @@ export type ImageModelCatalog<TGroups extends ModelGroups, TProvider extends Pro
 	};
 };
 
-export type ClassifierModelCatalog<TGroups extends ModelGroups, TProvider extends ProviderId> = {
-	[TKey in KeyForType<TGroups, "classifier"> as ModelId<TKey>]: ClassifierModel<
-		ApiForKey<TGroups, TKey> & ClassifierApi
-	> & {
-		id: ModelId<TKey>;
-		provider: TProvider;
-	};
-};
-
 function flattenModelCatalog(groups: ModelGroups, type: ModelType): Record<string, object> {
 	return Object.fromEntries(
 		Object.values(groups)
@@ -71,11 +53,4 @@ export function flattenImageModelCatalog<const TProvider extends ProviderId, con
 	groups: TGroups,
 ): ImageModelCatalog<TGroups, TProvider> {
 	return flattenModelCatalog(groups, "image") as ImageModelCatalog<TGroups, TProvider>;
-}
-
-export function flattenClassifierModelCatalog<const TProvider extends ProviderId, const TGroups extends ModelGroups>(
-	_provider: TProvider,
-	groups: TGroups,
-): ClassifierModelCatalog<TGroups, TProvider> {
-	return flattenModelCatalog(groups, "classifier") as ClassifierModelCatalog<TGroups, TProvider>;
 }

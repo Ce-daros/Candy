@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
+import { serializeSessionEntry, writeSessionFile } from "./session-jsonl.ts";
 import { CURRENT_SESSION_VERSION, type SessionHeader, type SessionManager } from "./session-manager.ts";
 
-/** Serialize the current session branch as JSONL. */
-export function serializeSessionBranch(sessionManager: SessionManager): string {
+/** The current session branch as serializable entries, including its header. */
+export function sessionBranchEntries(sessionManager: SessionManager): object[] {
 	const timestamp = new Date().toISOString();
 	const header: SessionHeader = {
 		type: "session",
@@ -19,7 +20,14 @@ export function serializeSessionBranch(sessionManager: SessionManager): string {
 		entries.push({ ...entry, parentId });
 		parentId = entry.id;
 	}
-	return `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+	return entries;
+}
+
+/** Serialize the current session branch as JSONL. */
+export function serializeSessionBranch(sessionManager: SessionManager): string {
+	return sessionBranchEntries(sessionManager)
+		.map((entry) => serializeSessionEntry(entry))
+		.join("");
 }
 
 /** Write the current session branch as JSONL. */
@@ -30,6 +38,6 @@ export function exportSessionToJsonl(sessionManager: SessionManager, outputPath?
 	);
 	const dir = dirname(filePath);
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	writeFileSync(filePath, serializeSessionBranch(sessionManager));
+	writeSessionFile(filePath, sessionBranchEntries(sessionManager), { flag: "w" });
 	return filePath;
 }

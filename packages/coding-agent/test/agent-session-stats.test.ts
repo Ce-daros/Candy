@@ -139,13 +139,18 @@ describe("AgentSession.getSessionStats", () => {
 		const { session, sessionManager } = await createSession();
 
 		try {
-			sessionManager.appendMessage(createUserMessage("first", 1));
-			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 2));
-			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 3));
-			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 4));
+			// Timestamps bracket the compaction entry: compaction is appended now, so the
+			// kept pre-compaction usage is newer than nothing and stale by position, while
+			// the post-compaction usage is newer than the compaction.
+			const before = Date.now() - 60_000;
+			sessionManager.appendMessage(createUserMessage("first", before + 1));
+			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, before + 2));
+			const keptUserId = sessionManager.appendMessage(createUserMessage("second", before + 3));
+			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, before + 4));
 			sessionManager.appendCompaction("summary", keptUserId, 195_000);
-			sessionManager.appendMessage(createUserMessage("third", 5));
-			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, 6));
+			const after = Date.now() + 1_000;
+			sessionManager.appendMessage(createUserMessage("third", after));
+			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, after + 1));
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
@@ -290,15 +295,17 @@ describe("AgentSession.getSessionStats", () => {
 		const { session, sessionManager } = await createSession();
 
 		try {
-			sessionManager.appendMessage(createUserMessage("first", 1));
-			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 2));
-			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 3));
-			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 4));
+			const before = Date.now() - 60_000;
+			sessionManager.appendMessage(createUserMessage("first", before + 1));
+			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, before + 2));
+			const keptUserId = sessionManager.appendMessage(createUserMessage("second", before + 3));
+			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, before + 4));
 			sessionManager.appendCompaction("summary", keptUserId, 195_000);
-			sessionManager.appendMessage(createUserMessage("third", 5));
-			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, 6));
-			sessionManager.appendMessage(createUserMessage("continue", 7));
-			sessionManager.appendMessage(createAssistantMessage("partial", 0, 8));
+			const after = Date.now() + 1_000;
+			sessionManager.appendMessage(createUserMessage("third", after));
+			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, after + 1));
+			sessionManager.appendMessage(createUserMessage("continue", after + 2));
+			sessionManager.appendMessage(createAssistantMessage("partial", 0, after + 3));
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
