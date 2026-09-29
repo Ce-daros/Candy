@@ -401,7 +401,7 @@ describe("package commands", () => {
 
 		expect(create).not.toHaveBeenCalled();
 		expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
-			"--models cannot be combined with --extensions",
+			"--models cannot be combined with --self, --extensions, or --extension",
 		);
 		expect(process.exitCode).toBe(1);
 	});
