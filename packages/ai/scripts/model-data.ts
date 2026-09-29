@@ -1,25 +1,17 @@
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-export const MODEL_DATA_SCHEMA_VERSION = 6;
+export const MODEL_DATA_SCHEMA_VERSION = 7;
 export const MODEL_DATA_MANIFEST_FILE = ".manifest.json";
 
 export type ModelDataStructure = Record<string, Record<string, string>>;
 
 export interface ModelDataManifest {
 	schemaVersion: number;
-	generatedAt: string;
-	structureHash: string;
-	files: Record<string, string>;
 }
 
 const MODEL_DATA_IMPORT_PATTERN =
 	/^import \{ [A-Z][A-Z0-9_]*_CLASSIFIER_MODELS, [A-Z][A-Z0-9_]*_IMAGE_MODELS, [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
-
-function sha256(value: string): string {
-	return createHash("sha256").update(value).digest("hex");
-}
 
 function sortedRecord<T>(entries: Iterable<readonly [string, T]>): Record<string, T> {
 	return Object.fromEntries(Array.from(entries).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
@@ -119,28 +111,6 @@ export function readModelDataStructure(packageRoot: string): ModelDataStructure 
 	);
 }
 
-export function modelDataStructureHash(structure: ModelDataStructure): string {
-	const normalized = sortedRecord(
-		Object.entries(structure).map(
-			([providerId, models]) => [providerId, sortedRecord(Object.entries(models))] as const,
-		),
-	);
-	return sha256(JSON.stringify(normalized));
-}
-
-export function createModelDataManifest(
-	structure: ModelDataStructure,
-	fileContents: Readonly<Record<string, string>>,
-	generatedAt: string,
-): ModelDataManifest {
-	return {
-		schemaVersion: MODEL_DATA_SCHEMA_VERSION,
-		generatedAt,
-		structureHash: modelDataStructureHash(structure),
-		files: sortedRecord(Object.entries(fileContents).map(([file, content]) => [file, sha256(content)] as const)),
-	};
-}
-
 function validateModelValue(
 	value: unknown,
 	providerId: string,
@@ -234,30 +204,10 @@ export function validateModelDataDirectory(structure: ModelDataStructure, dataDi
 			`model data schema is ${JSON.stringify(manifest?.schemaVersion)}, expected ${MODEL_DATA_SCHEMA_VERSION}`,
 		);
 	}
-	if (typeof manifest?.generatedAt !== "string" || Number.isNaN(Date.parse(manifest.generatedAt))) {
-		errors.push("model data manifest has an invalid generation timestamp");
-	}
-	const expectedStructureHash = modelDataStructureHash(structure);
-	if (manifest?.structureHash !== expectedStructureHash) {
-		errors.push("model data generation stamp does not match the generated catalog");
-	}
-	const manifestFiles = isRecord(manifest?.files) ? manifest.files : undefined;
-	if (!manifestFiles) errors.push("model data manifest has no file hashes");
-	else {
-		const manifestFileNames = Object.keys(manifestFiles).sort();
-		if (!sameStrings(expectedFiles, manifestFileNames)) {
-			errors.push(`manifest file hashes do not match provider data files (${describeSetDifference(expectedFiles, manifestFileNames)})`);
-		}
-	}
-
 	for (const [providerId, expectedModels] of Object.entries(structure)) {
 		const filename = `${providerId}.json`;
 		const path = join(dataDir, filename);
 		if (!existsSync(path)) continue;
-		const content = readFileSync(path, "utf8");
-		if (manifestFiles && manifestFiles[filename] !== sha256(content)) {
-			errors.push(`${filename} does not match its manifest hash`);
-		}
 		const groups = readJsonObject(path, filename, errors);
 		if (!groups) continue;
 

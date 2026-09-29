@@ -30,9 +30,9 @@ import type {
 } from "../src/types.ts";
 import {
 	assertExactModelIds,
-	createModelDataManifest,
 	type ModelDataStructure,
 	MODEL_DATA_MANIFEST_FILE,
+	MODEL_DATA_SCHEMA_VERSION,
 	readModelDataProviderIds,
 	validateGeneratedModelData,
 	validateModelDataDirectory,
@@ -3185,8 +3185,6 @@ async function generateModels() {
 		}
 	}
 
-	const generatedAt = new Date().toISOString();
-
 	if (!generatorOptions.jsonOnly) {
 		// Stage and validate all provider values before replacing the current generated data.
 		const providersDir = join(packageRoot, "src/providers");
@@ -3197,17 +3195,14 @@ async function generateModels() {
 		let restoreGeneratedCatalog: (() => void) | undefined;
 		try {
 			mkdirSync(stagedDataDir, { recursive: true });
-			const fileContents: Record<string, string> = {};
 			for (const providerId of generatedDataProviderIds) {
 				const filename = `${providerId}.json`;
 				const content = serializeJson(generatedDataProviders[providerId]);
-				fileContents[filename] = content;
 				writeFileSync(join(stagedDataDir, filename), content);
 			}
-			writeJson(
-				join(stagedDataDir, MODEL_DATA_MANIFEST_FILE),
-				createModelDataManifest(modelDataStructure, fileContents, generatedAt),
-			);
+			writeJson(join(stagedDataDir, MODEL_DATA_MANIFEST_FILE), {
+				schemaVersion: MODEL_DATA_SCHEMA_VERSION,
+			});
 			validateModelDataDirectory(modelDataStructure, stagedDataDir);
 
 			if (!generatorOptions.dataOnly) {

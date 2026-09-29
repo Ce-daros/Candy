@@ -1,10 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	assertExactModelIds,
-	createModelDataManifest,
 	MODEL_DATA_MANIFEST_FILE,
 	MODEL_DATA_SCHEMA_VERSION,
 	type ModelDataStructure,
@@ -12,7 +11,6 @@ import {
 	validateModelDataDirectory,
 } from "../scripts/model-data.ts";
 
-const GENERATED_AT = "2026-07-23T10:00:00.000Z";
 const temporaryRoots: string[] = [];
 
 afterEach(() => {
@@ -59,13 +57,12 @@ function createFixture(): {
 			maxTokens: 100,
 		},
 	};
-	writeFixtureData(dataDir, structure, values);
+	writeFixtureData(dataDir, values);
 	return { dataDir, packageRoot, structure, values };
 }
 
 function writeFixtureData(
 	dataDir: string,
-	structure: ModelDataStructure,
 	values: Record<string, unknown>,
 	manifestSchemaVersion = MODEL_DATA_SCHEMA_VERSION,
 	apiGroup = "openai-completions",
@@ -73,9 +70,10 @@ function writeFixtureData(
 	const filename = "test-provider.json";
 	const content = `${JSON.stringify({ [apiGroup]: values })}\n`;
 	writeFileSync(join(dataDir, filename), content);
-	const manifest = createModelDataManifest(structure, { [filename]: content }, GENERATED_AT);
-	manifest.schemaVersion = manifestSchemaVersion;
-	writeFileSync(join(dataDir, MODEL_DATA_MANIFEST_FILE), `${JSON.stringify(manifest)}\n`);
+	writeFileSync(
+		join(dataDir, MODEL_DATA_MANIFEST_FILE),
+		`${JSON.stringify({ schemaVersion: manifestSchemaVersion })}\n`,
+	);
 }
 
 describe("generated model data validation", () => {
@@ -111,7 +109,7 @@ describe("generated model data validation", () => {
 		const fixture = createFixture();
 		const model = fixture.values["chat:model-a"] as Record<string, unknown>;
 		model[field] = value;
-		writeFixtureData(fixture.dataDir, fixture.structure, fixture.values);
+		writeFixtureData(fixture.dataDir, fixture.values);
 		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow(expectedMessage);
 	});
 
@@ -119,7 +117,7 @@ describe("generated model data validation", () => {
 		const fixture = createFixture();
 		const model = fixture.values["chat:model-a"] as Record<string, unknown>;
 		delete model.type;
-		writeFixtureData(fixture.dataDir, fixture.structure, fixture.values);
+		writeFixtureData(fixture.dataDir, fixture.values);
 		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow(
 			'expected "chat", "image", or "classifier"',
 		);
@@ -140,13 +138,7 @@ describe("generated model data validation", () => {
 			cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 		};
 		const validate = () => {
-			writeFixtureData(
-				fixture.dataDir,
-				structure,
-				{ "image:image-a": image },
-				MODEL_DATA_SCHEMA_VERSION,
-				"test-images",
-			);
+			writeFixtureData(fixture.dataDir, { "image:image-a": image }, MODEL_DATA_SCHEMA_VERSION, "test-images");
 			validateModelDataDirectory(structure, fixture.dataDir);
 		};
 		expect(validate).not.toThrow();
@@ -161,7 +153,7 @@ describe("generated model data validation", () => {
 		const fixture = createFixture();
 		const model = fixture.values["chat:model-a"] as Record<string, unknown>;
 		model.output = ["text"];
-		writeFixtureData(fixture.dataDir, fixture.structure, fixture.values);
+		writeFixtureData(fixture.dataDir, fixture.values);
 		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow(
 			"unsupported output modalities",
 		);
@@ -185,7 +177,6 @@ describe("generated model data validation", () => {
 		};
 		writeFixtureData(
 			fixture.dataDir,
-			structure,
 			{ "classifier:classifier-a": classifier },
 			MODEL_DATA_SCHEMA_VERSION,
 			"test-classifier",
@@ -195,13 +186,7 @@ describe("generated model data validation", () => {
 
 	it("rejects a model in the wrong API group", () => {
 		const fixture = createFixture();
-		writeFixtureData(
-			fixture.dataDir,
-			fixture.structure,
-			fixture.values,
-			MODEL_DATA_SCHEMA_VERSION,
-			"anthropic-messages",
-		);
+		writeFixtureData(fixture.dataDir, fixture.values, MODEL_DATA_SCHEMA_VERSION, "anthropic-messages");
 		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow("grouped under API");
 	});
 
@@ -213,36 +198,23 @@ describe("generated model data validation", () => {
 			"anthropic-messages": fixture.values,
 		})}\n`;
 		writeFileSync(join(fixture.dataDir, filename), content);
-		const manifest = createModelDataManifest(fixture.structure, { [filename]: content }, GENERATED_AT);
-		writeFileSync(join(fixture.dataDir, MODEL_DATA_MANIFEST_FILE), `${JSON.stringify(manifest)}\n`);
+		writeFileSync(
+			join(fixture.dataDir, MODEL_DATA_MANIFEST_FILE),
+			`${JSON.stringify({ schemaVersion: MODEL_DATA_SCHEMA_VERSION })}\n`,
+		);
 		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow("more than one API group");
 	});
 
-	it("rejects missing model IDs and stale file hashes", () => {
+	it("rejects missing model IDs and invalid JSON", () => {
 		const fixture = createFixture();
 		writeFileSync(join(fixture.dataDir, "test-provider.json"), "{}\n");
-		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow(/manifest hash|model IDs/);
+		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow(/model IDs/);
 	});
 
-	it("rejects incompatible schema and generation stamps", () => {
+	it("rejects an incompatible schema", () => {
 		const fixture = createFixture();
-		writeFixtureData(fixture.dataDir, fixture.structure, fixture.values, MODEL_DATA_SCHEMA_VERSION + 1);
+		writeFixtureData(fixture.dataDir, fixture.values, MODEL_DATA_SCHEMA_VERSION + 1);
 		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow("model data schema");
-
-		const manifestPath = join(fixture.dataDir, MODEL_DATA_MANIFEST_FILE);
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
-		manifest.structureHash = "stale";
-		writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
-		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow("generation stamp");
-	});
-
-	it("rejects an invalid generation timestamp", () => {
-		const fixture = createFixture();
-		const manifestPath = join(fixture.dataDir, MODEL_DATA_MANIFEST_FILE);
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
-		manifest.generatedAt = "invalid";
-		writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
-		expect(() => validateModelDataDirectory(fixture.structure, fixture.dataDir)).toThrow("generation timestamp");
 	});
 
 	it("rejects missing provider shards imported by the aggregator", () => {
