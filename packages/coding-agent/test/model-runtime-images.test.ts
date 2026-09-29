@@ -5,7 +5,6 @@ import {
 	type AnyModel,
 	type Api,
 	type AssistantImages,
-	type ClassifierModel,
 	createProvider,
 	type ImageModel,
 	type ImagesOptions,
@@ -31,31 +30,7 @@ function imageModel(provider: string, id: string): ImageModel<"test-images"> {
 	};
 }
 
-function classifierModel(provider: string, id: string): ClassifierModel<"test-classifier"> {
-	return {
-		type: "classifier",
-		id,
-		name: id,
-		api: "test-classifier",
-		provider,
-		baseUrl: "https://classifier.test/v1",
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1000,
-	};
-}
-
 const context = { input: [{ type: "text" as const, text: "a red circle" }] };
-const classifierContext = {
-	state: { text: "Looks good" },
-	questions: {
-		approved: {
-			type: "bool" as const,
-			instructions: "Does this express approval?",
-			criteria: { true: "Approval", false: "No approval" },
-		},
-	},
-};
 
 function okImageResult(model: ImageModel<string>): AssistantImages {
 	return {
@@ -98,10 +73,7 @@ describe("ModelRuntime image generation", () => {
 		expect(runtime.getModelOfType("image", "openrouter", images[0].id)).toBe(images[0]);
 		expect(runtime.getModel("openrouter", "google/gemini-3-pro-image")?.api).toBe("openai-completions");
 		expect(runtime.getModelOfType("image", "openrouter", "google/gemini-3-pro-image")?.type).toBe("image");
-		const classifiers = runtime.getModelsOfType("classifier", "openrouter");
-		expect(runtime.getAllModels("openrouter").length).toBe(
-			runtime.getModels("openrouter").length + images.length + classifiers.length,
-		);
+		expect(runtime.getAllModels("openrouter").length).toBe(runtime.getModels("openrouter").length + images.length);
 	});
 
 	it("extension model lists replace undeclared models of every operation", async () => {
@@ -122,7 +94,7 @@ describe("ModelRuntime image generation", () => {
 			createProvider({
 				id: "mixed",
 				auth: { apiKey: { name: "Mixed key", resolve: async () => ({ auth: {} }) } },
-				models: [chat, imageModel("mixed", "built-in-image"), classifierModel("mixed", "built-in-classifier")],
+				models: [chat, imageModel("mixed", "built-in-image")],
 				images: { "test-images": { generateImages: async (model) => okImageResult(model) } },
 			}),
 		);
@@ -137,18 +109,14 @@ describe("ModelRuntime image generation", () => {
 		]);
 		expect(runtime.getModel("mixed", "extension-chat")?.baseUrl).toBe("https://chat-proxy.test/v1");
 		expect(runtime.getModelsOfType("image", "mixed")).toEqual([]);
-		expect(runtime.getModelsOfType("classifier", "mixed")).toEqual([]);
 	});
 
-	it("registers extension image and classifier models with their implementations", async () => {
+	it("registers extension image models with their implementations", async () => {
 		const runtime = await createRuntime();
 		const observed: Array<{ apiKey: string | undefined; headers: unknown }> = [];
 		runtime.registerProvider("extension-operations", {
 			apiKey: "extension-secret",
-			models: [
-				{ ...imageModel("ignored", "shared"), headers: { "X-Operation": "image" } },
-				{ ...classifierModel("ignored", "shared"), headers: { "X-Operation": "classifier" } },
-			],
+			models: [{ ...imageModel("ignored", "shared"), headers: { "X-Operation": "image" } }],
 			images: {
 				"test-images": {
 					generateImages: async (model, _context, options) => {
@@ -157,31 +125,11 @@ describe("ModelRuntime image generation", () => {
 					},
 				},
 			},
-			classifiers: {
-				"test-classifier": {
-					classify: async (model, _context, options) => {
-						observed.push({ apiKey: options?.apiKey, headers: options?.headers });
-						return {
-							api: model.api,
-							provider: model.provider,
-							model: model.id,
-							answers: { approved: { type: "bool", probability: 0.9 } },
-							stopReason: "stop",
-							timestamp: 0,
-						};
-					},
-				},
-			},
 		});
 
 		const image = runtime.getModelOfType("image", "extension-operations", "shared")!;
-		const classifier = runtime.getModelOfType("classifier", "extension-operations", "shared")!;
 		expect((await runtime.generateImages(image, context)).stopReason).toBe("stop");
-		expect((await runtime.classify(classifier, classifierContext)).stopReason).toBe("stop");
-		expect(observed).toEqual([
-			{ apiKey: "extension-secret", headers: { "X-Operation": "image" } },
-			{ apiKey: "extension-secret", headers: { "X-Operation": "classifier" } },
-		]);
+		expect(observed).toEqual([{ apiKey: "extension-secret", headers: { "X-Operation": "image" } }]);
 	});
 
 	it("generates images through a native provider with runtime-resolved auth", async () => {
@@ -311,14 +259,12 @@ describe("ModelRuntime image generation", () => {
 		expect(imageAuth?.auth.headers).toEqual({ "X-Title": "candy" });
 	});
 
-	it("does not add image generation or classification to composed chat-only providers", async () => {
+	it("does not add image generation to composed chat-only providers", async () => {
 		const runtime = await createRuntime({
 			providers: { anthropic: { headers: { "X-Title": "candy" } } },
 		});
 		const provider = runtime.getProvider("anthropic")!;
 		expect(provider.generateImages).toBeUndefined();
-		expect(provider.classify).toBeUndefined();
 		expect(runtime.getProvider("openrouter")?.generateImages).toBeDefined();
-		expect(runtime.getProvider("typesafe")?.classify).toBeDefined();
 	});
 });

@@ -30,10 +30,6 @@
 			"types": "./dist/oauth.d.ts",
 			"import": "./dist/oauth.js"
 		},
-		"./bedrock-provider": {
-			"types": "./dist/bedrock-provider.d.ts",
-			"import": "./dist/bedrock-provider.js"
-		},
 		"./bun-oauth": {
 			"types": "./dist/bun-oauth.d.ts",
 			"import": "./dist/bun-oauth.js"
@@ -60,10 +56,8 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "0.124.0",
-		"@aws-sdk/client-bedrock-runtime": "3.1127.0",
 		"@candy/telemetry": "^0.87.1",
 		"@google/genai": "2.21.0",
-		"@smithy/node-http-handler": "4.12.1",
 		"http-proxy-agent": "9.1.0",
 		"https-proxy-agent": "9.1.0",
 		"openai": "7.23.0",
@@ -76,7 +70,6 @@
 		"openai",
 		"anthropic",
 		"gemini",
-		"bedrock",
 		"unified",
 		"api"
 	],

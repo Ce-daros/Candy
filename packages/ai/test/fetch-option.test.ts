@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { streamSimple as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { streamSimple as streamAzureOpenAIResponses } from "../src/api/azure-openai-responses.ts";
 import { streamSimple as streamGoogleGenerativeAI } from "../src/api/google-generative-ai.ts";
 import { streamSimple as streamGoogleVertex } from "../src/api/google-vertex.ts";
 import { streamSimple as streamMistral } from "../src/api/mistral-conversations.ts";
@@ -80,12 +79,6 @@ describe("fetch stream option", () => {
 				}).result(),
 			() =>
 				streamOpenAIResponses(createModel("openai-responses"), context, {
-					apiKey: "test-key",
-					fetch: custom,
-					maxRetries: 0,
-				}).result(),
-			() =>
-				streamAzureOpenAIResponses(createModel("azure-openai-responses"), context, {
 					apiKey: "test-key",
 					fetch: custom,
 					maxRetries: 0,

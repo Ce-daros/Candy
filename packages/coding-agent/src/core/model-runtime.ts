@@ -11,11 +11,6 @@ import {
 	type AuthOperationOptions,
 	type AuthResult,
 	type AuthType,
-	type ClassifierApi,
-	type ClassifierContext,
-	type ClassifierModel,
-	type ClassifierOptions,
-	type ClassifierResult,
 	type Context,
 	type Credential,
 	type CredentialInfo,
@@ -32,7 +27,6 @@ import {
 	type Model,
 	type Models,
 	type ModelsApiStreamOptions,
-	type ModelsClassifierOptions,
 	type ModelsDeferredCancelOptions,
 	type ModelsDeferredFetchOptions,
 	ModelsError,
@@ -53,13 +47,7 @@ import {
 	type StreamOptions,
 } from "@candy/ai";
 import * as builtinProviderCatalog from "@candy/ai/providers/all";
-import {
-	assertChatModel,
-	assertClassifierModel,
-	assertImageModel,
-	classifierErrorResult,
-	imageErrorResult,
-} from "@candy/ai/utils/model-operations";
+import { assertChatModel, assertImageModel, imageErrorResult } from "@candy/ai/utils/model-operations";
 import { getAgentDir } from "../config.ts";
 import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
 import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
@@ -710,23 +698,6 @@ export class ModelRuntime implements Models {
 			return await prepared.provider.generateImages(prepared.model, context, prepared.options as ImagesOptions);
 		} catch (error) {
 			return imageErrorResult(model, error, options?.signal?.aborted);
-		}
-	}
-
-	async classify(
-		model: ClassifierModel<ClassifierApi>,
-		context: ClassifierContext,
-		options?: ModelsClassifierOptions,
-	): Promise<ClassifierResult> {
-		try {
-			assertClassifierModel(model);
-			const prepared = await this.prepareRequest(model, options);
-			if (!prepared.provider.classify) {
-				throw new ModelsError("provider", `Provider ${model.provider} does not support classification`);
-			}
-			return await prepared.provider.classify(prepared.model, context, prepared.options as ClassifierOptions);
-		} catch (error) {
-			return classifierErrorResult(model, error, options?.signal?.aborted);
 		}
 	}
 

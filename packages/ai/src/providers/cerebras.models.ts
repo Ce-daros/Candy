@@ -2,13 +2,10 @@
 // Do not edit manually - run 'npm run generate-models' to update
 
 import values from "./data/cerebras.json" with { type: "json" };
-import { flattenChatModelCatalog, flattenClassifierModelCatalog, flattenImageModelCatalog, type ChatModelCatalog, type ClassifierModelCatalog, type ImageModelCatalog } from "../model-catalog.ts";
+import { flattenChatModelCatalog, flattenImageModelCatalog, type ChatModelCatalog, type ImageModelCatalog } from "../model-catalog.ts";
 
 export const CEREBRAS_MODELS: ChatModelCatalog<typeof values, "cerebras"> =
 	flattenChatModelCatalog("cerebras", values);
 
 export const CEREBRAS_IMAGE_MODELS: ImageModelCatalog<typeof values, "cerebras"> =
 	flattenImageModelCatalog("cerebras", values);
-
-export const CEREBRAS_CLASSIFIER_MODELS: ClassifierModelCatalog<typeof values, "cerebras"> =
-	flattenClassifierModelCatalog("cerebras", values);

@@ -5,8 +5,6 @@ describe("built-in API streams", () => {
 	it("returns lazy stream implementations for every known chat API", () => {
 		for (const api of [
 			"anthropic-messages",
-			"azure-openai-responses",
-			"bedrock-converse-stream",
 			"google-generative-ai",
 			"google-vertex",
 			"mistral-conversations",

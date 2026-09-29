@@ -5,7 +5,7 @@ Most hosted providers support one or both of these authentication methods:
 - Sign in through a browser or device flow backed by OAuth.
 - Provide an API key.
 
-Open Model → Sources and select a provider to see its available authentication methods. Amazon Bedrock and Google Vertex AI can also use ambient cloud credentials.
+Open Model → Sources and select a provider to see its available authentication methods. Google Vertex AI can also use ambient cloud credentials.
 
 ## Authenticate interactively
 
@@ -94,43 +94,6 @@ A stored API-key credential can include an `env` object. Its values take priorit
   }
 }
 ```
-
-### Azure OpenAI
-
-Set an API key plus either a base URL or resource name:
-
-```bash
-export AZURE_OPENAI_API_KEY=...
-export AZURE_OPENAI_BASE_URL=https://your-resource.ai.azure.com
-# Or:
-export AZURE_OPENAI_RESOURCE_NAME=your-resource
-```
-
-Resource root URLs under `ai.azure.com`, `cognitiveservices.azure.com`, and `openai.azure.com` are normalized to the OpenAI API path.
-
-### Amazon Bedrock
-
-Bedrock can use a bearer token or an ambient AWS credential source:
-
-```bash
-# Named profile
-export AWS_PROFILE=your-profile
-
-# IAM keys
-export AWS_ACCESS_KEY_ID=AKIA...
-export AWS_SECRET_ACCESS_KEY=...
-# Required for temporary credentials
-export AWS_SESSION_TOKEN=...
-
-# Bedrock bearer token
-export AWS_BEARER_TOKEN_BEDROCK=...
-
-# Region, when not supplied by the profile or AWS SDK configuration
-export AWS_REGION=us-west-2
-# AWS_DEFAULT_REGION is also supported
-```
-
-candy also supports ECS task credentials and IRSA through the standard `AWS_CONTAINER_CREDENTIALS_*` and `AWS_WEB_IDENTITY_TOKEN_FILE` variables.
 
 ### Cloudflare AI Gateway
 

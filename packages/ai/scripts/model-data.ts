@@ -15,7 +15,7 @@ export interface ModelDataManifest {
 }
 
 const MODEL_DATA_IMPORT_PATTERN =
-	/^import \{ [A-Z][A-Z0-9_]*_CLASSIFIER_MODELS, [A-Z][A-Z0-9_]*_IMAGE_MODELS, [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
+	/^import \{ [A-Z][A-Z0-9_]*_IMAGE_MODELS, [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
 
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
@@ -182,16 +182,8 @@ function validateModelValue(
 		if (typeof value.maxTokens !== "number" || !Number.isFinite(value.maxTokens) || value.maxTokens <= 0) {
 			errors.push(`${label} has invalid maxTokens`);
 		}
-	} else if (value.type === "classifier") {
-		if (
-			typeof value.contextWindow !== "number" ||
-			!Number.isFinite(value.contextWindow) ||
-			value.contextWindow <= 0
-		) {
-			errors.push(`${label} has invalid contextWindow`);
-		}
 	} else if (value.type !== "image") {
-		errors.push(`${label} has type ${JSON.stringify(value.type)}, expected "chat", "image", or "classifier"`);
+		errors.push(`${label} has type ${JSON.stringify(value.type)}, expected "chat" or "image"`);
 	}
 	if (!isRecord(value.cost)) {
 		errors.push(`${label} has invalid cost metadata`);

@@ -29,7 +29,6 @@
 		"dist",
 		"docs",
 		"examples",
-		"containerization.md",
 		"CHANGELOG.md",
 		"npm-shrinkwrap.json"
 	],

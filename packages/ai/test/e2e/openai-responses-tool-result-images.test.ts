@@ -10,7 +10,6 @@ import { builtinRuntime } from "../builtin-runtime.ts";
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
 import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
 import { resolveApiKey } from "../oauth.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
@@ -153,16 +152,6 @@ describe("Responses API tool result images", () => {
 
 		it("should send tool result images in function_call_output", { retry: 3, timeout: 30000 }, async () => {
 			await verifyToolResultImagesStayInFunctionCallOutput(model, { reasoningEffort: "low" });
-		});
-	});
-
-	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider (gpt-4o-mini)", () => {
-		const model = getModel("azure-openai-responses", "gpt-4o-mini");
-		const azureDeploymentName = resolveAzureDeploymentName(model.id);
-		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
-
-		it("should send tool result images in function_call_output", { retry: 3, timeout: 30000 }, async () => {
-			await verifyToolResultImagesStayInFunctionCallOutput(model, azureOptions);
 		});
 	});
 

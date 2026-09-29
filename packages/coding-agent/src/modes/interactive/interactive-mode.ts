@@ -45,7 +45,6 @@ import {
 	getAgentDir,
 	getAuthPath,
 	getDebugLogPath,
-	getDocsPath,
 	VERSION,
 } from "../../config.ts";
 import {
@@ -5282,14 +5281,6 @@ export class InteractiveMode {
 			},
 			providerName,
 		);
-
-		if (providerId === "amazon-bedrock") {
-			dialog.showDetails([
-				theme.fg("text", "You can also use an AWS profile, IAM keys, or role-based credentials."),
-				theme.fg("muted", "See:"),
-				theme.fg("accent", `  ${path.join(getDocsPath(), "providers.md")}`),
-			]);
-		}
 
 		this.activeLogin = { dialog, session };
 		this.pageController.mountPanel(dialog, false, 0.5);

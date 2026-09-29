@@ -1,16 +1,4 @@
-import type {
-	AnyModel,
-	Api,
-	AssistantImages,
-	ClassifierApi,
-	ClassifierModel,
-	ClassifierResult,
-	ImageApi,
-	ImageModel,
-	Model,
-	ModelType,
-	ModelTypeMap,
-} from "../types.ts";
+import type { AnyModel, Api, AssistantImages, ImageApi, ImageModel, Model, ModelType, ModelTypeMap } from "../types.ts";
 import { ModelsError } from "./models-error.ts";
 
 /** The type of a model. Models without `type` are chat models. */
@@ -35,34 +23,12 @@ export function assertImageModel(model: AnyModel): asserts model is ImageModel<I
 	}
 }
 
-export function assertClassifierModel(model: AnyModel): asserts model is ClassifierModel<ClassifierApi> {
-	if (!isModelType(model, "classifier")) {
-		throw new ModelsError("provider", `Model ${model.provider}/${model.id} is not a classifier model`);
-	}
-}
-
 export function imageErrorResult(model: ImageModel<ImageApi>, error: unknown, aborted = false): AssistantImages {
 	return {
 		api: model.api,
 		provider: model.provider,
 		model: model.id,
 		output: [],
-		stopReason: aborted ? "aborted" : "error",
-		errorMessage: error instanceof Error ? error.message : String(error),
-		timestamp: Date.now(),
-	};
-}
-
-export function classifierErrorResult(
-	model: ClassifierModel<ClassifierApi>,
-	error: unknown,
-	aborted = false,
-): ClassifierResult {
-	return {
-		api: model.api,
-		provider: model.provider,
-		model: model.id,
-		answers: {},
 		stopReason: aborted ? "aborted" : "error",
 		errorMessage: error instanceof Error ? error.message : String(error),
 		timestamp: Date.now(),

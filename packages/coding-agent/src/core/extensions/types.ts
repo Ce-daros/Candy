@@ -20,7 +20,6 @@ import type {
 	Api,
 	AssistantMessageEvent,
 	AssistantMessageEventStream,
-	ClassifierApi,
 	ConstrainedSamplingConfig,
 	ImageApi,
 	ImageContent,
@@ -29,7 +28,6 @@ import type {
 	OAuthCredentials,
 	OAuthLoginCallbacks,
 	Provider,
-	ProviderClassifier,
 	ProviderHeaders,
 	ProviderId,
 	ProviderImages,
@@ -1651,8 +1649,6 @@ export interface ProviderConfig {
 	) => AssistantMessageEventStream;
 	/** Image-generation implementations keyed by image API. */
 	images?: Partial<Record<ImageApi, ProviderImages>>;
-	/** Classifier implementations keyed by classifier API. */
-	classifiers?: Partial<Record<ClassifierApi, ProviderClassifier>>;
 	/** Custom headers to include in requests. */
 	headers?: Record<string, string>;
 	/** If true, adds Authorization: Bearer header with the resolved API key. */
@@ -1726,15 +1722,8 @@ export interface ProviderImageModelConfig extends ProviderModelConfigBase {
 	output: ("text" | "image")[];
 }
 
-/** Structured classifier model configuration. */
-export interface ProviderClassifierModelConfig extends ProviderModelConfigBase {
-	type: "classifier";
-	api?: ClassifierApi;
-	contextWindow: number;
-}
-
 /** Configuration for a model within a provider. */
-export type ProviderModelConfig = ProviderChatModelConfig | ProviderImageModelConfig | ProviderClassifierModelConfig;
+export type ProviderModelConfig = ProviderChatModelConfig | ProviderImageModelConfig;
 
 /** Extension factory function type. Supports both sync and async initialization. */
 export type ExtensionFactory = (candy: ExtensionAPI) => void | Promise<void>;

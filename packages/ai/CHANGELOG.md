@@ -4,6 +4,9 @@
 
 ### Breaking Changes
 
+- Removed the classifier model surface: `ClassifierApi`/`ClassifierModel`/`ClassifierContext`/`ClassifierOptions`/`ClassifierResult` types, `Models.classify()`, the `classifiers` provider map, the TypeSafe provider, and the `typesafe-system-one`/`cloudflare-workers-ai-system-one` APIs.
+- Removed the Amazon Bedrock provider: `amazon-bedrock.ts`, `bedrock-converse-stream.ts`, the `./bedrock-provider` entrypoint, `BedrockOptions`/`BedrockCompat`, the `@aws-sdk/client-bedrock-runtime` and `@smithy/node-http-handler` dependencies, and AWS credential detection.
+- Removed the Azure OpenAI Responses provider: `azure-openai-responses.ts`, `AzureOpenAIResponsesOptions`, and the `AZURE_OPENAI_*` credential mapping.
 - Removed the unused `mapStopReasonString`, `getBuiltinModelDataGeneratedAt`, `FauxProviderRegistration`, and `getOverflowPatterns` exports.
 - Model data JSON under `src/providers/data/` is now tracked in the repository, so fresh checkouts build offline. `npm run build` validates the tracked data instead of regenerating it from the models.dev API; run `npm run generate-models` (or `hydrate-model-data`) explicitly when refreshing the catalog.
 
@@ -13,18 +16,16 @@
 - Removed the built-in Ant Ling, Baseten, and Radius providers, including Radius OAuth and model-catalog loading. The generic `pi-messages` API remains available to custom providers.
 - Unified image models into the regular `Provider`/`Models` surface. The separate `ImagesModels` collection is removed: `createImagesModels()`, `createImagesProvider()`, `ImagesProvider`, `openrouterImagesProvider()`, `builtinImagesProviders()`, and `builtinImagesModels()` are gone. Use `builtinModels()`, `models.getModelOfType("image", ...)`, `models.generateImages()`, and `createProvider({ models, images })` instead. Existing unqualified reads remain chat-only.
 - Image models are now `ImageModel` with a required `type: "image"` and share `BaseModel` with chat models. The old plural image type names (`ImagesModel`, `ImagesApi`, `KnownImagesApi`, `KnownImagesProvider`, and `ImagesProviderId`) are removed. `generateImages()` accepts only image models. Output modalities (`output`) remain on image models only.
-- Generated model data schema is now version 6: every entry carries `type`, operation-specific catalogs include chat, image, and classifier models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate:model-data`.
+- Generated model data schema is now version 6: every entry carries `type`, operation-specific catalogs include chat and image models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate:model-data`.
 - Renamed `@earendil-works/pi-ai` to `@candy/ai` and `pi-ai` to `candy-ai`. Update imports and use `CANDY_CACHE_RETENTION` and `CANDY_OAUTH_CALLBACK_HOST` for the renamed environment settings.
 
 ### Added
 
 - Added `ToolResultMessage.cancelled` as optional transcript metadata for agent-aborted tools. Provider requests continue to use the existing result content and error flag.
-- Added `Models.generateImages()` with provider-resolved auth, `Provider.generateImages?`, and `createProvider({ images })` keyed by `model.api`. `createProvider()` `models` and `fetchModels` accept models of every type, and `api` is optional when `images` or `classifiers` is given.
-- Added an optional model `type` (`"chat"`, `"image"`, or `"classifier"`). Chat models may omit it, so existing chat models, providers, and stores keep working unchanged. Narrow mixed lists with the new `isModelType()` guard or read the effective type with `getModelType()`.
+- Added `Models.generateImages()` with provider-resolved auth, `Provider.generateImages?`, and `createProvider({ images })` keyed by `model.api`. `createProvider()` `models` and `fetchModels` accept models of every type, and `api` is optional when `images` is given.
+- Added an optional model `type` (`"chat"` or `"image"`). Chat models may omit it, so existing chat models, providers, and stores keep working unchanged. Narrow mixed lists with the new `isModelType()` guard or read the effective type with `getModelType()`.
 - Added `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()` on `Models`; optional `Provider.getAllModels()` and `Provider.filterAllModels()`; corresponding generated-catalog accessors; and the `AnyModel` and `ModelTypeMap` types. `hasApi()`, `calculateCost()`, and `modelsAreEqual()` accept `AnyModel`.
 - Added support for models of every type in `ModelsStoreEntry.models`. Stored and fetched models of unknown types are dropped instead of failing a refresh.
-- Added classifier models and `Models.classify()` with a provider-neutral JEV-style `choice`/`score`/`bool` contract. The built-in TypeSafe provider exposes models.dev's `jev-latest` through the System One API and translates public `bool` questions to TypeSafe's `noul` wire format.
-- Added Jev classifier models on OpenRouter (`typesafe/jev-1.13`, `~typesafe/jev-latest`) through its TypeSafe-compatible System One endpoint, and on Cloudflare Workers AI (`typesafe/jev`) through the new `cloudflare-workers-ai-system-one` classifier API.
 - Added a runtime chat-model check to the `Models` stream entry points so non-chat models fail with a clear `ModelsError` instead of a missing-api stream error.
 - Added array-based `models.all.json` and `providers/{id}.all.json` variants to the generated and published JSON catalog, allowing the same upstream ID once per model type; the existing keyed `models.json` and `providers/{id}.json` stay chat-only for released clients.
 - Added `onProviderStreamEvent` to observe parsed provider stream events before normalization, including provider-specific fields not retained in assistant messages ([#9784](https://github.com/earendil-works/pi/issues/9784)).
@@ -44,6 +45,7 @@
 
 ### Removed
 
+- Removed the Amazon Bedrock and Azure OpenAI Responses adapters, providers, generated catalogs, and test suites, plus the classifier (System One) adapters, models, and provider configuration.
 - Removed `test/empty.test.ts`: its four assertions per provider accepted either an error or a defined content field, and were duplicated across 25 providers without a real behavior contract. Live provider behavior is covered by the remaining `test/e2e/` matrix.
 
 ## [0.87.1] - 2026-09-22
