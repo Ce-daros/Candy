@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Removed the unused `KeyEventType` export and `isPunctuationChar` helper.
 - `visibleWindow(index, count, viewportSize)` added to `selection.ts`: render-time centered window over a flat list, complementing `moveSelection`/`moveViewport`.
 
 - `SelectItem` supports an optional `checked` flag and `SelectListTheme` an optional `checkbox(checked)` renderer: checkbox items render the glyph between the selection cursor and the label with the column width accounting for it.

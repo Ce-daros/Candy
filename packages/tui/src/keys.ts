@@ -502,23 +502,17 @@ const matchesLegacyModifierSequence = (data: string, key: LegacyModifierKey, mod
  * Event types from Kitty keyboard protocol (flag 2)
  * 1 = key press, 2 = key repeat, 3 = key release
  */
-export type KeyEventType = "press" | "repeat" | "release";
-
 interface ParsedKittySequence {
 	codepoint: number;
 	shiftedKey?: number; // Shifted version of the key (when shift is pressed)
 	baseLayoutKey?: number; // Key in standard PC-101 layout (for non-Latin layouts)
 	modifier: number;
-	eventType: KeyEventType;
 }
 
 interface ParsedModifyOtherKeysSequence {
 	codepoint: number;
 	modifier: number;
 }
-
-// Store the last parsed event type for isKeyRelease() to query
-let _lastEventType: KeyEventType = "press";
 
 /**
  * Check if the last parsed key event was a key release.
@@ -576,14 +570,6 @@ export function isKeyRepeat(data: string): boolean {
 	return false;
 }
 
-function parseEventType(eventTypeStr: string | undefined): KeyEventType {
-	if (!eventTypeStr) return "press";
-	const eventType = parseInt(eventTypeStr, 10);
-	if (eventType === 2) return "repeat";
-	if (eventType === 3) return "release";
-	return "press";
-}
-
 function parseKittySequence(data: string): ParsedKittySequence | null {
 	// CSI u format with alternate keys (flag 4):
 	// \x1b[<codepoint>u
@@ -601,19 +587,15 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
 		const shiftedKey = csiUMatch[2] && csiUMatch[2].length > 0 ? parseInt(csiUMatch[2], 10) : undefined;
 		const baseLayoutKey = csiUMatch[3] ? parseInt(csiUMatch[3], 10) : undefined;
 		const modValue = csiUMatch[4] ? parseInt(csiUMatch[4], 10) : 1;
-		const eventType = parseEventType(csiUMatch[5]);
-		_lastEventType = eventType;
-		return { codepoint, shiftedKey, baseLayoutKey, modifier: modValue - 1, eventType };
+		return { codepoint, shiftedKey, baseLayoutKey, modifier: modValue - 1 };
 	}
 
 	// Arrow keys with modifier: \x1b[1;<mod>A/B/C/D or \x1b[1;<mod>:<event>A/B/C/D
 	const arrowMatch = data.match(/^\x1b\[1;(\d+)(?::(\d+))?([ABCD])$/);
 	if (arrowMatch) {
 		const modValue = parseInt(arrowMatch[1]!, 10);
-		const eventType = parseEventType(arrowMatch[2]);
 		const arrowCodes: Record<string, number> = { A: -1, B: -2, C: -3, D: -4 };
-		_lastEventType = eventType;
-		return { codepoint: arrowCodes[arrowMatch[3]!]!, modifier: modValue - 1, eventType };
+		return { codepoint: arrowCodes[arrowMatch[3]!]!, modifier: modValue - 1 };
 	}
 
 	// Functional keys: \x1b[<num>~ or \x1b[<num>;<mod>~ or \x1b[<num>;<mod>:<event>~
@@ -621,7 +603,6 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
 	if (funcMatch) {
 		const keyNum = parseInt(funcMatch[1]!, 10);
 		const modValue = funcMatch[2] ? parseInt(funcMatch[2], 10) : 1;
-		const eventType = parseEventType(funcMatch[3]);
 		const funcCodes: Record<number, number> = {
 			2: FUNCTIONAL_CODEPOINTS.insert,
 			3: FUNCTIONAL_CODEPOINTS.delete,
@@ -632,8 +613,7 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
 		};
 		const codepoint = funcCodes[keyNum];
 		if (codepoint !== undefined) {
-			_lastEventType = eventType;
-			return { codepoint, modifier: modValue - 1, eventType };
+			return { codepoint, modifier: modValue - 1 };
 		}
 	}
 
@@ -641,10 +621,8 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
 	const homeEndMatch = data.match(/^\x1b\[1;(\d+)(?::(\d+))?([HF])$/);
 	if (homeEndMatch) {
 		const modValue = parseInt(homeEndMatch[1]!, 10);
-		const eventType = parseEventType(homeEndMatch[2]);
 		const codepoint = homeEndMatch[3] === "H" ? FUNCTIONAL_CODEPOINTS.home : FUNCTIONAL_CODEPOINTS.end;
-		_lastEventType = eventType;
-		return { codepoint, modifier: modValue - 1, eventType };
+		return { codepoint, modifier: modValue - 1 };
 	}
 
 	return null;

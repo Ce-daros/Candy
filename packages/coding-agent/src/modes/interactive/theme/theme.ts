@@ -933,13 +933,6 @@ export function getResolvedThemeColors(themeName?: string): Record<string, strin
 }
 
 /**
- * Check if a theme is a "light" theme (for CSS that needs light/dark variants).
- */
-export function isLightTheme(themeName?: string): boolean {
-	return loadTheme(themeName ?? currentThemeName ?? getDefaultTheme()).appearance === "light";
-}
-
-/**
  * Get explicit export colors from theme JSON, if specified.
  * Returns undefined for each color that isn't explicitly set.
  */

@@ -115,29 +115,6 @@ export interface ToolsOptions {
 	ls?: LsToolOptions;
 }
 
-export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
-	switch (toolName) {
-		case "read":
-			return createReadToolDefinition(cwd, options?.read);
-		case "bash":
-			return createBashToolDefinition(cwd, options?.bash);
-		case "powershell":
-			return createPowerShellToolDefinition(cwd, options?.powershell);
-		case "edit":
-			return createEditToolDefinition(cwd, options?.edit);
-		case "write":
-			return createWriteToolDefinition(cwd, options?.write);
-		case "grep":
-			return createGrepToolDefinition(cwd, options?.grep);
-		case "find":
-			return createFindToolDefinition(cwd, options?.find);
-		case "ls":
-			return createLsToolDefinition(cwd, options?.ls);
-		default:
-			throw new Error(`Unknown tool name: ${toolName}`);
-	}
-}
-
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
 	switch (toolName) {
 		case "read":
@@ -159,24 +136,6 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
-}
-
-export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-	return [
-		createReadToolDefinition(cwd, options?.read),
-		createBashToolDefinition(cwd, options?.bash),
-		createEditToolDefinition(cwd, options?.edit),
-		createWriteToolDefinition(cwd, options?.write),
-	];
-}
-
-export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-	return [
-		createReadToolDefinition(cwd, options?.read),
-		createGrepToolDefinition(cwd, options?.grep),
-		createFindToolDefinition(cwd, options?.find),
-		createLsToolDefinition(cwd, options?.ls),
-	];
 }
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {

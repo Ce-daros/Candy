@@ -25,10 +25,7 @@
 	"dependencies": {
 		"@candy/ai": "^0.87.1",
 		"@candy/telemetry": "^0.87.1",
-		"diff": "8.0.4",
-		"ignore": "7.0.8",
-		"typebox": "1.3.27",
-		"yaml": "2.9.0"
+		"typebox": "1.3.27"
 	},
 	"keywords": [
 		"ai",
@@ -49,7 +46,6 @@
 	},
 	"devDependencies": {
 		"@types/node": "22.19.19",
-		"@vitest/coverage-v8": "4.1.9",
 		"vitest": "4.1.9"
 	}
 }

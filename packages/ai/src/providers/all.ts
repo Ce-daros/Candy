@@ -7,7 +7,6 @@ import { azureOpenAIResponsesProvider } from "./azure-openai-responses.ts";
 import { cerebrasProvider } from "./cerebras.ts";
 import { cloudflareAIGatewayProvider } from "./cloudflare-ai-gateway.ts";
 import { cloudflareWorkersAIProvider } from "./cloudflare-workers-ai.ts";
-import modelDataManifest from "./data/.manifest.json" with { type: "json" };
 import { deepseekProvider } from "./deepseek.ts";
 import { fireworksProvider } from "./fireworks.ts";
 import { githubCopilotProvider } from "./github-copilot.ts";
@@ -86,12 +85,6 @@ export function getBuiltinClassifierModel<
 
 export function getBuiltinProviders(): BuiltinProvider[] {
 	return Object.keys(MODELS) as BuiltinProvider[];
-}
-
-/** Generation timestamp shared by all built-in provider catalogs. */
-export function getBuiltinModelDataGeneratedAt(): number | undefined {
-	const generatedAt = Date.parse(modelDataManifest.generatedAt);
-	return Number.isNaN(generatedAt) ? undefined : generatedAt;
 }
 
 export function getBuiltinModels<TProvider extends BuiltinProvider>(

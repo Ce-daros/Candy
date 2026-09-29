@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Removed the unused `mapStopReasonString`, `getBuiltinModelDataGeneratedAt`, `FauxProviderRegistration`, and `getOverflowPatterns` exports.
 - Model data JSON under `src/providers/data/` is now tracked in the repository, so fresh checkouts build offline. `npm run build` validates the tracked data instead of regenerating it from the models.dev API; run `npm run generate-models` (or `hydrate-model-data`) explicitly when refreshing the catalog.
 
 - Removed the unused deprecated `image-models.ts` catalog wrapper. Use the typed `getBuiltinImageModel()` and related accessors from `@candy/ai/providers/all`.

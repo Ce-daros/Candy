@@ -107,7 +107,6 @@ export {
 	isKeyRepeat,
 	isKittyProtocolActive,
 	Key,
-	type KeyEventType,
 	type KeyId,
 	matchesKey,
 	parseKey,

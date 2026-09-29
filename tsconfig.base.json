@@ -4,6 +4,8 @@
 		"module": "Node16",
 		"lib": ["ES2024"],
 		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
 		"erasableSyntaxOnly": true,
 		"verbatimModuleSyntax": true,
 		"esModuleInterop": true,

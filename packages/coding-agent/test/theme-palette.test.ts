@@ -4,8 +4,24 @@ import { describe, expect, it } from "vitest";
 import { getResolvedThemeColors, getThemeByName, initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 const palettes = {
-	dark: { border: "#40e2ff", bashMode: "#ffd32f", accent: "#b967ff", success: "#b8e45a", error: "#f25d83" },
-	light: { border: "#007f99", bashMode: "#8a6400", accent: "#7641b0", success: "#567300", error: "#b72f54" },
+	dark: {
+		border: "#40e2ff",
+		bashMode: "#ffd32f",
+		accent: "#b967ff",
+		success: "#b8e45a",
+		error: "#f25d83",
+		thinkingOff: "#515875",
+		thinkingMax: "#cff9ff",
+	},
+	light: {
+		border: "#007f99",
+		bashMode: "#8a6400",
+		accent: "#7641b0",
+		success: "#567300",
+		error: "#b72f54",
+		thinkingOff: "#9198a8",
+		thinkingMax: "#003f58",
+	},
 } as const;
 
 describe("Candy theme palette", () => {
@@ -19,8 +35,6 @@ describe("Candy theme palette", () => {
 			for (const [role, hex] of Object.entries(palettes[appearance])) {
 				expect(colorToHex(theme.colors[role as keyof typeof palettes.dark])).toBe(hex);
 			}
-			expect(theme.colors.thinkingOff).toEqual(theme.colors.border);
-			expect(theme.colors.thinkingMax).toEqual(theme.colors.border);
 			expect(theme.colors.syntaxKeyword).toEqual(theme.colors.mdLink);
 			expect(theme.colors.syntaxFunction).toEqual(theme.colors.warning);
 			expect(theme.colors.syntaxVariable).toEqual(theme.colors.border);

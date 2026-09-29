@@ -13,13 +13,6 @@ import { DEFAULT_MAX_BYTES, formatSize } from "../../core/tools/truncate.ts";
 import { theme } from "../../modes/interactive/theme/theme.ts";
 import { getTextOutput, invalidArgText, str } from "../tool-render-utils.ts";
 
-export type BashRenderState = {
-	startedAt?: number;
-	endedAt?: number;
-	interval?: ReturnType<typeof setInterval>;
-	callComponent?: Text;
-	callArgs?: unknown;
-};
 function formatDuration(ms: number): string {
 	const seconds = ms / 1000;
 	if (seconds < 60) return `${seconds.toFixed(1)}s`;

@@ -131,18 +131,6 @@ export interface RegisterFauxProviderOptions {
 	};
 }
 
-export interface FauxProviderRegistration {
-	api: string;
-	models: [Model<string>, ...Model<string>[]];
-	getModel(): Model<string>;
-	getModel(modelId: string): Model<string> | undefined;
-	state: FauxProviderState;
-	setResponses: (responses: FauxResponseStep[]) => void;
-	appendResponses: (responses: FauxResponseStep[]) => void;
-	getPendingResponseCount: () => number;
-	unregister: () => void;
-}
-
 export interface FauxProviderHandle {
 	provider: Provider;
 	api: string;

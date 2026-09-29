@@ -450,9 +450,6 @@ export class InteractiveMode {
 	private get session(): AgentSession {
 		return this.runtimeHost.session;
 	}
-	private get agent() {
-		return this.session.agent;
-	}
 	private get sessionManager() {
 		return this.session.sessionManager;
 	}
@@ -3447,9 +3444,6 @@ export class InteractiveMode {
 			case "toolResult": {
 				// Tool results are rendered inline with tool calls, handled separately
 				break;
-			}
-			default: {
-				const _exhaustive: never = message;
 			}
 		}
 	}
