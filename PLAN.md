@@ -226,3 +226,34 @@
 | Q7 | 删 `.zcodeignore` 与无引用脚本 | §2.1 |
 
 **唯一待确认（歧义）**：Q6 我按字面理解为"**整个第 2 步取消**"，因此 §3 全部不做。如果你的本意只是"`§2.2`（interactive 层）不做"，请说一句，我会恢复：`agent-session.ts` 拆分、headless 模式统一、启动性能、行为一致性清单、文档审计与 CHANGELOG 收口（`modes/interactive` 与 `interactive-presentation` 那条仍然不动）。默认按"第 2 步整段取消"执行。
+
+---
+
+## 7. 执行结果（2026-09-29）
+
+完成批次：§2.1、§2.6、§2.4、§2.3、§2.5、§2.2(a)(c)(d)(e)、§2.8、§2.9。**未做 §2.7（TUI 视口裁剪，用户指定跳过）**，因此 TUI 源码与 bench 数字未变。images API 按用户指示保留（生成也不删）。共 159 个受跟踪文件之外另有本次新增文件，合计 223 文件 / +1074 / −15044 行。
+
+### 与 pristine `main` 同口径的行数与规模
+
+| 指标 | before | after | 差值 |
+|---|---|---|---|
+| coding-agent src / test 行数 | 62,718 / 62,892 | 62,315 / 62,003 | −403 / −889 |
+| ai src / test 行数 | 24,188 / 38,151 | 21,482 / 34,461 | −2,706 / −3,690 |
+| tui src / test 行数 | 19,262 / 19,043 | 19,262 / 19,043 | 0 / 0 |
+| agent src / test 行数 | 2,481 / 3,924 | 2,441 / 3,973 | −40 / +49 |
+| 测试用例数 coding-agent / ai | 2,283 / 1,361 | 2,267 / 1,210 | −16 / −151 |
+| 内置 provider 数 | 39 | 36 | −3（typesafe / bedrock / azure） |
+
+### 出口标准核对
+
+- §2.2 删除项全部消失；`@aws-sdk/*`、`@smithy/*` 已从 node_modules 与 lockfile 移除（node_modules 由 `npm ci` 重建），`check:shrinkwrap`、`check:runtime-deps` 通过。
+- `grep -rn "proper-lockfile" packages/coding-agent/src` 只命中 `core/storage/json-file.ts`；`grep -rn "Date.now() - start" packages/coding-agent/src` 为空；abort / sleep / estimate 各只剩一份。
+- `npm run check` exit 0；coding-agent 全量 vitest 与 pristine `main` **失败文件集合完全一致**（24 个文件 / 48 个用例，均为环境或既有 flaky），ai 失败集合同样与 main 一致；evals 单元测试 55/55。
+
+### 与原计划的偏差（均已核对）
+
+1. **§2.9 第 1 条（应用内 changelog）**：不能只改 `GITHUB_REPO`。原实现会把 `pi-mono` 时代的链接重写到"当前仓库"，改成本仓库后会让大量历史 PR/issue 链接变成 404。改为：相对链接解析到本仓库，绝对上游链接不再改写，并删掉 `LEGACY_REPO_RE`；`changelog.test.ts` 同步。
+2. **§2.8 没有可删的死测试**。计划点名的 `test/plan-mode-utils.test.ts` 经核实测试的是 `test/fixtures/plan-mode/utils.ts`，该文件被 `test/fixtures/plan-mode/index.ts`（示例扩展）与 `test/plan-mode-extension.test.ts` 使用，属活代码，按 Q3=B"只删死测"保留。其余 11 个"不直接导入 src"的测试经追踪（`new URL("../src/...")`、动态 `import()`、或经 `test/utilities.ts`、suite harness、tui `virtual-terminal.ts` 间接导入）全部在测生产代码。
+3. **§2.5**：保留了 `AuthStorageBackend` 接口与内存实现（AuthStorage 需要该抽象注入测试替身），文件后端改为通用 `JsonFileStorage`（`core/storage/json-file.ts`），不再从 auth 模块导出通用后端；`trust.json` 沿用自定义 `lockfilePath`。
+4. **测试夹具时间戳**：`estimateContextTokens` 统一到 ai 后带上了（上游 #6464 的）"较新的前缀消息使其之前 usage 失效"规则。`agent-session-stats.test.ts` 两个用例原先用 1..8 的合成时间戳，压缩条目用的是真实时钟，导致规则把所有 usage 都判为过期；改为围绕压缩条目取真实时间戳，语义不变。
+5. **发现并修复了上一批的误删**：`packages/ai/test/e2e/tokens.test.ts` 在 provider 裁剪时被整体清空（326 行），`context-overflow.test.ts` 多删了一行注释。已从裁剪前版本恢复，只移除 Bedrock / Azure 用例（单独 commit）。
