@@ -121,7 +121,7 @@ describe("PowerbarController thinking track", () => {
 
 		// The collapse keeps the new anchor highlighted until the final swap.
 		const mid = stripAnsi(controller.render(200)!.text);
-		expect(mid).toContain("‹ High ›");
+		expect(mid).toContain("♦ High ♦");
 
 		settle(controller);
 		expect(controller.isIdle()).toBe(true);
@@ -179,7 +179,7 @@ describe("PowerbarController thinking track", () => {
 		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
 		const { text, regions } = controller.render(76)!;
 		expect(regions.length).toBeGreaterThanOrEqual(6);
-		expect(stripAnsi(text)).toContain("‹ Medium ›");
+		expect(stripAnsi(text)).toContain("♦ Medium ♦");
 		expect(text).not.toMatch(/[▰▱]/);
 		expect(visibleWidth(text)).toBeLessThanOrEqual(76);
 		controller.dispose();
@@ -420,7 +420,7 @@ describe("PowerbarController window sliding", () => {
 		const text = stripAnsi(controller.render(80)!.text);
 		// Back at the window start the left marker is gone; the leading bracket
 		// belongs to the selected item.
-		expect(text.startsWith("‹ Model 01 ›")).toBe(true);
+		expect(text.startsWith("♦ Model 01 ♦")).toBe(true);
 	});
 
 	it("restores the visible window around a highlighted model", () => {

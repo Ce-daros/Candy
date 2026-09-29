@@ -4,6 +4,24 @@
 
 ### Breaking Changes
 
+- Command panel toggle actions now render their checkbox through `SelectItem.checked` with the shared green/dim checkbox glyph instead of an uncolored `[x]`/`[ ]` prefix baked into the label.
+
+- Project trust detection no longer considers `.agents/skills` in directories above the user home: the ancestor walk stops at the home directory, which is user territory, not project context.
+
+- Hand-rendered list panels share one scaffold: `readListAction` (navigation keys incl. vim aliases and horizontal cursor keys), `scrollCounter` ("  (n/total)"), and `emptyLine` from `list-scaffold.ts`, plus `visibleWindow` from `@candy/tui`. The four ad-hoc scroll-counter formats, ad-hoc windowing math, and per-panel key handling in the trust, extension, oauth, session, tree, and config panels are gone.
+
+- Extension dialogs (selector, input, editor) mount through one `panelDialog` helper in interactive mode, and the startup dialogs (selector, trust selector, input) through `withStartupTui`, replacing eleven copies of the settled-flag promise wrapper.
+
+- Metadata rows share `metaSeparator()`, "Label: value" lines share `infoLine` (value gets semantic color: trusted green, untrusted red), checkboxes share `checkboxGlyph`, and hint rows share `hintRow`.
+
+- Project trust prompting now uses the dedicated trust selector everywhere (startup, session resume, package manager). The multi-line prompt rendered as an all-accent title via generic `ui.select` is gone; the selector shows the title, path, and consequence paragraph with proper title/body color semantics.
+
+- Dialog and panel titles come from one shared `dialogTitle`/`dialogBody` theme helper in `theme.ts` instead of inline `bold(accent(...))` copies; the Help panel keeps its cyan title via the helper's color parameter.
+
+- Selection markers across transcript panels (session, tree, config, trust, oauth, reading panel, powerbar tracks) now come from one shared `selectionMarker`/`selectionCursor`/`selectedRowLabel` theme helper in `theme.ts`. Trust and session selectors previously used a cyan chevron dialect; the marker glyph is replaceable in one place.
+
+- Thinking blocks now fold by rendered cell width (CJK counts as two cells) against a three-line budget of the current viewport width, so long unwrapped paragraphs fold while short thoughts stay visible; resizing the terminal re-evaluates the fold.
+
 - Command panel section titles (Commands, Settings, History groups) now render flush-left in the palette warning color instead of muted, indented like list items.
 
 - Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.

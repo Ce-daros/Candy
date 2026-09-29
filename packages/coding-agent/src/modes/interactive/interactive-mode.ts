@@ -91,7 +91,11 @@ import { type SessionEntry, SessionManager, type UsageEntry } from "../../core/s
 import { type FullscreenExitOutput, SettingsManager } from "../../core/settings-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
-import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
+import {
+	hasTrustRequiringProjectResources,
+	ProjectTrustStore,
+	type ProjectTrustStoreEntry,
+} from "../../core/trust-manager.ts";
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
 import { type AppKeybinding, KEYBINDINGS, KeybindingsManager } from "../../presentation/keybindings.ts";
 import { exportSessionHtml } from "../../presentation/session-html-export.ts";
@@ -148,7 +152,7 @@ import { TranscriptContainer } from "./components/transcript-container.ts";
 import { TranscriptNotice } from "./components/transcript-notice.ts";
 import { TransientNotification } from "./components/transient-notification.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
-import { TrustSelectorComponent } from "./components/trust-selector.ts";
+import { type TrustSelection, TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { ExtensionWidgetAdapter } from "./extension-widget-adapter.ts";
@@ -2112,6 +2116,12 @@ export class InteractiveMode {
 				input: ui.input,
 				notify: ui.notify,
 			},
+			selectTrust: (trustCwd) =>
+				this.promptProjectTrust(
+					trustCwd,
+					new ProjectTrustStore(this.runtimeHost.services.agentDir).getEntry(trustCwd),
+					false,
+				),
 		};
 	}
 
@@ -2163,6 +2173,46 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Mount a transient panel and resolve when its callbacks complete it. `open`
+	 * creates the component (storing it for later disposal), wires `done` into its
+	 * select/cancel callbacks, and returns the panel with its close routine.
+	 */
+	private panelDialog<T>(
+		opts: ExtensionUIDialogOptions | undefined,
+		open: (done: (value: T | undefined) => void) => {
+			component: Parameters<InteractivePageController["mountPanel"]>[0];
+			close: () => void;
+			compact?: boolean;
+		},
+	): Promise<T | undefined> {
+		return new Promise((resolve) => {
+			if (opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+			let settled = false;
+			let close: () => void;
+			const onAbort = () => {
+				if (settled) return;
+				settled = true;
+				close();
+				resolve(undefined);
+			};
+			const finish = (value: T | undefined) => {
+				if (settled) return;
+				settled = true;
+				opts?.signal?.removeEventListener("abort", onAbort);
+				resolve(value);
+			};
+			const { component, close: closePanel, compact } = open(finish);
+			close = closePanel;
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+			this.pageController.disposeActiveSelector();
+			this.pageController.mountPanel(component, compact ?? true);
+		});
+	}
+
+	/**
 	 * Show a selector for extensions.
 	 */
 	private showExtensionSelector(
@@ -2171,30 +2221,17 @@ export class InteractiveMode {
 		opts?: ExtensionUIDialogOptions,
 		horizontal = false,
 	): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideExtensionSelector();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
+		return this.panelDialog<string>(opts, (done) => {
 			this.extensionSelector = new ExtensionSelectorComponent(
 				title,
 				options,
 				(option) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionSelector();
-					resolve(option);
+					done(option);
 				},
 				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionSelector();
-					resolve(undefined);
+					done(undefined);
 				},
 				{
 					tui: this.ui,
@@ -2203,9 +2240,7 @@ export class InteractiveMode {
 					onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
 				},
 			);
-
-			this.pageController.disposeActiveSelector();
-			this.pageController.mountPanel(this.extensionSelector, true);
+			return { component: this.extensionSelector, close: () => this.hideExtensionSelector() };
 		});
 	}
 
@@ -2246,36 +2281,21 @@ export class InteractiveMode {
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
 	): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideExtensionInput();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
+		return this.panelDialog<string>(opts, (done) => {
 			this.extensionInput = new ExtensionInputComponent(
 				title,
 				placeholder,
 				(value) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionInput();
-					resolve(value);
+					done(value);
 				},
 				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionInput();
-					resolve(undefined);
+					done(undefined);
 				},
 				{ tui: this.ui, timeout: opts?.timeout },
 			);
-
-			this.pageController.disposeActiveSelector();
-			this.pageController.mountPanel(this.extensionInput, true);
+			return { component: this.extensionInput, close: () => this.hideExtensionInput() };
 		});
 	}
 
@@ -2296,7 +2316,7 @@ export class InteractiveMode {
 		prefill?: string,
 		validate?: () => string | undefined,
 	): Promise<string | undefined> {
-		return new Promise((resolve) => {
+		return this.panelDialog<string>(undefined, (done) => {
 			this.extensionEditor = new ExtensionEditorComponent(
 				this.ui,
 				this.keybindings,
@@ -2309,18 +2329,16 @@ export class InteractiveMode {
 						return;
 					}
 					this.hideExtensionEditor();
-					resolve(value);
+					done(value);
 				},
 				() => {
 					this.hideExtensionEditor();
-					resolve(undefined);
+					done(undefined);
 				},
 				undefined,
 				this.settingsManager.getExternalEditorCommand(),
 			);
-
-			this.pageController.disposeActiveSelector();
-			this.pageController.mountPanel(this.extensionEditor);
+			return { component: this.extensionEditor, close: () => this.hideExtensionEditor(), compact: false };
 		});
 	}
 
@@ -4600,29 +4618,45 @@ export class InteractiveMode {
 		}
 	}
 
+	private promptProjectTrust(
+		cwd: string,
+		savedDecision: ProjectTrustStoreEntry | null,
+		projectTrusted: boolean,
+	): Promise<TrustSelection | undefined> {
+		const trustStore = new ProjectTrustStore(this.runtimeHost.services.agentDir);
+		return new Promise((resolve) => {
+			this.pageController.showSelector((done) => {
+				const selector = new TrustSelectorComponent({
+					cwd,
+					savedDecision,
+					projectTrusted,
+					onSelect: (selection) => {
+						trustStore.setMany(selection.updates);
+						done();
+						resolve(selection);
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+						resolve(undefined);
+					},
+				});
+				return { component: selector, focus: selector };
+			}, true);
+		});
+	}
+
 	private showTrustSelector(): void {
 		const cwd = this.sessionManager.getCwd();
 		const trustStore = new ProjectTrustStore(this.runtimeHost.services.agentDir);
-		const savedDecision = trustStore.getEntry(cwd);
-		this.pageController.showSelector((done) => {
-			const selector = new TrustSelectorComponent({
-				cwd,
-				savedDecision,
-				projectTrusted: this.settingsManager.isProjectTrusted(),
-				onSelect: (selection) => {
-					trustStore.setMany(selection.updates);
-					done();
-					this.showStatus(
-						`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart ${APP_NAME} for this to take effect.`,
-					);
-				},
-				onCancel: () => {
-					done();
-					this.ui.requestRender();
-				},
-			});
-			return { component: selector, focus: selector };
-		}, true);
+		void this.promptProjectTrust(cwd, trustStore.getEntry(cwd), this.settingsManager.isProjectTrusted()).then(
+			(selection) => {
+				if (!selection) return;
+				this.showStatus(
+					`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart ${APP_NAME} for this to take effect.`,
+				);
+			},
+		);
 	}
 
 	private showUserMessageSelector(): void {

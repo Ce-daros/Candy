@@ -494,6 +494,17 @@ function buildSessionOptions(
 				cliThinkingFromModel = true;
 			}
 		}
+	} else if (parsed.provider) {
+		// Without --model the provider would silently fall back to the default;
+		// validate it instead so typos fail fast.
+		const lowerProvider = parsed.provider.toLowerCase();
+		const known = modelRuntime.getProviders().some((provider) => provider.id.toLowerCase() === lowerProvider);
+		if (!known) {
+			diagnostics.push({
+				type: "error",
+				message: `Unknown provider "${parsed.provider}". Use --list-models to see available providers/models.`,
+			});
+		}
 	}
 
 	// Thinking level from CLI
@@ -735,6 +746,7 @@ export async function main(args: string[], options?: MainOptions) {
 										mode: isInitialRuntime ? trustPromptMode : appMode,
 										settingsManager: startupSettingsManager,
 										hasUI: isInitialRuntime && trustPromptMode === "interactive",
+										trustStore,
 									}),
 								onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
 							});

@@ -3,10 +3,18 @@
  * Displays a list of string options with keyboard navigation.
  */
 
-import { Container, getKeybindings, Spacer, Text, type TUI } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { Container, getKeybindings, Spacer, Text, type TUI, visibleWindow } from "@candy/tui";
+import {
+	dialogBody,
+	dialogTitle,
+	selectedRowLabel,
+	selectionCursor,
+	selectionMarkerSuffix,
+	theme,
+} from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
-import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
+import { hintRow } from "./keybinding-hints.ts";
+import { readListAction, scrollCounter } from "./list-scaffold.ts";
 
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
@@ -49,8 +57,13 @@ export class ExtensionSelectorComponent extends Container {
 		this.getAvailableHeight = opts?.getAvailableHeight;
 		if (this.getAvailableHeight) this.availableHeight = this.getAvailableHeight();
 
-		this.titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
+		const [titleLine, ...bodyLines] = title.split("\n");
+		this.titleText = new Text(dialogTitle(titleLine), 1, 0);
 		this.addChild(this.titleText);
+		const body = bodyLines.join("\n").trim();
+		if (body) {
+			this.addChild(new Text(dialogBody(body), 1, 0));
+		}
 		if (opts?.description) {
 			this.addChild(new Spacer(1));
 			this.addChild(new Text(theme.fg("text", opts.description), 1, 0));
@@ -61,7 +74,7 @@ export class ExtensionSelectorComponent extends Container {
 			this.countdown = new CountdownTimer(
 				opts.timeout,
 				opts.tui,
-				(s) => this.titleText.setText(theme.fg("accent", theme.bold(`${this.baseTitle} (${s}s)`))),
+				(s) => this.titleText.setText(dialogTitle(`${this.baseTitle} (${s}s)`)),
 				() => this.onCancelCallback(),
 			);
 		}
@@ -71,11 +84,11 @@ export class ExtensionSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				rawKeyHint("↑↓", "navigate") +
-					"  " +
-					keyHint("tui.select.confirm", "select") +
-					"  " +
-					keyHint("tui.select.cancel", "cancel"),
+				hintRow([
+					{ raw: "↑↓", label: "navigate" },
+					{ key: "tui.select.confirm", label: "select" },
+					{ key: "tui.select.cancel", label: "cancel" },
+				]),
 				1,
 				0,
 			),
@@ -102,8 +115,8 @@ export class ExtensionSelectorComponent extends Container {
 					this.options
 						.map((option, index) =>
 							index === this.selectedIndex
-								? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", option))}${theme.fg("borderAccent", " ♦")}`
-								: theme.fg("muted", `  ${option}  `),
+								? `${selectionCursor(true)}${selectedRowLabel(option, true)}${selectionMarkerSuffix(true)}`
+								: `${selectionCursor(false)}${theme.fg("muted", `${option}  `)}`,
 						)
 						.join("   "),
 					1,
@@ -113,45 +126,41 @@ export class ExtensionSelectorComponent extends Container {
 			return;
 		}
 		const maxVisible = Math.max(3, this.availableHeight - 6);
-		const start = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.options.length - maxVisible),
-		);
-		for (let i = start; i < Math.min(this.options.length, start + maxVisible); i++) {
+		const { start, end } = visibleWindow(this.selectedIndex, this.options.length, maxVisible);
+		for (let i = start; i < end; i++) {
 			const isSelected = i === this.selectedIndex;
 			const text = isSelected
-				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", this.options[i]))}${theme.fg("borderAccent", " ♦")}`
-				: `  ${theme.fg("text", this.options[i])}`;
+				? `${selectionCursor(true)}${selectedRowLabel(this.options[i], true)}${selectionMarkerSuffix(true)}`
+				: `${selectionCursor(false)}${theme.fg("text", this.options[i])}`;
 			this.listContainer.addChild(new Text(text, 1, 0));
 		}
-		if (start > 0 || start + maxVisible < this.options.length) {
-			this.listContainer.addChild(
-				new Text(theme.fg("muted", `  ${this.selectedIndex + 1}/${this.options.length}`), 1, 0),
-			);
+		if (start > 0 || end < this.options.length) {
+			this.listContainer.addChild(new Text(scrollCounter(this.selectedIndex, this.options.length), 1, 0));
 		}
 	}
 
 	handleInput(keyData: string): void {
-		const kb = getKeybindings();
-		if (kb.matches(keyData, "app.tools.expand")) {
+		if (getKeybindings().matches(keyData, "app.tools.expand")) {
 			this.onToggleToolsExpanded?.();
-		} else if (
-			kb.matches(keyData, "tui.select.up") ||
-			(this.horizontal && kb.matches(keyData, "tui.editor.cursorLeft"))
-		) {
-			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
-			this.updateList();
-		} else if (
-			kb.matches(keyData, "tui.select.down") ||
-			(this.horizontal && kb.matches(keyData, "tui.editor.cursorRight"))
-		) {
-			this.selectedIndex = Math.min(this.options.length - 1, this.selectedIndex + 1);
-			this.updateList();
-		} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n") {
-			const selected = this.options[this.selectedIndex];
-			if (selected) this.onSelectCallback(selected);
-		} else if (kb.matches(keyData, "tui.select.cancel")) {
-			this.onCancelCallback();
+			return;
+		}
+		switch (readListAction(keyData, { horizontal: this.horizontal })) {
+			case "up":
+				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.updateList();
+				break;
+			case "down":
+				this.selectedIndex = Math.min(this.options.length - 1, this.selectedIndex + 1);
+				this.updateList();
+				break;
+			case "confirm": {
+				const selected = this.options[this.selectedIndex];
+				if (selected) this.onSelectCallback(selected);
+				break;
+			}
+			case "cancel":
+				this.onCancelCallback();
+				break;
 		}
 	}
 

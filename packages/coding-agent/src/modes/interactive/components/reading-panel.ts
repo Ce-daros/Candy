@@ -13,7 +13,7 @@ import {
 } from "@candy/tui";
 import { stripAnsi } from "../../../utils/ansi.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
-import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { getMarkdownTheme, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 export interface ReadingPanelRow {
@@ -120,8 +120,8 @@ export class ReadingPanelComponent implements Focusable {
 				const label = truncateToWidth(row.label, Math.max(1, width - keyWidth - 7));
 				const value = truncateToWidth(row.value, keyWidth);
 				const name = selected ? theme.bold(theme.fg("accent", label)) : label;
-				const prefix = selected ? theme.fg("borderAccent", "♦ ") : "  ";
-				const suffix = selected ? theme.fg("borderAccent", " ♦") : "";
+				const prefix = selectionCursor(selected);
+				const suffix = selectionMarkerSuffix(selected);
 				const spacing = " ".repeat(
 					Math.max(
 						1,

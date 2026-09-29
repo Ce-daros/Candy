@@ -93,6 +93,7 @@ import type {
 	ReadToolInput,
 	WriteToolInput,
 } from "../tools/index.ts";
+import type { ProjectTrustSelection } from "../trust-manager.ts";
 
 export type { ExecOptions, ExecResult } from "../exec.ts";
 export type { BuildSystemPromptOptions, NormalizedBuildSystemPromptOptions } from "../system-prompt.ts";
@@ -522,6 +523,8 @@ export interface ProjectTrustContext {
 	mode: ExtensionMode;
 	hasUI: boolean;
 	ui: Pick<ExtensionUIContext, "select" | "confirm" | "input" | "notify">;
+	/** Dedicated project trust UI; resolves the trust prompt through the shared trust selector. */
+	selectTrust?: (cwd: string) => Promise<ProjectTrustSelection | undefined>;
 }
 
 export type ProjectTrustHandler = (

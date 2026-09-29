@@ -16,6 +16,8 @@ export interface SelectItem {
 	selectable?: boolean;
 	/** Render flush-left as a section title; selectable items keep the two-space indent. */
 	header?: boolean;
+	/** Render a checkbox between the selection cursor and the label; requires theme.checkbox. */
+	checked?: boolean;
 }
 
 export interface SelectListTheme {
@@ -24,6 +26,8 @@ export interface SelectListTheme {
 	description: (text: string) => string;
 	scrollInfo: (text: string) => string;
 	noMatch: (text: string) => string;
+	/** Optional glyph renderer for items carrying a checked flag. */
+	checkbox?: (checked: boolean) => string;
 }
 
 export interface SelectListTruncatePrimaryContext {
@@ -210,6 +214,11 @@ export class SelectList implements Component {
 		return this.selectedIndex;
 	}
 
+	private itemCheckbox(item: SelectItem): string {
+		if (item.checked === undefined || !this.theme.checkbox) return "";
+		return `${this.theme.checkbox(item.checked)} `;
+	}
+
 	private renderItem(
 		item: SelectItem,
 		isSelected: boolean,
@@ -221,7 +230,7 @@ export class SelectList implements Component {
 			return truncateToWidth(item.label || item.value, width);
 		}
 
-		const prefix = isSelected ? this.theme.selectedPrefix("♦ ") : "  ";
+		const prefix = (isSelected ? this.theme.selectedPrefix("♦ ") : "  ") + this.itemCheckbox(item);
 		const suffix = isSelected ? this.theme.selectedPrefix(" ♦") : "";
 		const prefixWidth = visibleWidth(prefix);
 		const suffixWidth = visibleWidth(suffix);
@@ -278,7 +287,8 @@ export class SelectList implements Component {
 	private getPrimaryColumnWidth(): number {
 		const { min, max } = this.getPrimaryColumnBounds();
 		const widestPrimary = this.filteredItems.reduce((widest, item) => {
-			return Math.max(widest, visibleWidth(this.getDisplayValue(item)) + PRIMARY_COLUMN_GAP);
+			const checkboxWidth = this.itemCheckbox(item) ? visibleWidth(this.itemCheckbox(item)) : 0;
+			return Math.max(widest, checkboxWidth + visibleWidth(this.getDisplayValue(item)) + PRIMARY_COLUMN_GAP);
 		}, 0);
 
 		return clamp(widestPrimary, min, max);

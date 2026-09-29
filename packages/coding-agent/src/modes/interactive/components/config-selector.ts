@@ -15,6 +15,7 @@ import {
 	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
+	visibleWindow,
 } from "@candy/tui";
 import { CONFIG_DIR_NAME } from "../../../config.ts";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.ts";
@@ -24,7 +25,7 @@ import {
 	type ResourceType,
 } from "../../../core/resource-configuration.ts";
 import type { SettingsManager } from "../../../core/settings-manager.ts";
-import { theme } from "../theme/theme.ts";
+import { checkboxGlyph, selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
@@ -419,8 +420,8 @@ class ResourceList implements Component, Focusable {
 			const selected = index === this.selectedTypeIndex;
 			const label = RESOURCE_TYPE_LABELS[this.resourceTypes[index]!];
 			const content = selected
-				? `${theme.fg("borderAccent", "♦ ")}${theme.bold(theme.fg("accent", label))}${theme.fg("borderAccent", " ♦")}`
-				: theme.fg("muted", `  ${label}`);
+				? `${selectionCursor(true)}${selectedRowLabel(label, true)}${selectionMarkerSuffix(true)}`
+				: `${selectionCursor(false)}${theme.fg("muted", label)}`;
 			return truncateToWidth(content, categoryWidth);
 		};
 
@@ -446,11 +447,11 @@ class ResourceList implements Component, Focusable {
 		}
 
 		// Calculate visible range
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
+		const { start: startIndex, end: endIndex } = visibleWindow(
+			this.selectedIndex,
+			this.filteredItems.length,
+			this.maxVisible,
 		);
-		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
 		this.lastVisibleStart = startIndex;
 		this.lastVisibleCount = endIndex - startIndex;
 
@@ -472,12 +473,12 @@ class ResourceList implements Component, Focusable {
 			} else {
 				// Resource item (cursor only on items)
 				const item = entry.item;
-				const cursor = isSelected ? theme.fg("borderAccent", "♦ ") : "  ";
+				const cursor = selectionCursor(isSelected);
 				const dimmed = this.isDimmedItem(item);
 				const nameText =
 					isSelected && !dimmed ? theme.bold(theme.fg("accent", item.displayName)) : item.displayName;
 				const name = dimmed ? theme.fg("dim", nameText) : nameText;
-				const marker = isSelected ? theme.fg("borderAccent", " ♦") : "";
+				const marker = selectionMarkerSuffix(isSelected);
 				lines.push(
 					truncateToWidth(
 						`${cursor}    ${this.renderCheckbox(item)} ${name}${this.getItemSuffix(item)}`,
@@ -676,9 +677,9 @@ class ResourceList implements Component, Focusable {
 			const state = this.resourceConfiguration.getProjectOverrideState(item);
 			if (state === "load") return theme.fg("success", "[+]");
 			if (state === "unload") return theme.fg("warning", "[-]");
-			return theme.fg("dim", item.enabled ? "[x]" : "[ ]");
+			return checkboxGlyph(item.enabled, false);
 		}
-		return item.enabled ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
+		return checkboxGlyph(item.enabled);
 	}
 
 	private getItemSuffix(item: ResourceItem): string {

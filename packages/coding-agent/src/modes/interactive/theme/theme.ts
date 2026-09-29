@@ -1167,7 +1167,56 @@ export function getSelectListTheme(): SelectListTheme {
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),
 		noMatch: (text: string) => theme.fg("muted", text),
+		checkbox: (checked: boolean) => checkboxGlyph(checked),
 	};
+}
+
+/**
+ * Selection marker shared by every hand-rendered transcript list. Swap the
+ * glyph pair here (e.g. "‹ " / " ›") to restyle all selected rows at once;
+ * prefix and suffix must keep the same visible width.
+ */
+export const selectionMarker = { prefix: "♦ ", suffix: " ♦" };
+
+/** Cursor column for a row: the marker when selected, blank width-matched spaces otherwise. */
+export function selectionCursor(selected: boolean): string {
+	return selected ? theme.fg("borderAccent", selectionMarker.prefix) : "  ";
+}
+
+/** Trailing marker for the selected row; empty for unselected rows. */
+export function selectionMarkerSuffix(selected: boolean): string {
+	return selected ? theme.fg("borderAccent", selectionMarker.suffix) : "";
+}
+
+/** Row label styling: bold accent for the selection, plain text otherwise. */
+export function selectedRowLabel(text: string, selected: boolean): string {
+	return selected ? theme.bold(theme.fg("accent", text)) : theme.fg("text", text);
+}
+
+/** Dialog and panel title styling; override the token where a panel deliberately differs. */
+export function dialogTitle(text: string, color: ThemeColor = "accent"): string {
+	return theme.bold(theme.fg(color, text));
+}
+
+/** Explanatory body text under a dialog title. */
+export function dialogBody(text: string): string {
+	return theme.fg("muted", text);
+}
+
+/** Muted " · " separator for metadata rows ("scope · origin · state"). */
+export function metaSeparator(): string {
+	return theme.fg("muted", " · ");
+}
+
+/** "Label: value" info line; the value gets a semantic color, the label stays muted. */
+export function infoLine(label: string, value: string, valueColor: ThemeColor = "muted"): string {
+	return theme.fg("muted", `${label}: `) + theme.fg(valueColor, value);
+}
+
+/** "[x]" / "[ ]" checkbox glyph; rows that cannot be toggled render both states dim. */
+export function checkboxGlyph(checked: boolean, enabled = true): string {
+	if (!enabled) return theme.fg("dim", checked ? "[x]" : "[ ]");
+	return checked ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
 }
 
 export function getEditorTheme(): EditorTheme {

@@ -1,11 +1,22 @@
-import { Container, getKeybindings, Spacer, Text } from "@candy/tui";
+import { Container, Spacer, Text } from "@candy/tui";
+import { APP_NAME, CONFIG_DIR_NAME } from "../../../config.ts";
 import {
 	getProjectTrustOptions,
 	type ProjectTrustOption,
 	type ProjectTrustStoreEntry,
 } from "../../../core/trust-manager.ts";
-import { theme } from "../theme/theme.ts";
-import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
+import {
+	dialogBody,
+	dialogTitle,
+	infoLine,
+	metaSeparator,
+	selectedRowLabel,
+	selectionCursor,
+	selectionMarkerSuffix,
+	theme,
+} from "../theme/theme.ts";
+import { hintRow } from "./keybinding-hints.ts";
+import { readListAction } from "./list-scaffold.ts";
 
 export type TrustSelection = Pick<ProjectTrustOption, "trusted" | "updates">;
 
@@ -41,7 +52,9 @@ export class TrustSelectorComponent extends Container {
 		super();
 
 		this.savedDecision = options.savedDecision;
-		this.trustOptions = getProjectTrustOptions(options.cwd, { includeSessionOnly: options.includeSessionOnly });
+		this.trustOptions = getProjectTrustOptions(options.cwd, {
+			includeSessionOnly: options.includeSessionOnly ?? true,
+		});
 		this.selectedIndex = Math.max(
 			0,
 			this.trustOptions.findIndex((option) => this.isSavedOption(option)),
@@ -49,21 +62,41 @@ export class TrustSelectorComponent extends Container {
 		this.onSelectCallback = options.onSelect;
 		this.onCancelCallback = options.onCancel;
 
-		this.addChild(new Text(theme.fg("accent", theme.bold("Project trust")), 1, 0));
+		this.addChild(new Text(dialogTitle("Project trust"), 1, 0));
 		this.addChild(new Text(theme.fg("muted", options.cwd), 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				theme.fg(
-					"muted",
-					`Saved decision: ${formatDecision(this.trustOptions[0]?.savedPath, options.savedDecision)}`,
+				dialogBody(
+					`This allows ${APP_NAME} to load ${CONFIG_DIR_NAME} settings and resources, install missing project packages, and execute project extensions.`,
+				),
+				1,
+				0,
+			),
+		);
+		this.addChild(new Spacer(1));
+		const decision = options.savedDecision;
+		this.addChild(
+			new Text(
+				infoLine(
+					"Saved decision",
+					formatDecision(this.trustOptions[0]?.savedPath, decision),
+					decision === null ? "muted" : decision.decision ? "success" : "error",
 				),
 				1,
 				0,
 			),
 		);
 		this.addChild(
-			new Text(theme.fg("muted", `Current session: ${options.projectTrusted ? "trusted" : "untrusted"}`), 1, 0),
+			new Text(
+				infoLine(
+					"Current session",
+					options.projectTrusted ? "trusted" : "untrusted",
+					options.projectTrusted ? "success" : "error",
+				),
+				1,
+				0,
+			),
 		);
 		this.addChild(new Spacer(1));
 
@@ -72,11 +105,11 @@ export class TrustSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				rawKeyHint("↑↓", "navigate") +
-					"  " +
-					keyHint("tui.select.confirm", "save") +
-					"  " +
-					keyHint("tui.select.cancel", "cancel"),
+				hintRow([
+					{ raw: "↑↓", label: "navigate" },
+					{ key: "tui.select.confirm", label: "save" },
+					{ key: "tui.select.cancel", label: "cancel" },
+				]),
 				1,
 				0,
 			),
@@ -103,32 +136,43 @@ export class TrustSelectorComponent extends Container {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = this.isSavedOption(option);
 			const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
-			const prefix = isSelected ? theme.fg("thinkingHigh", "‹ ") : "  ";
-			const label = isSelected ? theme.bold(theme.fg("accent", option.label)) : theme.fg("text", option.label);
+			const label = selectedRowLabel(option.label, isSelected);
 			this.listContainer.addChild(
-				new Text(`${prefix}${currentMarker}${label}${isSelected ? theme.fg("thinkingHigh", " ›") : ""}`, 1, 0),
+				new Text(
+					`${selectionCursor(isSelected)}${currentMarker}${label}${selectionMarkerSuffix(isSelected)}`,
+					1,
+					0,
+				),
 			);
 			const savedPaths = option.updates.filter((update) => update.decision !== null).map((update) => update.path);
-			const detail = savedPaths.length === 0 ? "This session only · not saved" : `${savedPaths.join(", ")} · saved`;
+			const detail =
+				savedPaths.length === 0
+					? `This session only${metaSeparator()}not saved`
+					: `${savedPaths.join(", ")}${metaSeparator()}saved`;
 			this.listContainer.addChild(new Text(theme.fg("muted", `     ${detail}`), 1, 0));
 		}
 	}
 
 	handleInput(keyData: string): void {
-		const kb = getKeybindings();
-		if (kb.matches(keyData, "tui.select.up") || keyData === "k") {
-			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
-			this.updateList();
-		} else if (kb.matches(keyData, "tui.select.down") || keyData === "j") {
-			this.selectedIndex = Math.min(this.trustOptions.length - 1, this.selectedIndex + 1);
-			this.updateList();
-		} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n") {
-			const selected = this.trustOptions[this.selectedIndex];
-			if (selected) {
-				this.onSelectCallback({ trusted: selected.trusted, updates: selected.updates });
+		switch (readListAction(keyData, { vim: true })) {
+			case "up":
+				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.updateList();
+				break;
+			case "down":
+				this.selectedIndex = Math.min(this.trustOptions.length - 1, this.selectedIndex + 1);
+				this.updateList();
+				break;
+			case "confirm": {
+				const selected = this.trustOptions[this.selectedIndex];
+				if (selected) {
+					this.onSelectCallback({ trusted: selected.trusted, updates: selected.updates });
+				}
+				break;
 			}
-		} else if (kb.matches(keyData, "tui.select.cancel")) {
-			this.onCancelCallback();
+			case "cancel":
+				this.onCancelCallback();
+				break;
 		}
 	}
 }

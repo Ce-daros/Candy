@@ -21,7 +21,7 @@ describe("LoadedResourcesComponent", () => {
 	it("reveals names, sources, and paths when constructed expanded", () => {
 		const component = new LoadedResourcesComponent(sections, true);
 		const expanded = stripAnsi(component.render(100).join("\n"));
-		expect(expanded).toContain("review  · Project");
+		expect(expanded).toContain("review · Project");
 		expect(expanded).toContain("/work/skills/review/SKILL.md");
 		expect(expanded).not.toContain("Loaded resources");
 	});

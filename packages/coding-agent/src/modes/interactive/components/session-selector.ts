@@ -15,13 +15,15 @@ import {
 	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
+	visibleWindow,
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
 import { KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
-import { theme } from "../theme/theme.ts";
+import { metaSeparator, selectionCursor, theme } from "../theme/theme.ts";
 import { keycap, keyHint, keyText } from "./keybinding-hints.ts";
+import { scrollCounter } from "./list-scaffold.ts";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
 
 type SessionScope = "current" | "all";
@@ -168,7 +170,7 @@ class SessionSelectorHeader implements Component {
 			hintLine2 = "";
 		} else {
 			const pathState = this.showPath ? "(on)" : "(off)";
-			const sep = theme.fg("muted", " · ");
+			const sep = metaSeparator();
 			const hint1 =
 				keyHint("app.panel.scope", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
 			const hint2Parts = [
@@ -461,11 +463,11 @@ class SessionList implements Component, Focusable {
 		}
 
 		// Calculate visible range with scrolling
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredSessions.length - this.maxVisible),
+		const { start: startIndex, end: endIndex } = visibleWindow(
+			this.selectedIndex,
+			this.filteredSessions.length,
+			this.maxVisible,
 		);
-		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredSessions.length);
 		this.lastVisibleStart = startIndex;
 		this.lastVisibleCount = endIndex - startIndex;
 
@@ -482,6 +484,7 @@ class SessionList implements Component, Focusable {
 
 			// Session display text (name or first message)
 			const hasName = !!session.name;
+			// Wider separator: name and first message are two different things, not peer attributes.
 			const displayText = session.name ? `${session.name}  ·  ${session.firstMessage}` : session.firstMessage;
 			const normalizedMessage = displayText.replace(/[\x00-\x1f\x7f]/g, " ").trim();
 
@@ -497,7 +500,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Cursor
-			const cursor = isSelected ? theme.fg("thinkingHigh", "♦ ") : "  ";
+			const cursor = selectionCursor(isSelected);
 
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);
@@ -532,8 +535,10 @@ class SessionList implements Component, Focusable {
 
 		// Add scroll indicator if needed
 		if (startIndex > 0 || endIndex < this.filteredSessions.length) {
-			const scrollText = `  (${this.selectedIndex + 1}/${this.filteredSessions.length})`;
-			const scrollInfo = theme.fg("muted", truncateToWidth(scrollText, width, ""));
+			const scrollInfo = theme.fg(
+				"muted",
+				truncateToWidth(scrollCounter(this.selectedIndex, this.filteredSessions.length), width, ""),
+			);
 			lines.push(scrollInfo);
 		}
 		while (lines.length < this.availableHeight - 9) lines.push("");

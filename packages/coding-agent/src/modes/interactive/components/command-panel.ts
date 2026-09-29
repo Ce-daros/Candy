@@ -13,7 +13,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import { getSelectListTheme, theme } from "../theme/theme.ts";
+import { dialogTitle, getSelectListTheme, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 export interface CommandPanelAction {
@@ -171,7 +171,7 @@ export class CommandPanel implements Component, Focusable {
 			this.activeAction && !this.inlineEditing
 				? `${this.options.title ?? "Command"} · ${this.activeAction.name}`
 				: (this.options.title ?? "Command");
-		const lines = new Text(theme.bold(theme.fg("accent", title)), 0, 0).render(width);
+		const lines = new Text(dialogTitle(title), 0, 0).render(width);
 		if (this.description) {
 			const descriptionLines = new Text(theme.fg("muted", this.description), 0, 0).render(width);
 			lines.push(...descriptionLines.slice(0, Math.max(0, this.availableHeight - 5)));
@@ -446,15 +446,14 @@ export class CommandPanel implements Component, Focusable {
 			const tone = action.status?.tone ?? "muted";
 			const status = action.status ? theme.fg(tone, action.status.text) : undefined;
 			const editing = this.inlineEditing && this.activeAction?.id === action.id;
-			const inlineLabelWidth = visibleWidth(
-				`${action.checked === undefined ? "" : action.checked ? "[x] " : "[ ] "}${action.name}`,
-			);
+			const inlineLabelWidth = visibleWidth(`${action.checked === undefined ? "" : "[x] "}${action.name}`);
 			const inputWidth = Math.max(1, this.renderedWidth - inlineLabelWidth - 6);
 			const inlineInput = editing ? this.argumentInput.render(inputWidth)[0] : undefined;
 			const inlineValue = inlineInput ? `  ${inlineInput}` : "";
 			items.push({
 				value: action.id,
-				label: `${action.checked === undefined ? "" : action.checked ? "[x] " : "[ ] "}${action.name}${inlineValue}`,
+				checked: action.checked,
+				label: `${action.name}${inlineValue}`,
 				description: editing ? undefined : [status, action.source, action.description].filter(Boolean).join(" · "),
 			});
 		}

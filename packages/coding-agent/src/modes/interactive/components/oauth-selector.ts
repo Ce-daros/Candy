@@ -1,6 +1,7 @@
 import type { ApiKeyAuth, AuthCheck, OAuthAuth } from "@candy/ai";
-import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, TruncatedText } from "@candy/tui";
-import { theme } from "../theme/theme.ts";
+import { Container, type Focusable, fuzzyFilter, Input, Spacer, TruncatedText, visibleWindow } from "@candy/tui";
+import { dialogTitle, selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import { emptyLine, readListAction, scrollCounter } from "./list-scaffold.ts";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -58,7 +59,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 
 		// Add title
 		const title = mode === "login" ? "Choose a provider" : "Choose a provider to sign out";
-		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
+		this.addChild(new TruncatedText(dialogTitle(title), 1, 0));
 		this.addChild(new Spacer(1));
 
 		this.searchInput = new Input();
@@ -103,13 +104,9 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		this.listContainer.clear();
 
 		const maxVisible = Math.max(3, this.availableHeight - 5);
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filteredProviders.length - maxVisible),
-		);
-		const endIndex = Math.min(startIndex + maxVisible, this.filteredProviders.length);
+		const { start, end } = visibleWindow(this.selectedIndex, this.filteredProviders.length, maxVisible);
 
-		for (let i = startIndex; i < endIndex; i++) {
+		for (let i = start; i < end; i++) {
 			const provider = this.filteredProviders[i];
 			if (!provider) continue;
 
@@ -121,19 +118,21 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 				: "";
 			let line = "";
 			if (isSelected) {
-				const text = theme.bold(theme.fg("accent", `♦ ${provider.name} ♦`));
-				line = text + authTypeLabel + statusIndicator;
+				line =
+					`${selectionCursor(true)}${selectedRowLabel(provider.name, true)}${selectionMarkerSuffix(true)}` +
+					authTypeLabel +
+					statusIndicator;
 			} else {
-				const text = `  ${theme.fg("text", provider.name)}`;
-				line = text + authTypeLabel + statusIndicator;
+				line = `${selectionCursor(false)}${selectedRowLabel(provider.name, false)}${authTypeLabel}${statusIndicator}`;
 			}
 
 			this.listContainer.addChild(new TruncatedText(line, 1, 0));
 		}
 
-		if (startIndex > 0 || endIndex < this.filteredProviders.length) {
-			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredProviders.length})`);
-			this.listContainer.addChild(new TruncatedText(scrollInfo, 1, 0));
+		if (start > 0 || end < this.filteredProviders.length) {
+			this.listContainer.addChild(
+				new TruncatedText(scrollCounter(this.selectedIndex, this.filteredProviders.length), 1, 0),
+			);
 		}
 
 		// Show "no providers" if empty
@@ -144,7 +143,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 						? "No providers available"
 						: "No providers signed in. Open Sources to connect one."
 					: "No matching providers";
-			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 1, 0));
+			this.listContainer.addChild(new TruncatedText(emptyLine(message), 1, 0));
 		}
 	}
 
@@ -168,34 +167,32 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 	}
 
 	handleInput(keyData: string): void {
-		const kb = getKeybindings();
-		// Up arrow
-		if (kb.matches(keyData, "tui.select.up")) {
-			if (this.filteredProviders.length === 0) return;
-			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
-			this.updateList();
-		}
-		// Down arrow
-		else if (kb.matches(keyData, "tui.select.down")) {
-			if (this.filteredProviders.length === 0) return;
-			this.selectedIndex = Math.min(this.filteredProviders.length - 1, this.selectedIndex + 1);
-			this.updateList();
-		}
-		// Enter
-		else if (kb.matches(keyData, "tui.select.confirm")) {
-			const selectedProvider = this.filteredProviders[this.selectedIndex];
-			if (selectedProvider) {
-				this.onSelectCallback(selectedProvider.id, selectedProvider.authType);
+		switch (readListAction(keyData)) {
+			case "up":
+				if (this.filteredProviders.length === 0) return;
+				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.updateList();
+				break;
+			case "down":
+				if (this.filteredProviders.length === 0) return;
+				this.selectedIndex = Math.min(this.filteredProviders.length - 1, this.selectedIndex + 1);
+				this.updateList();
+				break;
+			case "confirm": {
+				const selectedProvider = this.filteredProviders[this.selectedIndex];
+				if (selectedProvider) {
+					this.onSelectCallback(selectedProvider.id, selectedProvider.authType);
+				}
+				break;
 			}
-		}
-		// Escape or Ctrl+C
-		else if (kb.matches(keyData, "tui.select.cancel")) {
-			this.onCancelCallback();
-		}
-		// Pass everything else to search input
-		else {
-			this.searchInput.handleInput(keyData);
-			this.filterProviders(this.searchInput.getValue());
+			case "cancel":
+				this.onCancelCallback();
+				break;
+			// Pass everything else to search input
+			default:
+				this.searchInput.handleInput(keyData);
+				this.filterProviders(this.searchInput.getValue());
+				break;
 		}
 	}
 }

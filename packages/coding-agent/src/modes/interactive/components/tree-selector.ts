@@ -13,7 +13,8 @@ import {
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import type { SessionTreeNode } from "../../../core/session-manager.ts";
-import { theme } from "../theme/theme.ts";
+import { selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import { scrollCounter } from "./list-scaffold.ts";
 import { type FlatNode, flattenSessionTree, type GutterInfo, type ToolCallInfo } from "./tree-projection.ts";
 import { LabelInput, TreeHelp } from "./tree-selector-controls.ts";
 
@@ -530,7 +531,7 @@ class TreeList implements Component {
 		if (this.filteredNodes.length === 0) {
 			lines.push(truncateToWidth(theme.fg("muted", "  No entries found"), width));
 			while (lines.length < this.maxVisibleLines) lines.push("");
-			lines.push(truncateToWidth(theme.fg("muted", `  (0/0)${this.getStatusLabels()}`), width));
+			lines.push(truncateToWidth(`${scrollCounter(0, 0)}${this.getStatusLabels()}`, width));
 			while (lines.length < this.availableHeight) lines.push("");
 			return lines;
 		}
@@ -553,7 +554,7 @@ class TreeList implements Component {
 			const isSelected = i === this.selectedIndex;
 
 			// Build line: cursor + prefix + path marker + label + content
-			const cursor = isSelected ? theme.fg("borderAccent", "♦ ") : "  ";
+			const cursor = selectionCursor(isSelected);
 
 			// If multiple roots, shift display (roots at 0, not 1)
 			const displayIndent = this.multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
@@ -614,7 +615,7 @@ class TreeList implements Component {
 			const anchorCol = visibleWidth(prefixPart);
 			const gutter = cursor;
 			let body = prefixPart + label + labelTimestamp + content;
-			if (isSelected) body = `${theme.bold(theme.fg("accent", body))}${theme.fg("borderAccent", " ♦")}`;
+			if (isSelected) body = `${theme.bold(theme.fg("accent", body))}${selectionMarkerSuffix(true)}`;
 			renderedRows.push({ gutter, body, anchorCol, bodyWidth: visibleWidth(body), isSelected });
 		}
 
@@ -622,7 +623,7 @@ class TreeList implements Component {
 		while (lines.length < this.maxVisibleLines) lines.push("");
 		lines.push(
 			truncateToWidth(
-				theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getStatusLabels()}`),
+				`${scrollCounter(this.selectedIndex, this.filteredNodes.length)}${this.getStatusLabels()}`,
 				width,
 			),
 		);

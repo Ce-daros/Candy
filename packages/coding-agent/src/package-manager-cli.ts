@@ -405,6 +405,7 @@ async function createCommandSettingsManager(options: {
 			mode: appMode,
 			settingsManager,
 			hasUI: appMode === "interactive",
+			trustStore,
 		}),
 		onExtensionError: (message) => projectTrustWarnings.push(message),
 	});

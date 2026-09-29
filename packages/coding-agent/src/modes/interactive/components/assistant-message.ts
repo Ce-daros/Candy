@@ -11,6 +11,7 @@ import {
 	Text,
 	type TuiMouseEvent,
 	truncateToWidth,
+	visibleWidth,
 } from "@candy/tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
@@ -25,6 +26,10 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 const PROSE_WIDTH = 110;
+/** Fold thinking that would occupy more than this many rendered transcript lines. */
+const THINKING_FOLD_LINE_BUDGET = 3;
+/** Width assumed for fold decisions before the first render provides the real one. */
+const DEFAULT_RENDER_WIDTH = 80;
 
 class ThinkingRail implements Component {
 	private readonly content: Markdown;
@@ -84,6 +89,7 @@ export class AssistantMessageComponent extends Container {
 	private seenTextBlocks = new Set<number>();
 	private stats: string | undefined;
 	private statsExpanded = false;
+	private lastWidth = DEFAULT_RENDER_WIDTH;
 
 	setStats(text: string): void {
 		this.stats = text;
@@ -193,6 +199,10 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	override render(width: number): string[] {
+		if (width !== this.lastWidth) {
+			this.lastWidth = width;
+			if (this.lastMessage) this.updateContent(this.lastMessage);
+		}
 		const lines = super.render(width);
 		if (this.hasToolCalls || lines.length === 0) {
 			return lines;
@@ -321,8 +331,13 @@ export class AssistantMessageComponent extends Container {
 				const active = this.isStreaming && i === message.content.length - 1 && !this.completedBlocks.has(i);
 				const runIndex = thinkingRunIndex++;
 				const thinkingText = thinkingBlocks.join("\n\n");
-				const lineCount = thinkingText.split("\n").length;
-				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? (this.hideThinkingBlock && lineCount > 3);
+				// Judge by rendered cell width (CJK counts double) against the transcript
+				// line budget, so one long unwrapped paragraph folds the same way
+				// multi-line text would at the current viewport width.
+				const thinkingCells = visibleWidth(thinkingText.replace(/\n/g, ""));
+				const foldBudget = THINKING_FOLD_LINE_BUDGET * Math.max(20, this.lastWidth);
+				const hidden =
+					this.thinkingVisibilityOverrides.get(runIndex) ?? (this.hideThinkingBlock && thinkingCells > foldBudget);
 				const excerpt = thinkingText.replace(/\s+/g, " ");
 				const thinkingLabel = this.hiddenThinkingLabel === "Thinking..." ? "" : `${this.hiddenThinkingLabel} `;
 				if (hasPreviousBlock)

@@ -10,8 +10,8 @@ import {
 	visibleWidth,
 } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
-import { getSelectListTheme, theme } from "../theme/theme.ts";
-import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
+import { dialogTitle, getSelectListTheme, theme } from "../theme/theme.ts";
+import { hintRow } from "./keybinding-hints.ts";
 import { PanelTransition, panelPhase } from "./panel-transition.ts";
 
 const HELP_ITEMS: SelectItem[] = [
@@ -108,10 +108,14 @@ export class HelpPanel implements Component {
 		const listLines = this.list.render(innerWidth);
 		const lines = [
 			border(`╭${"─".repeat(Math.max(0, width - 2))}╮`),
-			row(theme.bold(theme.fg("borderAccent", "Help"))),
+			row(dialogTitle("Help", "borderAccent")),
 			...listLines.map(row),
 			row(
-				`${rawKeyHint("↑↓", "navigate")}  ${keyHint("tui.select.confirm", "open")}  ${keyHint("tui.select.cancel", "close")}`,
+				hintRow([
+					{ raw: "↑↓", label: "navigate" },
+					{ key: "tui.select.confirm", label: "open" },
+					{ key: "tui.select.cancel", label: "close" },
+				]),
 			),
 			border(`╰${"─".repeat(Math.max(0, width - 2))}╯`),
 		];

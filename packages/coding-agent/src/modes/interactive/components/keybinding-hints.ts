@@ -32,3 +32,13 @@ export function keyHint(keybinding: Keybinding, description: string): string {
 export function rawKeyHint(key: string, description: string): string {
 	return keycap(key) + theme.fg("muted", ` ${description}`);
 }
+
+/** Compose a hint row from bound or raw keys, joined by the given separator (default two spaces). */
+export function hintRow(
+	entries: Array<{ label: string; key: Keybinding } | { label: string; raw: string }>,
+	separator = "  ",
+): string {
+	return entries
+		.map((entry) => ("raw" in entry ? rawKeyHint(entry.raw, entry.label) : keyHint(entry.key, entry.label)))
+		.join(separator);
+}

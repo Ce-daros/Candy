@@ -9,7 +9,7 @@ import {
 	Spacer,
 	Text,
 } from "@candy/tui";
-import { getSelectListTheme, theme } from "../theme/theme.ts";
+import { dialogTitle, getSelectListTheme, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 const SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -63,7 +63,7 @@ export class SelectSubmenu extends Container {
 		this.currentSelection = currentValue;
 
 		// Title
-		this.addChild(new Text(theme.bold(theme.fg("accent", title)), 0, 0));
+		this.addChild(new Text(dialogTitle(title), 0, 0));
 
 		// Description
 		if (description) {

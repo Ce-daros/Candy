@@ -3,7 +3,7 @@ import type { Model } from "@candy/ai";
 import { fuzzyFilter, sliceByColumn, visibleWidth } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";
-import { theme } from "../theme/theme.ts";
+import { selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 
 const PREFIX_GAP = 2;
 
@@ -726,7 +726,7 @@ export class PowerbarController {
 					? this.paintThinking(content)
 					: theme.getThinkingBorderColor(item.level)(content);
 		if (index === this.selectedIndex) {
-			return theme.bold(`${theme.fg("borderAccent", "‹ ")}${label}${theme.fg("borderAccent", " ›")}`);
+			return theme.bold(`${selectionCursor(true)}${label}${selectionMarkerSuffix(true)}`);
 		}
 		return `  ${item.level === undefined ? theme.fg("muted", content) : label}`;
 	}

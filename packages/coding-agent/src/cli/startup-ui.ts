@@ -3,12 +3,14 @@ import { existsSync } from "fs";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.ts";
 import { DefaultPackageManager, type ResolvedResource } from "../core/package-manager.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
+import type { ProjectTrustSelection, ProjectTrustStoreEntry } from "../core/trust-manager.ts";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.ts";
 import {
 	FirstTimeSetupComponent,
 	type FirstTimeSetupResult,
 } from "../modes/interactive/components/first-time-setup.ts";
+import { TrustSelectorComponent } from "../modes/interactive/components/trust-selector.ts";
 import {
 	detectTerminalBackgroundFromEnv,
 	detectTerminalThemeForAuto,
@@ -127,34 +129,72 @@ export function shouldRunFirstTimeSetup(settingsPath: string = getSettingsPath()
 	return !existsSync(settingsPath);
 }
 
+/**
+ * Mount a component on a one-off startup TUI and resolve when it completes; the
+ * TUI is torn down either way. `open` returns an optional cleanup run before teardown.
+ */
+async function withStartupTui<T>(
+	settingsManager: SettingsManager,
+	open: (ui: TUI, done: (value: T | undefined) => void) => (() => void) | undefined,
+): Promise<T | undefined> {
+	const ui = await createStartupTui(settingsManager);
+	return new Promise((resolve) => {
+		let settled = false;
+		let cleanup: (() => void) | undefined;
+		const finish = (result: T | undefined) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			void (async () => {
+				cleanup?.();
+				await clearStartupTui(ui);
+				ui.stop();
+				resolve(result);
+			})();
+		};
+		cleanup = open(ui, finish) ?? undefined;
+	});
+}
+
 export async function showStartupSelector<T>(
 	settingsManager: SettingsManager,
 	title: string,
 	options: Array<{ label: string; value: T }>,
 ): Promise<T | undefined> {
-	const ui = await createStartupTui(settingsManager);
-	return new Promise((resolve) => {
-		let settled = false;
-		const finish = async (result: T | undefined) => {
-			if (settled) {
-				return;
-			}
-			settled = true;
-			await clearStartupTui(ui);
-			ui.stop();
-			resolve(result);
-		};
-
+	return withStartupTui<T>(settingsManager, (ui, done) => {
 		const selector = new ExtensionSelectorComponent(
 			title,
 			options.map((option) => option.label),
-			(option) => void finish(options.find((entry) => entry.label === option)?.value),
-			() => void finish(undefined),
+			(option) => done(options.find((entry) => entry.label === option)?.value),
+			() => done(undefined),
 			{ tui: ui, getAvailableHeight: () => Math.floor(ui.terminal.rows * 0.8) },
 		);
 		ui.addChild(selector);
 		ui.setFocus(selector);
 		startStartupTui(ui, settingsManager);
+		return undefined;
+	});
+}
+
+/** Show the project trust selector on a startup TUI; resolves with the decision, or undefined on cancel. */
+export async function showStartupTrustSelector(
+	settingsManager: SettingsManager,
+	cwd: string,
+	savedDecision: ProjectTrustStoreEntry | null,
+): Promise<ProjectTrustSelection | undefined> {
+	return withStartupTui<ProjectTrustSelection>(settingsManager, (ui, done) => {
+		const selector = new TrustSelectorComponent({
+			cwd,
+			savedDecision,
+			projectTrusted: false,
+			onSelect: done,
+			onCancel: () => done(undefined),
+		});
+		ui.addChild(selector);
+		ui.setFocus(selector);
+		startStartupTui(ui, settingsManager);
+		return undefined;
 	});
 }
 
@@ -206,31 +246,13 @@ export async function showStartupInput(
 	title: string,
 	placeholder?: string,
 ): Promise<string | undefined> {
-	const ui = await createStartupTui(settingsManager);
-	return new Promise((resolve) => {
-		let settled = false;
-		const finish = async (result: string | undefined) => {
-			if (settled) {
-				return;
-			}
-			settled = true;
-			input.dispose();
-			await clearStartupTui(ui);
-			ui.stop();
-			resolve(result);
-		};
-
-		const input = new ExtensionInputComponent(
-			title,
-			placeholder,
-			(value) => void finish(value),
-			() => void finish(undefined),
-			{
-				tui: ui,
-			},
-		);
+	return withStartupTui<string>(settingsManager, (ui, done) => {
+		const input = new ExtensionInputComponent(title, placeholder, done, () => done(undefined), {
+			tui: ui,
+		});
 		ui.addChild(input);
 		ui.setFocus(input);
 		startStartupTui(ui, settingsManager);
+		return () => input.dispose();
 	});
 }

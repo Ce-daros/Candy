@@ -25,6 +25,9 @@ export interface ProjectTrustOption {
 	savedPath?: string;
 }
 
+/** A trust decision made through a UI, with the store updates it implies. */
+export type ProjectTrustSelection = Pick<ProjectTrustOption, "trusted" | "updates">;
+
 type TrustFile = Record<string, boolean | null | undefined>;
 
 const TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES = [
@@ -180,7 +183,9 @@ function withTrustFileLock<T>(path: string, fn: () => T): T {
  * project trust: trust-requiring entries under cwd/.pi, or .agents/skills in
  * cwd or one of its ancestors. Returns false when no such project resources
  * exist. The user/global ~/.agents/skills directory is always treated as a
- * trusted user resource and is ignored here, even when cwd is $HOME.
+ * trusted user resource and is ignored here, even when cwd is $HOME, and the
+ * walk stops at the home: ancestors above it are user territory, not project
+ * context.
  */
 export function hasTrustRequiringProjectResources(cwd: string): boolean {
 	const homeDir = canonicalizePath(resolvePath(process.env.HOME || homedir()));
@@ -199,7 +204,7 @@ export function hasTrustRequiringProjectResources(cwd: string): boolean {
 		}
 
 		const parentDir = dirname(currentDir);
-		if (parentDir === currentDir) {
+		if (parentDir === currentDir || currentDir === homeDir) {
 			return false;
 		}
 		currentDir = parentDir;
