@@ -74,6 +74,7 @@
 
 ### Fixed
 
+- In-app changelog links, the extension migration guide, the extensions documentation link, and theme `$schema` URLs now resolve to this repository instead of the upstream project. Absolute historical upstream links are left untouched, so old entries keep pointing at the commits and issues they describe.
 - Resource filter patterns written by the config selector (`+`/`-` entries in settings package extensions/skills/prompts/themes arrays) now use `/` separators on Windows, so project settings stay portable across operating systems; previously stored backslash entries keep matching and are replaced on the next toggle.
 - Render the home logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals, preserving every source pixel and its transparent background.
 
