@@ -484,8 +484,9 @@ class SessionList implements Component, Focusable {
 
 			// Session display text (name or first message)
 			const hasName = !!session.name;
+			// Wider separator: name and first message are two different things, not peer attributes.
 			const displayText = session.name
-				? `${session.name}${metaSeparator()}${session.firstMessage}`
+				? `${session.name}  ·  ${session.firstMessage}`
 				: session.firstMessage;
 			const normalizedMessage = displayText.replace(/[\x00-\x1f\x7f]/g, " ").trim();
 
