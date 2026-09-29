@@ -446,15 +446,14 @@ export class CommandPanel implements Component, Focusable {
 			const tone = action.status?.tone ?? "muted";
 			const status = action.status ? theme.fg(tone, action.status.text) : undefined;
 			const editing = this.inlineEditing && this.activeAction?.id === action.id;
-			const inlineLabelWidth = visibleWidth(
-				`${action.checked === undefined ? "" : action.checked ? "[x] " : "[ ] "}${action.name}`,
-			);
+			const inlineLabelWidth = visibleWidth(`${action.checked === undefined ? "" : "[x] "}${action.name}`);
 			const inputWidth = Math.max(1, this.renderedWidth - inlineLabelWidth - 6);
 			const inlineInput = editing ? this.argumentInput.render(inputWidth)[0] : undefined;
 			const inlineValue = inlineInput ? `  ${inlineInput}` : "";
 			items.push({
 				value: action.id,
-				label: `${action.checked === undefined ? "" : action.checked ? "[x] " : "[ ] "}${action.name}${inlineValue}`,
+				checked: action.checked,
+				label: `${action.name}${inlineValue}`,
 				description: editing ? undefined : [status, action.source, action.description].filter(Boolean).join(" · "),
 			});
 		}

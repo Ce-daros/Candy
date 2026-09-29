@@ -4,6 +4,10 @@
 
 ### Breaking Changes
 
+- Command panel toggle actions now render their checkbox through `SelectItem.checked` with the shared green/dim checkbox glyph instead of an uncolored `[x]`/`[ ]` prefix baked into the label.
+
+- Project trust detection no longer considers `.agents/skills` in directories above the user home: the ancestor walk stops at the home directory, which is user territory, not project context.
+
 - Hand-rendered list panels share one scaffold: `readListAction` (navigation keys incl. vim aliases and horizontal cursor keys), `scrollCounter` ("  (n/total)"), and `emptyLine` from `list-scaffold.ts`, plus `visibleWindow` from `@candy/tui`. The four ad-hoc scroll-counter formats, ad-hoc windowing math, and per-panel key handling in the trust, extension, oauth, session, tree, and config panels are gone.
 
 - Extension dialogs (selector, input, editor) mount through one `panelDialog` helper in interactive mode, and the startup dialogs (selector, trust selector, input) through `withStartupTui`, replacing eleven copies of the settled-flag promise wrapper.
