@@ -27,6 +27,7 @@
 		"profile:tui": "node scripts/profile-coding-agent-node.mjs --mode tui",
 		"profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
 		"test": "npm run test:scripts && npm run test --workspaces --if-present",
+		"test:e2e": "npm --prefix packages/ai run test:e2e",
 		"test:scripts": "node --test scripts/*.test.mjs",
 		"prepare": "husky"
 	},

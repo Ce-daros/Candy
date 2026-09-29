@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { generateImages } from "../src/images.ts";
-import { getBuiltinImageModel } from "../src/providers/all.ts";
-import type { ImageContent, ImageModel, ImagesContext, ProviderImagesOptions } from "../src/types.ts";
+import { generateImages } from "../../src/images.ts";
+import { getBuiltinImageModel } from "../../src/providers/all.ts";
+import type { ImageContent, ImageModel, ImagesContext, ProviderImagesOptions } from "../../src/types.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,7 +30,7 @@ async function handleImageInput<TApi extends string>(model: ImageModel<TApi>, op
 		return;
 	}
 
-	const imagePath = join(__dirname, "data", "red-circle.png");
+	const imagePath = join(__dirname, "..", "data", "red-circle.png");
 	const imageBuffer = readFileSync(imagePath);
 	const imageContent: ImageContent = {
 		type: "image",

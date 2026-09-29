@@ -55,36 +55,35 @@ describe("Cache Retention (CANDY_CACHE_RETENTION)", () => {
 	});
 
 	describe("Anthropic Provider", () => {
-		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
-			"should use default cache TTL (no ttl field) when CANDY_CACHE_RETENTION is not set",
-			async () => {
-				const model = getModel("anthropic", "claude-haiku-4-5");
-				let capturedPayload: any = null;
+		it("should use default cache TTL (no ttl field) when CANDY_CACHE_RETENTION is not set", async () => {
+			const model = getModel("anthropic", "claude-haiku-4-5");
+			let capturedPayload: any = null;
 
-				const s = stream(model, context, {
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
+			const s = stream(model, context, {
+				apiKey: "test-key",
+				onPayload: stopAfterPayload((payload) => {
+					capturedPayload = payload;
+				}),
+			});
 
-				// Consume the stream to trigger the request
-				for await (const _ of s) {
-					// Just consume
-				}
+			// Consume the stream to trigger the request
+			for await (const _ of s) {
+				// Just consume
+			}
 
-				expect(capturedPayload).not.toBeNull();
-				// System prompt should have cache_control without ttl
-				expect(capturedPayload.system).toBeDefined();
-				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
-			},
-		);
+			expect(capturedPayload).not.toBeNull();
+			// System prompt should have cache_control without ttl
+			expect(capturedPayload.system).toBeDefined();
+			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
+		});
 
-		it.skipIf(!process.env.ANTHROPIC_API_KEY)("should use 1h cache TTL when CANDY_CACHE_RETENTION=long", async () => {
+		it("should use 1h cache TTL when CANDY_CACHE_RETENTION=long", async () => {
 			process.env.CANDY_CACHE_RETENTION = "long";
 			const model = getModel("anthropic", "claude-haiku-4-5");
 			let capturedPayload: any = null;
 
 			const s = stream(model, context, {
+				apiKey: "test-key",
 				onPayload: stopAfterPayload((payload) => {
 					capturedPayload = payload;
 				}),
@@ -252,50 +251,46 @@ describe("Cache Retention (CANDY_CACHE_RETENTION)", () => {
 			},
 		);
 
-		it.skipIf(!process.env.OPENAI_API_KEY)(
-			"should not set prompt_cache_retention when CANDY_CACHE_RETENTION is not set",
-			async () => {
-				const model = getModel("openai", "gpt-4o-mini");
-				let capturedPayload: any = null;
+		it("should not set prompt_cache_retention when CANDY_CACHE_RETENTION is not set", async () => {
+			const model = getModel("openai", "gpt-4o-mini");
+			let capturedPayload: any = null;
 
-				const s = stream(model, context, {
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
+			const s = stream(model, context, {
+				apiKey: "test-key",
+				onPayload: stopAfterPayload((payload) => {
+					capturedPayload = payload;
+				}),
+			});
 
-				// Consume the stream to trigger the request
-				for await (const _ of s) {
-					// Just consume
-				}
+			// Consume the stream to trigger the request
+			for await (const _ of s) {
+				// Just consume
+			}
 
-				expect(capturedPayload).not.toBeNull();
-				expect(capturedPayload.prompt_cache_retention).toBeUndefined();
-			},
-		);
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.prompt_cache_retention).toBeUndefined();
+		});
 
-		it.skipIf(!process.env.OPENAI_API_KEY)(
-			"should set prompt_cache_retention to 24h when CANDY_CACHE_RETENTION=long",
-			async () => {
-				process.env.CANDY_CACHE_RETENTION = "long";
-				const model = getModel("openai", "gpt-4o-mini");
-				let capturedPayload: any = null;
+		it("should set prompt_cache_retention to 24h when CANDY_CACHE_RETENTION=long", async () => {
+			process.env.CANDY_CACHE_RETENTION = "long";
+			const model = getModel("openai", "gpt-4o-mini");
+			let capturedPayload: any = null;
 
-				const s = stream(model, context, {
-					onPayload: stopAfterPayload((payload) => {
-						capturedPayload = payload;
-					}),
-				});
+			const s = stream(model, context, {
+				apiKey: "test-key",
+				onPayload: stopAfterPayload((payload) => {
+					capturedPayload = payload;
+				}),
+			});
 
-				// Consume the stream to trigger the request
-				for await (const _ of s) {
-					// Just consume
-				}
+			// Consume the stream to trigger the request
+			for await (const _ of s) {
+				// Just consume
+			}
 
-				expect(capturedPayload).not.toBeNull();
-				expect(capturedPayload.prompt_cache_retention).toBe("24h");
-			},
-		);
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.prompt_cache_retention).toBe("24h");
+		});
 
 		it("should set prompt_cache_retention for non-api.openai.com baseUrl by default", async () => {
 			process.env.CANDY_CACHE_RETENTION = "long";

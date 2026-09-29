@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { stream } from "../src/api/anthropic-messages.ts";
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { AssistantMessage, Context } from "../src/types.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
+import { stream } from "../../src/api/anthropic-messages.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { AssistantMessage, Context } from "../../src/types.ts";
+import { normalizeContext } from "../../src/utils/transcript.ts";
 
 const enabled = Boolean(process.env.ANTHROPIC_API_KEY);
 const model = getModel("anthropic", "claude-fable-5-1");

@@ -54,6 +54,7 @@
 		"check:model-data": "node scripts/check-model-data.ts",
 		"build": "npm run check:model-data && tsc -p tsconfig.build.json && shx rm -rf dist/providers/data && shx cp -r src/providers/data dist/providers/data",
 		"test": "vitest --run",
+		"test:e2e": "vitest --run --config vitest.e2e.config.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {

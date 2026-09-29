@@ -25,16 +25,16 @@
 import { writeFileSync } from "fs";
 import { Type } from "typebox";
 import { beforeAll, describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const completeSimple = builtinRuntime.completeSimple.bind(builtinRuntime);
 
-import { getEnvApiKey } from "../src/env-api-keys.ts";
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { Api, AssistantMessage, Message, Model, Tool, ToolResultMessage } from "../src/types.ts";
-import { hasAzureOpenAICredentials } from "./azure-utils.ts";
-import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "./cloudflare-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { getEnvApiKey } from "../../src/env-api-keys.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { Api, AssistantMessage, Message, Model, Tool, ToolResultMessage } from "../../src/types.ts";
+import { hasAzureOpenAICredentials } from "../azure-utils.ts";
+import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "../cloudflare-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 // Simple tool for testing
 const testToolSchema = Type.Object({

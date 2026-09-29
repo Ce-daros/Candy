@@ -39,6 +39,11 @@
 ### Changed
 
 - Updated the OpenAI SDK to 7.23.0 and provider regression fixtures for current OpenCode Go and Zen catalogs.
+- Live provider verification now lives in `test/e2e/`, is excluded from the default `vitest` collection, and runs explicitly with `npm run test:e2e`. The default run no longer imports those files and therefore no longer reads or refreshes `~/.candy/agent/auth.json` at collection time. The four credential-gated `cache-retention.test.ts` payload assertions run offline in the default suite with a fixed test key.
+
+### Removed
+
+- Removed `test/empty.test.ts`: its four assertions per provider accepted either an error or a defined content field, and were duplicated across 25 providers without a real behavior contract. Live provider behavior is covered by the remaining `test/e2e/` matrix.
 
 ## [0.87.1] - 2026-09-22
 

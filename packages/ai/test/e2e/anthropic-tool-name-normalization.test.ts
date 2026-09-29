@@ -1,12 +1,12 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const stream = builtinRuntime.stream.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { Context, Tool } from "../src/types.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { Context, Tool } from "../../src/types.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 const oauthToken = await resolveApiKey("anthropic");
 

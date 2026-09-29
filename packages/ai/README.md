@@ -1791,20 +1791,21 @@ Add a lazy wrapper `src/api/<api-id>.lazy.ts` (`<name>Api()` via `lazyApi()`) so
 
 #### 5. Tests (`test/`)
 
-Create or update test files to cover the new provider:
+Create or update test files to cover the new provider. Deterministic tests live in `test/` and run with `npm test`:
+
+- `providers.test.ts` - Provider listing and auth resolution
+
+Live provider verification runs against real endpoints and ambient credentials. Add the provider to the matching files under `test/e2e/`, which are excluded from `npm test` and run explicitly with `npm run test:e2e`:
 
 - `stream.test.ts` - Basic streaming and tool use
 - `tokens.test.ts` - Token usage reporting
 - `abort.test.ts` - Request cancellation
-- `empty.test.ts` - Empty message handling
 - `context-overflow.test.ts` - Context limit errors
-- `image-limits.test.ts` - Image support (if applicable)
 - `unicode-surrogate.test.ts` - Unicode handling
 - `tool-call-without-result.test.ts` - Orphaned tool calls
 - `image-tool-result.test.ts` - Images in tool results
 - `total-tokens.test.ts` - Token counting accuracy
 - `cross-provider-handoff.test.ts` - Cross-provider context replay
-- `providers.test.ts` - Provider listing and auth resolution
 
 For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (for example GPT and Claude), add at least one pair per family.
 

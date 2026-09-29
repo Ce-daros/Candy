@@ -4,14 +4,14 @@ import { fileURLToPath } from "node:url";
 import type { ResponseFunctionCallOutputItemList } from "openai/resources/responses/responses.js";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import type { Api, Context, Model, StreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import type { Api, Context, Model, StreamOptions, Tool, ToolResultMessage } from "../../src/types.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
@@ -45,7 +45,7 @@ async function verifyToolResultImagesStayInFunctionCallOutput<TApi extends Api>(
 		return;
 	}
 
-	const imagePath = join(__dirname, "data", "red-circle.png");
+	const imagePath = join(__dirname, "..", "data", "red-circle.png");
 	const base64Image = readFileSync(imagePath).toString("base64");
 	const toolText = "A red circle with a diameter of 100 pixels.";
 

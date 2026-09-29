@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
-import { MODELS } from "../src/models.generated.ts";
-import type { Model } from "../src/types.ts";
+import { MODELS } from "../../src/models.generated.ts";
+import type { Model } from "../../src/types.ts";
 
 describe.skipIf(!process.env.OPENCODE_API_KEY)("OpenCode Models Smoke Test", () => {
 	const providers = [

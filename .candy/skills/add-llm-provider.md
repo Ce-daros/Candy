@@ -1,6 +1,6 @@
 ---
 name: add-llm-provider
-description: Checklist for adding a new LLM provider to packages/ai. Covers core types, provider implementation, lazy registration, model generation, the full test matrix, coding-agent wiring, and docs.
+description: Checklist for adding a new LLM provider to packages/ai. Covers core types, provider implementation, lazy registration, model generation, the live test matrix, coding-agent wiring, and docs.
 ---
 
 # Adding a New LLM Provider (packages/ai)
@@ -38,8 +38,10 @@ Create a provider file exporting:
 
 ## 5. Tests (`packages/ai/test/`)
 
-- Always add the provider to `stream.test.ts` with at least one representative model, even if it reuses an existing API impl such as `openai-completions`.
-- Add the provider to the broader matrix where applicable: `tokens.test.ts`, `abort.test.ts`, `empty.test.ts`, `context-overflow.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`, `cross-provider-handoff.test.ts`.
+- Add deterministic coverage for the provider's local behavior in `packages/ai/test/`. These run with `npm test`.
+- Live verification runs against real endpoints and ambient credentials. Add the provider to the matching files under `packages/ai/test/e2e/`, which are excluded from `npm test` and run explicitly with `npm run test:e2e`.
+- Always add the provider to `packages/ai/test/e2e/stream.test.ts` with at least one representative model, even if it reuses an existing API impl such as `openai-completions`.
+- Add the provider to the broader live matrix where applicable: `tokens.test.ts`, `abort.test.ts`, `context-overflow.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`, `cross-provider-handoff.test.ts`.
 - For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (e.g. GPT and Claude), add at least one pair per family.
 - For non-standard auth, create a utility (e.g. `bedrock-utils.ts`) with credential detection.
 

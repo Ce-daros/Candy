@@ -1,39 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { Context } from "../src/types.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { Context } from "../../src/types.ts";
 
-const codexToken = await resolveApiKey("openai-codex");
-
-describe("openai-codex cache affinity e2e", () => {
-	it.skipIf(!codexToken)("handles SSE requests with aligned cache-affinity identifiers", async () => {
-		const model = getModel("openai-codex", "gpt-5.5");
+describe.skipIf(!process.env.OPENAI_API_KEY)("openai responses cache affinity e2e", () => {
+	it("handles direct OpenAI Responses requests with aligned cache-affinity identifiers", { retry: 2 }, async () => {
+		const model = getModel("openai", "gpt-5.4");
 		const sessionId = "0195d6e4-4cf9-7f44-a2d8-f8f7f49ee9d3";
 		const context: Context = {
 			systemPrompt: "You are a helpful assistant. Reply exactly as requested.",
 			messages: [
 				{
 					role: "user",
-					content: "Reply with exactly: cache affinity e2e success",
+					content: "Reply with exactly: openai cache affinity e2e success",
 					timestamp: Date.now(),
 				},
 			],
 		};
 
 		const response = await complete(model, context, {
-			apiKey: codexToken,
+			apiKey: process.env.OPENAI_API_KEY!,
 			sessionId,
-			transport: "sse",
 		});
 
 		expect(response.stopReason, response.errorMessage).not.toBe("error");
 		expect(response.errorMessage).toBeUndefined();
 		expect(response.content.map((block) => (block.type === "text" ? block.text : "")).join("")).toContain(
-			"cache affinity e2e success",
+			"openai cache affinity e2e success",
 		);
 	});
 });

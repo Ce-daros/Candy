@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { Api, Context, Model, StreamOptions } from "../src/types.ts";
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { Api, Context, Model, StreamOptions } from "../../src/types.ts";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 

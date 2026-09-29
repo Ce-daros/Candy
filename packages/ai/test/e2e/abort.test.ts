@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 const stream = builtinRuntime.stream.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { Api, Context, Model, StreamOptions } from "../src/types.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { Api, Context, Model, StreamOptions } from "../../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
-import { hasBedrockCredentials } from "./bedrock-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
+import { hasBedrockCredentials } from "../bedrock-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const [openaiCodexToken] = await Promise.all([resolveApiKey("openai-codex")]);

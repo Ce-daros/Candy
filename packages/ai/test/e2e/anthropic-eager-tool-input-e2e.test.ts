@@ -1,17 +1,28 @@
+import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
-import { getEnvApiKey } from "../src/env-api-keys.ts";
-import type { BuiltinProvider } from "../src/providers/all.ts";
-import { getBuiltinModels as getModels, getBuiltinProviders as getProviders } from "../src/providers/all.ts";
-import type { Api, KnownProvider, Model, ProviderStreamOptions } from "../src/types.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { getEnvApiKey } from "../../src/env-api-keys.ts";
+import type { BuiltinProvider } from "../../src/providers/all.ts";
+import { getBuiltinModels as getModels, getBuiltinProviders as getProviders } from "../../src/providers/all.ts";
+import type { Api, KnownProvider, Model, ProviderStreamOptions, Tool } from "../../src/types.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 const githubCopilotToken = await resolveApiKey("github-copilot");
 
-interface AnthropicLongCacheRetentionE2ECase {
+const echoToolSchema = Type.Object({
+	value: Type.String({ description: "The value to echo" }),
+});
+
+const echoTool: Tool<typeof echoToolSchema> = {
+	name: "echo_value",
+	description: "Echo a string value",
+	parameters: echoToolSchema,
+};
+
+interface AnthropicEagerE2ECase {
 	name: string;
 	provider: BuiltinProvider;
 	model: Model<"anthropic-messages">;
@@ -30,7 +41,7 @@ function getAnthropicMessagesModels(provider: BuiltinProvider): Model<"anthropic
 	return models.filter((model) => model.api === "anthropic-messages") as Model<"anthropic-messages">[];
 }
 
-const anthropicMessagesCases: AnthropicLongCacheRetentionE2ECase[] = getProviders().flatMap((provider) =>
+const anthropicMessagesCases: AnthropicEagerE2ECase[] = getProviders().flatMap((provider) =>
 	getAnthropicMessagesModels(provider).map((model) => ({
 		name: `${provider}/${model.id}`,
 		provider,
@@ -44,6 +55,8 @@ function getProbePriority(model: Model<"anthropic-messages">): number {
 	const cost = model.cost.input + model.cost.output;
 	let priority = cost;
 
+	// Prefer current Claude 4 Haiku routes when present: they are cheap and avoid
+	// stale Claude 3.x aliases that can remain in catalogs after upstream removal.
 	if (modelId.includes("haiku") && (modelId.includes("4-5") || modelId.includes("4.5"))) {
 		priority -= 1000;
 	} else if (modelId.includes("sonnet") && (modelId.includes("4-") || modelId.includes("4."))) {
@@ -55,8 +68,8 @@ function getProbePriority(model: Model<"anthropic-messages">): number {
 	return priority;
 }
 
-function selectOneCasePerProvider(cases: AnthropicLongCacheRetentionE2ECase[]): AnthropicLongCacheRetentionE2ECase[] {
-	const byProvider = new Map<BuiltinProvider, AnthropicLongCacheRetentionE2ECase[]>();
+function selectOneCasePerProvider(cases: AnthropicEagerE2ECase[]): AnthropicEagerE2ECase[] {
+	const byProvider = new Map<BuiltinProvider, AnthropicEagerE2ECase[]>();
 	for (const testCase of cases) {
 		const providerCases = byProvider.get(testCase.provider) ?? [];
 		providerCases.push(testCase);
@@ -71,39 +84,42 @@ function selectOneCasePerProvider(cases: AnthropicLongCacheRetentionE2ECase[]): 
 	);
 }
 
-const probeCases = selectOneCasePerProvider(anthropicMessagesCases);
+const generatedCompatCases = selectOneCasePerProvider(anthropicMessagesCases);
+const forcedEagerProbeCases = selectOneCasePerProvider(
+	anthropicMessagesCases.filter((testCase) => testCase.model.compat?.supportsEagerToolInputStreaming !== false),
+);
 
-function withLongCacheRetention(model: Model<"anthropic-messages">): Model<"anthropic-messages"> {
+function withEagerToolInputStreaming(model: Model<"anthropic-messages">): Model<"anthropic-messages"> {
 	return {
 		...model,
 		compat: {
 			...model.compat,
-			supportsLongCacheRetention: true,
+			supportsEagerToolInputStreaming: true,
 		},
 	};
 }
 
-async function expectLongCacheRetentionAccepted(
+async function expectToolEnabledRequestAccepted(
 	model: Model<"anthropic-messages">,
 	apiKey: string | undefined,
 ): Promise<void> {
 	const options: ProviderStreamOptions = {
 		apiKey,
-		cacheRetention: "long",
 		maxTokens: 128,
 		thinkingEnabled: false,
 	};
 	const response = await complete(
 		model,
 		{
-			systemPrompt: "You are a concise assistant.",
+			systemPrompt: "You are a concise assistant. Use tools when useful.",
 			messages: [
 				{
 					role: "user",
-					content: "Reply with exactly: long cache retention accepted",
+					content: "Call echo_value with value set to eager-input-streaming-compat.",
 					timestamp: Date.now(),
 				},
 			],
+			tools: [echoTool],
 		},
 		options,
 	);
@@ -112,7 +128,7 @@ async function expectLongCacheRetentionAccepted(
 	expect(response.stopReason, response.errorMessage).not.toBe("error");
 }
 
-describe("Anthropic Messages long cache retention E2E", () => {
+describe("Anthropic Messages eager tool input streaming E2E", () => {
 	it("covers every generated anthropic-messages model", () => {
 		const expectedModels = getProviders().flatMap((provider) =>
 			getAnthropicMessagesModels(provider).map((model) => `${provider}/${model.id}`),
@@ -120,13 +136,25 @@ describe("Anthropic Messages long cache retention E2E", () => {
 		expect(anthropicMessagesCases.map((testCase) => testCase.name).sort()).toEqual(expectedModels.sort());
 	});
 
-	describe("forced long cache retention probe", () => {
-		for (const testCase of probeCases) {
-			const model = withLongCacheRetention(testCase.model);
-
-			it.skipIf(!testCase.apiKey)(`${testCase.name} accepts long cache retention`, { retry: 2 }, async () => {
-				await expectLongCacheRetentionAccepted(model, testCase.apiKey);
+	describe("generated compatibility settings", () => {
+		for (const testCase of generatedCompatCases) {
+			it.skipIf(!testCase.apiKey)(`${testCase.name} accepts configured tool streaming`, { retry: 2 }, async () => {
+				await expectToolEnabledRequestAccepted(testCase.model, testCase.apiKey);
 			});
+		}
+	});
+
+	describe("forced eager_input_streaming probe", () => {
+		for (const testCase of forcedEagerProbeCases) {
+			const model = withEagerToolInputStreaming(testCase.model);
+
+			it.skipIf(!testCase.apiKey)(
+				`${testCase.name} accepts forced eager_input_streaming`,
+				{ retry: 2 },
+				async () => {
+					await expectToolEnabledRequestAccepted(model, testCase.apiKey);
+				},
+			);
 		}
 	});
 });

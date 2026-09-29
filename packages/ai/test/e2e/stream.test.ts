@@ -4,21 +4,21 @@ import { dirname, join } from "path";
 import { Type } from "typebox";
 import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 const stream = builtinRuntime.stream.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { Api, Context, ImageContent, Model, StreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { Api, Context, ImageContent, Model, StreamOptions, Tool, ToolResultMessage } from "../../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
-import { StringEnum } from "../src/utils/typebox-helpers.ts";
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
-import { hasBedrockCredentials } from "./bedrock-utils.ts";
-import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "./cloudflare-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { StringEnum } from "../../src/utils/typebox-helpers.ts";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
+import { hasBedrockCredentials } from "../bedrock-utils.ts";
+import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "../cloudflare-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -230,7 +230,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Strea
 	}
 
 	// Read the test image
-	const imagePath = join(__dirname, "data", "red-circle.png");
+	const imagePath = join(__dirname, "..", "data", "red-circle.png");
 	const imageBuffer = readFileSync(imagePath);
 	const base64Image = imageBuffer.toString("base64");
 

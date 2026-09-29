@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const stream = builtinRuntime.stream.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel, getBuiltinModels as getModels } from "../src/providers/all.ts";
-import type { Api, Context, Model, StreamOptions } from "../src/types.ts";
+import { getBuiltinModel as getModel, getBuiltinModels as getModels } from "../../src/providers/all.ts";
+import type { Api, Context, Model, StreamOptions } from "../../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
-import { hasBedrockCredentials } from "./bedrock-utils.ts";
-import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "./cloudflare-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
+import { hasBedrockCredentials } from "../bedrock-utils.ts";
+import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "../cloudflare-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
@@ -241,49 +241,6 @@ describe("Token Statistics on Abort", () => {
 		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!process.env.XIAOMI_API_KEY)("Xiaomi MiMo (API billing) Provider", () => {
-		const llm = getModel("xiaomi", "mimo-v2.5-pro");
-
-		// FIXME(xiaomi): Xiaomi's Anthropic-compatible stream does not populate
-		// usage in the message_start event the way Anthropic does — usage only
-		// arrives at message_stop. Aborting mid-stream therefore loses input/output
-		// token counts. Non-streaming usage works (see total-tokens.test.ts).
-		// Re-enable once upstream sends usage in message_start.
-		it.skip("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_CN_API_KEY)("Xiaomi MiMo Token Plan (CN) Provider", () => {
-		const llm = getModel("xiaomi-token-plan-cn", "mimo-v2.5-pro");
-
-		// FIXME(xiaomi): see the API-billing block above — same upstream streaming
-		// usage limitation applies to Token Plan endpoints.
-		it.skip("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_AMS_API_KEY)("Xiaomi MiMo Token Plan (AMS) Provider", () => {
-		const llm = getModel("xiaomi-token-plan-ams", "mimo-v2.5-pro");
-
-		// FIXME(xiaomi): see the API-billing block above — same upstream streaming
-		// usage limitation applies to Token Plan endpoints.
-		it.skip("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_SGP_API_KEY)("Xiaomi MiMo Token Plan (SGP) Provider", () => {
-		const llm = getModel("xiaomi-token-plan-sgp", "mimo-v2.5-pro");
-
-		// FIXME(xiaomi): see the API-billing block above — same upstream streaming
-		// usage limitation applies to Token Plan endpoints.
-		it.skip("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
 		});
 	});

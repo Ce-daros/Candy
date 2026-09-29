@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const completeSimple = builtinRuntime.completeSimple.bind(builtinRuntime);
 const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
 
-import { getEnvApiKey } from "../src/env-api-keys.ts";
-import type { AssistantMessage, Context, Model } from "../src/types.ts";
+import { getEnvApiKey } from "../../src/env-api-keys.ts";
+import type { AssistantMessage, Context, Model } from "../../src/types.ts";
 
 const provider = "xiaomi-token-plan-ams";
 const apiKey = getEnvApiKey(provider);

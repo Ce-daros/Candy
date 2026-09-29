@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const completeSimple = builtinRuntime.completeSimple.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
 
 function createLongSystemPrompt(): string {
 	const nonce = `${Date.now()}-${Math.random()}`;

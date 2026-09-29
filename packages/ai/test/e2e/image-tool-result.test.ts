@@ -2,19 +2,19 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/types.ts";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import type { Api, Context, Model, Tool, ToolResultMessage } from "../../src/types.ts";
+import { builtinRuntime } from "../builtin-runtime.ts";
 
 const complete = builtinRuntime.complete.bind(builtinRuntime);
 
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
-import type { StreamOptions } from "../src/types.ts";
+import { getBuiltinModel as getModel } from "../../src/providers/all.ts";
+import type { StreamOptions } from "../../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
-import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.ts";
-import { hasBedrockCredentials } from "./bedrock-utils.ts";
-import { resolveApiKey } from "./oauth.ts";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "../azure-utils.ts";
+import { hasBedrockCredentials } from "../bedrock-utils.ts";
+import { resolveApiKey } from "../oauth.ts";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
@@ -39,7 +39,7 @@ async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, o
 	}
 
 	// Read the test image
-	const imagePath = join(__dirname, "data", "red-circle.png");
+	const imagePath = join(__dirname, "..", "data", "red-circle.png");
 	const imageBuffer = readFileSync(imagePath);
 	const base64Image = imageBuffer.toString("base64");
 
@@ -130,7 +130,7 @@ async function handleToolWithTextAndImageResult<TApi extends Api>(
 	}
 
 	// Read the test image
-	const imagePath = join(__dirname, "data", "red-circle.png");
+	const imagePath = join(__dirname, "..", "data", "red-circle.png");
 	const imageBuffer = readFileSync(imagePath);
 	const base64Image = imageBuffer.toString("base64");
 
@@ -321,17 +321,6 @@ describe("Tool Results with Images", () => {
 		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);
 		});
-
-		// FIXME(xiaomi): when a tool_result contains both a descriptive text block
-		// and an image block, MiMo locks onto the text and ignores the image (it
-		// reports the text-derived diameter but never mentions the image's color).
-		// The image-only case above proves the image reaches the model, and the
-		// text-only path obviously works, so this is a multimodal-fusion quality
-		// issue in the model, not a transport bug. Re-enable when upstream model
-		// quality improves.
-		it.skip("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
-			await handleToolWithTextAndImageResult(llm);
-		});
 	});
 
 	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_CN_API_KEY)(
@@ -341,12 +330,6 @@ describe("Tool Results with Images", () => {
 
 			it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 				await handleToolWithImageResult(llm);
-			});
-
-			// FIXME(xiaomi): see the API-billing block above — same multimodal-fusion
-			// limitation applies to Token Plan endpoints (same model behind both).
-			it.skip("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
-				await handleToolWithTextAndImageResult(llm);
 			});
 		},
 	);
@@ -359,12 +342,6 @@ describe("Tool Results with Images", () => {
 			it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 				await handleToolWithImageResult(llm);
 			});
-
-			// FIXME(xiaomi): see the API-billing block above — same multimodal-fusion
-			// limitation applies to Token Plan endpoints (same model behind both).
-			it.skip("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
-				await handleToolWithTextAndImageResult(llm);
-			});
 		},
 	);
 
@@ -375,12 +352,6 @@ describe("Tool Results with Images", () => {
 
 			it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 				await handleToolWithImageResult(llm);
-			});
-
-			// FIXME(xiaomi): see the API-billing block above — same multimodal-fusion
-			// limitation applies to Token Plan endpoints (same model behind both).
-			it.skip("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
-				await handleToolWithTextAndImageResult(llm);
 			});
 		},
 	);
