@@ -1,20 +1,25 @@
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { defineConfig } from "vitest/config";
+import { repositoryRoot, workspacePackages } from "./scripts/lib/workspace-paths.mjs";
+
+const sourceRoot = (packageName: string): string => {
+	const root = workspacePackages().get(packageName);
+	if (!root) throw new Error(`Unknown workspace package ${packageName}`);
+	return join(repositoryRoot, root);
+};
 
 export const workspaceSourcePaths = {
-	telemetryIndex: fileURLToPath(new URL("./packages/telemetry/src/index.ts", import.meta.url)),
-	telemetryTesting: fileURLToPath(new URL("./packages/telemetry/src/testing/index.ts", import.meta.url)),
-	aiIndex: fileURLToPath(new URL("./packages/ai/src/index.ts", import.meta.url)),
-	aiApi: fileURLToPath(new URL("./packages/ai/src/api", import.meta.url)),
-	aiOAuth: fileURLToPath(new URL("./packages/ai/src/oauth.ts", import.meta.url)),
-	aiProviders: fileURLToPath(new URL("./packages/ai/src/providers", import.meta.url)),
-	aiUtils: fileURLToPath(new URL("./packages/ai/src/utils", import.meta.url)),
-	agentIndex: fileURLToPath(new URL("./packages/agent/src/index.ts", import.meta.url)),
-	codingAgentIndex: fileURLToPath(new URL("./packages/coding-agent/src/index.ts", import.meta.url)),
-	codingAgentExtensionHostModules: fileURLToPath(
-		new URL("./packages/coding-agent/src/presentation/extensions/virtual-modules.ts", import.meta.url),
-	),
-	tuiIndex: fileURLToPath(new URL("./packages/tui/src/index.ts", import.meta.url)),
+	telemetryIndex: join(sourceRoot("@candy/telemetry"), "index.ts"),
+	telemetryTesting: join(sourceRoot("@candy/telemetry"), "testing/index.ts"),
+	aiIndex: join(sourceRoot("@candy/ai"), "index.ts"),
+	aiApi: join(sourceRoot("@candy/ai"), "api"),
+	aiOAuth: join(sourceRoot("@candy/ai"), "oauth.ts"),
+	aiProviders: join(sourceRoot("@candy/ai"), "providers"),
+	aiUtils: join(sourceRoot("@candy/ai"), "utils"),
+	agentIndex: join(sourceRoot("@candy/agent-core"), "index.ts"),
+	codingAgentIndex: join(sourceRoot("@candy/coding-agent"), "index.ts"),
+	codingAgentExtensionHostModules: join(sourceRoot("@candy/coding-agent"), "presentation/extensions/virtual-modules.ts"),
+	tuiIndex: join(sourceRoot("@candy/tui"), "index.ts"),
 } as const;
 
 export default defineConfig({
