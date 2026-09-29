@@ -77,6 +77,8 @@
 - Removed slash-text command matching from ordinary messages and the old editor slash-completion protocol.
 - Removed Powerbar Shift+Tab behavior, Shift+Tab thinking cycling, and selector Ctrl+S global-default saving. Authentication actions now live in Sources; conversation and session actions live in History.
 - Removed inherited contributor approval workflows, the contributor allowlist, and upstream contribution gates and contact links.
+- Removed `packages/coding-agent/install-lock/` and `scripts/generate-coding-agent-install-lock.mjs`. The lockfile root was consumed only by the retired Pi installer and updater, and the root `check` chain no longer runs `check:install-lock:coding-agent`.
+- Removed `test/agent-session-compaction.test.ts`, which required a real `API_KEY` and never ran in CI. `test/suite/agent-session-compaction.test.ts` covers the same behavior with the faux provider.
 
 ### Breaking Changes
 
