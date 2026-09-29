@@ -49,6 +49,21 @@ npm run check
 ./test.sh
 ```
 
+Credential-backed integration tests are opt-in:
+
+```bash
+npm run test:e2e
+```
+
+The suite reads Anthropic credentials from the environment and may send requests to the provider. The default `npm test` command excludes these tests.
+
+The RPC example and Codex cache probe are maintained as explicit development commands:
+
+```bash
+npm run example:rpc
+npm run probe:codex-cache
+```
+
 Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for development philosophy and contribution expectations, [DESIGN.md](../../DESIGN.md) for product and interaction design, and [AGENTS.md](../../AGENTS.md) for implementation, testing, dependency, and release rules.
 
 ## License

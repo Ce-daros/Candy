@@ -13,7 +13,7 @@
  * Allocation is estimated with the V8 sampling heap profiler including
  * objects collected by minor/major GC, i.e. it measures churn, not retention.
  *
- * Run from packages/tui: node test/render-churn-bench.ts
+ * Run from packages/tui: node scripts/render-churn-bench.ts
  */
 
 import { Session } from "node:inspector/promises";

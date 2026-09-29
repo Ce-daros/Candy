@@ -7,10 +7,10 @@ export default mergeConfig(
 		test: {
 			globals: true,
 			environment: "node",
-			exclude: [...configDefaults.exclude, "test/e2e/**"],
-			testTimeout: 30000,
-			// Tests run offline by default; opt in with allowNetwork() from test/test-network-env.ts.
-			env: { CANDY_OFFLINE: "1" },
+			include: ["test/e2e/**/*.test.ts"],
+			exclude: [...configDefaults.exclude],
+			testTimeout: 180000,
+			hookTimeout: 60000,
 			unstubEnvs: true,
 			reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
 			silent: "passed-only",

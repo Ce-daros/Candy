@@ -1,5 +1,5 @@
-import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
-import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { extensionHostModules } from "../../src/presentation/extensions/virtual-modules.ts";
+import { resourceThemeAdapter } from "../../src/presentation/resource-theme-adapter.ts";
 /**
  * Tests for AgentSession forking behavior.
  *
@@ -14,17 +14,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AgentSession } from "../src/core/agent-session.ts";
+import type { AgentSession } from "../../src/core/agent-session.ts";
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
-} from "../src/core/agent-session-runtime.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { API_KEY } from "./utilities.ts";
+} from "../../src/core/agent-session-runtime.ts";
+import { AuthStorage } from "../../src/core/auth-storage.ts";
+import { SessionManager } from "../../src/core/session-manager.ts";
+import { API_KEY } from "../utilities.ts";
 
 describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	let session: AgentSession;

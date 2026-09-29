@@ -1754,6 +1754,8 @@ Provider notes:
 
 ## Development
 
+The Codex WebSocket cache probe is a live diagnostic tool. Run it with `npm run probe:codex-websocket` only when OpenAI Codex credentials are available; it makes network requests and prints cache statistics.
+
 ### Adding a New Provider
 
 Adding a new LLM provider requires changes across multiple files. The layered layout: API implementations live in `src/api/`, provider factories in `src/providers/`, stable generated catalog wrappers live in `src/providers/<id>.models.ts`, and `src/models.generated.ts` registers them. This checklist covers all necessary steps:

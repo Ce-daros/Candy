@@ -1,4 +1,4 @@
-import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "../model-runtime-test-utils.ts";
 /**
  * Tests for compaction extension events (before_compact / compact).
  */
@@ -9,21 +9,21 @@ import { join } from "node:path";
 import { Agent } from "@candy/agent-core";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentSession } from "../src/core/agent-session.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AgentSession } from "../../src/core/agent-session.ts";
+import { AuthStorage } from "../../src/core/auth-storage.ts";
 import {
 	createExtensionRuntime,
 	type Extension,
 	type SessionBeforeCompactEvent,
 	type SessionCompactEvent,
 	type SessionEvent,
-} from "../src/core/extensions/index.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
-import { createCodingTools } from "../src/index.ts";
-import { streamBuiltinSimple as streamSimple } from "./ai.ts";
-import { createTestResourceLoader } from "./utilities.ts";
+} from "../../src/core/extensions/index.ts";
+import { SessionManager } from "../../src/core/session-manager.ts";
+import { SettingsManager } from "../../src/core/settings-manager.ts";
+import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import { createCodingTools } from "../../src/index.ts";
+import { streamBuiltinSimple as streamSimple } from "../ai.ts";
+import { createTestResourceLoader } from "../utilities.ts";
 
 const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 

@@ -93,7 +93,7 @@ function required(value: string | undefined, flag: string): string {
 }
 
 function printHelp(): void {
-	console.log(`Usage: node test/codex-websocket-cached-probe.ts [options]
+	console.log(`Usage: node scripts/codex-websocket-cached-probe.ts [options]
 
 Options:
   --turns <n>          Number of user turns. Default: ${DEFAULT_TURNS}

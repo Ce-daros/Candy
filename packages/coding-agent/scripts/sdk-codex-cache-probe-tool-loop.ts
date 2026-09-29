@@ -34,7 +34,7 @@ import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
+import { createTestModelRuntime } from "../test/model-runtime-test-utils.ts";
 
 type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
@@ -125,7 +125,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 function printHelp(): void {
-	console.log(`Usage: node test/sdk-codex-cache-probe-tool-loop.ts [options]
+	console.log(`Usage: node scripts/sdk-codex-cache-probe-tool-loop.ts [options]
 
 Options:
   --turns <n>         Number of turns to run. Must be between ${MIN_TURNS} and ${MAX_TURNS}. Default: ${DEFAULT_TURNS}

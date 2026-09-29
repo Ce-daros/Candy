@@ -1,13 +1,11 @@
 import type { AgentMessage } from "@candy/agent-core";
 import type { AssistantMessage, Usage } from "@candy/ai";
-import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionSettings,
 	calculateContextTokens,
-	compact,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
 	findCutPoint,
@@ -594,62 +592,4 @@ describe("Large session fixture", () => {
 		expect(loaded.messages.length).toBeGreaterThan(100);
 		expect(loaded.model).not.toBeNull();
 	});
-});
-
-// ============================================================================
-// LLM integration tests (skipped without API key)
-// ============================================================================
-
-describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
-	it("should generate a compaction result for the large session", async () => {
-		const entries = loadLargeSessionEntries();
-		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-
-		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
-		expect(preparation).toBeDefined();
-
-		const compactionResult = await compact(preparation!, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
-
-		expect(compactionResult.summary.length).toBeGreaterThan(100);
-		expect(compactionResult.firstKeptEntryId).toBeTruthy();
-		expect(compactionResult.tokensBefore).toBeGreaterThan(0);
-
-		console.log("Summary length:", compactionResult.summary.length);
-		console.log("First kept entry ID:", compactionResult.firstKeptEntryId);
-		console.log("Tokens before:", compactionResult.tokensBefore);
-		console.log("\n--- SUMMARY ---\n");
-		console.log(compactionResult.summary);
-	}, 60000);
-
-	it("should produce valid session after compaction", async () => {
-		const entries = loadLargeSessionEntries();
-		const loaded = buildSessionContext(entries);
-		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-
-		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
-		expect(preparation).toBeDefined();
-
-		const compactionResult = await compact(preparation!, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
-
-		// Simulate appending compaction to entries by creating a proper entry
-		const lastEntry = entries[entries.length - 1];
-		const parentId = lastEntry.id;
-		const compactionEntry: CompactionEntry = {
-			type: "compaction",
-			id: "compaction-test-id",
-			parentId,
-			timestamp: new Date().toISOString(),
-			...compactionResult,
-		};
-		const newEntries = [...entries, compactionEntry];
-		const reloaded = buildSessionContext(newEntries);
-
-		// Should have summary + kept messages
-		expect(reloaded.messages.length).toBeLessThan(loaded.messages.length);
-		expect(reloaded.messages[0].role).toBe("compactionSummary");
-		expect((reloaded.messages[0] as any).summary).toContain(compactionResult.summary);
-
-		console.log("Original messages:", loaded.messages.length);
-		console.log("After compaction:", reloaded.messages.length);
-	}, 60000);
 });

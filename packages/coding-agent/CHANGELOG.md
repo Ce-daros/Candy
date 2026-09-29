@@ -66,6 +66,10 @@
 - Added OKLCH theme colors and composable `Theme.style()` attributes with truecolor and indexed-terminal rendering.
 - Added `DESIGN.md` for Candy's product, navigation, color, motion, and interaction rules.
 
+### Tests
+
+- Moved credential-backed AgentSession and compaction integration tests into the opt-in `npm run test:e2e` suite; the default Vitest suite remains offline and deterministic.
+
 ### Fixed
 
 - Resource filter patterns written by the config selector (`+`/`-` entries in settings package extensions/skills/prompts/themes arrays) now use `/` separators on Windows, so project settings stay portable across operating systems; previously stored backslash entries keep matching and are replaced on the next toggle.
@@ -5623,7 +5627,7 @@ _Dedicated to Peter's shoulder ([@steipete](https://twitter.com/steipete))_
 
 ### Breaking Changes
 
-- **New RPC protocol**: The RPC mode (`--mode rpc`) has been completely redesigned with a new JSON protocol. The old protocol is no longer supported. See [`docs/rpc.md`](docs/rpc.md) for the new protocol documentation and [`test/rpc-example.ts`](test/rpc-example.ts) for a working example. Includes `RpcClient` TypeScript class for easy integration. ([#91](https://github.com/badlogic/pi-mono/issues/91))
+- **New RPC protocol**: The RPC mode (`--mode rpc`) has been completely redesigned with a new JSON protocol. The old protocol is no longer supported. See [`docs/rpc.md`](docs/rpc.md) for the new protocol documentation and [`examples/rpc-example.ts`](examples/rpc-example.ts) for a working example. Includes `RpcClient` TypeScript class for easy integration. ([#91](https://github.com/badlogic/pi-mono/issues/91))
 
 ### Changed
 

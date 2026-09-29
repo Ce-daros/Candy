@@ -953,3 +953,10 @@ Set `CANDY_TUI_WRITE_LOG` to capture the raw ANSI stream written to stdout.
 ```bash
 CANDY_TUI_WRITE_LOG=/tmp/tui-ansi.log node test/chat-simple.ts
 ```
+
+Performance benchmarks live under `scripts/` and are not part of the test suite:
+
+```bash
+npm run bench:large-transcript
+npm run bench:render-churn
+```
