@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { generateImages } from "../../src/images.ts";
+import { createModels } from "../../src/models.ts";
 import { getBuiltinImageModel } from "../../src/providers/all.ts";
+import { openrouterProvider } from "../../src/providers/openrouter.ts";
 import type { ImageContent, ImageModel, ImagesContext, ProviderImagesOptions } from "../../src/types.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,12 +12,20 @@ const __dirname = dirname(__filename);
 
 type ImagesOptionsWithExtras = ProviderImagesOptions & Record<string, unknown>;
 
+function createOpenRouterModels() {
+	const models = createModels();
+	models.setProvider(openrouterProvider());
+	return models;
+}
+
 async function basicImageGeneration<TApi extends string>(model: ImageModel<TApi>, options?: ImagesOptionsWithExtras) {
 	const context: ImagesContext = {
 		input: [{ type: "text", text: "Generate a simple red circle on a plain white background. No text." }],
 	};
 
-	const response = await generateImages(model, context, options);
+	const models = createOpenRouterModels();
+	const requestModel = models.getModelOfType("image", model.provider, model.id)!;
+	const response = await models.generateImages(requestModel, context, options);
 
 	expect(response.stopReason, `Error: ${response.errorMessage}`).toBe("stop");
 	expect(response.errorMessage).toBeFalsy();
@@ -42,7 +51,9 @@ async function handleImageInput<TApi extends string>(model: ImageModel<TApi>, op
 		input: [{ type: "text", text: "Create a variation of this image with a blue background." }, imageContent],
 	};
 
-	const response = await generateImages(model, context, options);
+	const models = createOpenRouterModels();
+	const requestModel = models.getModelOfType("image", model.provider, model.id)!;
+	const response = await models.generateImages(requestModel, context, options);
 
 	expect(response.stopReason, `Error: ${response.errorMessage}`).toBe("stop");
 	expect(response.output.some((item) => item.type === "image")).toBe(true);

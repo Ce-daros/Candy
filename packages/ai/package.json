@@ -5,10 +5,6 @@
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"sideEffects": [
-		"./dist/images.js",
-		"./dist/providers/images/register-builtins.js"
-	],
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { builtinRuntime } from "./builtin-runtime.ts";
+import { streamSimple as streamOpenAICompletionsSimple } from "../src/api/openai-completions.ts";
+import type { Context, Model, SimpleStreamOptions, ThinkingBudgets } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
-const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
-
-import type { Model, SimpleStreamOptions, ThinkingBudgets } from "../src/types.ts";
+const streamSimple = (model: Model<"openai-completions">, context: Context, options?: SimpleStreamOptions) =>
+	streamOpenAICompletionsSimple(model, normalizeContext(context), { apiKey: "test", ...options });
 
 const mockState = vi.hoisted(() => ({
 	lastParams: undefined as unknown,

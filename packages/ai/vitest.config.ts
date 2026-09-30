@@ -5,6 +5,7 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		testTimeout: 30000, // 30 seconds for API calls
+		setupFiles: ["./test/network-guard.ts"],
 		// Live provider tests under test/e2e require real credentials and network access.
 		// They are opt-in through `npm run test:e2e`, so the default run never imports them.
 		exclude: [...configDefaults.exclude, "test/e2e/**"],

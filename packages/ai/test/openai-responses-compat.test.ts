@@ -73,6 +73,35 @@ describe("openai-responses provider defaults", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("omits reasoning effort for OpenCode Grok Build", async () => {
+		const model = getModel("opencode", "grok-build-0.1");
+		expect(model.compat?.supportsReasoningEffort).toBe(false);
+		let payload: unknown;
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", { status: 200, headers: { "content-type": "text/event-stream" } }),
+		);
+
+		const stream = streamOpenAIResponses(
+			model,
+			normalizeContext({
+				messages: [{ role: "user", content: "Hi", timestamp: Date.now() }],
+			}),
+			{
+				apiKey: "test",
+				reasoningEffort: "high",
+				onPayload: (params) => {
+					payload = params;
+				},
+			},
+		);
+		for await (const event of stream) {
+			if (event.type === "done" || event.type === "error") break;
+		}
+
+		expect(payload).toBeDefined();
+		expect(payload).not.toHaveProperty("reasoning.effort");
+	});
+
 	it("omits reasoning when no reasoning is requested", async () => {
 		const model = getModel("github-copilot", "gpt-5-mini");
 		let capturedPayload: unknown;

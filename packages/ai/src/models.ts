@@ -99,6 +99,18 @@ export interface ModelsRequestTransforms {
 	transformHeaders?: (headers: ProviderHeaders) => ProviderHeaders | Promise<ProviderHeaders>;
 }
 
+export interface ProviderAvailability {
+	providerId: string;
+	auth: AuthCheck | undefined;
+	credentialStored: boolean;
+}
+
+export interface ModelsAvailability {
+	available: readonly Model<Api>[];
+	providers: readonly ProviderAvailability[];
+	credentialProviderIds: readonly string[];
+}
+
 export type ModelsApiStreamOptions<TApi extends Api> = ApiStreamOptions<TApi> & ModelsRequestTransforms;
 export type ModelsSimpleStreamOptions = SimpleStreamOptions & ModelsRequestTransforms;
 export type ModelsDeferredFetchOptions = DeferredFetchOptions & ModelsRequestTransforms;
@@ -150,8 +162,7 @@ export interface Provider<TApi extends Api = Api> {
 	/**
 	 * Current known chat models, sync. Static providers return their catalog;
 	 * dynamic providers return the list as of the last `refreshModels()` (empty
-	 * before the first). Must not throw; `Models` treats a throwing
-	 * implementation as having no models.
+	 * before the first). Catalog failures propagate to the caller.
 	 */
 	getModels(): readonly Model<TApi>[];
 
@@ -230,7 +241,7 @@ export interface Models {
 
 	/**
 	 * Sync read of last-known chat models from one provider or all providers.
-	 * Best-effort: a provider whose `getModels()` throws yields no models.
+	 * Provider catalog failures propagate to the caller.
 	 */
 	getModels(provider?: string): readonly Model<Api>[];
 
@@ -261,6 +272,9 @@ export interface Models {
 
 	/** Return chat models whose providers have complete auth configuration. */
 	getAvailable(providerId?: string, options?: AuthOperationOptions): Promise<readonly Model<Api>[]>;
+
+	/** Read available models, auth checks, and stored-credential presence from one provider pass. */
+	getAvailability(providerId?: string, options?: AuthOperationOptions): Promise<ModelsAvailability>;
 
 	/** Return models of one type whose providers have complete auth configuration. */
 	getAvailableOfType<TType extends ModelType>(
@@ -339,6 +353,11 @@ export interface CreateModelsOptions {
 	credentials?: CredentialStore;
 	modelsStore?: ModelsStore;
 	authContext?: AuthContext;
+	decorateAuth?: (
+		model: AnyModel,
+		resolution: AuthResult | undefined,
+		options: AuthOperationOptions,
+	) => ProviderHeaders | undefined | Promise<ProviderHeaders | undefined>;
 }
 
 function mergeHeaders(
@@ -362,6 +381,7 @@ class ModelsImpl implements MutableModels {
 	private credentials: CredentialStore;
 	private modelsStore: ModelsStore;
 	private authContext: AuthContext;
+	private readonly decorateAuth: CreateModelsOptions["decorateAuth"];
 	private refreshGenerations = new Map<string, number>();
 	private refreshControllers = new Map<string, AbortController>();
 	private publicationChains = new Map<string, Promise<unknown>>();
@@ -370,6 +390,7 @@ class ModelsImpl implements MutableModels {
 		this.credentials = options?.credentials ?? new InMemoryCredentialStore();
 		this.modelsStore = options?.modelsStore ?? new InMemoryModelsStore();
 		this.authContext = options?.authContext ?? defaultAuthContext();
+		this.decorateAuth = options?.decorateAuth;
 	}
 
 	setProvider(provider: Provider): void {
@@ -400,45 +421,19 @@ class ModelsImpl implements MutableModels {
 	getModels(provider?: string): readonly Model<Api>[] {
 		if (provider !== undefined) {
 			const entry = this.providers.get(provider);
-			if (!entry) return [];
-			try {
-				return entry.getModels();
-			} catch {
-				return [];
-			}
+			return entry?.getModels() ?? [];
 		}
 
-		const models: Model<Api>[] = [];
-		for (const entry of this.providers.values()) {
-			try {
-				models.push(...entry.getModels());
-			} catch {
-				// Best-effort: ill-behaved providers yield no models.
-			}
-		}
-		return models;
+		return Array.from(this.providers.values()).flatMap((entry) => [...entry.getModels()]);
 	}
 
 	getAllModels(provider?: string): readonly AnyModel[] {
 		if (provider !== undefined) {
 			const entry = this.providers.get(provider);
-			if (!entry) return [];
-			try {
-				return entry.getAllModels?.() ?? entry.getModels();
-			} catch {
-				return [];
-			}
+			return entry?.getAllModels?.() ?? entry?.getModels() ?? [];
 		}
 
-		const models: AnyModel[] = [];
-		for (const entry of this.providers.values()) {
-			try {
-				models.push(...(entry.getAllModels?.() ?? entry.getModels()));
-			} catch {
-				// Best-effort: ill-behaved providers yield no models.
-			}
-		}
-		return models;
+		return Array.from(this.providers.values()).flatMap((entry) => [...(entry.getAllModels?.() ?? entry.getModels())]);
 	}
 
 	getModelsOfType<TType extends ModelType>(type: TType, provider?: string): readonly ModelTypeMap[TType][] {
@@ -645,14 +640,9 @@ class ModelsImpl implements MutableModels {
 	}
 
 	checkAuth(providerId: string, options?: AuthOperationOptions): Promise<AuthCheck | undefined> {
-		const signal = operationSignal(options?.signal);
-		const check = (async () => {
-			signal.throwIfAborted();
-			const provider = this.providers.get(providerId);
-			if (!provider) return undefined;
-			return this.checkProviderAuth(provider, await this.readCredential(providerId, signal), signal);
-		})();
-		return raceWithAbortSignal(check, signal);
+		return this.getAvailability(providerId, options).then(
+			(availability) => availability.providers.find((provider) => provider.providerId === providerId)?.auth,
+		);
 	}
 
 	private async getAuthenticatedProviders(providerId: string | undefined, signal: AbortSignal) {
@@ -666,19 +656,36 @@ class ModelsImpl implements MutableModels {
 				return { provider, credential, auth: await this.checkProviderAuth(provider, credential, signal) };
 			}),
 		);
-		return checks.filter((entry) => entry.auth !== undefined);
+		return checks;
 	}
 
 	getAvailable(providerId?: string, options?: AuthOperationOptions): Promise<readonly Model<Api>[]> {
+		return this.getAvailability(providerId, options).then((availability) => availability.available);
+	}
+
+	getAvailability(providerId?: string, options?: AuthOperationOptions): Promise<ModelsAvailability> {
 		const signal = operationSignal(options?.signal);
-		const available = (async () => {
-			const providers = await this.getAuthenticatedProviders(providerId, signal);
-			return providers.flatMap(({ provider, credential }) => {
+		const availability = (async (): Promise<ModelsAvailability> => {
+			const [providers, credentials] = await Promise.all([
+				this.getAuthenticatedProviders(providerId, signal),
+				this.credentials.list({ signal }),
+			]);
+			const available = providers.flatMap(({ provider, credential, auth }) => {
+				if (!auth) return [];
 				const models = provider.getModels();
 				return provider.filterModels?.(models, credential) ?? models;
 			});
+			return {
+				available,
+				credentialProviderIds: credentials.map(({ providerId: id }) => id),
+				providers: providers.map(({ provider, credential, auth }) => ({
+					providerId: provider.id,
+					auth,
+					credentialStored: credential !== undefined,
+				})),
+			};
 		})();
-		return raceWithAbortSignal(available, signal);
+		return raceWithAbortSignal(availability, signal);
 	}
 
 	async getAvailableOfType<TType extends ModelType>(
@@ -695,7 +702,8 @@ class ModelsImpl implements MutableModels {
 		const signal = operationSignal(options?.signal);
 		const available = (async () => {
 			const providers = await this.getAuthenticatedProviders(providerId, signal);
-			return providers.flatMap(({ provider, credential }) => {
+			return providers.flatMap(({ provider, credential, auth }) => {
+				if (!auth) return [];
 				const models = provider.getAllModels?.() ?? provider.getModels();
 				if (provider.filterAllModels) return provider.filterAllModels(models, credential);
 				if (!provider.filterModels) return models;
@@ -719,12 +727,16 @@ class ModelsImpl implements MutableModels {
 		const provider = this.providers.get(providerId);
 		if (!provider) return undefined;
 		const result = await resolveProviderAuth(provider, this.credentials, this.authContext, { ...overrides, signal });
-		if (!result || typeof providerOrModel === "string" || !providerOrModel.headers) return result;
+		if (typeof providerOrModel === "string") return result;
+		if (!result) return undefined;
+		const configuredHeaders = this.decorateAuth
+			? await this.decorateAuth(providerOrModel, result, { signal })
+			: undefined;
 		return {
 			...result,
 			auth: {
 				...result.auth,
-				headers: mergeHeaders(result.auth.headers, providerOrModel.headers),
+				headers: mergeHeaders(mergeHeaders(result.auth.headers, configuredHeaders), providerOrModel.headers),
 			},
 		};
 	}

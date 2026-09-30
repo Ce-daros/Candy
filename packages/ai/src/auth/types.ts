@@ -226,7 +226,7 @@ export interface OAuthAuth {
 	 * Covers per-credential baseUrl (GitHub Copilot). Async so lazy wrappers
 	 * can load the implementation on first use.
 	 */
-	toAuth(credential: OAuthCredential): Promise<ModelAuth>;
+	toAuth(credential: OAuthCredential, signal?: AbortSignal): Promise<ModelAuth>;
 }
 
 /**

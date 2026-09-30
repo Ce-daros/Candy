@@ -11,6 +11,7 @@ import {
 	stream as streamOpenAICodexResponses,
 	streamSimple as streamSimpleOpenAICodexResponses,
 } from "../src/api/openai-codex-responses.ts";
+import { cleanupSessionResources } from "../src/session-resources.ts";
 import type { Api, Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -1411,7 +1412,7 @@ describe("openai-codex streaming", () => {
 		});
 	});
 
-	it("scopes cached websockets to the authenticated account", async () => {
+	it("scopes cached websockets to the runtime owner and authenticated account", async () => {
 		// Regression for #7284: rotating accounts must not reuse a socket authenticated by another account.
 		const connectedHeaders: Record<string, string>[] = [];
 		let responseId = 0;
@@ -1484,30 +1485,51 @@ describe("openai-codex streaming", () => {
 			maxTokens: 128000,
 		};
 		const context = normalizeContext({ systemPrompt: "", messages: [] });
+		const firstOwner = {};
+		const secondOwner = {};
 		const options = { sessionId: "shared-session", transport: "websocket-cached" as const };
 
 		await streamOpenAICodexResponses(model, context, {
 			...options,
+			resourceOwner: firstOwner,
 			apiKey: mockToken("account-a"),
 		}).result();
 		await streamOpenAICodexResponses(model, context, {
 			...options,
+			resourceOwner: secondOwner,
+			apiKey: mockToken("account-a"),
+		}).result();
+		await streamOpenAICodexResponses(model, context, {
+			...options,
+			resourceOwner: firstOwner,
 			apiKey: mockToken("account-b"),
 		}).result();
 		await streamOpenAICodexResponses(model, context, {
 			...options,
+			resourceOwner: firstOwner,
+			apiKey: mockToken("account-a"),
+		}).result();
+		cleanupSessionResources(firstOwner);
+		await streamOpenAICodexResponses(model, context, {
+			...options,
+			resourceOwner: secondOwner,
 			apiKey: mockToken("account-a"),
 		}).result();
 
-		expect(connectedHeaders.map((headers) => headers["chatgpt-account-id"])).toEqual(["account-a", "account-b"]);
+		expect(connectedHeaders.map((headers) => headers["chatgpt-account-id"])).toEqual([
+			"account-a",
+			"account-a",
+			"account-b",
+		]);
 		expect(connectedHeaders.map((headers) => headers.authorization)).toEqual([
+			`Bearer ${mockToken("account-a")}`,
 			`Bearer ${mockToken("account-a")}`,
 			`Bearer ${mockToken("account-b")}`,
 		]);
 		expect(global.fetch).not.toHaveBeenCalled();
 		expect(getOpenAICodexWebSocketDebugStats("shared-session")).toMatchObject({
-			connectionsCreated: 2,
-			connectionsReused: 1,
+			connectionsCreated: 3,
+			connectionsReused: 2,
 		});
 	});
 

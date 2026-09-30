@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateImages } from "../src/images.ts";
 import type { ImageModel, ImagesContext } from "../src/types.ts";
+import { createOpenRouterImageModels } from "./openrouter-image-models.ts";
 
 const mockState = vi.hoisted(() => ({
 	lastParams: undefined as unknown,
@@ -81,7 +81,8 @@ describe("openrouter images", () => {
 			input: [{ type: "text", text: "Generate a dog" }],
 		};
 
-		const output = await generateImages(model, context, { apiKey: "test" });
+		const request = createOpenRouterImageModels(model);
+		const output = await request.models.generateImages(request.model, context, { apiKey: "test" });
 		expect(output.stopReason).toBe("stop");
 		expect(output.responseId).toBe("img-1");
 		expect(output.output[0]).toMatchObject({ type: "text", text: "Here is your image." });
@@ -115,10 +116,14 @@ describe("openrouter images", () => {
 		const controller = new AbortController();
 		controller.abort(new Error("cancelled by the user"));
 
-		const output = await generateImages(model, context, { apiKey: "test", signal: controller.signal });
+		const request = createOpenRouterImageModels(model);
+		const output = await request.models.generateImages(request.model, context, {
+			apiKey: "test",
+			signal: controller.signal,
+		});
 		expect(output.stopReason).toBe("aborted");
 		expect(output.errorMessage).toBe("cancelled by the user");
-		expect(mockState.lastRequestOptions).toMatchObject({ signal: controller.signal });
+		expect(mockState.lastRequestOptions).toBeUndefined();
 	});
 
 	it("generateImages resolves the final assistant images result", async () => {
@@ -137,7 +142,8 @@ describe("openrouter images", () => {
 			input: [{ type: "text", text: "Generate a dog" }],
 		};
 
-		const output = await generateImages(model, context, { apiKey: "test" });
+		const request = createOpenRouterImageModels(model);
+		const output = await request.models.generateImages(request.model, context, { apiKey: "test" });
 		expect(output.output.some((item) => item.type === "image")).toBe(true);
 		// Image-only models must not request text output.
 		expect((mockState.lastParams as { modalities?: string[] }).modalities).toEqual(["image"]);

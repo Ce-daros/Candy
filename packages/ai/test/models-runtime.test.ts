@@ -209,10 +209,10 @@ describe("Models runtime", () => {
 		expect(models.getModels("chat-only").map((model) => model.id)).toEqual(["model-a"]);
 		expect(models.getModel("chat-only", "model-a")?.id).toBe("model-a");
 		expect((await models.getAvailable("chat-only")).map((model) => model.id)).toEqual(["model-a"]);
-		expect(models.getAllModels("chat-only")).toEqual([]);
+		expect(() => models.getAllModels("chat-only")).toThrow("all models unavailable");
 	});
 
-	it("swallows provider source failures for both all-provider and single-provider listing", () => {
+	it("propagates provider source failures for all-provider and single-provider listing", () => {
 		const models = createModels();
 		models.setProvider(
 			testProvider({
@@ -224,9 +224,9 @@ describe("Models runtime", () => {
 		);
 		models.setProvider(testProvider({ id: "ok", models: [testModel("ok", "m1")] }));
 
-		expect(models.getModels().map((m) => m.id)).toEqual(["m1"]);
-		expect(models.getModels("broken")).toEqual([]);
-		// precise failures come from the provider directly
+		expect(() => models.getModels()).toThrow("boom");
+		expect(() => models.getModels("broken")).toThrow("boom");
+		expect(models.getModels("ok").map((model) => model.id)).toEqual(["m1"]);
 		expect(() => models.getProvider("broken")?.getModels()).toThrow("boom");
 	});
 
@@ -269,6 +269,24 @@ describe("Models runtime", () => {
 		const second = await models.refresh();
 		expect(refreshes).toBe(2);
 		expect(second.errors.get("flaky")?.message).toBe("fetch failed");
+	});
+
+	it("retains the last published catalog when a provider refresh fails", async () => {
+		const catalog = [testModel("dynamic", "published")];
+		const models = createModels();
+		models.setProvider(
+			testProvider({
+				id: "dynamic",
+				getModels: () => catalog,
+				refreshModels: async ({ allowNetwork }) => {
+					if (allowNetwork) throw new Error("catalog unavailable");
+				},
+			}),
+		);
+		const result = await models.refresh({ allowNetwork: true });
+
+		expect(result.errors.get("dynamic")?.message).toBe("catalog unavailable");
+		expect(models.getModels("dynamic").map((model) => model.id)).toEqual(["published"]);
 	});
 
 	it("restricts refresh work to selected providers", async () => {
@@ -849,6 +867,13 @@ describe("Models runtime", () => {
 		expect(refreshes).toBe(0);
 		expect((await models.getAvailable()).map((model) => model.provider)).toEqual(["ambient", "oauth"]);
 		expect((await models.getAvailable("ambient")).map((model) => model.provider)).toEqual(["ambient"]);
+		const availability = await models.getAvailability();
+		expect(availability.available.map((model) => model.provider)).toEqual(["ambient", "oauth"]);
+		expect(availability.providers).toEqual([
+			{ providerId: "ambient", auth: { source: "env", type: "api_key" }, credentialStored: false },
+			{ providerId: "missing", auth: undefined, credentialStored: false },
+			{ providerId: "oauth", auth: { source: "OAuth", type: "oauth" }, credentialStored: true },
+		]);
 	});
 
 	it("runs provider login and logout through the credential store", async () => {

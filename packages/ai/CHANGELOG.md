@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Provider resource cleanup is keyed by a runtime-owned object. Pass the same `resourceOwner` object to stream options and `cleanupSessionResources()`; a conversation `sessionId` no longer identifies pooled runtime resources.
 - Removed the classifier model surface: `ClassifierApi`/`ClassifierModel`/`ClassifierContext`/`ClassifierOptions`/`ClassifierResult` types, `Models.classify()`, the `classifiers` provider map, the TypeSafe provider, and the `typesafe-system-one`/`cloudflare-workers-ai-system-one` APIs.
 - Removed the Amazon Bedrock provider: `amazon-bedrock.ts`, `bedrock-converse-stream.ts`, the `./bedrock-provider` entrypoint, `BedrockOptions`/`BedrockCompat`, the `@aws-sdk/client-bedrock-runtime` and `@smithy/node-http-handler` dependencies, and AWS credential detection.
 - Removed the Azure OpenAI Responses provider: `azure-openai-responses.ts`, `AzureOpenAIResponsesOptions`, and the `AZURE_OPENAI_*` credential mapping.
@@ -22,6 +23,7 @@
 
 ### Added
 
+- Added `createModels({ decorateAuth })` for configured request headers and `Models.getAvailability()` for one provider authentication pass shared by availability, credential status, and errors.
 - Added `isAbortError()` and `abortReason()` to `@candy/ai/utils/abort`, and made `raceWithAbortSignal()` accept an optional signal. `sleep()` now accepts an optional signal and rejects with the signal's own reason instead of a fixed message.
 - The context estimator in `@candy/ai/utils/estimate` now counts the agent-level transcript messages hosts add (bash executions, extension messages, and branch/compaction summaries), so one implementation serves both the runtime estimate and compaction decisions.
 
@@ -49,6 +51,7 @@
 
 ### Removed
 
+- Removed the legacy global image dispatcher and registry. Image requests use `Models.generateImages()` and the provider image implementation.
 - Removed the Amazon Bedrock and Azure OpenAI Responses adapters, providers, generated catalogs, and test suites, plus the classifier (System One) adapters, models, and provider configuration.
 - Removed `test/empty.test.ts`: its four assertions per provider accepted either an error or a defined content field, and were duplicated across 25 providers without a real behavior contract. Live provider behavior is covered by the remaining `test/e2e/` matrix.
 

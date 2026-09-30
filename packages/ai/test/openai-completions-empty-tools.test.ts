@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { streamSimple as streamOpenAICompletionsSimple } from "../src/api/openai-completions.ts";
+import { getBuiltinModel as getModel } from "../src/providers/all.ts";
+import type { Context, Model, SimpleStreamOptions } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import { builtinRuntime } from "./builtin-runtime.ts";
 
-const streamSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
-
-import { getBuiltinModel as getModel } from "../src/providers/all.ts";
+const streamSimple = (model: Model<"openai-completions">, context: Context, options?: SimpleStreamOptions) =>
+	streamOpenAICompletionsSimple(model, normalizeContext(context), { apiKey: "test", ...options });
+const streamRuntimeSimple = builtinRuntime.streamSimple.bind(builtinRuntime);
 
 // Empty tools arrays must NOT be serialized as `tools: []` — some OpenAI-compatible
 // backends (e.g. DashScope / Aliyun Qwen via compatible-mode) reject the request with
@@ -170,7 +174,7 @@ describe("openai-completions empty tools handling", () => {
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
 		const model = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6")!;
 
-		await streamSimple(
+		await streamRuntimeSimple(
 			model,
 			{
 				systemPrompt: "You are helpful.",
@@ -207,7 +211,7 @@ describe("openai-completions empty tools handling", () => {
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
 		const model = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6")!;
 
-		await streamSimple(model, {
+		await streamRuntimeSimple(model, {
 			messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
 		}).result();
 
@@ -221,7 +225,7 @@ describe("openai-completions empty tools handling", () => {
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";
 		const model = getModel("cloudflare-ai-gateway", "gpt-5.1")!;
 
-		await streamSimple(
+		await streamRuntimeSimple(
 			model,
 			{
 				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],

@@ -6,10 +6,10 @@ import { streamSimple as streamMistral } from "../src/api/mistral-conversations.
 import { streamSimple as streamOpenAICodexResponses } from "../src/api/openai-codex-responses.ts";
 import { streamSimple as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import { streamSimple as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { generateImages } from "../src/api/openrouter-images.ts";
 import { streamSimple as streamCandyMessages } from "../src/api/pi-messages.ts";
 import type { Api, FetchFunction, ImageModel, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { createOpenRouterImageModels } from "./openrouter-image-models.ts";
 
 const context = normalizeContext({
 	messages: [{ role: "user", content: "hello", timestamp: 1 }],
@@ -159,8 +159,9 @@ describe("fetch stream option", () => {
 			provider: "openrouter",
 			output: ["image"],
 		};
-		await generateImages(
-			model,
+		const request = createOpenRouterImageModels(model);
+		await request.models.generateImages(
+			request.model,
 			{ input: [{ type: "text", text: "draw" }] },
 			{
 				apiKey: "test-key",

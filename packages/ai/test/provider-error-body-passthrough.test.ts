@@ -1,20 +1,6 @@
-// Regression test for issues/provider-error-body-passthrough
-//
-// When an endpoint behind a proxy / gateway returns a non-2xx response with a
-// body the SDK cannot fold into its message, the provider catch block drops the
-// body. The openai SDK's APIError keeps the parsed body on `error.error` and
-// produces `"<status> status code (no body)"` as the message, so a body-blind
-// catch (`error.message` only) surfaces the opaque message and hides the real
-// reason the gateway returned.
-//
-// This test routes a 403-with-body APIError through the OpenRouter image
-// provider (one of the body-blind providers) and asserts the resulting
-// errorMessage contains both the status and the body reason. It is EXPECTED TO
-// FAIL until the provider catch blocks read the SDK error body.
-
 import { describe, expect, it, vi } from "vitest";
-import { generateImages } from "../src/images.ts";
 import type { ImageModel, ImagesContext } from "../src/types.ts";
+import { createOpenRouterImageModels } from "./openrouter-image-models.ts";
 
 // Reproduce the openai SDK APIError shape: makeMessage(status, error, message)
 // returns `"403 status code (no body)"` when status is set but the parsed body
@@ -67,7 +53,8 @@ describe("provider error body passthrough", () => {
 			input: [{ type: "text", text: "Generate a dog" }],
 		};
 
-		const output = await generateImages(model, context, { apiKey: "test" });
+		const request = createOpenRouterImageModels(model);
+		const output = await request.models.generateImages(request.model, context, { apiKey: "test" });
 
 		expect(output.stopReason).toBe("error");
 		// The status should be surfaced.

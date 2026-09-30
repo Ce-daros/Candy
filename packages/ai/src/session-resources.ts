@@ -1,4 +1,5 @@
-export type SessionResourceCleanup = (sessionId?: string) => void;
+export type SessionResourceOwner = object;
+export type SessionResourceCleanup = (resourceOwner?: SessionResourceOwner) => void;
 
 const sessionResourceCleanups = new Set<SessionResourceCleanup>();
 
@@ -9,11 +10,11 @@ export function registerSessionResourceCleanup(cleanup: SessionResourceCleanup):
 	};
 }
 
-export function cleanupSessionResources(sessionId?: string): void {
+export function cleanupSessionResources(resourceOwner?: SessionResourceOwner): void {
 	const errors: unknown[] = [];
 	for (const cleanup of sessionResourceCleanups) {
 		try {
-			cleanup(sessionId);
+			cleanup(resourceOwner);
 		} catch (error) {
 			errors.push(error);
 		}

@@ -1,8 +1,6 @@
 import { NOOP_TELEMETRY_CONTEXT, type TelemetryContext } from "@candy/telemetry";
 import { describe, expect, it } from "vitest";
 import { buildBaseOptions } from "../src/api/simple-options.ts";
-import { generateImages } from "../src/images.ts";
-import { registerImagesApiProvider } from "../src/images-api-registry.ts";
 import { createModels, createProvider } from "../src/models.ts";
 import type { DeferredHandle, ImageModel, ImagesContext, Model, ProviderRequestOptions } from "../src/types.ts";
 import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
@@ -119,24 +117,8 @@ describe("ProviderRequestOptions.telemetryContext", () => {
 		expect(observed.every((value) => value === telemetryContext)).toBe(true);
 	});
 
-	it("survives direct and Models image dispatch", async () => {
+	it("survives Models image dispatch", async () => {
 		const observed: Array<TelemetryContext | undefined> = [];
-		registerImagesApiProvider({
-			api: imageModel.api,
-			generateImages: async (requestModel, _context, options) => {
-				observed.push(options?.telemetryContext);
-				return {
-					api: requestModel.api,
-					provider: requestModel.provider,
-					model: requestModel.id,
-					output: [],
-					stopReason: "stop",
-					timestamp: 0,
-				};
-			},
-		});
-		await generateImages(imageModel, imagesContext, { telemetryContext });
-
 		const models = createModels();
 		models.setProvider(
 			createProvider({
@@ -162,6 +144,6 @@ describe("ProviderRequestOptions.telemetryContext", () => {
 		);
 		await models.generateImages(imageModel, imagesContext, { telemetryContext });
 
-		expect(observed).toEqual([telemetryContext, telemetryContext]);
+		expect(observed).toEqual([telemetryContext]);
 	});
 });
