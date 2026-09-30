@@ -9,17 +9,15 @@ import { contentText, InMemoryCredentialStore } from "@candy/ai";
 import { getCurrentSystemPrompt } from "@candy/ai/utils/transcript";
 import {
 	type AgentSession,
-	type CreateAgentSessionOptions,
-	createAgentSessionFromServices,
-	createAgentSessionServices,
+	type CreateAgentSessionRuntimeOptions,
+	createAgentSessionRuntime,
 	getAgentDir,
 	type InlineExtension,
 	ModelRuntime,
-	readStoredCredential,
-	resourceThemeAdapter,
+	ReadOnlyAuthStorage,
 	SessionManager,
 } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
+
 import {
 	attachHarnessRunToError,
 	createHarness,
@@ -52,9 +50,9 @@ export type CandyCodingAgentModelSelection = {
 export type CandyCodingAgentHarnessOptions = {
 	name?: string;
 	model?: CandyCodingAgentModelSelection;
-	noTools?: CreateAgentSessionOptions["noTools"];
-	tools?: CreateAgentSessionOptions["tools"];
-	customTools?: CreateAgentSessionOptions["customTools"];
+	noTools?: CreateAgentSessionRuntimeOptions["noTools"];
+	tools?: CreateAgentSessionRuntimeOptions["tools"];
+	customTools?: CreateAgentSessionRuntimeOptions["customTools"];
 	workspaceFiles?: Readonly<Record<string, string>>;
 	transformSystemPrompt?: (defaultPrompt: string) => string;
 	expectedCandyDocumentation?: boolean;
@@ -304,6 +302,7 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 
 	let sessionManager: SessionManager | undefined;
 	let session: AgentSession | undefined;
+	let runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>> | undefined;
 	let result: SimpleHarnessResult<string | TOutput> | undefined;
 	let runDiagnostics: CandyRunDiagnostics | undefined;
 	let runError: unknown;
@@ -313,7 +312,7 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 	try {
 		const authPath = join(hostAgentDir, "auth.json");
 		const credentials = new InMemoryCredentialStore();
-		const storedCredential = readStoredCredential(selection.provider, authPath);
+		const storedCredential = await new ReadOnlyAuthStorage(authPath).read(selection.provider, { signal });
 		if (storedCredential) await credentials.modify(selection.provider, async () => storedCredential);
 		const modelRuntime = await ModelRuntime.create({ credentials });
 		await Promise.all([mkdir(workspace), mkdir(agentDir, { recursive: true })]);
@@ -336,31 +335,28 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 			}
 		}
 
-		const services = await createAgentSessionServices({
-			extensionModules: extensionHostModules,
-			themeAdapter: resourceThemeAdapter,
-			cwd: workspace,
-			modelRuntime,
-			resourceLoaderOptions: { extensionFactories },
-		});
 		signal?.throwIfAborted();
 		sessionManager = SessionManager.create(workspace, join(root, "sessions"));
 		setArtifact("runId", sessionManager.getSessionId());
-		session = (
-			await createAgentSessionFromServices({
-				services,
-				sessionManager,
-				model,
-				thinkingLevel: "off",
-				tools: options.tools,
-				noTools: options.noTools,
-				customTools: options.customTools,
-			})
-		).session;
+		runtime = await createAgentSessionRuntime({
+			cwd: workspace,
+			agentDir,
+			modelRuntime,
+			resourceLoaderOptions: { extensionFactories },
+			sessionManager,
+			model,
+			thinkingLevel: "off",
+			tools: options.tools,
+			noTools: options.noTools,
+			customTools: options.customTools,
+			signal,
+		});
+		session = runtime.session;
 
 		const expectedInlinePaths = new Set(extensionFactories.map(({ name }) => `<inline:${name}>`));
-		const unexpectedExtensions = session.extensionRunner
-			.getExtensionPaths()
+		const unexpectedExtensions = runtime.resources
+			.getInventory()
+			.extensions.extensions.map((extension) => extension.path)
 			.filter((path) => !expectedInlinePaths.has(path));
 		if (unexpectedExtensions.length > 0) {
 			throw new Error(`Isolated eval loaded unexpected extensions: ${unexpectedExtensions.join(", ")}`);
@@ -434,7 +430,7 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 			}
 		}
 		try {
-			session?.dispose();
+			await runtime?.dispose();
 		} catch (error) {
 			cleanupErrors.push(error);
 		}
