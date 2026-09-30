@@ -1,5 +1,6 @@
 import { fuzzyFilter } from "../fuzzy.ts";
 import { getKeybindings } from "../keybindings.ts";
+import { moveSelection } from "../selection.ts";
 import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 import { Input } from "./input.ts";
@@ -15,6 +16,8 @@ export interface SettingItem {
 	currentValue: string;
 	/** If provided, Enter/Space cycles through these values */
 	values?: string[];
+	/** Display labels keyed by the stored cycle value */
+	optionLabels?: Record<string, string>;
 	/** If provided, Enter opens this submenu. Receives current value and done callback.
 	 *  done() accepts an optional selectedValue and an optional navigateTo id to move the cursor after close. */
 	submenu?: (
@@ -172,7 +175,8 @@ export class SettingsList implements Component {
 			const usedWidth = prefixWidth + maxLabelWidth + visibleWidth(separator);
 			const valueMaxWidth = width - usedWidth - 2;
 
-			const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
+			const displayValue = item.optionLabels?.[item.currentValue] ?? item.currentValue;
+			const valueText = this.theme.value(truncateToWidth(displayValue, valueMaxWidth, ""), isSelected);
 
 			lines.push(
 				truncateToWidth(
@@ -224,7 +228,7 @@ export class SettingsList implements Component {
 		if (event.type === "wheel" && event.wheelDelta) {
 			const delta = event.wheelDelta < 0 ? -1 : 1;
 			const previousIndex = this.selectedIndex;
-			this.selectedIndex = Math.max(0, Math.min(displayItems.length - 1, this.selectedIndex + delta));
+			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, delta);
 			return { handled: true, render: this.selectedIndex !== previousIndex };
 		}
 		// Hover must not change selection: the visible range is centered on it.
@@ -260,11 +264,9 @@ export class SettingsList implements Component {
 		const kb = getKeybindings();
 		const displayItems = this.getDisplayItems();
 		if (kb.matches(data, "tui.select.up")) {
-			if (displayItems.length === 0) return;
-			this.selectedIndex = this.selectedIndex === 0 ? displayItems.length - 1 : this.selectedIndex - 1;
+			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, -1);
 		} else if (kb.matches(data, "tui.select.down")) {
-			if (displayItems.length === 0) return;
-			this.selectedIndex = this.selectedIndex === displayItems.length - 1 ? 0 : this.selectedIndex + 1;
+			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, 1);
 		} else if (
 			kb.matches(data, "tui.select.confirm") ||
 			(data === " " && (!this.searchEnabled || this.searchInput?.getValue().length === 0))

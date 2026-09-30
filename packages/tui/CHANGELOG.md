@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Vertical `SelectList` and `SettingsList` navigation stops at the first and last selectable rows for arrows, wheel input, and paging. Settings value cycling continues to wrap.
 - Removed the unused `KeyEventType` export and `isPunctuationChar` helper.
 - `visibleWindow(index, count, viewportSize)` added to `selection.ts`: render-time centered window over a flat list, complementing `moveSelection`/`moveViewport`.
 

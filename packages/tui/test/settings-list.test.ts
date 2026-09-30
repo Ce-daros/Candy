@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { SettingsList, type SettingsListTheme } from "../src/components/settings-list.ts";
+import type { TuiMouseEvent } from "../src/tui.ts";
 
 const testTheme: SettingsListTheme = {
 	label: (text) => text,
@@ -41,6 +42,9 @@ describe("SettingsList", () => {
 
 		list.handleInput("\r");
 		assert.deepStrictEqual(changes, [{ id: "tui-mode", value: "fullscreen" }]);
+		list.updateValue("tui-mode", "fullscreen");
+		list.handleInput("\r");
+		assert.deepStrictEqual(changes[1], { id: "tui-mode", value: "regular" });
 	});
 
 	it("keeps Space as a change shortcut before a search query is entered", () => {
@@ -59,6 +63,42 @@ describe("SettingsList", () => {
 		list.handleInput(" ");
 
 		assert.deepStrictEqual(changes, [{ id: "tui-mode", value: "fullscreen" }]);
+	});
+
+	it("stops keyboard and wheel navigation at the first and last settings", () => {
+		const list = new SettingsList(
+			[
+				{ id: "first", label: "First", currentValue: "off", values: ["off", "on"] },
+				{ id: "second", label: "Second", currentValue: "off", values: ["off", "on"] },
+			],
+			10,
+			testTheme,
+			() => {},
+			() => {},
+		);
+		list.handleInput("\x1b[A");
+		assert.equal(list.getSelectedItem()?.id, "first");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.id, "second");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.id, "second");
+
+		const wheel: TuiMouseEvent = {
+			type: "wheel",
+			button: "none",
+			x: 0,
+			y: 0,
+			screenX: 0,
+			screenY: 0,
+			width: 80,
+			height: 10,
+			wheelDelta: 1,
+			shift: false,
+			alt: false,
+			ctrl: false,
+		};
+		list.handleMouse(wheel);
+		assert.equal(list.getSelectedItem()?.id, "second");
 	});
 
 	it("restores the previous value and renders async save failures", async () => {

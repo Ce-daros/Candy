@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { SelectList } from "../src/components/select-list.ts";
+import type { TuiMouseEvent } from "../src/tui.ts";
 import { visibleWidth } from "../src/utils.ts";
 
 const testTheme = {
@@ -157,6 +158,43 @@ describe("SelectList", () => {
 		list.setSelectedIndex(0);
 		assert.equal(list.getSelectedItem()?.value, "first");
 		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.value, "second");
+	});
+
+	it("stops keyboard and wheel navigation at selectable boundaries", () => {
+		const list = new SelectList(
+			[
+				{ value: "group", label: "Connection", selectable: false },
+				{ value: "first", label: "First" },
+				{ value: "second", label: "Second" },
+				{ value: "end", label: "End", selectable: false },
+			],
+			5,
+			testTheme,
+		);
+		list.setSelectedIndex(1);
+		list.handleInput("\x1b[A");
+		assert.equal(list.getSelectedItem()?.value, "first");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.value, "second");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.value, "second");
+
+		const wheel: TuiMouseEvent = {
+			type: "wheel",
+			button: "none",
+			x: 0,
+			y: 0,
+			screenX: 0,
+			screenY: 0,
+			width: 80,
+			height: 10,
+			wheelDelta: 1,
+			shift: false,
+			alt: false,
+			ctrl: false,
+		};
+		list.handleMouse(wheel);
 		assert.equal(list.getSelectedItem()?.value, "second");
 	});
 

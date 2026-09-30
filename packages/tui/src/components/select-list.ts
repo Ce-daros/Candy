@@ -1,4 +1,5 @@
 import { getKeybindings } from "../keybindings.ts";
+import { moveSelection } from "../selection.ts";
 import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth } from "../utils.ts";
 
@@ -134,7 +135,10 @@ export class SelectList implements Component {
 		if (event.type === "wheel" && event.wheelDelta) {
 			const delta: 1 | -1 = event.wheelDelta < 0 ? -1 : 1;
 			const previousIndex = this.selectedIndex;
-			this.selectedIndex = this.findSelectable(this.selectedIndex + delta, delta);
+			this.selectedIndex = this.findSelectable(
+				moveSelection(this.selectedIndex, this.filteredItems.length, delta),
+				delta,
+			);
 			if (this.selectedIndex !== previousIndex) this.notifySelectionChange();
 			return { handled: true, render: this.selectedIndex !== previousIndex };
 		}
@@ -171,12 +175,12 @@ export class SelectList implements Component {
 		const kb = getKeybindings();
 		// Up arrow - wrap to bottom when at top
 		if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = this.findSelectable(this.selectedIndex - 1, -1);
+			this.selectedIndex = this.findSelectable(moveSelection(this.selectedIndex, this.filteredItems.length, -1), -1);
 			this.notifySelectionChange();
 		}
 		// Down arrow - wrap to top when at bottom
 		else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = this.findSelectable(this.selectedIndex + 1, 1);
+			this.selectedIndex = this.findSelectable(moveSelection(this.selectedIndex, this.filteredItems.length, 1), 1);
 			this.notifySelectionChange();
 		}
 		// Enter
@@ -206,9 +210,7 @@ export class SelectList implements Component {
 	}
 
 	private findSelectable(start: number, direction: 1 | -1): number {
-		if (this.filteredItems.length === 0) return 0;
-		for (let offset = 0; offset < this.filteredItems.length; offset++) {
-			const index = (start + offset * direction + this.filteredItems.length * 2) % this.filteredItems.length;
+		for (let index = start; index >= 0 && index < this.filteredItems.length; index += direction) {
 			if (this.filteredItems[index]?.selectable !== false) return index;
 		}
 		return this.selectedIndex;
