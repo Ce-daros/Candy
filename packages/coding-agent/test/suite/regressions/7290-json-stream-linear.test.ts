@@ -17,7 +17,7 @@ describe("regression #7290: JSON event streams stay linear", () => {
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage(text)]);
 
-		await harness.session.prompt("respond");
+		await harness.session.execution.prompt("respond");
 
 		const sessionUpdates = harness.eventsOfType("message_update");
 		for (const update of sessionUpdates) {

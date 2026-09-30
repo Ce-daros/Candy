@@ -157,7 +157,7 @@ export type AgentTurnDecision = { action: "continue" } | { action: "end" };
 export type FinishTurn = (
 	turn: AgentTurnContext,
 	signal?: AbortSignal,
-) => AgentTurnDecision | void | Promise<AgentTurnDecision | undefined> | Promise<void>;
+) => AgentTurnDecision | undefined | Promise<AgentTurnDecision | undefined | undefined>;
 
 /** Replacement runtime state used by the agent loop before starting another provider request. */
 export interface AgentLoopTurnUpdate {
@@ -188,7 +188,7 @@ export type AgentRequestUpdate = Omit<AgentLoopTurnUpdate, "messages">;
 export type PrepareRequest = (
 	request: PrepareRequestContext,
 	signal?: AbortSignal,
-) => AgentRequestUpdate | void | Promise<AgentRequestUpdate | undefined> | Promise<void>;
+) => AgentRequestUpdate | undefined | Promise<AgentRequestUpdate | undefined | undefined>;
 
 export interface PrepareNextTurnContext extends AgentTurnContext {}
 
@@ -411,7 +411,6 @@ export interface AgentState {
 	 *
 	 * System messages in the transcript carry the prompt and tool declarations.
 	 */
-	set messages(messages: AgentMessage[]);
 	get messages(): AgentMessage[];
 	/**
 	 * True while the agent is processing a prompt or continuation.

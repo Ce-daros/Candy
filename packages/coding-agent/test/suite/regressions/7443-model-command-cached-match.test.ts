@@ -16,8 +16,10 @@ describe("issue #7443 cached Powerbar models", () => {
 	it("browses the available snapshot without refreshing the catalog", async () => {
 		initTheme(undefined, false);
 		harness = await createHarness({ models: [{ id: "cached", name: "Cached" }] });
-		const refresh = vi.spyOn(harness.session.modelRuntime, "refresh").mockImplementation(() => new Promise(() => {}));
-		const runtime = harness.session.modelRuntime;
+		const refresh = vi
+			.spyOn(harness.session.execution.modelRuntime, "refresh")
+			.mockImplementation(() => new Promise(() => {}));
+		const runtime = harness.session.execution.modelRuntime;
 		const host: PowerbarHost = {
 			requestRender() {},
 			getThinkingLevels: () => ["off"],

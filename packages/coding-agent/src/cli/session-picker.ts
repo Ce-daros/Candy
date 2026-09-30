@@ -3,7 +3,7 @@
  */
 
 import { setKeybindings } from "@candy/tui";
-import type { SessionInfo, SessionListProgress } from "../core/session-manager.ts";
+import type { SessionInfo, SessionListProgress } from "../core/session-history.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.ts";
 import { KeybindingsManager } from "../presentation/keybindings.ts";

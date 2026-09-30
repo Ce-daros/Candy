@@ -19,7 +19,7 @@ describe("regression: issue 6019 explicit provider retry messages", () => {
 				fauxAssistantMessage("recovered"),
 			]);
 
-			await harness.session.prompt("test");
+			await harness.session.execution.prompt("test");
 
 			expect(harness.faux.state.callCount).toBe(2);
 			expect(harness.eventsOfType("auto_retry_start").map((event) => event.errorMessage)).toEqual([errorMessage]);

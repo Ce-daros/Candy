@@ -19,8 +19,6 @@ vi.mock("../../../src/core/output-guard.js", () => ({
 	},
 }));
 
-vi.mock("../../../src/modes/interactive/theme/theme.js", () => ({ theme: {} }));
-
 vi.mock("../../../src/modes/rpc/jsonl.js", () => ({
 	attachJsonlLineReader: vi.fn((_stream: NodeJS.ReadableStream, onLine: (line: string) => void) => {
 		rpcIo.lineHandler = onLine;
@@ -72,6 +70,9 @@ function parseOutputLines(): Array<Record<string, unknown>> {
 function createRuntimeHost(harness: Harness): AgentSessionRuntime {
 	return {
 		session: harness.session,
+		settings: harness.settingsManager,
+		models: harness.modelRuntime,
+		resources: harness.session.resources,
 		newSession: vi.fn(async () => ({ cancelled: true })),
 		switchSession: vi.fn(async () => ({ cancelled: true })),
 		fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),

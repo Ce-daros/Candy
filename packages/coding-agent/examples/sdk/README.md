@@ -14,7 +14,7 @@ These examples use `createAgentSessionRuntime()` from `@candy/coding-agent`. The
 | `08-prompt-templates.ts` | Add a host-defined prompt template |
 | `09-api-keys-and-oauth.ts` | Configure credentials and model storage |
 | `10-settings.ts` | Supply settings and await a persisted change |
-| `11-sessions.ts` | Use memory or persistent session managers |
+| `11-sessions.ts` | Use in-memory or persistent session history |
 | `12-full-control.ts` | Supply custom model, settings, and resource services |
 | `13-session-runtime.ts` | Replace the active session through the runtime |
 

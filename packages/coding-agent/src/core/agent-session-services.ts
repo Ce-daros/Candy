@@ -16,7 +16,7 @@ import {
 	type ResourceLoader,
 	type ResourceLoaderReloadOptions,
 } from "./resource-loader.ts";
-import type { SessionManager } from "./session-manager.ts";
+import type { SessionHistory } from "./session-history.ts";
 import { SettingsManager } from "./settings-manager.ts";
 
 /**
@@ -64,7 +64,7 @@ export interface CreateAgentSessionServicesOptions {
  */
 export interface CreateAgentSessionFromServicesOptions {
 	services: AgentSessionServices;
-	sessionManager: SessionManager;
+	sessionManager: SessionHistory;
 	sessionStartEvent?: SessionStartEvent;
 	model?: Model<any>;
 	thinkingLevel?: ThinkingLevel;
@@ -174,19 +174,7 @@ export async function assembleAgentSessionServices(
 
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
 		const extensionsResult = resourceLoader.getExtensions();
-		for (const { name, config, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {
-			try {
-				modelRuntime.registerProvider(name, config);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				diagnostics.push({
-					type: "error",
-					message: `Extension "${extensionPath}" error: ${message}`,
-				});
-			}
-		}
-		extensionsResult.runtime.pendingProviderRegistrations = [];
-		for (const { provider, extensionPath } of extensionsResult.runtime.pendingNativeProviderRegistrations) {
+		for (const { provider, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {
 			try {
 				modelRuntime.registerNativeProvider(provider);
 			} catch (error) {
@@ -197,7 +185,7 @@ export async function assembleAgentSessionServices(
 				});
 			}
 		}
-		extensionsResult.runtime.pendingNativeProviderRegistrations = [];
+		extensionsResult.runtime.pendingProviderRegistrations = [];
 		await modelRuntime.refresh({ allowNetwork: false });
 		diagnostics.push(...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues));
 

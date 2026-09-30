@@ -5,13 +5,14 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import { getTestAgent } from "../execution-internals.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";
 
 async function createWaitingHarness(
 	options: {
 		tools?: AgentTool[];
-		extensionFactories?: Harness["session"]["extensionRunner"] extends never
+		extensionFactories?: Harness["session"]["execution"]["extensionRunner"] extends never
 			? never
 			: Array<(candy: ExtensionAPI) => void>;
 	} = {},
@@ -44,7 +45,7 @@ async function createWaitingHarness(
 	});
 
 	const waitForToolStart = new Promise<void>((resolve) => {
-		const unsubscribe = harness.session.subscribe((event) => {
+		const unsubscribe = harness.session.execution.subscribe((event) => {
 			if (event.type === "tool_execution_start" && event.toolName === "wait") {
 				unsubscribe();
 				resolve();
@@ -55,7 +56,7 @@ async function createWaitingHarness(
 	return {
 		harness,
 		releaseToolExecution: () => releaseToolExecution?.(),
-		promptPromise: harness.session.prompt("start"),
+		promptPromise: harness.session.execution.prompt("start"),
 		waitForToolStart,
 	};
 }
@@ -85,11 +86,11 @@ describe("AgentSession queue characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.executeCommand({ source: "extension", name: "testcmd", args: "hello world" });
+		await harness.session.execution.executeCommand({ source: "extension", name: "testcmd", args: "hello world" });
 
 		expect(commandRuns).toEqual(["hello world"]);
 		expect(harness.getPendingResponseCount()).toBe(0);
-		expect(harness.session.messages).toEqual([]);
+		expect(harness.session.execution.messages).toEqual([]);
 	});
 
 	it("delivers extension-origin steering messages before the next LLM call", async () => {
@@ -149,7 +150,7 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.followUp("after current run");
+		await harness.session.execution.followUp("after current run");
 		releaseToolExecution();
 		await promptPromise;
 
@@ -187,10 +188,10 @@ describe("AgentSession queue characterization", () => {
 		await waitForToolStart;
 		inputEvents.length = 0;
 		try {
-			await harness.session.steer("steer me", undefined, { source: "rpc" });
-			await harness.session.steer("handle steer", undefined, { source: "rpc" });
-			await harness.session.followUp("follow me", undefined, { source: "rpc" });
-			await harness.session.followUp("handle follow", undefined, { source: "rpc" });
+			await harness.session.execution.steer("steer me", undefined, { source: "rpc" });
+			await harness.session.execution.steer("handle steer", undefined, { source: "rpc" });
+			await harness.session.execution.followUp("follow me", undefined, { source: "rpc" });
+			await harness.session.execution.followUp("handle follow", undefined, { source: "rpc" });
 
 			expect(inputEvents).toEqual([
 				{ text: "steer me", source: "rpc", streamingBehavior: "steer" },
@@ -198,8 +199,8 @@ describe("AgentSession queue characterization", () => {
 				{ text: "follow me", source: "rpc", streamingBehavior: "followUp" },
 				{ text: "handle follow", source: "rpc", streamingBehavior: "followUp" },
 			]);
-			expect(harness.session.getSteeringMessages()).toEqual(["transformed: steer me"]);
-			expect(harness.session.getFollowUpMessages()).toEqual(["transformed: follow me"]);
+			expect(harness.session.execution.getSteeringMessages()).toEqual(["transformed: steer me"]);
+			expect(harness.session.execution.getFollowUpMessages()).toEqual(["transformed: follow me"]);
 		} finally {
 			releaseToolExecution();
 		}
@@ -218,8 +219,8 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.steer("steer 1");
-		await harness.session.steer("steer 2");
+		await harness.session.execution.steer("steer 1");
+		await harness.session.execution.steer("steer 2");
 		releaseToolExecution();
 		await promptPromise;
 
@@ -240,8 +241,8 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.followUp("follow-up 1");
-		await harness.session.followUp("follow-up 2");
+		await harness.session.execution.followUp("follow-up 1");
+		await harness.session.execution.followUp("follow-up 2");
 		releaseToolExecution();
 		await promptPromise;
 
@@ -258,7 +259,7 @@ describe("AgentSession queue characterization", () => {
 		const waiting = await createWaitingHarness();
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
 		harnesses.push(harness);
-		await harness.session.setSteeringMode("all");
+		await harness.session.execution.setSteeringMode("all");
 		let batchedUserMessages: string[] = [];
 
 		harness.setResponses([
@@ -272,8 +273,8 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.steer("steer 1");
-		await harness.session.steer("steer 2");
+		await harness.session.execution.steer("steer 1");
+		await harness.session.execution.steer("steer 2");
 		releaseToolExecution();
 		await promptPromise;
 
@@ -285,7 +286,7 @@ describe("AgentSession queue characterization", () => {
 		const waiting = await createWaitingHarness();
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
 		harnesses.push(harness);
-		await harness.session.setFollowUpMode("all");
+		await harness.session.execution.setFollowUpMode("all");
 		let batchedUserMessages: string[] = [];
 
 		harness.setResponses([
@@ -300,8 +301,8 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.followUp("follow-up 1");
-		await harness.session.followUp("follow-up 2");
+		await harness.session.execution.followUp("follow-up 1");
+		await harness.session.execution.followUp("follow-up 2");
 		releaseToolExecution();
 		await promptPromise;
 
@@ -329,7 +330,7 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.sendCustomMessage(
+		await harness.session.execution.sendCustomMessage(
 			{ customType: "queue-test", content: "steer custom", display: true, details: { value: 1 } },
 			{ deliverAs: "steer" },
 		);
@@ -338,7 +339,9 @@ describe("AgentSession queue characterization", () => {
 
 		expect(sawCustomMessage).toBe(true);
 		expect(
-			harness.session.messages.some((message) => message.role === "custom" && message.customType === "queue-test"),
+			harness.session.execution.messages.some(
+				(message) => message.role === "custom" && message.customType === "queue-test",
+			),
 		).toBe(true);
 	});
 
@@ -363,7 +366,7 @@ describe("AgentSession queue characterization", () => {
 		]);
 
 		await waitForToolStart;
-		await harness.session.sendCustomMessage(
+		await harness.session.execution.sendCustomMessage(
 			{ customType: "queue-test", content: "follow-up custom", display: true, details: { value: 1 } },
 			{ deliverAs: "followUp" },
 		);
@@ -372,7 +375,9 @@ describe("AgentSession queue characterization", () => {
 
 		expect(sawCustomMessage).toBe(true);
 		expect(
-			harness.session.messages.some((message) => message.role === "custom" && message.customType === "queue-test"),
+			harness.session.execution.messages.some(
+				(message) => message.role === "custom" && message.customType === "queue-test",
+			),
 		).toBe(true);
 	});
 
@@ -381,7 +386,7 @@ describe("AgentSession queue characterization", () => {
 		harnesses.push(harness);
 		let sawCustomMessage = false;
 
-		await harness.session.sendCustomMessage(
+		await harness.session.execution.sendCustomMessage(
 			{ customType: "next-turn", content: "carry this", display: true, details: {} },
 			{ deliverAs: "nextTurn" },
 		);
@@ -398,10 +403,10 @@ describe("AgentSession queue characterization", () => {
 			},
 		]);
 
-		await harness.session.prompt("normal prompt");
+		await harness.session.execution.prompt("normal prompt");
 
 		expect(sawCustomMessage).toBe(true);
-		expect(harness.session.messages.map((message) => message.role)).toEqual([
+		expect(harness.session.execution.messages.map((message) => message.role)).toEqual([
 			"system",
 			"user",
 			"custom",
@@ -420,24 +425,24 @@ describe("AgentSession queue characterization", () => {
 			fauxAssistantMessage("done"),
 		]);
 
-		harness.session.subscribe((event) => {
+		harness.session.execution.subscribe((event) => {
 			if (
 				event.type === "message_start" &&
 				event.message.role === "user" &&
 				getMessageText(event.message) === "queued"
 			) {
-				countsAtQueuedMessageStart.push(harness.session.pendingMessageCount);
+				countsAtQueuedMessageStart.push(harness.session.execution.pendingMessageCount);
 			}
 		});
 
 		await waitForToolStart;
-		await harness.session.steer("queued");
-		expect(harness.session.pendingMessageCount).toBe(1);
+		await harness.session.execution.steer("queued");
+		expect(harness.session.execution.pendingMessageCount).toBe(1);
 		releaseToolExecution();
 		await promptPromise;
 
 		expect(countsAtQueuedMessageStart).toEqual([0]);
-		expect(harness.session.pendingMessageCount).toBe(0);
+		expect(harness.session.execution.pendingMessageCount).toBe(0);
 	});
 
 	it.each(["steer", "followUp"] as const)("keeps a matching command literal in %s", async (method) => {
@@ -464,10 +469,12 @@ describe("AgentSession queue characterization", () => {
 		const harness = await createHarness({ resourceLoader });
 		harnesses.push(harness);
 		const text = "/testcmd queued";
-		const disposition = await harness.session[method](text);
+		const disposition = await harness.session.execution[method](text);
 		expect(disposition).toBe("queued");
 		expect(
-			method === "steer" ? harness.session.getSteeringMessages() : harness.session.getFollowUpMessages(),
+			method === "steer"
+				? harness.session.execution.getSteeringMessages()
+				: harness.session.execution.getFollowUpMessages(),
 		).toEqual([text]);
 		expect(commandRuns).toEqual([]);
 	});
@@ -489,8 +496,8 @@ describe("AgentSession queue characterization", () => {
 
 		harness.setResponses([fauxAssistantMessage("reply"), fauxAssistantMessage("follow-up reply")]);
 
-		await harness.session.prompt("hello");
-		await harness.session.agent.waitForIdle();
+		await harness.session.execution.prompt("hello");
+		await getTestAgent(harness.session.execution).waitForIdle();
 
 		expect(getUserTexts(harness)).toEqual(["hello", "conflict report"]);
 	});

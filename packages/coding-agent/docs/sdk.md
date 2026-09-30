@@ -15,14 +15,14 @@ const runtime = await createAgentSessionRuntime();
 
 try {
 	const session = runtime.session;
-	const unsubscribe = session.subscribe((event) => {
+	const unsubscribe = session.execution.subscribe((event) => {
 		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 			process.stdout.write(event.assistantMessageEvent.delta);
 		}
 	});
 
 	try {
-		await session.prompt("What files are in the current directory?");
+		await session.execution.prompt("What files are in the current directory?");
 	} finally {
 		unsubscribe();
 	}
@@ -37,7 +37,18 @@ The [minimal example](../examples/sdk/01-minimal.ts) also reads messages after a
 
 ## Session lifecycle
 
-`runtime.session` is a read-only operations facade for the active conversation. Its `messages`, model, and prompt-template values are detached snapshots; read them again after an operation when you need current state. The facade exposes prompting, queueing, model and tool selection, context operations, subscriptions, and session metadata without exposing the underlying Agent or mutable message storage.
+`runtime.session` exposes four capabilities for the active conversation:
+
+| Capability | Owns |
+|---|---|
+| `execution` | Prompting, input queues, cancellation, events, commands, and compaction |
+| `history` | Reading committed entries, branches, context projection, session metadata and statistics, and JSONL export |
+| `selection` | The selected model and thinking level |
+| `resources` | Discovered instructions, skills, extensions, prompts, tools, and resource configuration |
+
+Use `execution` for operations, `history` for committed records, and `selection` for model state. A session object remains bound to that session; after replacement, read `runtime.session` again before starting work. Runtime-level model catalog and authentication operations are available on `runtime.models`.
+
+Read context with `session.history.buildSessionContext().messages`, the last answer with `session.history.getLastAssistantText()`, and model-specific totals with `session.history.getContextUsage(session.selection.model)` or `getSessionStats(session.selection.model)`. Use `history.exportToJsonl()` to save the committed session. The public capability objects expose supported operations at runtime as well as in their types; history writes and internal managers are not exposed through `runtime.session`.
 
 The runtime owns session replacement:
 
@@ -49,13 +60,22 @@ await runtime.clone();
 await runtime.importFromJsonl(jsonlPath);
 ```
 
-After replacement, read `runtime.session` again and bind session-specific listeners to the new facade. The runtime also provides `cwd`, `settings`, `models`, `resources`, and startup diagnostics for the active session.
+After replacement, read `runtime.session` again and bind session-specific listeners to the new session. The runtime also provides `cwd`, `settings`, `models`, `resources`, and startup diagnostics for the active session.
+
+Use the runtime model catalog to find a model, then apply it through the session's selection capability:
+
+```typescript
+const model = runtime.models.getModel("anthropic", "claude-sonnet-4-5");
+if (!model) throw new Error("Model is unavailable");
+await runtime.session.selection.setModel(model);
+runtime.session.selection.setThinkingLevel("low");
+```
 
 `runtime.newSession({ parentSession, withSession })` can record session lineage and run host setup against the replacement session. The `withSession` callback receives a context for the new session after replacement; use it for work that must follow the swap rather than keeping a reference to the old facade.
 
-Sessions persist to JSONL by default. Supply `SessionManager.inMemory(cwd)` when the host does not want a session file. `SessionManager.create()`, `continueRecent()`, `open()`, and `list()` support persistent session workflows; the [sessions example](../examples/sdk/11-sessions.ts) shows the available factories. Branching updates the active leaf without deleting abandoned branches. [Session File Format](session-format.md) describes the persisted representation.
+Sessions persist to JSONL by default. Supply `SessionHistory.inMemory(cwd)` when the host does not want a session file. `SessionHistory.create()`, `continueRecent()`, and `open()` construct histories; `SessionDiscovery.list()` discovers saved sessions. The [sessions example](../examples/sdk/11-sessions.ts) shows these workflows. Branching updates the active leaf without deleting abandoned branches. [Session File Format](session-format.md) describes the persisted representation.
 
-`cwd` selects the workspace for project resource discovery, context files, session grouping, and built-in tool paths. Pass it explicitly when the target differs from `process.cwd()` and create an in-memory `SessionManager` for that same cwd.
+`cwd` selects the workspace for project resource discovery, context files, session grouping, and built-in tool paths. Pass it explicitly when the target differs from `process.cwd()` and create an in-memory `SessionHistory` for that same cwd.
 
 Configure credentials and model storage through `modelRuntimeOptions` when the runtime should own model-runtime construction:
 
@@ -76,19 +96,19 @@ The runtime registers its providers before its managed model-catalog refresh. It
 
 A prompt sent during an active run must specify whether it should steer the current run or follow it. `steer()` and `followUp()` express those choices directly. They resolve to `"queued"` when input waits behind the active operation or `"handled"` when an extension consumes it. `abort()` stops the current operation and waits for it to settle; `waitForIdle()` waits without aborting.
 
-Subscribe before prompting when the host needs streamed output. `message_end` carries the completed message and its committed `entryId`; `turn_end` carries `messageEntry` and `toolResultEntries` for the same journal records. `agent_end` marks one low-level run; retries, overflow recovery, and queued inputs can continue. Use `agent_settled` when the host needs to know that no work will continue automatically.
+Subscribe through `runtime.session.execution.subscribe()` before prompting when the host needs streamed output. `message_end` carries the completed message and its committed `entryId`. `turn_end` carries the finalized message and tool results, their committed entry IDs, the projected context, the turn outcome, and whether work can continue. `agent_end` marks one low-level run; retries, overflow recovery, and queued inputs can continue. Use `agent_settled` when the host needs to know that no work will continue automatically.
 
 ## Configure resources and tools
 
-The runtime factory creates the model runtime, settings manager, session manager, default resource loader, and default tools when those dependencies are omitted. Use `resourceLoaderOptions` for discovery overrides such as extension paths, prompt templates, skills, and system-prompt content. The factory binds these options to each session's effective working directory:
+The runtime factory creates the model runtime, settings manager, session history, default resource loader, and default tools when those dependencies are omitted. Use `resourceLoaderOptions` for discovery overrides such as extension paths, prompt templates, skills, and system-prompt content. The factory binds these options to each session's effective working directory:
 
 ```typescript
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 const cwd = process.cwd();
 const runtime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		appendSystemPromptOverride: (current) => [...current, "Keep answers concise."],
 		additionalExtensionPaths: ["./extensions/review.ts"],
@@ -112,14 +132,11 @@ Use `modelRuntime`, `model`, and `thinkingLevel` to choose model access and the 
 
 ## Settings
 
-`runtime.settings` exposes the active `SettingsManager`. Read settings through its getters or `getSetting(field)`. Setters return promises: await them to know the change has passed validation, reached storage, and become effective. A write failure rejects and leaves the previous effective value in place.
+`runtime.settings` exposes the active `SettingsManager`. Read an interactive setting through its typed definition with `read(id)`. Persist a setting change with `commitSetting(scope, field, value)` or a nested field with `commitNestedSetting(scope, field, key, value)`. Await commits; a write failure rejects and leaves the previous effective value in place.
 
 ```typescript
-await runtime.settings.setDefaultThinkingLevel("low");
-await runtime.settings.commitSetting("global", "markdown", {
-	...runtime.settings.getSetting("markdown"),
-	mermaid: "off",
-});
+const defaultThinkingLevel = runtime.settings.read("default-thinking-level");
+await runtime.settings.commitNestedSetting("global", "markdown", "mermaid", "off");
 ```
 
 `SettingsManager.inMemory(initialSettings)` is useful for tests and hosts that do not want a Candy settings file. `applyOverrides()` supplies process-local runtime overrides; it does not save defaults. Use a scope-aware commit when the host intends to change persisted global or project defaults.
@@ -136,8 +153,8 @@ The package exposes separate entrypoints for separate responsibilities:
 | `@candy/coding-agent/extension-host-modules` | Module map for dynamically loaded extensions |
 | `@candy/coding-agent/rpc-entry` | RPC process launcher |
 
-Migrate direct session construction to `createAgentSessionRuntime()`, use `runtime.session` for conversation operations, and await `runtime.dispose()` instead of disposing an individual session. Move UI imports to `./ui` and RPC imports to `./rpc`. Settings changes now return promises; await each persisted operation instead of calling `mutateAndPersist()` or using `flush()` as a substitute for awaiting the operation.
+Migrate direct session construction to `createAgentSessionRuntime()`. Move conversation calls to `runtime.session.execution`, committed entry reads to `runtime.session.history`, and model changes to `runtime.session.selection`. Use runtime operations for session replacement and await `runtime.dispose()` when the host is finished. Move UI imports to `./ui` and RPC imports to `./rpc`. Settings changes return promises; await each persisted operation instead of calling `mutateAndPersist()` or using `flush()` as a substitute for awaiting the operation.
 
-Extension `ProviderConfig.refreshModels(context)` returns the extension provider's refreshed model list; use `context.publish()` when the catalog should persist. The AI package's native `Provider.refreshModels(context)` publishes through its provider context and returns no catalog. The former OAuth `modifyModels` compatibility hook is removed. `ctx.ui.setTheme()` is asynchronous; await its result before reporting whether the theme change succeeded.
+Provider extensions register native `Provider` implementations and own their authentication, discovery, refresh, request conversion, and streaming. Use `models.json` for compatible endpoints and model configuration; see [Custom Providers](custom-provider.md).
 
 See [Extensions](extensions.md), [Choose a Model](models.md), [Provider Authentication](providers.md), [Settings](settings.md), [Sessions and Context](sessions.md), [RPC](rpc.md), and [CLI Integration](cli-integration.md) for the related APIs.

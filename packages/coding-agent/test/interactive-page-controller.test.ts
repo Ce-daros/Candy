@@ -1,18 +1,14 @@
 import { Text } from "@candy/tui";
 import { describe, expect, it } from "vitest";
+import { type InteractiveFlowFrame, InteractiveFlowStack } from "../src/modes/interactive/interactive-flow-stack.ts";
 import { InteractivePageController } from "../src/modes/interactive/interactive-page-controller.ts";
 
-describe("InteractivePageController", () => {
-	it("owns panel mount, focus, close animation, and stale close cancellation", () => {
-		const events: string[] = [];
-		let finishClose: (() => void) | undefined;
-		const panel = new Text("panel", 0, 0);
-		const editor = new Text("editor", 0, 0);
-		const controller = new InteractivePageController({
-			suspendPresentation: () => events.push("suspend"),
+function createController(flows: InteractiveFlowStack, events: string[]) {
+	let finishClose: (() => void) | undefined;
+	const controller = new InteractivePageController(
+		{
 			closeTranscriptSearch: () => events.push("close-search"),
 			mount: () => events.push("mount"),
-			resumePresentation: () => false,
 			focusEditor: () => events.push("focus-editor"),
 			closeAnimation: (onComplete) => {
 				events.push("close-animation");
@@ -20,48 +16,132 @@ describe("InteractivePageController", () => {
 			},
 			restoreEditor: () => events.push("restore-editor"),
 			requestRender: () => events.push("render"),
-		});
+		},
+		flows,
+	);
+	return { controller, finishClose: () => finishClose?.() };
+}
 
-		controller.mountPanel(panel);
-		const generation = controller.generation;
+function frame(
+	content = new Text("presentation", 0, 0),
+	events: string[] = [],
+): Omit<InteractiveFlowFrame, "controller"> {
+	return {
+		role: "presentation",
+		kind: "history",
+		content,
+		onSuspend: () => events.push("suspend-parent"),
+		onResume: () => events.push("resume-parent"),
+	};
+}
+
+describe("InteractivePageController", () => {
+	it("uses the shared flow stack to suspend and restore a presentation page", () => {
+		const events: string[] = [];
+		const flows = new InteractiveFlowStack();
+		const parent = flows.push(frame(new Text("history", 0, 0), events));
+		const { controller } = createController(flows, events);
+
+		const child = controller.mountPanel(new Text("reader", 0, 0));
+		expect(flows.current).toBe(child);
+		expect(parent.controller.signal.aborted).toBe(false);
+		expect(events).toEqual(["suspend-parent", "close-search", "mount", "render"]);
+
+		events.length = 0;
+		controller.closePanel(child);
+		expect(flows.current).toBe(parent);
+		expect(child.controller.signal.aborted).toBe(true);
+		expect(events).toEqual(["resume-parent"]);
+	});
+
+	it("invalidates stale close animations when a new flow opens", () => {
+		const events: string[] = [];
+		const flows = new InteractiveFlowStack();
+		const { controller, finishClose } = createController(flows, events);
+
+		controller.mountPanel(new Text("old panel", 0, 0));
 		controller.closePanel();
-		controller.mountPanel(editor);
-		finishClose?.();
+		controller.mountPanel(new Text("new panel", 0, 0));
+		finishClose();
 
-		expect(controller.generation).toBe(generation + 1);
+		expect(events).not.toContain("restore-editor");
+	});
+
+	it("disposes replaced selectors and ignores their stale completion callbacks", () => {
+		const events: string[] = [];
+		const flows = new InteractiveFlowStack();
+		const { controller } = createController(flows, events);
+		const component = new Text("selector", 0, 0);
+		let completeFirst!: () => void;
+		let completeSecond!: () => void;
+
+		controller.showSelector((done) => {
+			completeFirst = done;
+			return { component, focus: component, dispose: () => events.push("dispose-first") };
+		});
+		controller.showSelector((done) => {
+			completeSecond = done;
+			return { component, focus: component, dispose: () => events.push("dispose-second") };
+		});
+		const active = flows.current;
+
+		expect(events).not.toContain("resume-parent");
+		expect(events).toContain("dispose-first");
+		completeFirst();
+		expect(flows.current).toBe(active);
+		completeSecond();
+		expect(flows.current).toBeUndefined();
+		expect(events).toContain("dispose-second");
+	});
+
+	it("aborts selector work and resumes its page when the selector is cancelled", () => {
+		const events: string[] = [];
+		const flows = new InteractiveFlowStack();
+		const parent = flows.push(frame(new Text("history", 0, 0), events));
+		const { controller } = createController(flows, events);
+		let cancel!: () => void;
+		controller.showSelector((done) => {
+			cancel = done;
+			return {
+				component: new Text("selector", 0, 0),
+				focus: new Text("focus", 0, 0),
+				dispose: () => events.push("dispose-selector"),
+			};
+		});
+		const signal = flows.current!.controller.signal;
+		signal.addEventListener("abort", () => events.push("cancel-async-work"));
+
+		cancel();
+
+		expect(signal.aborted).toBe(true);
+		expect(flows.current).toBe(parent);
 		expect(events).toEqual([
-			"suspend",
+			"suspend-parent",
 			"close-search",
 			"mount",
 			"render",
-			"focus-editor",
-			"close-animation",
-			"suspend",
-			"close-search",
-			"mount",
-			"render",
+			"cancel-async-work",
+			"dispose-selector",
+			"resume-parent",
 		]);
 	});
 
-	it("disposes selector resources before replacement and only closes the active selector", () => {
+	it("aborts and disposes the whole flow stack on invalidation", () => {
 		const events: string[] = [];
-		const component = new Text("selector", 0, 0);
-		const controller = new InteractivePageController({
-			suspendPresentation: () => {},
-			closeTranscriptSearch: () => {},
-			mount: () => {},
-			resumePresentation: () => false,
-			focusEditor: () => {},
-			closeAnimation: (onComplete) => onComplete(),
-			restoreEditor: () => events.push("restore"),
-			requestRender: () => {},
+		const flows = new InteractiveFlowStack();
+		const parent = flows.push(frame(new Text("history", 0, 0), events));
+		const { controller } = createController(flows, events);
+		controller.showSelector((_done) => {
+			const component = new Text("selector", 0, 0);
+			return { component, focus: component, dispose: () => events.push("dispose-selector") };
 		});
+		const selectorSignal = flows.current?.controller.signal;
 
-		controller.showSelector((_done) => ({ component, focus: component, dispose: () => events.push("dispose-1") }));
-		controller.showSelector((_done) => ({ component, focus: component, dispose: () => events.push("dispose-2") }));
-		expect(events).toEqual(["dispose-1"]);
-
-		controller.disposeActiveSelector();
-		expect(events).toEqual(["dispose-1", "dispose-2"]);
+		controller.invalidateFlows();
+		expect(flows.current).toBeUndefined();
+		expect(parent.controller.signal.aborted).toBe(true);
+		expect(selectorSignal?.aborted).toBe(true);
+		expect(events).toContain("dispose-selector");
+		expect(events).not.toContain("resume-parent");
 	});
 });

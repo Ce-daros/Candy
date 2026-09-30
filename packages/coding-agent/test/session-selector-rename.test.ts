@@ -1,6 +1,6 @@
 import { setKeybindings } from "@candy/tui";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionInfo } from "../src/core/session-manager.ts";
+import type { SessionInfo } from "../src/core/session-history.ts";
 import { SessionSelectorComponent } from "../src/modes/interactive/components/session-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { KeybindingsManager } from "../src/presentation/keybindings.ts";

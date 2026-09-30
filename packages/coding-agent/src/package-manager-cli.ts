@@ -399,7 +399,7 @@ async function createCommandSettingsManager(options: {
 		cwd: options.cwd,
 		trustStore,
 		trustOverride: options.projectTrustOverride,
-		defaultProjectTrust: settingsManager.getDefaultProjectTrust(),
+		defaultProjectTrust: settingsManager.read("default-project-trust"),
 		extensionsResult,
 		projectTrustContext: createProjectTrustContext({
 			cwd: options.cwd,

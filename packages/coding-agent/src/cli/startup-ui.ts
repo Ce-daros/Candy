@@ -81,8 +81,12 @@ export async function createStartupTui(settingsManager: SettingsManager): Promis
 	const terminalTheme = detectTerminalBackgroundFromEnv().theme;
 	initTheme(resolveThemeSetting(settingsManager.getThemeSetting(), terminalTheme) ?? terminalTheme);
 	setKeybindings(KeybindingsManager.create());
-	const ui: TUI = new TuiMainScreen(new ProcessTerminal(), settingsManager.getShowHardwareCursor(), getAgentDir());
-	ui.setClearOnShrink(settingsManager.getClearOnShrink());
+	const ui: TUI = new TuiMainScreen(
+		new ProcessTerminal(),
+		settingsManager.read("show-hardware-cursor"),
+		getAgentDir(),
+	);
+	ui.setClearOnShrink(settingsManager.read("clear-on-shrink"));
 	return ui;
 }
 

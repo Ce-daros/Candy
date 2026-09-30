@@ -10,12 +10,12 @@
  * extensions system using candy.registerTool().
  */
 
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 // Read-only mode (no edit/write)
 const readOnlySessionRuntime = await createAgentSessionRuntime({
 	tools: ["read", "grep", "find", "ls"],
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionHistory.inMemory(),
 });
 console.log("Read-only session created");
 await readOnlySessionRuntime.dispose();
@@ -23,7 +23,7 @@ await readOnlySessionRuntime.dispose();
 // Custom tool selection
 const customToolsSessionRuntime = await createAgentSessionRuntime({
 	tools: ["read", "bash", "grep"],
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionHistory.inMemory(),
 });
 console.log("Custom tools session created");
 await customToolsSessionRuntime.dispose();
@@ -33,7 +33,7 @@ const customCwd = "/path/to/project";
 const customCwdSessionRuntime = await createAgentSessionRuntime({
 	cwd: customCwd,
 	tools: ["read", "bash", "edit", "write"],
-	sessionManager: SessionManager.inMemory(customCwd),
+	sessionManager: SessionHistory.inMemory(customCwd),
 });
 console.log("Custom cwd session created");
 await customCwdSessionRuntime.dispose();
@@ -42,7 +42,7 @@ await customCwdSessionRuntime.dispose();
 const specificToolsSessionRuntime = await createAgentSessionRuntime({
 	cwd: customCwd,
 	tools: ["read", "bash", "grep"],
-	sessionManager: SessionManager.inMemory(customCwd),
+	sessionManager: SessionHistory.inMemory(customCwd),
 });
 console.log("Specific tools with custom cwd session created");
 await specificToolsSessionRuntime.dispose();

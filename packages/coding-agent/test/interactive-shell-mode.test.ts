@@ -53,7 +53,10 @@ type SubmitContext = {
 	inputMode: InputMode;
 	defaultEditor: { onSubmit?: (text: string) => Promise<void> };
 	editor: { addToHistory: ReturnType<typeof vi.fn>; setText: ReturnType<typeof vi.fn> };
-	session: { model: { id: string }; isBashRunning: boolean; isCompacting: boolean; isStreaming: boolean };
+	session: {
+		selection: { model: { id: string } };
+		execution: { isBashRunning: boolean; isCompacting: boolean; isStreaming: boolean };
+	};
 	createEditorInput(text: string): QueuedInput;
 	handleBashCommand: ReturnType<typeof vi.fn>;
 	showWarning: ReturnType<typeof vi.fn>;
@@ -102,7 +105,10 @@ describe("interactive Shell mode", () => {
 			inputMode: "shell",
 			defaultEditor: {},
 			editor: { addToHistory: vi.fn(), setText: vi.fn() },
-			session: { model: { id: "faux" }, isBashRunning: false, isCompacting: false, isStreaming: false },
+			session: {
+				selection: { model: { id: "faux" } },
+				execution: { isBashRunning: false, isCompacting: false, isStreaming: false },
+			},
 			createEditorInput: (text) => ({ text }),
 			handleBashCommand: vi.fn(async () => {}),
 			showWarning: vi.fn(),

@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { normalizePath } from "../utils/paths.ts";
-import type { FileEntry, SessionHeader } from "./session-manager.ts";
+import type { FileEntry, SessionHeader } from "./session-history.ts";
 
 const SESSION_READ_BUFFER_SIZE = 1024 * 1024;
 const SESSION_HEADER_READ_BUFFER_SIZE = 4096;
@@ -40,7 +40,7 @@ export class SessionHeaderScanLimitError extends Error {
 
 /**
  * Session files are JSONL: this module owns both reading and writing them so
- * `SessionManager` and export only decide which entries to persist.
+ * `SessionHistory` and export only decide which entries to persist.
  */
 export function serializeSessionEntry(entry: unknown): string {
 	return `${JSON.stringify(entry)}

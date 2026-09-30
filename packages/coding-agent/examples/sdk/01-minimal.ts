@@ -9,15 +9,15 @@ import { createAgentSessionRuntime } from "@candy/coding-agent";
 
 const runtime = await createAgentSessionRuntime();
 const session = runtime.session;
-const unsubscribe = session.subscribe((event) => {
+const unsubscribe = session.execution.subscribe((event) => {
 	if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 		process.stdout.write(event.assistantMessageEvent.delta);
 	}
 });
 
 try {
-	await session.prompt("What files are in the current directory?");
-	session.messages.forEach((msg) => {
+	await session.execution.prompt("What files are in the current directory?");
+	session.history.buildSessionProjection().messages.forEach((msg) => {
 		console.log(msg);
 	});
 	console.log();

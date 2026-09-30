@@ -23,7 +23,7 @@ describe("Sources catalog lifecycle", () => {
 	// Regression for #6999: refreshing Sources must publish the changed provider catalog.
 	it("shows a provider catalog refresh error and keeps the provider page active", async () => {
 		harness = await createHarness();
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.modelRuntime;
 		const provider = runtime.getProviders()[0]!;
 		const refresh = vi.spyOn(runtime, "refresh").mockResolvedValue({
 			aborted: false,
@@ -32,6 +32,7 @@ describe("Sources catalog lifecycle", () => {
 		let panel!: CommandPanel;
 		const host: PresentationHost = {
 			session: () => harness!.session,
+			models: () => harness!.modelRuntime,
 			settings: () => harness!.settingsManager,
 			mount(next) {
 				panel = next;
@@ -65,7 +66,7 @@ describe("Sources catalog lifecycle", () => {
 
 	it("does not restore a provider page after its refresh completes late", async () => {
 		harness = await createHarness();
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.modelRuntime;
 		const provider = runtime.getProviders()[0]!;
 		let finishRefresh!: (value: { aborted: boolean; errors: Map<string, Error> }) => void;
 		const refreshDone = new Promise<{ aborted: boolean; errors: Map<string, Error> }>((resolve) => {
@@ -78,6 +79,7 @@ describe("Sources catalog lifecycle", () => {
 		let panel!: CommandPanel;
 		const host: PresentationHost = {
 			session: () => harness!.session,
+			models: () => harness!.modelRuntime,
 			settings: () => harness!.settingsManager,
 			mount,
 			exit() {},

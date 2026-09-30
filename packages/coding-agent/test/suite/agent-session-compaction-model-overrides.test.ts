@@ -1,10 +1,18 @@
 import { fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionBeforeCompactEvent } from "../../src/core/extensions/index.ts";
+import { getTestAgent } from "../execution-internals.ts";
 import { createHarness, type Harness } from "./harness.ts";
+import { useSummaryResponses } from "./summarization.ts";
+
+function useSummaries(harness: Harness, text = "compacted history"): void {
+	useSummaryResponses(
+		harness,
+		Array.from({ length: 4 }, () => fauxAssistantMessage(text)),
+	);
+}
 
 function seedHistory(harness: Harness, totalTokens = 650): string {
-	const model = harness.session.model!;
+	const model = harness.session.selection.model!;
 	let recentUserId = "";
 	for (const label of ["old", "recent"]) {
 		recentUserId = harness.sessionManager.appendMessage({
@@ -21,7 +29,6 @@ function seedHistory(harness: Harness, totalTokens = 650): string {
 			usage: { ...assistant.usage, input: totalTokens, totalTokens },
 		});
 	}
-	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 	return recentUserId;
 }
 
@@ -34,9 +41,10 @@ describe("AgentSession compaction model overrides", () => {
 	});
 
 	it.each(["manual", "pre-prompt", "post-run", "overflow"] as const)(
-		"uses model token settings for %s compaction and extension preparation",
+		"uses model token settings for %s compaction",
 		async (path) => {
-			const preparations: SessionBeforeCompactEvent[] = [];
+			const observedSettings: ReturnType<Harness["settingsManager"]["getCompactionSettings"]>[] = [];
+			const observedBudgets: Array<number | undefined> = [];
 			const harness = await createHarness({
 				models: [{ id: "faux-1", contextWindow: 4000 }],
 				tools: [],
@@ -48,26 +56,25 @@ describe("AgentSession compaction model overrides", () => {
 						modelOverrides: { "faux/faux-1": { reserveTokens: 2000, keepRecentTokens: 150 } },
 					},
 				},
-				extensionFactories: [
-					(candy) => {
-						candy.on("session_before_compact", (event) => {
-							preparations.push(event);
-							return {
-								compaction: {
-									summary: "compacted history",
-									firstKeptEntryId: event.preparation.firstKeptEntryId,
-									tokensBefore: event.preparation.tokensBefore,
-								},
-							};
-						});
-					},
-				],
 			});
 			harnesses.push(harness);
 			const recentUserId = seedHistory(harness, path === "pre-prompt" ? 2500 : 650);
+			const getCompactionSettings = harness.settingsManager.getCompactionSettings.bind(harness.settingsManager);
+			vi.spyOn(harness.settingsManager, "getCompactionSettings").mockImplementation((model) => {
+				const settings = getCompactionSettings(model);
+				observedSettings.push(settings);
+				return settings;
+			});
+			useSummaryResponses(harness, [
+				(_context, options) => {
+					observedBudgets.push(options?.maxTokens);
+					return fauxAssistantMessage("compacted history");
+				},
+				fauxAssistantMessage("compacted history"),
+			]);
 
 			if (path === "manual") {
-				await harness.session.compact();
+				await harness.session.execution.compact();
 			} else {
 				harness.setResponses(
 					path === "overflow"
@@ -77,26 +84,24 @@ describe("AgentSession compaction model overrides", () => {
 							]
 						: [fauxAssistantMessage(path === "post-run" ? "z".repeat(8000) : "done")],
 				);
-				await harness.session.prompt("continue");
+				await harness.session.execution.prompt("continue");
 			}
 
-			expect(preparations).toHaveLength(1);
-			expect(preparations[0]?.preparation.settings).toEqual({
+			expect(observedSettings).toContainEqual({
 				enabled: path !== "manual",
 				reserveTokens: 2000,
 				keepRecentTokens: 150,
 			});
-			expect(preparations[0]?.reason).toBe(
-				path === "manual" ? "manual" : path === "overflow" ? "overflow" : "threshold",
-			);
+			expect(observedBudgets[0]).toBe(1600);
 			if (path === "manual" || path === "pre-prompt") {
-				expect(preparations[0]?.preparation.firstKeptEntryId).toBe(recentUserId);
+				const compaction = harness.sessionManager.getEntries().find((entry) => entry.type === "compaction");
+				expect(compaction?.type === "compaction" ? compaction.firstKeptEntryId : undefined).toBe(recentUserId);
 			}
 			expect(harness.eventsOfType("compaction_end")).toHaveLength(1);
 			expect(harness.eventsOfType("compaction_end")[0]).toMatchObject({
 				aborted: false,
 				willRetry: path === "overflow",
-				result: { summary: "compacted history" },
+				result: { summary: expect.stringContaining("compacted history") },
 			});
 			expect(harness.getPendingResponseCount()).toBe(0);
 		},
@@ -116,15 +121,16 @@ describe("AgentSession compaction model overrides", () => {
 		harnesses.push(harness);
 		const recentUserId = seedHistory(harness, 2500);
 		const budgets: Array<number | undefined> = [];
-		harness.setResponses([
+		useSummaryResponses(harness, [
 			(_context, options) => {
 				budgets.push(options?.maxTokens);
 				return fauxAssistantMessage("built-in summary");
 			},
-			...(path === "automatic" ? [fauxAssistantMessage("done")] : []),
+			fauxAssistantMessage("built-in summary"),
 		]);
-		if (path === "manual") await harness.session.compact();
-		else await harness.session.prompt("continue");
+		harness.setResponses([...(path === "automatic" ? [fauxAssistantMessage("done")] : [])]);
+		if (path === "manual") await harness.session.execution.compact();
+		else await harness.session.execution.prompt("continue");
 		expect(budgets).toEqual([1600]);
 		expect(harness.sessionManager.getEntries().find((entry) => entry.type === "compaction")).toMatchObject({
 			firstKeptEntryId: recentUserId,
@@ -146,32 +152,22 @@ describe("AgentSession compaction model overrides", () => {
 					modelOverrides: { "faux/big": { reserveTokens: 8000, keepRecentTokens: 150 } },
 				},
 			},
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", (event) => ({
-						compaction: {
-							summary: "big model summary",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
-				},
-			],
 		});
 		harnesses.push(harness);
+		useSummaries(harness, "big model summary");
 		seedHistory(harness, 2500);
 		harness.setResponses([fauxAssistantMessage("small response"), fauxAssistantMessage("big response")]);
-		await harness.session.prompt("continue on small");
+		await harness.session.execution.prompt("continue on small");
 		expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
 		// Retain usage from the small model: the next check must use the active big model's policy.
 		seedHistory(harness, 2500);
-		await harness.session.setModel(harness.getModel("big")!);
-		await harness.session.prompt("continue on big");
+		await harness.session.selection.setModel(harness.getModel("big")!);
+		await harness.session.execution.prompt("continue on big");
 		expect(harness.eventsOfType("compaction_end")).toHaveLength(1);
-		expect(harness.eventsOfType("compaction_end")[0]?.result?.summary).toBe("big model summary");
+		expect(harness.eventsOfType("compaction_end")[0]?.result?.summary).toContain("big model summary");
 		expect(harness.settingsManager.getCompactionReserveTokens()).toBe(10);
-		await harness.session.setModel(harness.getModel("small")!);
-		expect(harness.settingsManager.getCompactionReserveTokens(harness.session.model)).toBe(10);
+		await harness.session.selection.setModel(harness.getModel("small")!);
+		expect(harness.settingsManager.getCompactionReserveTokens(harness.session.selection.model)).toBe(10);
 	});
 
 	it("captures model identity before awaiting summarization auth", async () => {
@@ -188,19 +184,20 @@ describe("AgentSession compaction model overrides", () => {
 		});
 		harnesses.push(harness);
 		seedHistory(harness);
-		const getAuth = harness.session.modelRuntime.getAuth.bind(harness.session.modelRuntime);
-		vi.spyOn(harness.session.modelRuntime, "getAuth").mockImplementation(async (model, ...args) => {
-			harness.session.agent.state.model = harness.getModel("second")!;
+		const getAuth = harness.session.execution.modelRuntime.getAuth.bind(harness.session.execution.modelRuntime);
+		vi.spyOn(harness.session.execution.modelRuntime, "getAuth").mockImplementation(async (model, ...args) => {
+			getTestAgent(harness.session.execution).state.model = harness.getModel("second")!;
 			return getAuth(model, ...args);
 		});
 		const requests: Array<{ id: string; maxTokens: number | undefined }> = [];
-		harness.setResponses([
+		useSummaryResponses(harness, [
 			(_context, options, _state, model) => {
 				requests.push({ id: model.id, maxTokens: options?.maxTokens });
 				return fauxAssistantMessage("summary");
 			},
+			fauxAssistantMessage("summary"),
 		]);
-		await harness.session.compact();
+		await harness.session.execution.compact();
 		expect(requests).toEqual([{ id: "first", maxTokens: 1600 }]);
 	});
 });

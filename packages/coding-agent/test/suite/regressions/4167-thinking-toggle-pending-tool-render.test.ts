@@ -3,7 +3,8 @@ import type { AssistantMessage, ToolResultMessage, Usage } from "@candy/ai";
 import { Container, Text, type TUI } from "@candy/tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.ts";
-import type { SessionEntry } from "../../../src/core/session-manager.ts";
+import type { SessionEntry } from "../../../src/core/session-history.ts";
+import { SettingsManager } from "../../../src/core/settings-manager.ts";
 import type { ToolExecutionComponent } from "../../../src/modes/interactive/components/tool-execution.ts";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
@@ -39,12 +40,7 @@ type RenderSessionContextThis = {
 	footer: { invalidate(): void };
 	refreshContextLine(): void;
 	renderer: TUI;
-	settingsManager: {
-		getShowImages(): boolean;
-		getImageWidthCells(): number;
-		getToolPreviewLines(): 5;
-		getShowCacheMissNotices(): boolean;
-	};
+	settingsManager: SettingsManager;
 	sessionManager: { getCwd(): string; getEntries(): SessionEntry[] };
 	sessionPresentation: { projectEntries(entries: SessionEntry[]): AgentMessage[] };
 	session: { retryAttempt: number; modelRuntime: { find(provider: string, modelId: string): undefined } };
@@ -74,12 +70,10 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		footer: { invalidate: vi.fn() },
 		refreshContextLine: vi.fn(),
 		renderer: { requestRender: vi.fn() } as unknown as TUI,
-		settingsManager: {
-			getShowImages: () => false,
-			getImageWidthCells: () => 60,
-			getToolPreviewLines: () => 5,
-			getShowCacheMissNotices: () => false,
-		},
+		settingsManager: SettingsManager.inMemory({
+			terminal: { showImages: false, imageWidthCells: 60 },
+			toolPreviewLines: 5,
+		}),
 		sessionManager: { getCwd: () => process.cwd(), getEntries: () => [] },
 		sessionPresentation: {
 			projectEntries: (entries) => entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),

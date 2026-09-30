@@ -1,11 +1,11 @@
 /** Load extensions from disk and register one inline extension factory. */
 
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 const cwd = process.cwd();
 const runtime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		additionalExtensionPaths: ["./my-logging-extension.ts", "./my-safety-extension.ts"],
 		extensionFactories: [
@@ -18,12 +18,12 @@ const runtime = await createAgentSessionRuntime({
 
 try {
 	const session = runtime.session;
-	session.subscribe((event) => {
+	session.execution.subscribe((event) => {
 		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 			process.stdout.write(event.assistantMessageEvent.delta);
 		}
 	});
-	await session.prompt("List files in the current directory.");
+	await session.execution.prompt("List files in the current directory.");
 	console.log();
 } finally {
 	await runtime.dispose();

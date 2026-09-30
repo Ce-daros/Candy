@@ -28,11 +28,13 @@ function seedCompactableSession(harness: Harness): void {
 		},
 	};
 	harness.sessionManager.appendMessage(assistant);
-	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 }
 
 function runAutoCompaction(harness: Harness): Promise<boolean> {
-	return (harness.session as unknown as SessionWithCompactionInternals)._runAutoCompaction("threshold", false);
+	return (harness.session.execution as unknown as SessionWithCompactionInternals)._runAutoCompaction(
+		"threshold",
+		false,
+	);
 }
 
 describe("automatic compaction cancellation regressions", () => {
@@ -51,25 +53,20 @@ describe("automatic compaction cancellation regressions", () => {
 				compaction: { enabled: true, reserveTokens: 50, keepRecentTokens: 1 },
 				retry: { enabled: false },
 			},
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", () => ({ cancel: true }));
-				},
-			],
 		});
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "Synthetic network failure" }),
 		]);
-		harness.session.subscribe((event) => {
+		harness.session.execution.subscribe((event) => {
 			if (event.type === "message_end" && event.message.role === "assistant") {
-				harness.session.abortCompaction();
-				void harness.session.abort();
+				harness.session.execution.abortCompaction();
+				void harness.session.execution.abort();
 			}
 		});
 
-		await harness.session.prompt("z".repeat(1000));
+		await harness.session.execution.prompt("z".repeat(1000));
 
 		expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
 	});
@@ -84,7 +81,7 @@ describe("automatic compaction cancellation regressions", () => {
 			markAuthStarted = resolve;
 		});
 		let authSignal: AbortSignal | undefined;
-		vi.spyOn(harness.session.modelRuntime, "getAuth").mockImplementation(async (_model, options) => {
+		vi.spyOn(harness.modelRuntime, "getAuth").mockImplementation(async (_model, options) => {
 			authSignal = options?.signal;
 			markAuthStarted();
 			if (!authSignal) throw new Error("Missing auth abort signal");
@@ -96,8 +93,8 @@ describe("automatic compaction cancellation regressions", () => {
 		const compaction = runAutoCompaction(harness);
 		await authStarted;
 		const started = harness.eventsOfType("compaction_start").length;
-		const wasCompacting = harness.session.isCompacting;
-		await Promise.all([compaction, harness.session.abort()]);
+		const wasCompacting = harness.session.execution.isCompacting;
+		await Promise.all([compaction, harness.session.execution.abort()]);
 
 		expect({ started, wasCompacting, authAborted: authSignal?.aborted }).toEqual({
 			started: 1,
@@ -112,8 +109,8 @@ describe("automatic compaction cancellation regressions", () => {
 		const harness = await createHarness({ settings: { compaction: { keepRecentTokens: 1 } } });
 		harnesses.push(harness);
 		seedCompactableSession(harness);
-		harness.session.subscribe((event) => {
-			if (event.type === "compaction_start") harness.session.abortCompaction();
+		harness.session.execution.subscribe((event) => {
+			if (event.type === "compaction_start") harness.session.execution.abortCompaction();
 		});
 
 		await runAutoCompaction(harness);
@@ -130,29 +127,12 @@ describe("automatic compaction cancellation regressions", () => {
 		const harness = await createHarness({ settings: { compaction: { keepRecentTokens: 1 } } });
 		harnesses.push(harness);
 		seedCompactableSession(harness);
-		vi.spyOn(harness.session.modelRuntime, "getAuth").mockRejectedValue(createError());
+		vi.spyOn(harness.modelRuntime, "getAuth").mockRejectedValue(createError());
 
 		await runAutoCompaction(harness);
 
 		const event = harness.eventsOfType("compaction_end").at(-1);
 		expect(event?.aborted).toBe(false);
 		expect(event?.errorMessage).toContain(createError().message);
-	});
-
-	it("reports extension cancellation as aborted", async () => {
-		const harness = await createHarness({
-			settings: { compaction: { keepRecentTokens: 1 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", () => ({ cancel: true }));
-				},
-			],
-		});
-		harnesses.push(harness);
-		seedCompactableSession(harness);
-
-		await runAutoCompaction(harness);
-
-		expect(harness.eventsOfType("compaction_end").at(-1)?.aborted).toBe(true);
 	});
 });

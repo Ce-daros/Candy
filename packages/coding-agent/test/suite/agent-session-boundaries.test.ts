@@ -3,6 +3,7 @@ import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
+import { useSummaryResponses } from "./summarization.ts";
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
 	let resolve = () => {};
@@ -12,205 +13,40 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 	return { promise, resolve };
 }
 
-describe("AgentSession actionable boundaries", () => {
+describe("turn_end committed boundaries", () => {
 	const harnesses: Harness[] = [];
-
 	afterEach(async () => {
-		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
+		for (const harness of harnesses.splice(0)) await harness.cleanup();
 	});
-
-	it("commits a retain-none turn_end compaction and explicitly continues once", async () => {
-		let handled = false;
-		const observedIds: string[] = [];
-		const requests: string[] = [];
+	it("commits each handler before the next reads history and continues exactly once", async () => {
+		const order: string[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
 					candy.on("turn_end", (event) => {
-						observedIds.push(event.messageEntryId);
-						if (handled) return;
-						handled = true;
+						if (event.turnIndex > 0) return;
+						order.push("first");
 						return {
 							entries: [
-								{
-									type: "compaction",
-									summary: "exact handoff",
-									firstKeptEntryId: null,
-									details: { source: "test" },
-								},
+								{ type: "custom", customType: "progress", data: 1 },
+								{ type: "custom_message", customType: "next", content: "continue work", display: false },
 							],
 							continue: true,
 						};
 					});
 				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage("discarded response"),
-			(context) => {
-				requests.push(JSON.stringify(context.messages));
-				return fauxAssistantMessage("continued from handoff");
-			},
-		]);
-
-		await harness.session.prompt("discarded prompt");
-
-		const compaction = harness.sessionManager.getEntries().find((entry) => entry.type === "compaction");
-		expect(compaction).toMatchObject({ type: "compaction", summary: "exact handoff" });
-		if (compaction?.type !== "compaction") throw new Error("expected compaction");
-		expect(compaction.firstKeptEntryId).toBe(compaction.id);
-		expect(requests).toHaveLength(1);
-		expect(requests[0]).toContain("exact handoff");
-		expect(requests[0]).not.toContain("discarded prompt");
-		expect(requests[0]).not.toContain("discarded response");
-		expect(observedIds).toHaveLength(2);
-		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
-	});
-
-	it.each(["steering", "follow-up", "both"] as const)(
-		"preserves %s queue scheduling around a turn_end handoff",
-		async (queueKind) => {
-			let handled = false;
-			const requests: string[] = [];
-			const harness = await createHarness({
-				extensionFactories: [
-					(candy) => {
-						candy.on("turn_end", () => {
-							if (handled) return;
-							handled = true;
-							if (queueKind === "steering" || queueKind === "both") {
-								candy.sendUserMessage("queued steering", { deliverAs: "steer" });
-							}
-							if (queueKind === "follow-up" || queueKind === "both") {
-								candy.sendUserMessage("queued follow-up", { deliverAs: "followUp" });
-							}
-							return {
-								entries: [{ type: "compaction", summary: "exact handoff", firstKeptEntryId: null }],
-								continue: true,
-							};
-						});
-					},
-				],
-			});
-			harnesses.push(harness);
-			harness.setResponses([
-				fauxAssistantMessage("first"),
-				(context) => {
-					requests.push(JSON.stringify(context.messages));
-					return fauxAssistantMessage("second");
-				},
-				(context) => {
-					requests.push(JSON.stringify(context.messages));
-					return fauxAssistantMessage("third");
-				},
-			]);
-
-			await harness.session.prompt("start");
-
-			expect(requests[0]).toContain("exact handoff");
-			if (queueKind === "steering") {
-				expect(harness.faux.state.callCount).toBe(2);
-				expect(requests[0]).toContain("queued steering");
-				expect(requests[0]).not.toContain("queued follow-up");
-			} else if (queueKind === "follow-up") {
-				expect(harness.faux.state.callCount).toBe(2);
-				expect(requests[0]).toContain("queued follow-up");
-			} else {
-				expect(harness.faux.state.callCount).toBe(3);
-				expect(requests[0]).toContain("queued steering");
-				expect(requests[0]).not.toContain("queued follow-up");
-				expect(requests[1]).toContain("queued follow-up");
-			}
-		},
-	);
-
-	it("keeps a boundary replacement verbatim through threshold compaction", async () => {
-		let handled = false;
-		const requests: string[] = [];
-		const instruction = "EXACT-REPLACEMENT-INSTRUCTION ".repeat(100);
-		const harness = await createHarness({
-			models: [{ id: "faux-1", contextWindow: 2_000, maxTokens: 100 }],
-			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
-			extensionFactories: [
 				(candy) => {
 					candy.on("turn_end", (event, ctx) => {
-						if (handled) return;
-						handled = true;
-						const user = [...ctx.sessionManager.getBranch()]
-							.reverse()
-							.find((entry) => entry.type === "message" && entry.message.role === "user");
-						if (!user) throw new Error("missing user entry");
-						return {
-							entries: [
-								{ type: "context_edit", targetId: user.id, replacement: { content: instruction } },
-								{ type: "context_edit", targetId: event.messageEntryId, replacement: null },
-								{ type: "custom", customType: "bookkeeping", data: { source: "test" } },
-							],
-							continue: true,
-						};
+						if (event.turnIndex > 0) return;
+						expect(
+							ctx.history
+								.getEntries()
+								.some((entry) => entry.type === "custom" && entry.customType === "progress"),
+						).toBe(true);
+						expect(JSON.stringify(event.context.contextMessages)).toContain("continue work");
+						expect(event.entries).toHaveLength(2);
+						order.push("second");
 					});
-					candy.on("session_before_compact", (event) => ({
-						compaction: {
-							summary: "older history summary",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.sessionManager.appendMessage({ role: "user", content: "older input", timestamp: Date.now() - 2 });
-		harness.sessionManager.appendMessage(fauxAssistantMessage("older answer", { timestamp: Date.now() - 1 }));
-		harness.session.refreshContext();
-		harness.setResponses([
-			fauxAssistantMessage("answered original input"),
-			(context) => {
-				requests.push(JSON.stringify(context.messages));
-				return fauxAssistantMessage("answered replacement");
-			},
-		]);
-
-		await harness.session.prompt("original input");
-
-		expect(harness.eventsOfType("compaction_start").length).toBeGreaterThan(0);
-		expect(requests).toHaveLength(1);
-		expect(requests[0]).toContain("EXACT-REPLACEMENT-INSTRUCTION");
-	});
-
-	it("keeps boundary input verbatim through threshold compaction when metadata follows it", async () => {
-		let handled = false;
-		const requests: string[] = [];
-		const instruction = "EXACT-UNSENT-INSTRUCTION ".repeat(100);
-		const harness = await createHarness({
-			models: [{ id: "faux-1", contextWindow: 2_000, maxTokens: 100 }],
-			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("turn_end", () => {
-						if (handled) return;
-						handled = true;
-						return {
-							entries: [
-								{
-									type: "custom_message",
-									customType: "next-work",
-									content: instruction,
-									display: false,
-								},
-								{ type: "custom", customType: "bookkeeping", data: { source: "test" } },
-							],
-							continue: true,
-						};
-					});
-					candy.on("session_before_compact", (event) => ({
-						compaction: {
-							summary: "older history summary",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
 				},
 			],
 		});
@@ -218,71 +54,53 @@ describe("AgentSession actionable boundaries", () => {
 		harness.setResponses([
 			fauxAssistantMessage("first"),
 			(context) => {
-				requests.push(JSON.stringify(context.messages));
+				expect(JSON.stringify(context.messages)).toContain("continue work");
 				return fauxAssistantMessage("second");
 			},
 		]);
-
-		await harness.session.prompt("old input ".repeat(500));
-
-		expect(harness.eventsOfType("compaction_start").length).toBeGreaterThan(0);
-		expect(requests).toHaveLength(1);
-		expect(requests[0]).toContain("EXACT-UNSENT-INSTRUCTION");
+		await harness.session.execution.prompt("start");
+		expect(order).toEqual(["first", "second"]);
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(harness.eventsOfType("agent_start")).toHaveLength(1);
+		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
+		const assistantEntries = harness.session.history
+			.getEntries()
+			.filter((entry) => entry.type === "message" && entry.message.role === "assistant");
+		expect(assistantEntries).toHaveLength(2);
 	});
-
-	it("refreshes canonical context before publishing boundary entry notifications", async () => {
-		let handled = false;
-		const snapshots: string[] = [];
+	it("publishes canonical context before notifying appended entries", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
-					candy.on("turn_end", () => {
-						if (handled) return;
-						handled = true;
-						return {
-							entries: [
-								{ type: "custom", customType: "metadata", data: true },
-								{
-									type: "custom_message",
-									customType: "visible-context",
-									content: "committed context",
-									display: true,
-								},
-							],
-						};
-					});
+					candy.on("turn_end", () => ({
+						entries: [
+							{ type: "custom", customType: "metadata", data: true },
+							{ type: "custom_message", customType: "context", content: "committed context", display: true },
+						],
+					}));
 				},
 			],
 		});
 		harnesses.push(harness);
-		harness.session.subscribe((event) => {
-			if (event.type === "entry_appended") snapshots.push(JSON.stringify(harness.session.messages));
+		const snapshots: string[] = [];
+		harness.session.execution.subscribe((event) => {
+			if (event.type === "entry_appended") snapshots.push(JSON.stringify(harness.session.execution.messages));
 		});
 		harness.setResponses([fauxAssistantMessage("done")]);
-
-		await harness.session.prompt("start");
-
+		await harness.session.execution.prompt("start");
 		expect(snapshots).toHaveLength(2);
-		expect(snapshots.every((snapshot) => snapshot.includes("committed context"))).toBe(true);
+		expect(snapshots.every((value) => value.includes("committed context"))).toBe(true);
 	});
-
-	it("continues from an agent_before_settle custom message before final settlement", async () => {
-		let requested = false;
-		const requests: string[] = [];
+	it.each(["steer", "followUp"] as const)("merges an extension continuation with %s input", async (deliverAs) => {
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
-					candy.on("agent_before_settle", () => {
-						if (requested) return;
-						requested = true;
+					candy.on("turn_end", (event) => {
+						if (event.turnIndex > 0) return;
+						candy.sendUserMessage("queued work", { deliverAs });
 						return {
 							entries: [
-								{
-									type: "custom_message",
-									customType: "test-continuation",
-									content: "continue now",
-									display: false,
-								},
+								{ type: "custom_message", customType: "context", content: "boundary context", display: false },
 							],
 							continue: true,
 						};
@@ -294,82 +112,126 @@ describe("AgentSession actionable boundaries", () => {
 		harness.setResponses([
 			fauxAssistantMessage("first"),
 			(context) => {
-				requests.push(JSON.stringify(context.messages));
+				expect(JSON.stringify(context.messages)).toContain("queued work");
+				expect(JSON.stringify(context.messages)).toContain("boundary context");
 				return fauxAssistantMessage("second");
 			},
 		]);
-
-		await harness.session.prompt("start");
-
-		expect(requests[0]).toContain("continue now");
-		expect(harness.sessionManager.getEntries()).toContainEqual(
-			expect.objectContaining({ type: "custom_message", customType: "test-continuation", display: false }),
-		);
-		expect(harness.eventsOfType("agent_start")).toHaveLength(2);
+		await harness.session.execution.prompt("start");
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(harness.session.execution.pendingMessageCount).toBe(0);
+	});
+	it("commits intercepted tool results once before handlers and consumers see them", async () => {
+		const tool: AgentTool = {
+			name: "read_test",
+			label: "read_test",
+			description: "read",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text", text: "raw" }], details: {} }),
+		};
+		const observations: string[] = [];
+		const harness = await createHarness({
+			tools: [tool],
+			extensionFactories: [
+				(candy) => {
+					candy.on("tool_result", () => ({ content: [{ type: "text", text: "processed" }] }));
+					candy.on("turn_end", (event, ctx) => {
+						if (event.turnIndex > 0) return;
+						expect(getMessageText(event.toolResults[0])).toBe("processed");
+						expect(event.toolResultEntryIds).toHaveLength(1);
+						expect(ctx.history.getEntry(event.toolResultEntryIds[0])?.type).toBe("message");
+						return {
+							entries: [{ type: "custom_message", customType: "next", content: "next work", display: false }],
+							continue: true,
+						};
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+		harness.session.execution.subscribe((event) => {
+			if (event.type === "message_end" && event.message.role === "toolResult")
+				observations.push(getMessageText(event.message));
+		});
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("read_test", {}, { id: "call-1" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+		await harness.session.execution.prompt("start");
+		expect(observations).toEqual(["processed"]);
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(
+			harness.session.history
+				.getEntries()
+				.filter((entry) => entry.type === "message" && entry.message.role === "toolResult"),
+		).toHaveLength(1);
+	});
+	it("rejects continuation without runnable context and keeps the committed response", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(candy) => {
+					candy.on("turn_end", () => ({ continue: true }));
+				},
+			],
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("done")]);
+		await expect(harness.session.execution.prompt("start")).rejects.toThrow("without runnable model context");
+		expect(harness.faux.state.callCount).toBe(1);
+		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
+		expect(
+			harness.session.history
+				.getEntries()
+				.filter((entry) => entry.type === "message" && entry.message.role === "assistant"),
+		).toHaveLength(1);
+	});
+	it("stops after handler failure and reports final settlement once", async () => {
+		const later = vi.fn();
+		const harness = await createHarness({
+			extensionFactories: [
+				(candy) => {
+					candy.on("turn_end", () => {
+						throw new Error("boundary failed");
+					});
+					candy.on("turn_end", later);
+				},
+			],
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("done")]);
+		await expect(harness.session.execution.prompt("start")).rejects.toThrow("boundary failed");
+		expect(later).not.toHaveBeenCalled();
 		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
 	});
-
-	it("persists custom context queued by agent_end before pre-settlement continuation", async () => {
-		let firstRun = true;
-		let continued = false;
-		const requests: string[] = [];
+	it.each(["error", "aborted"] as const)("ignores extension continuation after %s", async (stopReason) => {
 		const harness = await createHarness({
+			settings: { retry: { enabled: false } },
 			extensionFactories: [
 				(candy) => {
-					candy.on("agent_end", () => {
-						if (!firstRun) return;
-						firstRun = false;
-						candy.sendMessage(
-							{ customType: "agent-end-context", content: "queued after agent end", display: false },
-							{ triggerTurn: false },
-						);
-					});
-					candy.on("agent_before_settle", (event) => {
-						if (continued) return;
-						continued = true;
-						expect(JSON.stringify(event.context.pendingMessages)).toContain("queued after agent end");
-						expect(JSON.stringify(event.context.contextMessages)).not.toContain("queued after agent end");
-						return { continue: true };
-					});
+					candy.on("turn_end", () => ({
+						entries: [{ type: "custom_message", customType: "context", content: "next work", display: false }],
+						continue: true,
+					}));
 				},
 			],
 		});
 		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage("first"),
-			(context) => {
-				requests.push(JSON.stringify(context.messages));
-				return fauxAssistantMessage("second");
-			},
-		]);
-
-		await harness.session.prompt("start");
-
-		expect(requests[0]).toContain("queued after agent end");
-		expect(harness.sessionManager.getEntries()).toContainEqual(
-			expect.objectContaining({ type: "custom_message", customType: "agent-end-context" }),
-		);
+		harness.setResponses([fauxAssistantMessage("failed", { stopReason, errorMessage: stopReason })]);
+		await harness.session.execution.prompt("start");
+		expect(harness.faux.state.callCount).toBe(1);
+		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
 	});
-
-	it("keeps a pre-settlement follow-up deferred until the explicit continuation would stop", async () => {
-		let handled = false;
-		const requests: string[] = [];
+	it("invalidates continuation when cancelled during a boundary", async () => {
+		const started = deferred(),
+			released = deferred();
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
-					candy.on("agent_before_settle", () => {
-						if (handled) return;
-						handled = true;
-						candy.sendUserMessage("queued follow-up", { deliverAs: "followUp" });
+					candy.on("turn_end", async () => {
+						started.resolve();
+						await released.promise;
 						return {
-							entries: [
-								{
-									type: "custom_message",
-									customType: "boundary",
-									content: "boundary context",
-									display: false,
-								},
-							],
+							entries: [{ type: "custom_message", customType: "context", content: "next work", display: false }],
 							continue: true,
 						};
 					});
@@ -377,361 +239,62 @@ describe("AgentSession actionable boundaries", () => {
 			],
 		});
 		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage("first"),
-			(context) => {
-				requests.push(JSON.stringify(context.messages));
-				return fauxAssistantMessage("second");
-			},
-			(context) => {
-				requests.push(JSON.stringify(context.messages));
-				return fauxAssistantMessage("follow-up response");
-			},
-		]);
-
-		await harness.session.prompt("start");
-
-		expect(harness.faux.state.callCount).toBe(3);
-		expect(requests[0]).toContain("boundary context");
-		expect(requests[0]).not.toContain("queued follow-up");
-		expect(requests[1]).toContain("queued follow-up");
+		harness.setResponses([fauxAssistantMessage("done")]);
+		const prompt = harness.session.execution.prompt("start");
+		await started.promise;
+		const abort = harness.session.execution.abort();
+		released.resolve();
+		await Promise.all([prompt, abort]);
+		expect(harness.faux.state.callCount).toBe(1);
+		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
 	});
-
-	it("defers runs started by agent_settled handlers until every settled handler completes", async () => {
-		let triggered = false;
-		const lifecycle: string[] = [];
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.on("agent_start", () => {
-						lifecycle.push("start");
-					});
-					candy.on("agent_settled", (_event, ctx) => {
-						lifecycle.push(`settled-first:${ctx.isIdle()}`);
-						if (triggered) return;
-						triggered = true;
-						candy.sendMessage(
-							{ customType: "settled-trigger", content: "start later", display: false },
-							{ triggerTurn: true },
-						);
-					});
-					candy.on("agent_settled", (_event, ctx) => {
-						lifecycle.push(`settled-second:${ctx.isIdle()}`);
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
-
-		await harness.session.prompt("start");
-
-		expect(lifecycle).toEqual([
-			"start",
-			"settled-first:true",
-			"settled-second:true",
-			"start",
-			"settled-first:true",
-			"settled-second:true",
-		]);
-	});
-
-	it("does not let an invalid explicit continuation suppress natural tool continuation", async () => {
+	it("rejects continuation when a context edit leaves an orphan tool result", async () => {
 		const tool: AgentTool = {
-			name: "noop",
-			label: "Noop",
-			description: "Noop",
+			name: "read_test",
+			label: "read_test",
+			description: "read",
 			parameters: Type.Object({}),
-			execute: async () => ({ content: [{ type: "text", text: "done" }], details: {} }),
+			execute: async () => ({ content: [{ type: "text", text: "result" }], details: {} }),
 		};
 		const harness = await createHarness({
 			tools: [tool],
 			extensionFactories: [
 				(candy) => {
-					candy.on("turn_end", (event, ctx) => {
-						const user = [...ctx.sessionManager.getBranch()]
-							.reverse()
-							.find((entry) => entry.type === "message" && entry.message.role === "user");
-						if (!user) throw new Error("missing user entry");
-						return {
-							entries: [user.id, event.messageEntryId, ...event.toolResultEntryIds].map((targetId) => ({
-								type: "context_edit" as const,
-								targetId,
-								replacement: null,
-							})),
-							continue: true,
-						};
-					});
+					candy.on("turn_end", (event) => ({
+						entries: [{ type: "context_edit", targetId: event.messageEntryId, replacement: null }],
+						continue: true,
+					}));
 				},
 			],
 		});
 		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("noop", {}), { stopReason: "toolUse" }),
-			fauxAssistantMessage("must not run"),
-		]);
-
-		await harness.session.prompt("start");
-
-		expect(harness.faux.state.callCount).toBe(2);
+		harness.setResponses([fauxAssistantMessage(fauxToolCall("read_test", {}), { stopReason: "toolUse" })]);
+		await expect(harness.session.execution.prompt("start")).rejects.toThrow("without runnable model context");
+		expect(harness.faux.state.callCount).toBe(1);
+		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
 	});
-
-	it("dispatches actionable turn_end for synthetic run failures", async () => {
-		let turnEnds = 0;
+	it("validates an entire handler's additions before committing any of them", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
-					candy.on("turn_end", (event) => {
-						turnEnds++;
-						expect(event.outcome).toBe("error");
-						return { entries: [{ type: "custom", customType: "failure-boundary", data: true }] };
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.session.agent.prepareRequest = () => {
-			throw new Error("request preparation failed");
-		};
-
-		await harness.session.prompt("start");
-
-		expect(turnEnds).toBe(1);
-		expect(harness.faux.state.callCount).toBe(0);
-		expect(harness.sessionManager.getEntries()).toContainEqual(
-			expect.objectContaining({ type: "custom", customType: "failure-boundary" }),
-		);
-	});
-
-	it("does not compact from usage belonging to a boundary-omitted assistant", async () => {
-		let handled = false;
-		const harness = await createHarness({
-			models: [{ id: "faux-1", contextWindow: 10_000, maxTokens: 100 }],
-			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 300 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("message_end", (event) => {
-						if (event.message.role !== "assistant") return;
-						return {
-							message: {
-								...event.message,
-								usage: { ...event.message.usage, input: 9_800, output: 1, totalTokens: 9_801 },
-							},
-						};
-					});
-					candy.on("turn_end", (event) => {
-						if (handled) return;
-						handled = true;
-						return {
-							entries: [{ type: "context_edit", targetId: event.messageEntryId, replacement: null }],
-						};
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("short response")]);
-
-		await harness.session.prompt("small prompt");
-
-		expect(harness.eventsOfType("compaction_start")).toEqual([]);
-		expect(harness.session.getContextUsage()?.tokens).toBeLessThan(2_000);
-	});
-
-	it("does not trigger successful-response overflow from usage captured before a boundary edit", async () => {
-		let handled = false;
-		const harness = await createHarness({
-			models: [{ id: "faux-1", contextWindow: 5_000, maxTokens: 100 }],
-			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("message_end", (event) => {
-						if (event.message.role !== "assistant") return;
-						return {
-							message: {
-								...event.message,
-								usage: { ...event.message.usage, input: 5_100, output: 1, totalTokens: 5_101 },
-							},
-						};
-					});
-					candy.on("turn_end", (_event, ctx) => {
-						if (handled) return;
-						handled = true;
-						const user = [...ctx.sessionManager.getBranch()]
-							.reverse()
-							.find((entry) => entry.type === "message" && entry.message.role === "user");
-						if (!user) throw new Error("missing user entry");
-						return { entries: [{ type: "context_edit", targetId: user.id, replacement: null }] };
-					});
+					candy.on("turn_end", () => ({
+						entries: [
+							{ type: "custom", customType: "uncommitted", data: true },
+							{ type: "context_edit", targetId: "missing-entry", replacement: null },
+						],
+					}));
 				},
 			],
 		});
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("done")]);
-
-		await harness.session.prompt("large input that is later omitted");
-
-		expect(harness.eventsOfType("compaction_start")).toEqual([]);
-		expect(harness.session.getContextUsage()?.tokens).toBeLessThan(2_000);
-	});
-
-	it("does not trigger threshold compaction from post-edit usage captured before a later compaction", async () => {
-		const harness = await createHarness({
-			models: [{ id: "faux-1", contextWindow: 10_000, maxTokens: 100 }],
-			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
-		});
-		harnesses.push(harness);
-		const userId = harness.sessionManager.appendMessage({
-			role: "user",
-			content: "small input",
-			timestamp: Date.now() - 3,
-		});
-		harness.sessionManager.appendContextEdit(userId, { content: "edited input" });
-		const response = fauxAssistantMessage("answer", { timestamp: Date.now() - 2 });
-		response.usage = { ...response.usage, input: 50_000, output: 1, totalTokens: 50_001 };
-		harness.sessionManager.appendMessage(response);
-		harness.sessionManager.appendCompaction("small summary", userId, 50_001);
-		harness.session.refreshContext();
-		const runAutoCompaction = vi.spyOn(
-			harness.session as unknown as {
-				_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
-			},
-			"_runAutoCompaction",
-		);
-		const checkCompaction = (
-			harness.session as unknown as {
-				_checkCompaction: (message: ReturnType<typeof fauxAssistantMessage>) => Promise<boolean>;
-			}
-		)._checkCompaction.bind(harness.session);
-		const error = fauxAssistantMessage("", {
-			stopReason: "error",
-			errorMessage: "invalid_api_key",
-			timestamp: Date.now() + 1_000,
-		});
-
-		await checkCompaction(error);
-
-		expect(runAutoCompaction).not.toHaveBeenCalled();
-	});
-
-	it("does not treat retained pre-compaction assistant usage as post-compaction usage", async () => {
-		const harness = await createHarness();
-		harnesses.push(harness);
-		const retained = fauxAssistantMessage("retained");
-		retained.usage = { ...retained.usage, input: 10_000, totalTokens: 10_001 };
-		const retainedId = harness.sessionManager.appendMessage(retained);
-		harness.sessionManager.appendCompaction("summary", retainedId, 10_001);
-		harness.session.refreshContext();
-
-		expect(harness.session.getContextUsage()?.tokens).toBeNull();
-	});
-
-	it("persists custom context sent during pre-settlement before continuing", async () => {
-		let handled = false;
-		const requests: string[] = [];
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.on("agent_before_settle", () => {
-						if (handled) return;
-						handled = true;
-						candy.sendMessage(
-							{ customType: "pending-boundary", content: "persist before continue", display: false },
-							{ triggerTurn: false },
-						);
-						return { continue: true };
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage("first"),
-			(context) => {
-				requests.push(JSON.stringify(context.messages));
-				return fauxAssistantMessage("second");
-			},
-		]);
-
-		await harness.session.prompt("start");
-
-		expect(harness.faux.state.callCount).toBe(2);
-		expect(requests[0]).toContain("persist before continue");
-		expect(harness.sessionManager.getEntries()).toContainEqual(
-			expect.objectContaining({ type: "custom_message", customType: "pending-boundary" }),
-		);
-	});
-
-	it("does not consume queued input when pre-settlement drafts leave system-only context", async () => {
-		let handled = false;
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.on("agent_before_settle", (_event, ctx) => {
-						if (handled) return;
-						handled = true;
-						candy.sendUserMessage("still queued", { deliverAs: "followUp" });
-						const targets = ctx.sessionManager
-							.getBranch()
-							.flatMap((entry) =>
-								entry.type === "message" &&
-								(entry.message.role === "user" ||
-									entry.message.role === "assistant" ||
-									entry.message.role === "toolResult")
-									? [entry.id]
-									: [],
-							);
-						return {
-							entries: targets.map((targetId) => ({
-								type: "context_edit" as const,
-								targetId,
-								replacement: null,
-							})),
-							continue: true,
-						};
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("must not run")]);
-
-		await harness.session.prompt("start");
-
-		expect(harness.faux.state.callCount).toBe(1);
-		expect(harness.session.pendingMessageCount).toBe(1);
-	});
-
-	it("commits pre-settlement drafts but suppresses continuation when aborted during the hook", async () => {
-		const started = deferred();
-		const release = deferred();
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.on("agent_before_settle", async () => {
-						started.resolve();
-						await release.promise;
-						return {
-							entries: [{ type: "custom", customType: "committed-after-abort", data: true }],
-							continue: true,
-						};
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("must not run")]);
-
-		const prompt = harness.session.prompt("start");
-		await started.promise;
-		const abort = harness.session.abort();
-		release.resolve();
-		await Promise.all([prompt, abort]);
-
-		expect(harness.faux.state.callCount).toBe(1);
-		expect(harness.sessionManager.getEntries()).toContainEqual(
-			expect.objectContaining({ type: "custom", customType: "committed-after-abort", data: true }),
-		);
+		await expect(harness.session.execution.prompt("start")).rejects.toThrow();
+		expect(
+			harness.session.history
+				.getEntries()
+				.some((entry) => entry.type === "custom" && entry.customType === "uncommitted"),
+		).toBe(false);
+		expect(harness.eventsOfType("entry_appended")).toHaveLength(0);
 		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
 	});
 });
@@ -768,7 +331,7 @@ describe("durable length recovery", () => {
 			},
 		]);
 
-		await harness.session.prompt("start");
+		await harness.session.execution.prompt("start");
 
 		expect(executed).toBe(false);
 		expect(harness.faux.state.callCount).toBe(2);
@@ -788,19 +351,12 @@ describe("durable length recovery", () => {
 			models: [{ id: "faux-1", contextWindow: 1000, maxTokens: 100 }],
 			settings: { compaction: { keepRecentTokens: 1, reserveTokens: 0 } },
 			tools: [tool],
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", (event) => ({
-						compaction: {
-							summary: "recovered input",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
-				},
-			],
 		});
 		harnesses.push(harness);
+		useSummaryResponses(
+			harness,
+			Array.from({ length: 4 }, () => fauxAssistantMessage("recovered overflow")),
+		);
 		harness.setResponses([
 			fauxAssistantMessage("first partial", { stopReason: "length" }),
 			fauxAssistantMessage(fauxToolCall("noop", {}), { stopReason: "toolUse" }),
@@ -808,7 +364,7 @@ describe("durable length recovery", () => {
 			() => fauxAssistantMessage("completed second recovery", { timestamp: Date.now() + 2_000 }),
 		]);
 
-		await harness.session.prompt("x".repeat(5000));
+		await harness.session.execution.prompt("x".repeat(5000));
 
 		const omittedIds = harness.sessionManager
 			.getEntries()
@@ -832,13 +388,6 @@ describe("durable length recovery", () => {
 			settings: { compaction: { keepRecentTokens: 1, reserveTokens: 0 } },
 			extensionFactories: [
 				(candy) => {
-					candy.on("session_before_compact", (event) => ({
-						compaction: {
-							summary: "recovered input",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
 					candy.on("agent_end", (event) => {
 						if (queued || !event.messages.some((message) => getMessageText(message) === "first recovered"))
 							return;
@@ -849,6 +398,10 @@ describe("durable length recovery", () => {
 			],
 		});
 		harnesses.push(harness);
+		useSummaryResponses(
+			harness,
+			Array.from({ length: 4 }, () => fauxAssistantMessage("recovered overflow")),
+		);
 		harness.setResponses([
 			fauxAssistantMessage("first partial", { stopReason: "length" }),
 			fauxAssistantMessage("first recovered"),
@@ -856,7 +409,7 @@ describe("durable length recovery", () => {
 			() => fauxAssistantMessage("follow-up recovered", { timestamp: Date.now() + 2_000 }),
 		]);
 
-		await harness.session.prompt("x".repeat(5000));
+		await harness.session.execution.prompt("x".repeat(5000));
 
 		const lengthIds = harness.sessionManager
 			.getEntries()
@@ -883,7 +436,7 @@ describe("durable length recovery", () => {
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid_api_key" }),
 		]);
 
-		await harness.session.prompt("start");
+		await harness.session.execution.prompt("start");
 
 		expect(harness.faux.state.callCount).toBe(2);
 		expect(harness.eventsOfType("auto_retry_end")).toContainEqual(
@@ -895,11 +448,6 @@ describe("durable length recovery", () => {
 		const harness = await createHarness({
 			models: [{ id: "faux-1", contextWindow: 1_000, maxTokens: 100 }],
 			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", () => ({ cancel: true }));
-				},
-			],
 		});
 		harnesses.push(harness);
 		harness.sessionManager.appendMessage({ role: "user", content: "x".repeat(5_000), timestamp: Date.now() - 2 });
@@ -911,10 +459,9 @@ describe("durable length recovery", () => {
 		harness.sessionManager.appendContextEdit(partialId, {
 			content: [{ type: "text", text: "edited partial" }],
 		});
-		harness.session.refreshContext();
 		harness.setResponses([fauxAssistantMessage("new answer")]);
 
-		await harness.session.prompt("next prompt");
+		await harness.session.execution.prompt("next prompt");
 
 		const edits = harness.sessionManager.getEntries().filter((entry) => entry.type === "context_edit");
 		expect(edits.filter((entry) => entry.targetId === partialId).at(-1)?.replacement).toBeNull();
@@ -947,23 +494,20 @@ describe("durable length recovery", () => {
 							],
 						};
 					});
-					candy.on("session_before_compact", (event) => ({
-						compaction: {
-							summary: "recovered overflow",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
 				},
 			],
 		});
 		harnesses.push(harness);
+		useSummaryResponses(
+			harness,
+			Array.from({ length: 4 }, () => fauxAssistantMessage("recovered overflow")),
+		);
 		harness.setResponses([
 			fauxAssistantMessage("retained error", { stopReason: "error", errorMessage: "prompt is too long" }),
 			fauxAssistantMessage("recovered"),
 		]);
 
-		await harness.session.prompt("x".repeat(5_000));
+		await harness.session.execution.prompt("x".repeat(5_000));
 
 		expect(harness.faux.state.callCount).toBe(2);
 		expect(overflowId).toBeDefined();
@@ -988,7 +532,7 @@ describe("durable length recovery", () => {
 			],
 		});
 		harnesses.push(harness);
-		harness.session.subscribe((event) => {
+		harness.session.execution.subscribe((event) => {
 			if (event.type === "agent_end" || event.type === "auto_retry_start") lifecycle.push(event.type);
 		});
 		harness.setResponses([
@@ -1003,7 +547,7 @@ describe("durable length recovery", () => {
 			},
 		]);
 
-		await harness.session.prompt("start");
+		await harness.session.execution.prompt("start");
 
 		expect(harness.faux.state.callCount).toBe(3);
 		expect(requests[0]).not.toContain("queued follow-up");
@@ -1021,7 +565,7 @@ describe("durable length recovery", () => {
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" }),
 		]);
 
-		await harness.session.prompt("start");
+		await harness.session.execution.prompt("start");
 
 		expect(harness.eventsOfType("agent_end").map((event) => event.willRetry)).toEqual([true, false]);
 		expect(harness.eventsOfType("auto_retry_end")).toContainEqual(
@@ -1044,7 +588,7 @@ describe("durable length recovery", () => {
 			fauxAssistantMessage("must not retry"),
 		]);
 
-		await harness.session.prompt("x".repeat(5000));
+		await harness.session.execution.prompt("x".repeat(5000));
 
 		const entries = harness.sessionManager.getEntries();
 		expect(entries.some((entry) => entry.type === "context_edit")).toBe(true);

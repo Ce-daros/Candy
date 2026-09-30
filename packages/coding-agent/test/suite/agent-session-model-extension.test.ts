@@ -14,29 +14,20 @@ describe("AgentSession model and extension characterization", () => {
 		}
 	});
 
-	it("setModel saves the model to the session and emits model_select", async () => {
-		const modelEvents: string[] = [];
+	it("setModel saves the model to the session", async () => {
 		const harness = await createHarness({
 			models: [
 				{ id: "faux-1", name: "One", reasoning: true },
 				{ id: "faux-2", name: "Two", reasoning: true },
-			],
-			extensionFactories: [
-				(candy) => {
-					candy.on("model_select", async (event) => {
-						modelEvents.push(`${event.previousModel?.id ?? "none"}->${event.model.id}:${event.source}`);
-					});
-				},
 			],
 		});
 		harnesses.push(harness);
 		const nextModel = harness.getModel("faux-2")!;
 		const previousModelChanges = harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change");
 
-		await harness.session.setModel(nextModel);
+		await harness.session.selection.setModel(nextModel);
 
-		expect(harness.session.model?.id).toBe("faux-2");
-		expect(modelEvents).toEqual(["faux-1->faux-2:set"]);
+		expect(harness.session.selection.model?.id).toBe("faux-2");
 		expect(
 			harness.sessionManager
 				.getEntries()
@@ -60,11 +51,11 @@ describe("AgentSession model and extension characterization", () => {
 		harnesses.push(harness);
 		const nextModel = harness.getModel("faux-2")!;
 
-		await harness.session.setModel(nextModel);
+		await harness.session.selection.setModel(nextModel);
 		expect(harness.settingsManager.getDefaultProvider()).toBeUndefined();
 		expect(harness.settingsManager.getDefaultModel()).toBeUndefined();
 
-		harness.session.setThinkingLevel("low");
+		harness.session.selection.setThinkingLevel("low");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBeUndefined();
 
 		await harness.settingsManager.commitDefaultModelAndProvider(nextModel.provider, nextModel.id);
@@ -72,7 +63,7 @@ describe("AgentSession model and extension characterization", () => {
 		expect(harness.settingsManager.getDefaultModel()).toBe(nextModel.id);
 
 		await harness.settingsManager.setDefaultThinkingLevel("high");
-		harness.session.setThinkingLevel("high");
+		harness.session.selection.setThinkingLevel("high");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("high");
 	});
 
@@ -84,7 +75,7 @@ describe("AgentSession model and extension characterization", () => {
 			],
 		});
 		harnesses.push(harness);
-		await harness.session.setModel(harness.getModel("faux-2")!);
+		await harness.session.selection.setModel(harness.getModel("faux-2")!);
 		vi.spyOn(harness.settingsManager, "commitDefaultModelAndProvider").mockRejectedValueOnce(
 			new Error("Settings write failed"),
 		);
@@ -92,7 +83,7 @@ describe("AgentSession model and extension characterization", () => {
 		await expect(harness.settingsManager.commitDefaultModelAndProvider("faux", "faux-2")).rejects.toThrow(
 			"Settings write failed",
 		);
-		expect(harness.session.model?.id).toBe("faux-2");
+		expect(harness.session.selection.model?.id).toBe("faux-2");
 		expect(harness.sessionManager.getEntries().some((entry) => entry.type === "model_change")).toBe(true);
 	});
 
@@ -101,9 +92,9 @@ describe("AgentSession model and extension characterization", () => {
 		harnesses.push(harness);
 
 		await harness.settingsManager.setDefaultThinkingLevel("max");
-		harness.session.setThinkingLevel("max");
+		harness.session.selection.setThinkingLevel("max");
 
-		expect(harness.session.thinkingLevel).toBe("high");
+		expect(harness.session.selection.thinkingLevel).toBe("high");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("max");
 	});
 
@@ -118,8 +109,8 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 
-		harness.session.setThinkingLevel("off");
-		expect(harness.session.cycleThinkingLevel()).toBe("minimal");
+		harness.session.selection.setThinkingLevel("off");
+		expect(harness.session.selection.cycleThinkingLevel()).toBe("minimal");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("low");
 	});
 
@@ -137,18 +128,18 @@ describe("AgentSession model and extension characterization", () => {
 		await harness.settingsManager.setModelThinkingLevel("faux", "faux-2", "low");
 
 		// Session starts on faux-1 with default thinking
-		harness.session.setThinkingLevel("high");
-		expect(harness.session.thinkingLevel).toBe("high");
+		harness.session.selection.setThinkingLevel("high");
+		expect(harness.session.selection.thinkingLevel).toBe("high");
 
 		// Switch to faux-2 → per-model override should apply
 		const model2 = harness.getModel("faux-2")!;
-		await harness.session.setModel(model2);
-		expect(harness.session.thinkingLevel).toBe("low");
+		await harness.session.selection.setModel(model2);
+		expect(harness.session.selection.thinkingLevel).toBe("low");
 
 		// Switch back to faux-1 → no per-model override, uses global default
 		const model1 = harness.getModel("faux-1")!;
-		await harness.session.setModel(model1);
-		expect(harness.session.thinkingLevel).toBe("medium");
+		await harness.session.selection.setModel(model1);
+		expect(harness.session.selection.thinkingLevel).toBe("medium");
 	});
 
 	it("falls back to current session thinking level when no per-model or global default is configured", async () => {
@@ -160,9 +151,9 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 
-		harness.session.setThinkingLevel("high");
-		await harness.session.setModel(harness.getModel("faux-2")!);
-		expect(harness.session.thinkingLevel).toBe("high");
+		harness.session.selection.setThinkingLevel("high");
+		await harness.session.selection.setModel(harness.getModel("faux-2")!);
+		expect(harness.session.selection.thinkingLevel).toBe("high");
 	});
 
 	it("per-model override takes priority over global default during model switch", async () => {
@@ -180,17 +171,17 @@ describe("AgentSession model and extension characterization", () => {
 
 		// Start on a non-thinking model, then switch to faux-2
 		const model2 = harness.getModel("faux-2")!;
-		await harness.session.setModel(model2);
-		expect(harness.session.thinkingLevel).toBe("minimal");
+		await harness.session.selection.setModel(model2);
+		expect(harness.session.selection.thinkingLevel).toBe("minimal");
 	});
 
 	it("clamps thinking levels to model capabilities and cycles available levels", async () => {
 		const harness = await createHarness({ models: [{ id: "faux-1", reasoning: false }] });
 		harnesses.push(harness);
 
-		harness.session.setThinkingLevel("high");
-		expect(harness.session.thinkingLevel).toBe("off");
-		expect(harness.session.cycleThinkingLevel()).toBeUndefined();
+		harness.session.selection.setThinkingLevel("high");
+		expect(harness.session.selection.thinkingLevel).toBe("off");
+		expect(harness.session.selection.cycleThinkingLevel()).toBeUndefined();
 	});
 
 	it("cycles xhigh before max when both are supported", async () => {
@@ -198,7 +189,7 @@ describe("AgentSession model and extension characterization", () => {
 		harnesses.push(harness);
 		harness.getModel().thinkingLevelMap = { xhigh: "xhigh", max: "max" };
 
-		expect(harness.session.getAvailableThinkingLevels()).toEqual([
+		expect(harness.session.selection.getAvailableThinkingLevels()).toEqual([
 			"off",
 			"minimal",
 			"low",
@@ -207,10 +198,10 @@ describe("AgentSession model and extension characterization", () => {
 			"xhigh",
 			"max",
 		]);
-		harness.session.setThinkingLevel("high");
-		expect(harness.session.cycleThinkingLevel()).toBe("xhigh");
-		expect(harness.session.cycleThinkingLevel()).toBe("max");
-		expect(harness.session.cycleThinkingLevel()).toBe("off");
+		harness.session.selection.setThinkingLevel("high");
+		expect(harness.session.selection.cycleThinkingLevel()).toBe("xhigh");
+		expect(harness.session.selection.cycleThinkingLevel()).toBe("max");
+		expect(harness.session.selection.cycleThinkingLevel()).toBe("off");
 	});
 
 	it("throws when setModel is called without configured auth", async () => {
@@ -223,7 +214,7 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await expect(harness.session.setModel(harness.getModel("faux-2")!)).rejects.toThrow(
+		await expect(harness.session.selection.setModel(harness.getModel("faux-2")!)).rejects.toThrow(
 			`No API key for ${harness.getModel().provider}/faux-2`,
 		);
 	});
@@ -240,20 +231,20 @@ describe("AgentSession model and extension characterization", () => {
 		let finishFirst!: (value: { source: string; type: "api_key" }) => void;
 		let finishSecond!: (value: { source: string; type: "api_key" }) => void;
 		let checkCount = 0;
-		harness.session.modelRuntime.checkAuth = () =>
+		harness.session.execution.modelRuntime.checkAuth = () =>
 			new Promise((resolve) => {
 				if (checkCount++ === 0) finishFirst = resolve;
 				else finishSecond = resolve;
 			});
 
-		const first = harness.session.setModel(harness.getModel("faux-2")!);
-		const second = harness.session.setModel(harness.getModel("faux-3")!);
+		const first = harness.session.selection.setModel(harness.getModel("faux-2")!);
+		const second = harness.session.selection.setModel(harness.getModel("faux-3")!);
 		finishSecond({ source: "test", type: "api_key" });
 		await second;
 		finishFirst({ source: "test", type: "api_key" });
 		await first;
 
-		expect(harness.session.model?.id).toBe("faux-3");
+		expect(harness.session.selection.model?.id).toBe("faux-3");
 	});
 
 	it("commits a supported thinking level together with the selected model", async () => {
@@ -265,11 +256,11 @@ describe("AgentSession model and extension characterization", () => {
 			settings: { defaultThinkingLevel: "max" },
 		});
 		harnesses.push(harness);
-		await harness.session.setModel(harness.getModel("plain")!);
-		expect(harness.session.thinkingLevel).toBe("off");
+		await harness.session.selection.setModel(harness.getModel("plain")!);
+		expect(harness.session.selection.thinkingLevel).toBe("off");
 		expect(harness.sessionManager.buildSessionContext().thinkingLevel).toBe("off");
-		await harness.session.setModel(harness.getModel("reasoning")!);
-		expect(harness.session.thinkingLevel).toBe("high");
+		await harness.session.selection.setModel(harness.getModel("reasoning")!);
+		expect(harness.session.selection.thinkingLevel).toBe("high");
 		expect(harness.sessionManager.buildSessionContext().thinkingLevel).toBe("high");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("max");
 	});
@@ -277,9 +268,9 @@ describe("AgentSession model and extension characterization", () => {
 	it("rejects thinking changes after disposal without appending a journal entry", async () => {
 		const harness = await createHarness({ models: [{ id: "reasoning", reasoning: true }] });
 		harnesses.push(harness);
-		await harness.session.dispose();
+		await harness.session.execution.dispose();
 		const entries = harness.sessionManager.getEntries();
-		expect(() => harness.session.setThinkingLevel("high")).toThrow("Session was disposed");
+		expect(() => harness.session.selection.setThinkingLevel("high")).toThrow("Session was disposed");
 		expect(harness.sessionManager.getEntries()).toEqual(entries);
 	});
 
@@ -287,17 +278,17 @@ describe("AgentSession model and extension characterization", () => {
 		const harness = await createHarness({ models: [{ id: "faux-1" }, { id: "faux-2" }] });
 		harnesses.push(harness);
 		let finishAuth!: (value: { source: string; type: "api_key" }) => void;
-		harness.session.modelRuntime.checkAuth = () =>
+		harness.session.execution.modelRuntime.checkAuth = () =>
 			new Promise((resolve) => {
 				finishAuth = resolve;
 			});
 
-		const pendingSelection = harness.session.setModel(harness.getModel("faux-2")!);
-		harness.session.clearModel();
+		const pendingSelection = harness.session.selection.setModel(harness.getModel("faux-2")!);
+		harness.session.selection.clearModel();
 		finishAuth({ source: "test", type: "api_key" });
 		await pendingSelection;
 
-		expect(harness.session.model).toBeUndefined();
+		expect(harness.session.selection.model).toBeUndefined();
 		expect(
 			harness.sessionManager
 				.getEntries()
@@ -340,11 +331,11 @@ describe("AgentSession model and extension characterization", () => {
 			},
 		]);
 
-		await harness.session.prompt("hi");
+		await harness.session.execution.prompt("hi");
 
 		expect(getAssistantTexts(harness)).toContain("Blocked by test");
 		expect(
-			harness.session.messages.find((message) => message.role === "toolResult" && message.isError),
+			harness.session.execution.messages.find((message) => message.role === "toolResult" && message.isError),
 		).toBeDefined();
 	});
 
@@ -407,10 +398,10 @@ describe("AgentSession model and extension characterization", () => {
 			},
 		]);
 
-		await harness.session.prompt("hi");
+		await harness.session.execution.prompt("hi");
 
 		expect(getAssistantTexts(harness)).toContain("patched result");
-		const toolResult = harness.session.messages.find(
+		const toolResult = harness.session.execution.messages.find(
 			(message) =>
 				message.role === "toolResult" &&
 				typeof message.details === "object" &&
@@ -453,10 +444,10 @@ describe("AgentSession model and extension characterization", () => {
 			},
 		]);
 
-		await harness.session.prompt("original");
+		await harness.session.execution.prompt("original");
 
 		expect(providerUserText).toBe("rewritten");
-		const storedUserMessage = harness.session.messages.find((message) => message.role === "user");
+		const storedUserMessage = harness.session.execution.messages.find((message) => message.role === "user");
 		expect(storedUserMessage?.role).toBe("user");
 		if (storedUserMessage?.role === "user") {
 			expect(storedUserMessage.content).toEqual([{ type: "text", text: "original" }]);
@@ -494,11 +485,13 @@ describe("AgentSession model and extension characterization", () => {
 			},
 		]);
 
-		await transformedHarness.session.prompt("hello");
-		await transformedHarness.session.prompt("ping");
+		await transformedHarness.session.execution.prompt("hello");
+		await transformedHarness.session.execution.prompt("ping");
 
 		expect(providerUserText).toBe("transformed:hello");
-		expect(transformedHarness.session.messages.filter((message) => message.role === "user")).toHaveLength(1);
+		expect(transformedHarness.session.execution.messages.filter((message) => message.role === "user")).toHaveLength(
+			1,
+		);
 		expect(extensionApi).toBeDefined();
 	});
 
@@ -520,8 +513,8 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.executeCommand({ source: "extension", name: "inspect-options", args: "" });
-		await harness.session.executeCommand({ source: "extension", name: "inspect-options", args: "" });
+		await harness.session.execution.executeCommand({ source: "extension", name: "inspect-options", args: "" });
+		await harness.session.execution.executeCommand({ source: "extension", name: "inspect-options", args: "" });
 
 		expect(seenOptions).toHaveLength(2);
 		expect(seenOptions[0]).toBe(seenOptions[1]);
@@ -562,12 +555,14 @@ describe("AgentSession model and extension characterization", () => {
 			},
 		]);
 
-		await harness.session.prompt("hello");
+		await harness.session.execution.prompt("hello");
 
 		expect(providerSystemPrompt).toContain("extra instructions");
 		expect(sawInjectedUserMessage).toBe(true);
 		expect(
-			harness.session.messages.some((message) => message.role === "custom" && message.customType === "before-start"),
+			harness.session.execution.messages.some(
+				(message) => message.role === "custom" && message.customType === "before-start",
+			),
 		).toBe(true);
 	});
 
@@ -587,9 +582,25 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.bindExtensions({ shutdownHandler: () => {} });
-		await harness.session.reload();
+		await harness.session.execution.bindExtensions({ shutdownHandler: () => {} });
+		await harness.session.execution.reload();
 
 		expect(lifecycleEvents).toEqual(["start:startup", "shutdown:reload", "start:reload"]);
+	});
+	it("keeps extension contexts usable when resource loading fails", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		const runner = harness.session.execution.extensionRunner;
+		const context = runner.createContext();
+		const reload = vi
+			.spyOn(harness.session.execution.resourceLoader, "reload")
+			.mockRejectedValueOnce(new Error("resource load failed"));
+		await expect(harness.session.resources.reload()).rejects.toThrow("resource load failed");
+		expect(harness.session.execution.extensionRunner).toBe(runner);
+		expect(context.history.getSessionId()).toBe(harness.session.history.getSessionId());
+		harness.setResponses([fauxAssistantMessage("still usable")]);
+		await harness.session.execution.prompt("continue");
+		expect(harness.session.history.getLastAssistantText()).toBe("still usable");
+		reload.mockRestore();
 	});
 });

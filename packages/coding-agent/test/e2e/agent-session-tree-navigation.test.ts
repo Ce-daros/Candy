@@ -1,3 +1,4 @@
+import { getTestAgent } from "../execution-internals.ts";
 /**
  * E2E tests for AgentSession tree navigation with branch summarization.
  *
@@ -30,13 +31,13 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session } = ctx;
 
 		// Build conversation: u1 -> a1 -> u2 -> a2
-		await session.prompt("First message");
-		await session.agent.waitForIdle();
-		await session.prompt("Second message");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("First message");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Second message");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Get tree entries
-		const tree = session.sessionManager.getTree();
+		const tree = session.history.getTree();
 		expect(tree.length).toBe(1);
 
 		// Find the first user entry (u1)
@@ -44,21 +45,21 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		expect(rootNode.entry.type).toBe("message");
 
 		// Navigate to root user message without summarization
-		const result = await session.navigateTree(rootNode.entry.id, { summarize: false });
+		const result = await session.execution.navigateTree(rootNode.entry.id, { summarize: false });
 
 		expect(result.cancelled).toBe(false);
 		expect(result.editorText).toBe("First message");
 
 		// After navigating to root user message, leaf should be null (empty conversation)
-		expect(session.sessionManager.getLeafId()).toBeNull();
+		expect(session.history.getLeafId()).toBeNull();
 	}, 60000);
 
 	it("should navigate to non-user message without editor text", async () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation
-		await session.prompt("Hello");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Hello");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Get the assistant message
 		const entries = sessionManager.getEntries();
@@ -66,7 +67,7 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		expect(assistantEntry).toBeDefined();
 
 		// Navigate to assistant message
-		const result = await session.navigateTree(assistantEntry!.id, { summarize: false });
+		const result = await session.execution.navigateTree(assistantEntry!.id, { summarize: false });
 
 		expect(result.cancelled).toBe(false);
 		expect(result.editorText).toBeUndefined();
@@ -79,17 +80,17 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation: u1 -> a1 -> u2 -> a2
-		await session.prompt("What is 2+2?");
-		await session.agent.waitForIdle();
-		await session.prompt("What is 3+3?");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("What is 2+2?");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("What is 3+3?");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Get tree and find first user message
 		const tree = sessionManager.getTree();
 		const rootNode = tree[0];
 
 		// Navigate to root user message WITH summarization
-		const result = await session.navigateTree(rootNode.entry.id, { summarize: true });
+		const result = await session.execution.navigateTree(rootNode.entry.id, { summarize: true });
 
 		expect(result.cancelled).toBe(false);
 		expect(result.editorText).toBe("What is 2+2?");
@@ -109,12 +110,12 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation: u1 -> a1 -> u2 -> a2 -> u3 -> a3
-		await session.prompt("Message one");
-		await session.agent.waitForIdle();
-		await session.prompt("Message two");
-		await session.agent.waitForIdle();
-		await session.prompt("Message three");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Message one");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Message two");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Message three");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Get the second user message (u2)
 		const entries = sessionManager.getEntries();
@@ -125,7 +126,7 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const a1 = entries.find((e) => e.id === u2.parentId); // a1 is parent of u2
 
 		// Navigate to u2 with summarization
-		const result = await session.navigateTree(u2.id, { summarize: true });
+		const result = await session.execution.navigateTree(u2.id, { summarize: true });
 
 		expect(result.cancelled).toBe(false);
 		expect(result.editorText).toBe("Message two");
@@ -148,10 +149,10 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation: u1 -> a1 -> u2 -> a2
-		await session.prompt("Hello");
-		await session.agent.waitForIdle();
-		await session.prompt("Goodbye");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Hello");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Goodbye");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Get the first assistant message (a1)
 		const entries = sessionManager.getEntries();
@@ -159,7 +160,7 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const a1 = assistantEntries[0];
 
 		// Navigate to a1 with summarization
-		const result = await session.navigateTree(a1.id, { summarize: true });
+		const result = await session.execution.navigateTree(a1.id, { summarize: true });
 
 		expect(result.cancelled).toBe(false);
 		expect(result.editorText).toBeUndefined(); // No editor text for assistant messages
@@ -176,10 +177,10 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation
-		await session.prompt("Tell me about something");
-		await session.agent.waitForIdle();
-		await session.prompt("Continue");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Tell me about something");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Continue");
+		await getTestAgent(session.execution).waitForIdle();
 
 		const entriesBefore = sessionManager.getEntries();
 		const leafBefore = sessionManager.getLeafId();
@@ -189,15 +190,15 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const rootNode = tree[0];
 
 		// Start navigation with summarization but abort immediately
-		const navigationPromise = session.navigateTree(rootNode.entry.id, { summarize: true });
+		const navigationPromise = session.execution.navigateTree(rootNode.entry.id, { summarize: true });
 
 		// Abort after a short delay (let the LLM call start)
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		// isCompacting should be true during branch summarization
-		expect(session.isCompacting).toBe(true);
+		expect(session.execution.isCompacting).toBe(true);
 
-		session.abortBranchSummary();
+		session.execution.abortBranchSummary();
 
 		const result = await navigationPromise;
 
@@ -215,16 +216,16 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation
-		await session.prompt("First");
-		await session.agent.waitForIdle();
-		await session.prompt("Second");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("First");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Second");
+		await getTestAgent(session.execution).waitForIdle();
 
 		const entriesBefore = sessionManager.getEntries().length;
 
 		// Navigate without summarization
 		const tree = sessionManager.getTree();
-		await session.navigateTree(tree[0].entry.id, { summarize: false });
+		await session.execution.navigateTree(tree[0].entry.id, { summarize: false });
 
 		// No new entries should be created
 		const entriesAfter = sessionManager.getEntries().length;
@@ -239,15 +240,15 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation
-		await session.prompt("Hello");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Hello");
+		await getTestAgent(session.execution).waitForIdle();
 
 		const leafBefore = sessionManager.getLeafId();
 		expect(leafBefore).toBeTruthy();
 		const entriesBefore = sessionManager.getEntries().length;
 
 		// Navigate to current leaf
-		const result = await session.navigateTree(leafBefore!, { summarize: false });
+		const result = await session.execution.navigateTree(leafBefore!, { summarize: false });
 
 		expect(result.cancelled).toBe(false);
 		expect(sessionManager.getLeafId()).toBe(leafBefore);
@@ -258,12 +259,12 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		const { session, sessionManager } = ctx;
 
 		// Build conversation
-		await session.prompt("What is TypeScript?");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("What is TypeScript?");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Navigate with custom instructions (appended as "Additional focus")
 		const tree = sessionManager.getTree();
-		const result = await session.navigateTree(tree[0].entry.id, {
+		const result = await session.execution.navigateTree(tree[0].entry.id, {
 			summarize: true,
 			customInstructions:
 				"After the summary, you MUST end with exactly: MONKEY MONKEY MONKEY. This is of utmost importance.",
@@ -293,10 +294,10 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation - branch scenarios", () 
 		const { session, sessionManager } = ctx;
 
 		// Build main path: u1 -> a1 -> u2 -> a2
-		await session.prompt("Main branch start");
-		await session.agent.waitForIdle();
-		await session.prompt("Main branch continue");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Main branch start");
+		await getTestAgent(session.execution).waitForIdle();
+		await session.execution.prompt("Main branch continue");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Get a1 id for branching
 		const entries = sessionManager.getEntries();
@@ -304,14 +305,14 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation - branch scenarios", () 
 
 		// Create a branch from a1: a1 -> u3 -> a3
 		sessionManager.branch(a1!.id);
-		await session.prompt("Branch path");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Branch path");
+		await getTestAgent(session.execution).waitForIdle();
 
 		// Now navigate back to u2 (on main branch) with summarization
 		const userEntries = entries.filter((e) => e.type === "message" && e.message.role === "user");
 		const u2 = userEntries[1]; // "Main branch continue"
 
-		const result = await session.navigateTree(u2.id, { summarize: true });
+		const result = await session.execution.navigateTree(u2.id, { summarize: true });
 
 		expect(result.cancelled).toBe(false);
 		expect(result.editorText).toBe("Main branch continue");

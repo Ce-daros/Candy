@@ -1,10 +1,10 @@
 import type { Component } from "@candy/tui";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
-import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import type { Theme } from "../src/modes/interactive/theme/theme.ts";
 import { ansiLinesToHtml } from "../src/presentation/export-html/ansi-to-html.ts";
 import { createToolHtmlRenderer } from "../src/presentation/export-html/tool-renderer.ts";
+import type { ToolRenderers } from "../src/presentation/tool-render-types.ts";
 
 describe("export HTML tool output whitespace", () => {
 	it("preserves whitespace for plain-text tool output lines without preserving template whitespace", () => {
@@ -28,7 +28,7 @@ describe("export HTML tool output whitespace", () => {
 			label: "custom",
 			description: "custom",
 			renderResult: () => component,
-		} as unknown as ToolDefinition;
+		} as ToolRenderers;
 		const renderer = createToolHtmlRenderer({
 			getToolDefinition: () => tool,
 			theme: {} as Theme,

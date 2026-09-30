@@ -1,6 +1,7 @@
 import type { TUI } from "@candy/tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentSessionEvent } from "../src/core/agent-session.ts";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -53,12 +54,10 @@ describe("interactive tool cancellation", () => {
 		const addToolToChat = vi.fn<(component: ToolExecutionComponent) => void>();
 		const context = {
 			pendingTools: new Map<string, ToolExecutionComponent>(),
-			settingsManager: {
-				getShowCacheMissNotices: () => false,
-				getShowImages: () => false,
-				getImageWidthCells: () => 80,
-				getToolPreviewLines: () => 5,
-			},
+			settingsManager: SettingsManager.inMemory({
+				terminal: { showImages: false, imageWidthCells: 80 },
+				toolPreviewLines: 5,
+			}),
 			sessionManager: { getCwd: () => process.cwd() },
 			session: { retryAttempt: 0 },
 			toolOutputExpanded: false,

@@ -36,7 +36,7 @@ function getDefaultAttributionHeaders(
 	model: Model<Api>,
 	settingsManager: SettingsManager,
 ): Record<string, string> | undefined {
-	if (!settingsManager.getEnableInstallTelemetry()) {
+	if (!settingsManager.read("install-telemetry")) {
 		return undefined;
 	}
 

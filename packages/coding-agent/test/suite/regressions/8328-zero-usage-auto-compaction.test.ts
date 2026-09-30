@@ -1,5 +1,6 @@
 import type { AssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { seedHistory } from "../../session-factory.ts";
 import { createHarness, type Harness } from "../harness.ts";
 
 type SessionWithCompactionInternals = {
@@ -50,11 +51,11 @@ describe("issue #8328 zero-usage auto-compaction", () => {
 	it("uses the message estimate when no assistant has reported usage", async () => {
 		const harness = await createCompactionHarness();
 		const assistant = createZeroUsageAssistant(harness);
-		harness.session.agent.state.messages = [
+		seedHistory(harness.session.history, [
 			{ role: "user", content: [{ type: "text", text: "x".repeat(400) }], timestamp: Date.now() - 1 },
 			assistant,
-		];
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		]);
+		const sessionInternals = harness.session.execution as unknown as SessionWithCompactionInternals;
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
 
 		await sessionInternals._checkCompaction(assistant);
@@ -66,11 +67,11 @@ describe("issue #8328 zero-usage auto-compaction", () => {
 	it("does not compact when the zero-usage message estimate is below the threshold", async () => {
 		const harness = await createCompactionHarness();
 		const assistant = createZeroUsageAssistant(harness);
-		harness.session.agent.state.messages = [
+		seedHistory(harness.session.history, [
 			{ role: "user", content: [{ type: "text", text: "short" }], timestamp: Date.now() - 1 },
 			assistant,
-		];
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		]);
+		const sessionInternals = harness.session.execution as unknown as SessionWithCompactionInternals;
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
 
 		await sessionInternals._checkCompaction(assistant);

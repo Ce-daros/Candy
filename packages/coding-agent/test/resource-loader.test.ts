@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { DefaultResourceLoader, loadProjectContextFiles } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
@@ -412,16 +411,9 @@ export default function(candy) {
 			expect(extensionsResult.extensions).toHaveLength(2);
 			expect(extensionsResult.errors.some((e) => e.error.includes('Command "/deploy" conflicts'))).toBe(false);
 
-			const sessionManager = SessionManager.inMemory();
 			const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 			const modelRuntime = await createTestModelRuntime(authStorage);
-			const runner = new ExtensionRunner(
-				extensionsResult.extensions,
-				extensionsResult.runtime,
-				cwd,
-				sessionManager,
-				modelRuntime,
-			);
+			const runner = new ExtensionRunner(extensionsResult.extensions, extensionsResult.runtime, cwd, modelRuntime);
 
 			expect(runner.getCommand("deploy:1")?.description).toBe("project deploy");
 			expect(runner.getCommand("deploy:2")?.description).toBe("user deploy");
@@ -1185,16 +1177,9 @@ export default function(candy: ExtensionAPI) {
 			const extensionsResult = loader.getExtensions();
 			expect(extensionsResult.extensions[0]?.path).toBe(explicitExtPath);
 
-			const sessionManager = SessionManager.inMemory();
 			const authStorage = AuthStorage.create(join(tempDir, "auth-explicit.json"));
 			const modelRuntime = await createTestModelRuntime(authStorage);
-			const runner = new ExtensionRunner(
-				extensionsResult.extensions,
-				extensionsResult.runtime,
-				cwd,
-				sessionManager,
-				modelRuntime,
-			);
+			const runner = new ExtensionRunner(extensionsResult.extensions, extensionsResult.runtime, cwd, modelRuntime);
 
 			expect(runner.getCommand("deploy:1")?.description).toBe("explicit command");
 			expect(runner.getCommand("deploy:2")?.description).toBe("global command");

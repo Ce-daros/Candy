@@ -3,7 +3,7 @@ import type { Model } from "@candy/ai";
 import { clampThinkingLevel, getSupportedThinkingLevels, modelsAreEqual } from "@candy/ai";
 import { THINKING_LEVEL_OPTIONS } from "./defaults.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
-import type { SessionManager } from "./session-manager.ts";
+import type { SessionHistory } from "./session-history.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 export interface ModelMutationOptions {
@@ -14,14 +14,13 @@ export interface ModelMutationOptions {
 interface ModelSelectionCallbacks {
 	isDisposed: () => boolean;
 	isBusy: () => boolean;
-	onModelSelect: (model: Model<any>, previousModel: Model<any> | undefined) => Promise<void>;
 	onThinkingLevelChange: (level: ThinkingLevel, previousLevel: ThinkingLevel) => void;
 }
 
 export class ModelSelection {
 	private readonly agent: Agent;
 	private readonly modelRuntime: ModelRuntime;
-	private readonly sessionManager: SessionManager;
+	private readonly sessionManager: SessionHistory;
 	private readonly settingsManager: SettingsManager;
 	private readonly callbacks: ModelSelectionCallbacks;
 	private selectionRevision = 0;
@@ -29,7 +28,7 @@ export class ModelSelection {
 	constructor(
 		agent: Agent,
 		modelRuntime: ModelRuntime,
-		sessionManager: SessionManager,
+		sessionManager: SessionHistory,
 		settingsManager: SettingsManager,
 		callbacks: ModelSelectionCallbacks,
 	) {
@@ -77,7 +76,6 @@ export class ModelSelection {
 		this.agent.state.thinkingLevel = thinkingLevel;
 
 		if (thinkingChanged) this.callbacks.onThinkingLevelChange(thinkingLevel, previousThinkingLevel);
-		await this.callbacks.onModelSelect(model, previousModel);
 	}
 
 	clearModel(): void {

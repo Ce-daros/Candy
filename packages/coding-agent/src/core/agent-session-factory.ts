@@ -1,23 +1,18 @@
-import { join } from "node:path";
-import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@candy/agent-core";
+import type { AgentMessage, AgentOptions, AgentTool, ThinkingLevel } from "@candy/agent-core";
 import type { ModelsSimpleStreamOptions } from "@candy/ai";
 import { clampThinkingLevel, type Message, type Model } from "@candy/ai";
-import { getAgentDir } from "../config.ts";
-import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { CacheWarmer } from "./cache-warmer.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
-import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
+import type { LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
 import { findInitialModel } from "./model-resolver.ts";
-import { ModelRuntime } from "./model-runtime.ts";
+import type { ModelRuntime } from "./model-runtime.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader, ResourceThemeAdapter } from "./resource-loader.ts";
-import { DefaultResourceLoader } from "./resource-loader.ts";
-import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
-import { SettingsManager } from "./settings-manager.ts";
-import { time } from "./timings.ts";
+import type { SessionHistory } from "./session-history.ts";
+import type { SettingsManager } from "./settings-manager.ts";
 
 export interface CreateAgentSessionOptions {
 	baseToolsOverride?: Record<string, AgentTool>;
@@ -65,8 +60,8 @@ export interface CreateAgentSessionOptions {
 	/** Required when the default resource loader loads extension source files. */
 	extensionModules?: Record<string, unknown>;
 
-	/** Session manager. Default: SessionManager.create(cwd) */
-	sessionManager?: SessionManager;
+	/** Session manager. Default: SessionHistory.create(cwd) */
+	sessionManager?: SessionHistory;
 
 	/** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
 	settingsManager?: SettingsManager;
@@ -84,70 +79,17 @@ export interface CreateAgentSessionResult {
 	modelFallbackMessage?: string;
 }
 
-// Helper Functions
+export type AssembleAgentSessionOptions = CreateAgentSessionOptions & {
+	cwd: string;
+	agentDir: string;
+	modelRuntime: ModelRuntime;
+	settingsManager: SettingsManager;
+	sessionManager: SessionHistory;
+	resourceLoader: ResourceLoader;
+};
 
-function getDefaultAgentDir(): string {
-	return getAgentDir();
-}
-
-/**
- * Create an AgentSession with the specified options.
- *
- * @example
- * ```typescript
- * // Minimal - uses defaults
- * const { session } = await assembleAgentSession();
- *
- * // With explicit model
- * import { getModel } from '@candy/ai';
- * const { session } = await assembleAgentSession({
- *   model: getModel('anthropic', 'claude-opus-4-5'),
- *   thinkingLevel: 'high',
- * });
- *
- * // Continue previous session
- * const { session, modelFallbackMessage } = await assembleAgentSession({
- *   continueSession: true,
- * });
- *
- * // Full control
- * const loader = new DefaultResourceLoader({
- *   cwd: process.cwd(),
- *   agentDir: getAgentDir(),
- *   settingsManager: SettingsManager.create(),
- * });
- * await loader.reload();
- * const { session } = await assembleAgentSession({
- *   model: myModel,
- *   tools: ["read", "bash"],
- *   resourceLoader: loader,
- *   sessionManager: SessionManager.inMemory(),
- * });
- * ```
- */
-export async function assembleAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
-	const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
-	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
-	let resourceLoader = options.resourceLoader;
-
-	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
-	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
-	const modelRuntime = options.modelRuntime ?? (await ModelRuntime.create({ authPath, modelsPath }));
-
-	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
-	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
-
-	if (!resourceLoader) {
-		resourceLoader = new DefaultResourceLoader({
-			cwd,
-			agentDir,
-			settingsManager,
-			themeAdapter: options.themeAdapter,
-			extensionModules: options.extensionModules,
-		});
-		await resourceLoader.reload();
-		time("resourceLoader.reload");
-	}
+export async function assembleAgentSession(options: AssembleAgentSessionOptions): Promise<CreateAgentSessionResult> {
+	const { cwd, agentDir, modelRuntime, settingsManager, sessionManager, resourceLoader } = options;
 
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.buildSessionContext();
@@ -234,7 +176,7 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
 		const converted = convertToLlm(messages);
 		// Check setting dynamically so mid-session changes take effect
-		if (!settingsManager.getBlockImages()) {
+		if (!settingsManager.read("block-images")) {
 			return converted;
 		}
 		// Filter out ImageContent from all messages, replacing with text placeholder
@@ -267,22 +209,15 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 		});
 	};
 
-	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 	const resourceOwner = {};
-	const cacheWarmer = new CacheWarmer(
-		modelRuntime,
-		sessionManager,
-		() => settingsManager.getCacheWarmingMode(),
-		async (event) => extensionRunnerRef.current?.emitCacheWarmingDecision(event) ?? event.action,
-	);
+	const cacheWarmer = new CacheWarmer(modelRuntime, sessionManager, () => settingsManager.read("cache-warming-mode"));
 	const buildRequestOptions = (
 		requestModel: Model<any>,
 		options: ModelsSimpleStreamOptions = {},
 	): ModelsSimpleStreamOptions => {
 		const providerRetrySettings = settingsManager.getProviderRetrySettings();
-		const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
+		const httpIdleTimeoutMs = settingsManager.read("http-idle-timeout");
 		const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
-		const headerRunner = extensionRunnerRef.current;
 		return {
 			...options,
 			resourceOwner,
@@ -297,17 +232,15 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 					options.sessionId,
 					requestHeaders,
 				);
-				return headerRunner?.hasHandlers("before_provider_headers")
-					? headerRunner.emitBeforeProviderHeaders(headers ?? {})
-					: (headers ?? {});
+				return headers ?? {};
 			},
 		};
 	};
 	const cacheContextIsCurrent = (requestModel: Model<any>) => {
-		const messages = agent.state.messages;
+		const messages = session.execution.state.messages;
 		return () => {
-			const currentModel = agent.state.model;
-			const currentMessages = agent.state.messages;
+			const currentModel = session.execution.state.model;
+			const currentMessages = session.execution.state.messages;
 			if (!currentModel) return false;
 			return (
 				currentModel.provider === requestModel.provider &&
@@ -317,42 +250,11 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 			);
 		};
 	};
-	const transformProviderPayload = async (payload: unknown) => {
-		const runner = extensionRunnerRef.current;
-		if (!runner?.hasHandlers("before_provider_request")) return payload;
-		return runner.emitBeforeProviderRequest(payload);
-	};
-	const handleProviderResponse: NonNullable<ModelsSimpleStreamOptions["onResponse"]> = async (response) => {
-		const runner = extensionRunnerRef.current;
-		if (!runner?.hasHandlers("after_provider_response")) return;
-		await runner.emit({
-			type: "after_provider_response",
-			status: response.status,
-			headers: response.headers,
-		});
-	};
-	const handleProviderStreamEvent: NonNullable<ModelsSimpleStreamOptions["onProviderStreamEvent"]> = async (
-		data,
-		model,
-	) => {
-		const runner = extensionRunnerRef.current;
-		if (!runner?.hasHandlers("provider_stream_event")) return;
-		await runner.emit({
-			data,
-			type: "provider_stream_event",
-			provider: model.provider,
-			api: model.api,
-			model: model.id,
-		});
-	};
-
-	const agent = new Agent({
+	const agentOptions: Omit<AgentOptions, "host" | "inputs"> = {
 		initialState: {
-			systemPrompt: "",
 			model,
 			thinkingLevel,
 			tools: [],
-			messages: existingSession.messages,
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		streamFn: async (model, context, options) => {
@@ -367,21 +269,11 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 			}
 			return modelRuntime.streamSimple(model, context, requestOptions);
 		},
-		onPayload: transformProviderPayload,
-		onResponse: handleProviderResponse,
-		onProviderStreamEvent: handleProviderStreamEvent,
 		sessionId: sessionManager.getSessionId(),
-		transformContext: async (messages) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner) return messages;
-			return runner.emitContext(messages);
-		},
-		steeringMode: settingsManager.getSteeringMode(),
-		followUpMode: settingsManager.getFollowUpMode(),
-		transport: settingsManager.getTransport(),
+		transport: settingsManager.read("transport"),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
-	});
+	};
 
 	// Restore missing settings metadata for older sessions.
 	if (hasExistingSession) {
@@ -398,7 +290,7 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 
 	const session = new AgentSession({
 		baseToolsOverride: options.baseToolsOverride,
-		agent,
+		agentOptions,
 		sessionManager,
 		settingsManager,
 		cwd,
@@ -410,7 +302,6 @@ export async function assembleAgentSession(options: CreateAgentSessionOptions = 
 		initialActiveToolNames,
 		allowedToolNames,
 		excludedToolNames,
-		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 		resourceOwner,
 	});

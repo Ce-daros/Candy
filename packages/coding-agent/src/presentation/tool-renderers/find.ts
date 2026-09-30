@@ -8,9 +8,9 @@
 
 import { Text } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
-import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
 import type { FindToolDetails } from "../../core/tools/find.ts";
 import { DEFAULT_MAX_BYTES, formatSize } from "../../core/tools/truncate.ts";
+import type { ToolRenderers, ToolRenderResultOptions } from "../tool-render-types.ts";
 import { getTextOutput, invalidArgText, shortenPath, str } from "../tool-render-utils.ts";
 
 function formatFindCall(args: { pattern: string; path?: string; limit?: number } | undefined, theme: Theme): string {
@@ -64,7 +64,7 @@ function formatFindResult(
 	return text;
 }
 
-export const findRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> = {
+export const findRenderers: ToolRenderers<any, FindToolDetails> = {
 	renderCall(args, theme, context) {
 		const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 		text.setText(formatFindCall(args as any, theme));

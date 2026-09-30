@@ -1,8 +1,10 @@
 import type { Api, Model } from "@candy/ai";
 import type { AutocompleteItem } from "@candy/tui";
 import type { AgentSession } from "../../core/agent-session.ts";
+import type { ModelRuntime } from "../../core/model-runtime.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
 import { CommandPanel, type CommandPanelAction, type CommandPanelOptions } from "./components/command-panel.ts";
+import { type InteractiveFlowFrame, InteractiveFlowStack } from "./interactive-flow-stack.ts";
 import {
 	AgentController,
 	CommandController,
@@ -15,6 +17,7 @@ export type PresentationSurface = "sources" | "details" | "history" | "agent" | 
 
 export interface PresentationHost {
 	session(): AgentSession;
+	models(): ModelRuntime;
 	settings(): SettingsManager;
 	mount(panel: CommandPanel): void;
 	exit(): void;
@@ -35,27 +38,28 @@ export interface PresentationHost {
 	): Promise<void>;
 }
 
-export interface PresentationPage {
+export interface PresentationPage extends InteractiveFlowFrame {
+	role: "presentation";
 	kind: PresentationSurface;
 	panel: CommandPanel;
+	session: AgentSession;
+	scopeChanged: boolean;
+	closing: boolean;
 	refresh: () => void;
-	controller: AbortController;
 }
 
 export class InteractivePresentation {
 	private readonly host: PresentationHost;
-	private pages: PresentationPage[] = [];
-	private session: AgentSession | undefined;
-	private scopeChanged = false;
-	private closing = false;
+	private readonly flows: InteractiveFlowStack;
 	private readonly sources: SourcesController;
 	private readonly details: DetailsController;
 	private readonly history: HistoryController;
 	private readonly agent: AgentController;
 	private readonly command: CommandController;
 
-	constructor(host: PresentationHost) {
+	constructor(host: PresentationHost, flows: InteractiveFlowStack = new InteractiveFlowStack()) {
 		this.host = host;
+		this.flows = flows;
 		const page = (...args: Parameters<InteractivePresentation["page"]>) => this.page(...args);
 		const refresh = (target: PresentationPage) => this.refresh(target);
 		this.sources = new SourcesController(
@@ -78,16 +82,15 @@ export class InteractivePresentation {
 	}
 
 	get active(): boolean {
-		return this.pages.length > 0;
+		return this.flows.last("presentation") !== undefined;
 	}
 
 	get surface(): PresentationSurface | undefined {
-		return this.pages[0]?.kind;
+		return this.flows.last("presentation")?.kind as PresentationSurface | undefined;
 	}
 
 	open(surface: PresentationSurface, model?: Model<Api>): void {
 		this.dispose();
-		this.session = this.host.session();
 		switch (surface) {
 			case "sources":
 				this.sources.openSources();
@@ -108,17 +111,12 @@ export class InteractivePresentation {
 	}
 
 	resume(): boolean {
-		const page = this.pages.at(-1);
-		if (!page || this.session !== this.host.session()) return false;
+		const page = this.flows.last("presentation") as PresentationPage | undefined;
+		if (!page || this.flows.current !== page || page.session !== this.host.session()) return false;
 		page.refresh();
 		page.panel.resume();
 		this.host.mount(page.panel);
 		return true;
-	}
-
-	suspendFor(content: object): void {
-		const page = this.pages.at(-1);
-		if (page && page.panel !== content) page.panel.suspend();
 	}
 
 	finish(): void {
@@ -127,30 +125,23 @@ export class InteractivePresentation {
 	}
 
 	dispose(): void {
-		for (const page of this.pages) {
-			page.controller.abort();
-			page.panel.dispose();
-		}
-		this.pages = [];
-		this.session = undefined;
-		this.scopeChanged = false;
-		this.closing = false;
+		this.flows.clear();
 	}
 
 	private back(): void {
-		if (this.closing) return;
-		if (this.pages.length === 1 && this.scopeChanged) {
-			const page = this.pages[0];
-			this.closing = true;
+		const page = this.flows.current as PresentationPage | undefined;
+		if (!page || page.role !== "presentation" || page.closing) return;
+		if (page.kind === "sources" && !this.hasParentPage(page) && page.scopeChanged) {
+			page.closing = true;
 			page.panel.suspend();
 			void this.host.applyQuickSelection(page.controller.signal).then(
 				() => {
-					if (page.controller.signal.aborted || this.session !== this.host.session()) return;
+					if (!this.isLive(page)) return;
 					this.finish();
 				},
 				(error: unknown) => {
-					if (page.controller.signal.aborted || this.session !== this.host.session()) return;
-					this.closing = false;
+					if (!this.isLive(page)) return;
+					page.closing = false;
 					page.panel.resume();
 					this.host.mount(page.panel);
 					this.host.reportError(error instanceof Error ? error.message : String(error));
@@ -158,10 +149,8 @@ export class InteractivePresentation {
 			);
 			return;
 		}
-		const page = this.pages.pop();
-		page?.controller.abort();
-		page?.panel.dispose();
-		if (!this.resume()) this.finish();
+		this.flows.pop(page);
+		if (!this.flows.last("presentation")) this.finish();
 	}
 
 	private page(
@@ -172,7 +161,6 @@ export class InteractivePresentation {
 		onSelectionChange?: CommandPanelOptions["onSelectionChange"],
 		searchable = kind === "command" || kind === "sources",
 	): PresentationPage {
-		this.pages.at(-1)?.panel.suspend();
 		const panel = new CommandPanel([], {
 			title,
 			onCancel: () => this.back(),
@@ -181,38 +169,62 @@ export class InteractivePresentation {
 			onSelectionChange,
 			searchable,
 		});
-		const page: PresentationPage = {
+		let page: PresentationPage;
+		page = this.flows.push({
+			role: "presentation",
 			kind,
 			panel,
-			controller: new AbortController(),
+			content: panel,
+			session: this.host.session(),
+			scopeChanged: false,
+			closing: false,
 			refresh: () => {
 				panel.setActions(getActions(page));
 				panel.setDescription(getDescription());
 			},
-		};
-		this.pages.push(page);
+			onSuspend: () => panel.suspend(),
+			onResume: () => {
+				if (!this.isLive(page)) return;
+				page.refresh();
+				panel.resume();
+				this.host.mount(panel);
+			},
+			dispose: () => panel.dispose(),
+		}) as PresentationPage;
 		page.refresh();
 		this.host.mount(panel);
 		return page;
 	}
 
 	private refresh(page: PresentationPage): void {
-		if (this.pages.at(-1) !== page || this.session !== this.host.session()) return;
+		if (this.flows.last("presentation") !== page || !this.isLive(page)) return;
 		page.refresh();
 		this.host.render();
 	}
 
 	private assertScopeEditable(): void {
 		const session = this.host.session();
-		if (session.isStreaming || session.isCompacting)
+		if (session.execution.isStreaming || session.execution.isCompacting)
 			throw new Error("Wait for the current response or compaction to finish");
 	}
 
 	private markScopeChanged(): void {
-		this.scopeChanged = true;
+		const sourcePage = this.flows.all.find(
+			(frame): frame is PresentationPage => frame.role === "presentation" && frame.kind === "sources",
+		);
+		if (sourcePage) sourcePage.scopeChanged = true;
 	}
 
 	private isCurrentPage(page: PresentationPage): boolean {
-		return this.pages.at(-1) === page && this.session === this.host.session();
+		return this.flows.has(page) && this.isLive(page);
+	}
+
+	private isLive(page: PresentationPage): boolean {
+		return !page.controller.signal.aborted && page.session === this.host.session();
+	}
+
+	private hasParentPage(page: PresentationPage): boolean {
+		const frames = this.flows.all;
+		return frames.slice(0, frames.indexOf(page)).some((frame) => frame.role === "presentation");
 	}
 }

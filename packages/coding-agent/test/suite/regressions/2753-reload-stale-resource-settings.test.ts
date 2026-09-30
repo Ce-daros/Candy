@@ -11,7 +11,7 @@ import {
 } from "../../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
-import { SessionManager } from "../../../src/core/session-manager.ts";
+import { SessionHistory } from "../../../src/core/session-history.ts";
 import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
 import { configuredFauxProvider } from "../../ai.ts";
@@ -73,23 +73,23 @@ describe("issue #2753 reload stale resource settings", () => {
 		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir,
-			sessionManager: SessionManager.create(tempDir),
+			sessionManager: SessionHistory.create(tempDir),
 		});
 
 		cleanups.push(async () => {
-			await runtime.session.dispose();
+			await runtime.session.execution.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
 		});
 
-		expect(runtime.session.promptTemplates.map((prompt) => prompt.name)).toContain("test");
+		expect(runtime.session.execution.promptTemplates.map((prompt) => prompt.name)).toContain("test");
 
 		writeFileSync(join(agentDir, "settings.json"), `${JSON.stringify({ prompts: ["-prompts/test.md"] }, null, 2)}\n`);
 
-		await runtime.session.reload();
+		await runtime.session.execution.reload();
 
 		expect(runtime.services.settingsManager.getGlobalSettings().prompts).toEqual(["-prompts/test.md"]);
-		expect(runtime.session.promptTemplates.map((prompt) => prompt.name)).not.toContain("test");
+		expect(runtime.session.execution.promptTemplates.map((prompt) => prompt.name)).not.toContain("test");
 	});
 });

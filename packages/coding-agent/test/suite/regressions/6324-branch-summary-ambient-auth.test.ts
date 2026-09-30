@@ -20,7 +20,7 @@ describe("issue #6324 branch summary ambient auth", () => {
 		harnesses.push(harness);
 
 		let ambientAuthResolved = 0;
-		harness.session.modelRuntime.registerNativeProvider({
+		harness.session.execution.modelRuntime.registerNativeProvider({
 			...harness.faux.provider,
 			auth: {
 				apiKey: {
@@ -32,8 +32,8 @@ describe("issue #6324 branch summary ambient auth", () => {
 				},
 			},
 		});
-		await harness.session.modelRuntime.refresh({ allowNetwork: false });
-		harness.session.setThinkingLevel("high");
+		await harness.session.execution.modelRuntime.refresh({ allowNetwork: false });
+		harness.session.selection.setThinkingLevel("high");
 		harness.setResponses([
 			(_context, requestOptions) => {
 				expect(requestOptions?.apiKey).toBeUndefined();
@@ -48,7 +48,7 @@ describe("issue #6324 branch summary ambient auth", () => {
 		harness.sessionManager.appendMessage(userMsg("abandoned branch work"));
 		harness.sessionManager.appendMessage(assistantMsg("abandoned reply"));
 
-		const result = await harness.session.navigateTree(targetId, { summarize: true });
+		const result = await harness.session.execution.navigateTree(targetId, { summarize: true });
 
 		expect(result.cancelled).toBe(false);
 		expect(harness.faux.state.callCount).toBe(1);

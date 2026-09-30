@@ -8,18 +8,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
-import type { AssistantMessage, AuthEvent, AuthPrompt, ImageContent, Message, Model } from "@candy/ai";
+import type { AssistantMessage, ImageContent, Message, Model } from "@candy/ai";
 import type * as TuiLayouts from "@candy/tui";
-import type {
-	AutocompleteItem,
-	AutocompleteProvider,
-	EditorComponent,
-	Keybinding,
-	KeyId,
-	MarkdownTheme,
-	OverlayHandle,
-	OverlayOptions,
-} from "@candy/tui";
+import type { AutocompleteItem, AutocompleteProvider, Keybinding, KeyId, MarkdownTheme } from "@candy/tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -32,22 +23,12 @@ import {
 	setKeybindings,
 	type Terminal,
 	Text,
-	type TUI,
 	type TuiAltScreen,
 	visibleWidth,
 } from "@candy/tui";
 import chalk from "chalk";
 import { spawn } from "child_process";
-import {
-	APP_NAME,
-	APP_TITLE,
-	CONFIG_DIR_NAME,
-	getAgentDir,
-	getAuthPath,
-	getDebugLogPath,
-	VERSION,
-} from "../../config.ts";
-import type { Theme } from "../../contracts/theme.ts";
+import { APP_NAME, APP_TITLE, CONFIG_DIR_NAME, getAgentDir, getDebugLogPath, VERSION } from "../../config.ts";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
@@ -66,26 +47,21 @@ import {
 import { formatCacheWarmingStatus, formatCacheWarmingUsage } from "../../core/cache-warmer.ts";
 import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
 import type {
-	AutocompleteProviderFactory,
-	EditorFactory,
 	ExtensionCommandContext,
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
-	MarkdownTransformer,
 	ProjectTrustContext,
-	UserBashEventResult,
 } from "../../core/extensions/index.ts";
 import { findExtensionStackMatches } from "../../core/extensions/stack-matches.ts";
-import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
+import { FooterDataProvider } from "../../core/footer-data-provider.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
-import { CredentialSynchronizationError } from "../../core/model-runtime.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { getQuickSelectionModels, reconcileQuickSelection } from "../../core/quick-selection.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { createSessionCommandActions } from "../../core/session-command-actions.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
-import { type SessionEntry, SessionManager, type UsageEntry } from "../../core/session-manager.ts";
+import { SessionDiscovery, type SessionEntry, SessionHistory, type UsageEntry } from "../../core/session-history.ts";
 import type { FullscreenExitOutput } from "../../core/settings-manager.ts";
 import { commitInteractiveSetting, getInteractiveSettingState } from "../../core/settings-operations.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
@@ -98,7 +74,7 @@ import {
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
 import { type AppKeybinding, KEYBINDINGS, KeybindingsManager } from "../../presentation/keybindings.ts";
 import { exportSessionHtml } from "../../presentation/session-html-export.ts";
-import { withBuiltInRenderers } from "../../presentation/tool-renderers/index.ts";
+import { getBuiltInToolRenderers } from "../../presentation/tool-renderers/index.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -116,8 +92,7 @@ import type { CommandPanelAction } from "./components/command-panel.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
 import { ComposerPanel } from "./components/composer-panel.ts";
 import { ConfigSelectorComponent } from "./components/config-selector.ts";
-import { CustomEditor, type EditorBottomStatus } from "./components/custom-editor.ts";
-import { CustomEntryComponent } from "./components/custom-entry.ts";
+import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
@@ -128,13 +103,7 @@ import type { InputMode } from "./components/frame-motion.ts";
 import { HelpPanel } from "./components/help-panel.ts";
 import { keycap, keyDisplayText, keyHint } from "./components/keybinding-hints.ts";
 import { type LoadedResourceSection, LoadedResourcesComponent } from "./components/loaded-resources.ts";
-import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidCodeBlockView } from "./components/mermaid.ts";
-import {
-	type AuthSelectorProvider,
-	getAuthSelectorProviders,
-	OAuthSelectorComponent,
-} from "./components/oauth-selector.ts";
 import type { PowerbarHost, PowerbarModelEntry, PowerbarSnapshot } from "./components/powerbar.ts";
 import { QueuedMessagesComponent } from "./components/queued-messages.ts";
 import { ReadingPanelComponent, type ReadingPanelRow } from "./components/reading-panel.ts";
@@ -160,6 +129,8 @@ import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { ExtensionWidgetAdapter } from "./extension-widget-adapter.ts";
 import { editInExternalEditor } from "./external-editor.ts";
+import { InteractiveAuthFlow } from "./interactive-auth-flow.ts";
+import { InteractiveFlowStack } from "./interactive-flow-stack.ts";
 import { InteractivePageController } from "./interactive-page-controller.ts";
 import { InteractivePresentation, type PresentationSurface } from "./interactive-presentation.ts";
 import {
@@ -172,10 +143,8 @@ import {
 } from "./session-presentation.ts";
 import {
 	getAvailableThemes,
-	getAvailableThemesWithPaths,
 	getEditorTheme,
 	getMarkdownTheme,
-	getThemeByName,
 	onThemeChange,
 	setRegisteredThemes,
 	stopThemeWatcher,
@@ -189,20 +158,6 @@ export { createInteractiveTui } from "./tui-renderer.ts";
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {
 	setExpanded(expanded: boolean): void;
-}
-
-interface WorkingStatusEditor extends EditorComponent {
-	readonly embedWorkingStatus: boolean;
-	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void;
-}
-
-function isWorkingStatusEditor(editor: EditorComponent): editor is WorkingStatusEditor {
-	return (
-		"embedWorkingStatus" in editor &&
-		editor.embedWorkingStatus === true &&
-		"setWorkingStatusIndicator" in editor &&
-		typeof editor.setWorkingStatusIndicator === "function"
-	);
 }
 
 function isExpandable(obj: unknown): obj is Expandable {
@@ -265,7 +220,7 @@ function parsePathCommandArgument(input: string): string | undefined {
 	return value;
 }
 
-export function formatResumeCommand(sessionManager: SessionManager): string | undefined {
+export function formatResumeCommand(sessionManager: SessionHistory): string | undefined {
 	if (!process.stdout.isTTY) return undefined;
 	if (!sessionManager.isPersisted()) return undefined;
 
@@ -313,7 +268,7 @@ export class InteractiveMode {
 			project: path.basename(this.sessionManager.getCwd()),
 			branch: this.footerDataProvider.getGitBranch(),
 			sessionName: this.sessionManager.getSessionName(),
-			contextPercent: this.session.getContextUsage()?.percent ?? null,
+			contextPercent: this.session.execution.getContextUsage()?.percent ?? null,
 		}),
 		() => this.renderer.requestRender(),
 	);
@@ -332,10 +287,8 @@ export class InteractiveMode {
 	private helpPanel: HelpPanel | undefined;
 	private transcriptSearch: Component | undefined;
 	private readonly pageController: InteractivePageController;
-	private editor: EditorComponent;
-	private editorComponentFactory: EditorFactory | undefined;
+	private readonly editor: CustomEditor;
 	private autocompleteProvider: AutocompleteProvider | undefined;
-	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
 	private editorContainer: Container;
 	private footer: FooterComponent;
@@ -349,8 +302,6 @@ export class InteractiveMode {
 	private onInputCallback?: (input: QueuedInput) => void;
 	private pendingUserInputs: QueuedInput[] = [];
 	private activeStatusIndicator: StatusIndicator | undefined = undefined;
-	private activeWorkingIndicatorEmbedded = false;
-	private workingVisible = true;
 	private readonly defaultWorkingMessage = "Working";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
@@ -377,7 +328,7 @@ export class InteractiveMode {
 	private hideThinkingBlock = false;
 	private outputPad = 1;
 	private readonly mermaidCodeBlockView = createMermaidCodeBlockView({
-		getMode: () => this.settingsManager.getMermaidRenderingMode(),
+		getMode: () => this.settingsManager.read("mermaid-rendering"),
 		theme,
 	});
 
@@ -386,9 +337,10 @@ export class InteractiveMode {
 	private signalCleanupHandlers: Array<() => void> = [];
 
 	private inputMode: InputMode = "normal";
+	private readonly flows = new InteractiveFlowStack();
 	private readonly presentation: InteractivePresentation;
 	private powerbarReturn: PowerbarSnapshot | undefined;
-	private activeLogin?: { dialog: LoginDialogComponent; session: AgentSession };
+	private readonly authFlow: InteractiveAuthFlow;
 
 	// Track current bash execution component
 	private bashComponent: BashExecutionComponent | undefined = undefined;
@@ -411,16 +363,11 @@ export class InteractiveMode {
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
-	private extensionTerminalInputSubscriptions = new Set<{
-		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
-		unsubscribe: () => void;
-	}>();
 
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetAdapter!: ExtensionWidgetAdapter;
 
 	// Custom footer from extension (undefined = use built-in footer)
-	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
 
 	// Header container that holds the built-in or custom header
 	private headerContainer: Container;
@@ -429,7 +376,6 @@ export class InteractiveMode {
 	private builtInHeader: Component | undefined = undefined;
 
 	// Custom header from extension (undefined = use built-in header)
-	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
 	private options: InteractiveModeOptions;
 	private readonly onRightClickPaste = (): void => {
@@ -443,10 +389,10 @@ export class InteractiveMode {
 		return this.runtimeHost.session;
 	}
 	private get sessionManager() {
-		return this.session.sessionManager;
+		return this.session.history;
 	}
 	private get settingsManager() {
-		return this.session.settingsManager;
+		return this.runtimeHost.settings;
 	}
 
 	constructor(runtimeHost: AgentSessionRuntime, options: InteractiveModeOptions = {}) {
@@ -455,6 +401,8 @@ export class InteractiveMode {
 		this.options = { ...options };
 		this.autoTrustOnReloadCwd = options.autoTrustOnReloadCwd;
 		this.runtimeHost.setBeforeSessionInvalidate(() => {
+			if (this.presentation.active) this.presentation.finish();
+			this.pageController.invalidateFlows();
 			this.resetExtensionUI();
 		});
 		this.runtimeHost.setRebindSession(async () => {
@@ -463,13 +411,13 @@ export class InteractiveMode {
 		});
 		this.version = VERSION;
 		this.renderer = createInteractiveTui({
-			showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+			showHardwareCursor: this.settingsManager.read("show-hardware-cursor"),
 			logDirectory: getAgentDir(),
 			terminal: options.terminal,
 			onRightClickPaste: this.onRightClickPaste,
-			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			fullscreenCopyOnSelect: this.settingsManager.read("fullscreen-copy-on-select"),
 		});
-		this.renderer.setClearOnShrink(this.settingsManager.getClearOnShrink());
+		this.renderer.setClearOnShrink(this.settingsManager.read("clear-on-shrink"));
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new TranscriptContainer();
@@ -482,14 +430,14 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.notification = new TransientNotification(
 			() => this.renderer.requestRender(),
-			() => this.settingsManager.getUiAnimations(),
+			() => this.settingsManager.read("ui-animations"),
 		);
 		this.statusContainer.addChild(this.notification);
 		this.extensionWidgetAdapter = new ExtensionWidgetAdapter(this.renderer);
 		this.keybindings = KeybindingsManager.create();
 		setKeybindings(this.keybindings);
-		const editorPaddingX = this.settingsManager.getEditorPaddingX();
-		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+		const editorPaddingX = this.settingsManager.read("editor-padding");
+		const autocompleteMaxVisible = this.settingsManager.read("autocomplete-max-visible");
 		this.defaultEditor = new CustomEditor(this.renderer, getEditorTheme(), this.keybindings, {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
@@ -498,31 +446,31 @@ export class InteractiveMode {
 		this.editor = this.defaultEditor;
 		this.composerPanel = new ComposerPanel(this.renderer, this.defaultEditor);
 		this.composerPanel.setOptions(
-			this.settingsManager.getUiAnimations(),
-			this.settingsManager.getAnimationIntensity(),
+			this.settingsManager.read("ui-animations"),
+			this.settingsManager.read("animation-intensity"),
 		);
-		this.topBar.setAnimations(this.settingsManager.getUiAnimations());
+		this.topBar.setAnimations(this.settingsManager.read("ui-animations"));
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.buildPowerbarHost());
 		this.defaultEditor.setBottomStatus(this.footer);
 		this.defaultEditor.setAnimationOptions(
-			this.settingsManager.getUiAnimations(),
-			this.settingsManager.getAnimationIntensity(),
+			this.settingsManager.read("ui-animations"),
+			this.settingsManager.read("animation-intensity"),
 		);
 		this.footer.setAnimationOptions(
-			this.settingsManager.getUiAnimations(),
-			this.settingsManager.getAnimationIntensity(),
+			this.settingsManager.read("ui-animations"),
+			this.settingsManager.read("animation-intensity"),
 		);
 		this.footerContainer = new Container();
 
 		// Load hide thinking block setting
-		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
-		this.outputPad = this.settingsManager.getOutputPad();
+		this.hideThinkingBlock = this.settingsManager.read("hide-thinking");
+		this.outputPad = this.settingsManager.read("output-padding");
 
 		// Register themes from resource loader and initialize
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
+		setRegisteredThemes(this.session.execution.resourceLoader.getThemes().themes);
 		this.themeController = new InteractiveThemeController(this.renderer, {
 			getSettingsManager: () => this.settingsManager,
 			showError: (message) => this.showError(message),
@@ -530,25 +478,50 @@ export class InteractiveMode {
 			initialThemeSetting: options.initialThemeSetting,
 		});
 		this.presentation = this.createPresentation();
-		this.pageController = new InteractivePageController({
-			suspendPresentation: (content) => this.presentation.suspendFor(content),
-			closeTranscriptSearch: (content) => {
-				if (this.transcriptSearch && content !== this.transcriptSearch) this.renderer.closeSearch();
+		this.pageController = new InteractivePageController(
+			{
+				closeTranscriptSearch: (content) => {
+					if (this.transcriptSearch && content !== this.transcriptSearch) this.renderer.closeSearch();
+				},
+				mount: (content, heightRatio, inputTarget) => {
+					this.composerPanel.show(content, heightRatio, inputTarget);
+					this.editorContainer.clear();
+					this.editorContainer.addChild(this.composerPanel);
+					this.renderer.setFocus(this.composerPanel);
+				},
+				focusEditor: () => this.renderer.setFocus(this.editor),
+				closeAnimation: (onComplete) => this.composerPanel.close(onComplete),
+				restoreEditor: () => {
+					this.editorContainer.clear();
+					if (this.inputMode === "help" && this.helpPanel) this.editorContainer.addChild(this.helpPanel);
+					this.editorContainer.addChild(this.editor);
+					this.renderer.setFocus(this.editor);
+				},
+				requestRender: () => this.renderer.requestRender(),
 			},
-			mount: (content, heightRatio, inputTarget) => {
-				this.composerPanel.show(content, heightRatio, inputTarget);
-				this.editorContainer.clear();
-				this.editorContainer.addChild(this.composerPanel);
-				this.renderer.setFocus(this.composerPanel);
+			this.flows,
+		);
+		const mode = this;
+		this.authFlow = new InteractiveAuthFlow({
+			get models() {
+				return mode.runtimeHost.models;
 			},
-			resumePresentation: () => this.presentation.resume(),
-			focusEditor: () => this.renderer.setFocus(this.editor),
-			closeAnimation: (onComplete) => this.composerPanel.close(onComplete),
-			restoreEditor: () => {
-				this.editorContainer.clear();
-				if (this.inputMode === "help" && this.helpPanel) this.editorContainer.addChild(this.helpPanel);
-				this.editorContainer.addChild(this.editor);
-				this.renderer.setFocus(this.editor);
+			pageController: this.pageController,
+			renderer: this.renderer,
+			getSessionIdentity: () => this.session,
+			getFlowGeneration: () => this.pageController.generation,
+			subscribeSessionChanges: (listener) => this.runtimeHost.subscribeSession(async () => listener()),
+			showStatus: (message) => this.showStatus(message),
+			showWarning: (message) => this.showWarning(message),
+			showError: (message, title) => this.showError(message, title),
+			refreshAuthenticationPresentation: async () => {
+				await this.updateAvailableProviderCount();
+				this.footer.invalidate();
+				this.refreshContextLine();
+				this.updateEditorBorderColor();
+			},
+			warnAboutAnthropicSubscription: () => {
+				void this.maybeWarnAboutAnthropicSubscriptionAuth();
 			},
 			requestRender: () => this.renderer.requestRender(),
 		});
@@ -589,97 +562,102 @@ export class InteractiveMode {
 	}
 
 	private createPresentation(): InteractivePresentation {
-		return new InteractivePresentation({
-			session: () => this.session,
-			settings: () => this.settingsManager,
-			mount: (panel) => this.pageController.mountPanel(panel),
-			exit: () => {
-				this.pageController.disposeActiveSelector();
-				this.setInputMode("normal");
-				this.pageController.closePanel();
-				if (this.powerbarReturn) {
-					this.footer.restorePowerbar(this.powerbarReturn);
-					this.powerbarReturn = undefined;
-				}
-			},
-			render: () => this.renderer.requestRender(),
-			read: (title, content, onEdit) => this.showReader(title, content, undefined, onEdit),
-			reportError: (message) => this.showError(message),
-			applyQuickSelection: (signal) => this.applyQuickSelection(signal),
-			edit: (title, content) =>
-				this.showExtensionEditor(title, content, () =>
-					this.session.isStreaming || this.session.isCompacting
-						? "Wait for the current response or compaction to finish"
-						: undefined,
-				),
-			login: (provider) => this.handleLoginCommand(provider),
-			skills: () => this.showSkillConfiguration(),
-			settingsActions: () => {
-				const definition = this.buildSettingsDefinition(() => this.pageController.closePanel());
-				return [
-					...definition.items.map((item): CommandPanelAction => {
-						const cycle = async (direction: 1 | -1): Promise<void> => {
-							await cycleSetting(definition, item.id, direction);
-							this.presentation.resume();
-						};
-						return {
-							id: `setting:${item.id}`,
-							name: item.label,
-							description: item.currentValue,
-							argumentMode: "none",
-							cycle: item.values ? cycle : undefined,
-							execute: item.values
-								? () => cycle(1)
-								: async () =>
-										this.pageController.showSelector((done) => {
-											const control = item.submenu!(item.currentValue, async (selectedValue) => {
-												if (selectedValue !== undefined && item.id === "theme") {
-													await definition.onChange(item.id, selectedValue);
-												}
-												done();
+		return new InteractivePresentation(
+			{
+				session: () => this.session,
+				settings: () => this.settingsManager,
+				models: () => this.runtimeHost.models,
+				mount: (panel) => this.pageController.mountPresentationPanel(panel),
+				exit: () => {
+					this.pageController.disposeActiveSelector();
+					this.setInputMode("normal");
+					this.pageController.closePanel();
+					if (this.powerbarReturn) {
+						this.footer.restorePowerbar(this.powerbarReturn);
+						this.powerbarReturn = undefined;
+					}
+				},
+				render: () => this.renderer.requestRender(),
+				read: (title, content, onEdit) => this.showReader(title, content, undefined, onEdit),
+				reportError: (message) => this.showError(message),
+				applyQuickSelection: (signal) => this.applyQuickSelection(signal),
+				edit: (title, content) =>
+					this.showExtensionEditor(title, content, () =>
+						this.session.execution.isStreaming || this.session.execution.isCompacting
+							? "Wait for the current response or compaction to finish"
+							: undefined,
+					),
+				login: (provider) => this.authFlow.handleLoginCommand(provider),
+				skills: () => this.showSkillConfiguration(),
+				settingsActions: () => {
+					const definition = this.buildSettingsDefinition(() => this.pageController.closePanel());
+					return [
+						...definition.items.map((item): CommandPanelAction => {
+							const cycle = async (direction: 1 | -1): Promise<void> => {
+								await cycleSetting(definition, item.id, direction);
+								this.presentation.resume();
+							};
+							return {
+								id: `setting:${item.id}`,
+								name: item.label,
+								description: item.currentValue,
+								argumentMode: "none",
+								cycle: item.values ? cycle : undefined,
+								execute: item.values
+									? () => cycle(1)
+									: async () => {
+											this.pageController.showSelector((done) => {
+												const control = item.submenu!(item.currentValue, async (selectedValue) => {
+													if (selectedValue !== undefined && item.id === "theme") {
+														await definition.onChange(item.id, selectedValue);
+													}
+													done();
+												});
+												return { component: control, focus: control };
 											});
-											return { component: control, focus: control };
-										}),
-						};
-					}),
-					{
-						id: "setting:project-trust",
-						name: "Project trust",
-						source: "Settings · Privacy & Trust",
-						argumentMode: "none",
-						execute: async () => this.showTrustSelector(),
-					},
-				];
+										},
+							};
+						}),
+						{
+							id: "setting:project-trust",
+							name: "Project trust",
+							source: "Settings · Privacy & Trust",
+							argumentMode: "none",
+							execute: async () => this.showTrustSelector(),
+						},
+					];
+				},
+				localCommands: () => this.getLocalCommandActions(),
+				historyCommands: () => this.getHistoryCommandActions(),
+				completeArguments: (input, signal, force) => this.completeCommandArguments(input, signal, force),
+				historyAction: async (action, args) => {
+					switch (action) {
+						case "compact":
+							await this.handleCompactCommand(args || undefined);
+							break;
+						case "details":
+							this.handleSessionCommand();
+							break;
+						case "rename":
+							this.handleNameCommand(args);
+							break;
+						case "tree":
+							this.showTreeSelector();
+							break;
+						case "fork":
+							this.showUserMessageSelector();
+							break;
+						case "clone":
+							await this.handleCloneCommand();
+							break;
+						case "resume":
+							this.showSessionSelector();
+							break;
+					}
+				},
 			},
-			localCommands: () => this.getLocalCommandActions(),
-			historyCommands: () => this.getHistoryCommandActions(),
-			completeArguments: (input, signal, force) => this.completeCommandArguments(input, signal, force),
-			historyAction: async (action, args) => {
-				switch (action) {
-					case "compact":
-						await this.handleCompactCommand(args || undefined);
-						break;
-					case "details":
-						this.handleSessionCommand();
-						break;
-					case "rename":
-						this.handleNameCommand(args);
-						break;
-					case "tree":
-						this.showTreeSelector();
-						break;
-					case "fork":
-						this.showUserMessageSelector();
-						break;
-					case "clone":
-						await this.handleCloneCommand();
-						break;
-					case "resume":
-						this.showSessionSelector();
-						break;
-				}
-			},
-		});
+			this.flows,
+		);
 	}
 
 	private getHistoryCommandActions(): CommandPanelAction[] {
@@ -764,7 +742,7 @@ export class InteractiveMode {
 		let changed = false;
 		this.pageController.showSelector((done) => {
 			const close = async () => {
-				if (changed && (session.isStreaming || session.isCompacting)) {
+				if (changed && (session.execution.isStreaming || session.execution.isCompacting)) {
 					this.showWarning("Wait for the current response or compaction to finish before applying skills.");
 					return;
 				}
@@ -792,7 +770,7 @@ export class InteractiveMode {
 					embedded: true,
 					title: "Skills",
 					beforeToggle: () =>
-						session.isStreaming || session.isCompacting
+						session.execution.isStreaming || session.execution.isCompacting
 							? "Wait for the current response or compaction to finish"
 							: undefined,
 					onOpen: (filePath) => {
@@ -819,21 +797,8 @@ export class InteractiveMode {
 	}
 
 	private setupAutocompleteProvider(): void {
-		let provider = this.createBaseAutocompleteProvider();
-		const triggerCharacters: string[] = [];
-		for (const wrapProvider of this.autocompleteProviderWrappers) {
-			provider = wrapProvider(provider);
-			triggerCharacters.push(...(provider.triggerCharacters ?? []));
-		}
-		if (triggerCharacters.length > 0) {
-			provider.triggerCharacters = [...new Set(triggerCharacters)];
-		}
-
-		this.autocompleteProvider = provider;
-		this.defaultEditor.setAutocompleteProvider(provider);
-		if (this.editor !== this.defaultEditor) {
-			this.editor.setAutocompleteProvider?.(provider);
-		}
+		this.autocompleteProvider = this.createBaseAutocompleteProvider();
+		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}
 
 	private showStartupNoticesIfNeeded(): void {
@@ -845,7 +810,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(
 			new TranscriptNotice({ tone: "info", title, body: "", onOpen: () => this.showReader(title, content) }),
 		);
-		if (!this.settingsManager.getCollapseChangelog()) this.showReader(title, content);
+		if (!this.settingsManager.read("collapse-changelog")) this.showReader(title, content);
 	}
 
 	private mountInteractiveTui(tui: TuiAltScreen, components: readonly Component[]): void {
@@ -881,9 +846,8 @@ export class InteractiveMode {
 			status: this.statusContainer,
 			widgetsAbove: this.extensionWidgetAdapter.above,
 			editor: this.editorContainer,
-			widgetsBelow: this.extensionWidgetAdapter.below,
 			footer: this.footerContainer,
-			scrollbar: this.settingsManager.getFullscreenScrollbar(),
+			scrollbar: this.settingsManager.read("fullscreen-scrollbar"),
 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
 		});
@@ -895,7 +859,6 @@ export class InteractiveMode {
 			this.statusContainer,
 			this.extensionWidgetAdapter.above,
 			this.editorContainer,
-			this.extensionWidgetAdapter.below,
 			this.footerContainer,
 		]);
 		// Accept text while startup completes, but only enable interrupt, exit, and submission feedback.
@@ -997,7 +960,7 @@ export class InteractiveMode {
 		if (!process.env.CANDY_OFFLINE) {
 			const controller = new AbortController();
 			const timeout = setTimeout(() => controller.abort(), 15_000);
-			void this.session.modelRuntime
+			void this.runtimeHost.models
 				.refresh({ signal: controller.signal })
 				.then(() => this.updateAvailableProviderCount())
 				.catch(() => {})
@@ -1050,7 +1013,7 @@ export class InteractiveMode {
 			this.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
 		}
 
-		const modelsJsonError = this.session.modelRuntime.getError();
+		const modelsJsonError = this.runtimeHost.models.getError();
 		if (modelsJsonError) {
 			this.showError(`models.json error: ${modelsJsonError}`);
 		}
@@ -1064,7 +1027,7 @@ export class InteractiveMode {
 		// Process initial messages
 		if (initialMessage) {
 			try {
-				await this.session.prompt(initialMessage, { images: initialImages });
+				await this.session.execution.prompt(initialMessage, { images: initialImages });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -1074,7 +1037,7 @@ export class InteractiveMode {
 		if (initialMessages) {
 			for (const message of initialMessages) {
 				try {
-					await this.session.prompt(message);
+					await this.session.execution.prompt(message);
 				} catch (error: unknown) {
 					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 					this.showError(errorMessage);
@@ -1086,7 +1049,7 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await this.session.prompt(userInput.text, { images: userInput.images });
+				await this.session.execution.prompt(userInput.text, { images: userInput.images });
 			} catch (error: unknown) {
 				this.restoreInputToEditor(userInput);
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -1166,7 +1129,7 @@ export class InteractiveMode {
 	 */
 	private async getChangelogForDisplay(): Promise<string | undefined> {
 		// Skip changelog for resumed/continued sessions (already have messages)
-		if (this.session.state.messages.length > 0) {
+		if (this.session.execution.state.messages.length > 0) {
 			return undefined;
 		}
 
@@ -1490,17 +1453,17 @@ export class InteractiveMode {
 		this.splashComponent?.setResources(this.getHomeResources());
 		const showListing = options?.force || this.options.verbose;
 		const showDiagnostics =
-			showListing || !this.settingsManager.getQuietStartup() || options?.showDiagnosticsWhenQuiet === true;
+			showListing || !this.settingsManager.read("quiet-startup") || options?.showDiagnosticsWhenQuiet === true;
 		if (!showListing && !showDiagnostics) {
 			return;
 		}
 
-		const skillsResult = this.session.resourceLoader.getSkills();
-		const promptsResult = this.session.resourceLoader.getPrompts();
-		const themesResult = this.session.resourceLoader.getThemes();
+		const skillsResult = this.session.execution.resourceLoader.getSkills();
+		const promptsResult = this.session.execution.resourceLoader.getPrompts();
+		const themesResult = this.session.execution.resourceLoader.getThemes();
 		const extensions =
 			options?.extensions ??
-			this.session.resourceLoader
+			this.session.execution.resourceLoader
 				.getExtensions()
 				.extensions.filter((extension) => !extension.hidden)
 				.map((extension) => ({
@@ -1530,11 +1493,11 @@ export class InteractiveMode {
 		}
 
 		if (showListing) {
-			const systemPromptSource = this.session.resourceLoader.getSystemPromptSource();
+			const systemPromptSource = this.session.execution.resourceLoader.getSystemPromptSource();
 			const contextFiles = [
 				...(systemPromptSource ? [systemPromptSource] : []),
-				...this.session.resourceLoader.getAppendSystemPromptSources(),
-				...this.session.resourceLoader.getAgentsFiles().agentsFiles,
+				...this.session.execution.resourceLoader.getAppendSystemPromptSources(),
+				...this.session.execution.resourceLoader.getAgentsFiles().agentsFiles,
 			];
 			const extensionLabels = this.getCompactExtensionLabels(extensions);
 			const sections: LoadedResourceSection[] = [
@@ -1552,7 +1515,7 @@ export class InteractiveMode {
 				},
 				{
 					name: "Prompts",
-					entries: this.session.promptTemplates.map((prompt) => ({
+					entries: this.session.execution.promptTemplates.map((prompt) => ({
 						name: prompt.name,
 						path: prompt.filePath,
 						source: prompt.sourceInfo?.source,
@@ -1601,7 +1564,7 @@ export class InteractiveMode {
 			}
 
 			const extensionDiagnostics: ResourceDiagnostic[] = [];
-			const extensionsResult = this.session.resourceLoader.getExtensions();
+			const extensionsResult = this.session.execution.resourceLoader.getExtensions();
 			for (const error of extensionsResult.errors) {
 				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
 			}
@@ -1609,10 +1572,10 @@ export class InteractiveMode {
 				extensionDiagnostics.push({ type: "warning", message: warning.warning, path: warning.path });
 			}
 
-			const commandDiagnostics = this.session.extensionRunner.getCommandDiagnostics();
+			const commandDiagnostics = this.session.execution.extensionRunner.getCommandDiagnostics();
 			extensionDiagnostics.push(...commandDiagnostics);
 
-			const shortcutDiagnostics = this.session.extensionRunner.getShortcutDiagnostics();
+			const shortcutDiagnostics = this.session.execution.extensionRunner.getShortcutDiagnostics();
 			extensionDiagnostics.push(...shortcutDiagnostics);
 
 			if (extensionDiagnostics.length > 0) {
@@ -1640,7 +1603,7 @@ export class InteractiveMode {
 	private async bindCurrentSessionExtensions(): Promise<void> {
 		const uiContext = this.createExtensionUIContext();
 		const sessionActions = createSessionCommandActions(this.runtimeHost);
-		await this.session.bindExtensions({
+		await this.session.execution.bindExtensions({
 			uiContext,
 			mode: "tui",
 			abortHandler: () => {
@@ -1692,7 +1655,7 @@ export class InteractiveMode {
 			},
 			shutdownHandler: () => {
 				this.shutdownRequested = true;
-				if (this.session.isIdle) {
+				if (this.session.execution.isIdle) {
 					void this.shutdown();
 				}
 			},
@@ -1701,42 +1664,38 @@ export class InteractiveMode {
 			},
 		});
 
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
+		setRegisteredThemes(this.session.execution.resourceLoader.getThemes().themes);
 		this.setupAutocompleteProvider();
 
-		const extensionRunner = this.session.extensionRunner;
+		const extensionRunner = this.session.execution.extensionRunner;
 		this.setupExtensionShortcuts(extensionRunner);
 		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
 		this.showStartupNoticesIfNeeded();
 	}
 
 	private applyFullscreenScrollbarSetting(): void {
-		this.transcriptScrollView?.setScrollbar(this.settingsManager.getFullscreenScrollbar());
+		this.transcriptScrollView?.setScrollbar(this.settingsManager.read("fullscreen-scrollbar"));
 	}
 
 	private applyRuntimeSettings(): void {
 		setCapabilityOverrides(this.settingsManager.getTerminalCapabilityOverrides());
 		this.applyFullscreenScrollbarSetting();
-		this.renderer.setCopyOnSelect(this.settingsManager.getFullscreenCopyOnSelect());
+		this.renderer.setCopyOnSelect(this.settingsManager.read("fullscreen-copy-on-select"));
 		this.footer.setSession(this.session);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
-		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
-		this.outputPad = this.settingsManager.getOutputPad();
-		this.renderer.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
-		const clearOnShrink = this.settingsManager.getClearOnShrink();
+		this.hideThinkingBlock = this.settingsManager.read("hide-thinking");
+		this.outputPad = this.settingsManager.read("output-padding");
+		this.renderer.setShowHardwareCursor(this.settingsManager.read("show-hardware-cursor"));
+		const clearOnShrink = this.settingsManager.read("clear-on-shrink");
 		this.renderer.setClearOnShrink(clearOnShrink);
 		if (!clearOnShrink && !this.activeStatusIndicator) {
 			this.statusContainer.clear();
 			this.statusContainer.addChild(this.notification);
 		}
-		const editorPaddingX = this.settingsManager.getEditorPaddingX();
-		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+		const editorPaddingX = this.settingsManager.read("editor-padding");
+		const autocompleteMaxVisible = this.settingsManager.read("autocomplete-max-visible");
 		this.defaultEditor.setPaddingX(editorPaddingX);
 		this.defaultEditor.setAutocompleteMaxVisible(autocompleteMaxVisible);
-		if (this.editor !== this.defaultEditor) {
-			this.editor.setPaddingX?.(editorPaddingX);
-			this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
-		}
 	}
 
 	private async rebindCurrentSession(options: { renderBeforeBind?: boolean } = {}): Promise<void> {
@@ -1788,7 +1747,7 @@ export class InteractiveMode {
 			return formatCrashExtensionHint(
 				findExtensionStackMatches(
 					error instanceof Error ? error.stack : undefined,
-					this.session.resourceLoader.getExtensions().extensions,
+					this.session.execution.resourceLoader.getExtensions().extensions,
 				),
 			);
 		} catch {
@@ -1815,11 +1774,7 @@ export class InteractiveMode {
 	 * whatever this returns, so they never reach into the tool registry themselves.
 	 */
 	private getRegisteredToolDefinition(toolName: string) {
-		return withBuiltInRenderers(toolName, this.session.getToolDefinition(toolName));
-	}
-
-	private getMarkdownTransformers(): MarkdownTransformer[] {
-		return this.session.extensionRunner.getMarkdownTransformers();
+		return getBuiltInToolRenderers(toolName);
 	}
 
 	/**
@@ -1856,8 +1811,6 @@ export class InteractiveMode {
 	}
 
 	private setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean {
-		this.defaultEditor.setWorkingStatusIndicator(undefined);
-		if (!isWorkingStatusEditor(this.editor)) return false;
 		this.editor.setWorkingStatusIndicator(indicator);
 		return true;
 	}
@@ -1865,12 +1818,10 @@ export class InteractiveMode {
 	private showStatusIndicator(indicator: StatusIndicator): void {
 		this.activeStatusIndicator?.dispose();
 		this.activeStatusIndicator = indicator;
-		this.activeWorkingIndicatorEmbedded = false;
 		this.statusContainer.clear();
 		this.statusContainer.addChild(this.notification);
 		this.setEditorWorkingStatusIndicator(undefined);
 		if (this.setEditorWorkingStatusIndicator(indicator)) {
-			this.activeWorkingIndicatorEmbedded = true;
 			return;
 		}
 		this.statusContainer.addChild(indicator);
@@ -1883,31 +1834,14 @@ export class InteractiveMode {
 		const clearedIndicator = this.activeStatusIndicator;
 		clearedIndicator?.dispose();
 		this.activeStatusIndicator = undefined;
-		this.activeWorkingIndicatorEmbedded = false;
 		this.statusContainer.clear();
 		this.statusContainer.addChild(this.notification);
 		this.setEditorWorkingStatusIndicator(undefined);
 	}
 
 	private showWorkingStatusIndicator(): void {
-		const colorFn = isWorkingStatusEditor(this.editor)
-			? (text: string) =>
-					(this.editor.borderColor ?? theme.getThinkingBorderColor(this.session.thinkingLevel || "off"))(text)
-			: undefined;
+		const colorFn = this.editor.borderColor;
 		this.showStatusIndicator(new WorkingStatusIndicator(this.renderer, this.defaultWorkingMessage, colorFn));
-	}
-
-	private setWorkingVisible(visible: boolean): void {
-		this.workingVisible = visible;
-		if (!visible) {
-			this.clearStatusIndicator("working");
-			this.renderer.requestRender();
-			return;
-		}
-		if (this.session.isStreaming && this.activeStatusIndicator?.kind !== "working") {
-			this.showWorkingStatusIndicator();
-		}
-		this.renderer.requestRender();
 	}
 
 	private setHiddenThinkingLabel(label?: string): void {
@@ -1934,18 +1868,12 @@ export class InteractiveMode {
 			this.hideExtensionEditor();
 		}
 		this.renderer.hideOverlay();
-		this.clearExtensionTerminalInputListeners();
-		this.setExtensionFooter(undefined);
-		this.setExtensionHeader(undefined);
 		this.extensionWidgetAdapter.clear();
 		this.footerDataProvider.clearExtensionStatuses();
 		this.footer.invalidate();
-		this.autocompleteProviderWrappers = [];
-		this.setCustomEditorComponent(undefined);
 		this.setupAutocompleteProvider();
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.updateTerminalTitle();
-		this.workingVisible = true;
 		if (this.activeStatusIndicator?.kind === "working") {
 			this.activeStatusIndicator.setMessage(
 				`${this.defaultWorkingMessage} (${keyHint("app.interrupt", "to interrupt")})`,
@@ -1957,88 +1885,10 @@ export class InteractiveMode {
 	/**
 	 * Set a custom footer component, or restore the built-in footer.
 	 */
-	private setExtensionFooter(
-		factory:
-			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
-			| undefined,
-	): void {
-		// Dispose existing custom footer
-		if (this.customFooter?.dispose) {
-			this.customFooter.dispose();
-		}
-
-		this.footerContainer.clear();
-		if (factory) {
-			// Create and add custom footer, passing the data provider
-			this.customFooter = factory(this.renderer, theme, this.footerDataProvider);
-			this.footerContainer.addChild(this.customFooter);
-		} else {
-			// The built-in status lives in the editor's bottom border.
-			this.customFooter = undefined;
-		}
-
-		this.renderer.requestRender();
-	}
 
 	/**
 	 * Set a custom header component, or restore the built-in header.
 	 */
-	private setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
-		// Header may not be initialized yet if called during early initialization
-		if (!this.builtInHeader) {
-			return;
-		}
-
-		// Dispose existing custom header
-		if (this.customHeader?.dispose) {
-			this.customHeader.dispose();
-		}
-
-		// Find the index of the current header in the header container
-		const currentHeader = this.customHeader || this.builtInHeader;
-		const index = this.headerContainer.children.indexOf(currentHeader);
-
-		if (factory) {
-			// Create and add custom header
-			this.customHeader = factory(this.renderer, theme);
-			if (isExpandable(this.customHeader)) {
-				this.customHeader.setExpanded(this.toolOutputExpanded);
-			}
-			if (index !== -1) {
-				this.headerContainer.children[index] = this.customHeader;
-			} else {
-				// If not found (e.g. builtInHeader was never added), add at the top
-				this.headerContainer.children.unshift(this.customHeader);
-			}
-		} else {
-			// Restore built-in header
-			this.customHeader = undefined;
-			if (isExpandable(this.builtInHeader)) {
-				this.builtInHeader.setExpanded(this.toolOutputExpanded);
-			}
-			if (index !== -1) {
-				this.headerContainer.children[index] = this.builtInHeader;
-			}
-		}
-
-		this.renderer.requestRender();
-	}
-
-	private addExtensionTerminalInputListener(
-		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
-	): () => void {
-		const subscription = { handler, unsubscribe: this.renderer.addInputListener(handler) };
-		this.extensionTerminalInputSubscriptions.add(subscription);
-		return () => {
-			subscription.unsubscribe();
-			this.extensionTerminalInputSubscriptions.delete(subscription);
-		};
-	}
-
-	private clearExtensionTerminalInputListeners(): void {
-		for (const subscription of this.extensionTerminalInputSubscriptions) subscription.unsubscribe();
-		this.extensionTerminalInputSubscriptions.clear();
-	}
 
 	/**
 	 * Create the ExtensionUIContext for extensions.
@@ -2069,43 +1919,10 @@ export class InteractiveMode {
 			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
-			notify: (message, type) => this.showExtensionNotify(message, type),
-			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
-			setStatus: (key, text) => this.setExtensionStatus(key, text),
-			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
-			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
-			setWidget: (key, content, options) => this.extensionWidgetAdapter.set(key, content, options),
-			setFooter: (factory) => this.setExtensionFooter(factory),
-			setHeader: (factory) => this.setExtensionHeader(factory),
-			setTitle: (title) => this.renderer.terminal.setTitle(title),
-			custom: (factory, options) => this.showExtensionCustom(factory, options),
-			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
-			setEditorText: (text) => this.editor.setText(text),
-			getEditorText: () => this.editor.getExpandedText?.() ?? this.editor.getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
-			addAutocompleteProvider: (factory) => {
-				this.autocompleteProviderWrappers.push(factory);
-				this.setupAutocompleteProvider();
-			},
-			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
-			getEditorComponent: () => this.editorComponentFactory,
-			get theme() {
-				return theme;
-			},
-			getAllThemes: () => getAvailableThemesWithPaths(),
-			getTheme: (name) => getThemeByName(name),
-			setTheme: async (themeOrName) => {
-				if (typeof themeOrName !== "string") return this.themeController.setThemeInstance(themeOrName);
-				const result = this.themeController.setThemeName(themeOrName);
-				if (result.success) {
-					if (this.settingsManager.getTheme() !== themeOrName) {
-						await this.settingsManager.commitSetting("global", "theme", themeOrName);
-					}
-				}
-				return result;
-			},
-			getToolsExpanded: () => this.toolOutputExpanded,
-			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
+			notify: (message, type) => this.showExtensionNotify(message, type),
+			setStatus: (key, text) => this.setExtensionStatus(key, text),
+			setWidget: (key, content) => this.extensionWidgetAdapter.set(key, content),
 		};
 	}
 
@@ -2290,92 +2107,6 @@ export class InteractiveMode {
 	 * Set a custom editor component from an extension.
 	 * Pass undefined to restore the default editor.
 	 */
-	private setCustomEditorComponent(factory: EditorFactory | undefined): void {
-		if (!factory && this.editor === this.defaultEditor) return;
-		if (this.inputMode === "help") this.exitHelpMode();
-		else if (factory) this.setInputMode("normal");
-		this.editorComponentFactory = factory;
-
-		// Save text from current editor before switching
-		const currentText = this.editor.getText();
-
-		this.pageController.disposeActiveSelector();
-		this.editorContainer.clear();
-
-		if (factory) {
-			// Create the custom editor with tui, theme, and keybindings
-			const newEditor = factory(this.renderer, getEditorTheme(), this.keybindings);
-
-			// Wire up callbacks from the default editor
-			newEditor.onSubmit = this.defaultEditor.onSubmit;
-			newEditor.onChange = this.defaultEditor.onChange;
-
-			// Copy text from previous editor
-			newEditor.setText(currentText);
-
-			// Copy appearance settings if supported
-			if (newEditor.borderColor !== undefined) {
-				newEditor.borderColor = this.defaultEditor.borderColor;
-			}
-			if (newEditor.setPaddingX !== undefined) {
-				newEditor.setPaddingX(this.defaultEditor.getPaddingX());
-			}
-			if (newEditor.setAutocompleteMaxVisible !== undefined) {
-				newEditor.setAutocompleteMaxVisible(this.defaultEditor.getAutocompleteMaxVisible());
-			}
-
-			// Set autocomplete if supported
-			if (newEditor.setAutocompleteProvider && this.autocompleteProvider) {
-				newEditor.setAutocompleteProvider(this.autocompleteProvider);
-			}
-
-			// If extending CustomEditor, copy app-level handlers
-			// Use duck typing since instanceof fails across jiti module boundaries
-			const customEditor = newEditor as unknown as Record<string, unknown>;
-			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
-				if (!customEditor.onEscape) {
-					customEditor.onEscape = () => this.defaultEditor.onEscape?.();
-				}
-				if (!customEditor.onCtrlD) {
-					customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
-				}
-				if (!customEditor.onPasteImage) {
-					customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
-				}
-				if (!customEditor.onExtensionShortcut) {
-					customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
-				}
-				if (typeof customEditor.setBottomStatus === "function") {
-					(customEditor.setBottomStatus as (status: EditorBottomStatus | undefined) => void).call(
-						customEditor,
-						this.footer,
-					);
-				}
-				// Copy action handlers (clear, suspend, model switching, etc.)
-				for (const [action, handler] of this.defaultEditor.actionHandlers) {
-					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);
-				}
-			}
-
-			this.editor = newEditor;
-		} else {
-			// Restore default editor with text from custom editor
-			this.defaultEditor.setText(currentText);
-			this.editor = this.defaultEditor;
-		}
-
-		this.editorContainer.addChild(this.editor as Component);
-		if (this.activeStatusIndicator) {
-			this.statusContainer.clear();
-			this.statusContainer.addChild(this.notification);
-			this.activeWorkingIndicatorEmbedded = this.setEditorWorkingStatusIndicator(this.activeStatusIndicator);
-			if (!this.activeWorkingIndicatorEmbedded) {
-				this.statusContainer.addChild(this.activeStatusIndicator);
-			}
-		}
-		this.renderer.setFocus(this.editor as Component);
-		this.renderer.requestRender();
-	}
 
 	/**
 	 * Show a notification for extensions.
@@ -2391,84 +2122,6 @@ export class InteractiveMode {
 	}
 
 	/** Show a custom component with keyboard focus. Overlay mode renders on top of existing content. */
-	private async showExtensionCustom<T>(
-		factory: (
-			tui: TUI,
-			theme: Theme,
-			keybindings: KeybindingsManager,
-			done: (result: T) => void,
-		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: {
-			overlay?: boolean;
-			overlayOptions?: OverlayOptions | (() => OverlayOptions);
-			onHandle?: (handle: OverlayHandle) => void;
-		},
-	): Promise<T> {
-		const isOverlay = options?.overlay ?? false;
-		const previousFocus = this.renderer.getFocusedComponent();
-
-		const restoreEditor = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.renderer.setFocus(previousFocus ?? this.editor);
-			this.renderer.requestRender();
-		};
-
-		return new Promise((resolve, reject) => {
-			let component: (Component & { dispose?(): void }) | undefined;
-			let closed = false;
-			let settled = false;
-			const disposeComponent = (value: Component & { dispose?(): void }): void => {
-				try {
-					value.dispose?.();
-				} catch (error: unknown) {
-					this.showExtensionError("custom UI", error instanceof Error ? error.message : String(error));
-				}
-			};
-
-			const close = (result: T) => {
-				if (closed) return;
-				closed = true;
-				if (isOverlay) this.renderer.hideOverlay();
-				else restoreEditor();
-				// Note: both branches above already call requestRender
-				if (component) disposeComponent(component);
-				settled = true;
-				resolve(result);
-			};
-
-			Promise.resolve(factory(this.renderer, theme, this.keybindings, close))
-				.then((c) => {
-					if (closed) {
-						disposeComponent(c);
-						return;
-					}
-					component = c;
-					if (isOverlay) {
-						const overlayOptions =
-							typeof options?.overlayOptions === "function" ? options.overlayOptions() : options?.overlayOptions;
-						const handle = this.renderer.showOverlay(component, overlayOptions);
-						// Expose handle to caller for visibility control
-						options?.onHandle?.(handle);
-					} else {
-						this.pageController.disposeActiveSelector();
-						this.editorContainer.clear();
-						this.editorContainer.addChild(component);
-						this.renderer.setFocus(component);
-						this.renderer.requestRender();
-					}
-				})
-				.catch((err) => {
-					if (closed || settled) {
-						this.showExtensionError("custom UI", err instanceof Error ? err.message : String(err));
-						return;
-					}
-					if (!isOverlay) restoreEditor();
-					settled = true;
-					reject(err);
-				});
-		});
-	}
 
 	/**
 	 * Show an extension error in the UI.
@@ -2499,17 +2152,17 @@ export class InteractiveMode {
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
-			if (this.session.isBashRunning) {
-				this.session.abortBash();
+			if (this.session.execution.isBashRunning) {
+				this.session.execution.abortBash();
 			} else if (this.inputMode === "help") {
 				this.exitHelpMode();
 			} else if (this.inputMode !== "normal") {
 				this.setInputMode(this.inputMode === "shell-no-context" ? "shell" : "normal");
-			} else if (this.session.isStreaming) {
+			} else if (this.session.execution.isStreaming) {
 				this.restoreQueuedMessagesToEditor({ abort: true });
 			} else if (!this.editor.getText().trim()) {
 				// Double Escape opens the configured History view.
-				const action = this.settingsManager.getDoubleEscapeAction();
+				const action = this.settingsManager.read("double-escape-action");
 				if (action !== "none") {
 					const now = Date.now();
 					if (now - this.lastEscapeTime < 500) {
@@ -2591,8 +2244,8 @@ export class InteractiveMode {
 				},
 			);
 			this.helpPanel.setOptions(
-				this.settingsManager.getUiAnimations(),
-				this.settingsManager.getAnimationIntensity(),
+				this.settingsManager.read("ui-animations"),
+				this.settingsManager.read("animation-intensity"),
 			);
 		}
 		this.editorContainer.clear();
@@ -2688,7 +2341,7 @@ export class InteractiveMode {
 				fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
 				const dimensions = getImageDimensions(Buffer.from(image.bytes).toString("base64"), image.mimeType);
-				if (this.editor === this.defaultEditor && dimensions) {
+				if (dimensions) {
 					this.defaultEditor.insertImageAtCursor(filePath, {
 						width: dimensions.widthPx,
 						height: dimensions.heightPx,
@@ -2724,7 +2377,7 @@ export class InteractiveMode {
 			if (this.inputMode === "help") return;
 
 			if (this.inputMode === "shell" || this.inputMode === "shell-no-context") {
-				if (this.session.isBashRunning) {
+				if (this.session.execution.isBashRunning) {
 					this.showWarning("A bash command is already running. Press Esc to cancel it first.");
 					this.editor.setText(text);
 					return;
@@ -2741,24 +2394,24 @@ export class InteractiveMode {
 				this.showError(error instanceof Error ? error.message : String(error));
 				return;
 			}
-			if (!this.session.model) {
+			if (!this.session.selection.model) {
 				this.editor.setText(omitImageMarkers(input.text));
 				this.restoreImagesToEditor(input.images ?? []);
 				this.showError("Select a model in Sources", "No model selected");
 				return;
 			}
 
-			if (this.session.isCompacting) {
+			if (this.session.execution.isCompacting) {
 				this.queueCompactionMessage(input, "steer");
 				return;
 			}
 
 			// If streaming, use prompt() with steer behavior
-			if (this.session.isStreaming) {
+			if (this.session.execution.isStreaming) {
 				this.editor.addToHistory?.(input.text);
 				this.editor.setText("");
 				try {
-					await this.session.prompt(input.text, { images: input.images, streamingBehavior: "steer" });
+					await this.session.execution.prompt(input.text, { images: input.images, streamingBehavior: "steer" });
 				} catch (error) {
 					this.restoreInputToEditor(input);
 					this.showError(`Failed to queue message: ${error instanceof Error ? error.message : String(error)}`);
@@ -2782,7 +2435,7 @@ export class InteractiveMode {
 	}
 
 	private subscribeToAgent(): void {
-		this.unsubscribe = this.session.subscribe(async (event) => {
+		this.unsubscribe = this.session.execution.subscribe(async (event) => {
 			await this.handleEvent(event);
 		});
 	}
@@ -2791,7 +2444,7 @@ export class InteractiveMode {
 	 * Repaint when the context line's rounded percentage changes.
 	 */
 	private refreshContextLine(): void {
-		const percent = this.session.getContextUsage()?.percent ?? null;
+		const percent = this.session.execution.getContextUsage()?.percent ?? null;
 		const rounded =
 			percent === null || !Number.isFinite(percent) ? null : Math.round(Math.max(0, Math.min(100, percent)));
 		if (rounded === this.lastContextPercent) return;
@@ -2826,16 +2479,10 @@ export class InteractiveMode {
 				break;
 
 			case "turn_start":
-				if (this.settingsManager.getShowTerminalProgress()) {
+				if (this.settingsManager.read("terminal-progress")) {
 					this.renderer.terminal.setProgress(true);
 				}
-				if (this.workingVisible) {
-					if (this.activeStatusIndicator?.kind !== "working") {
-						this.showWorkingStatusIndicator();
-					}
-				} else {
-					this.clearStatusIndicator();
-				}
+				if (this.activeStatusIndicator?.kind !== "working") this.showWorkingStatusIndicator();
 				this.renderer.requestRender();
 				break;
 
@@ -2915,12 +2562,11 @@ export class InteractiveMode {
 						this.getMarkdownThemeWithSettings(),
 						this.hiddenThinkingLabel,
 						this.outputPad,
-						this.getMarkdownTransformers(),
 						this.mermaidCodeBlockView,
 					);
 					component.setAnimationOptions(
-						this.settingsManager.getUiAnimations(),
-						this.settingsManager.getAnimationIntensity(),
+						this.settingsManager.read("ui-animations"),
+						this.settingsManager.read("animation-intensity"),
 						() => this.renderer.requestRender(),
 					);
 					this.sessionPresentation.beginStreaming(component, event.message);
@@ -2944,9 +2590,9 @@ export class InteractiveMode {
 									content.id,
 									content.arguments,
 									{
-										showImages: this.settingsManager.getShowImages(),
-										imageWidthCells: this.settingsManager.getImageWidthCells(),
-										toolPreviewLines: this.settingsManager.getToolPreviewLines(),
+										showImages: this.settingsManager.read("show-images"),
+										imageWidthCells: this.settingsManager.read("image-width-cells"),
+										toolPreviewLines: this.settingsManager.read("tool-preview-lines"),
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.renderer,
@@ -2975,7 +2621,7 @@ export class InteractiveMode {
 					this.sessionPresentation.updateStreaming(event.message);
 					let errorMessage: string | undefined;
 					if (event.message.stopReason === "aborted") {
-						const retryAttempt = this.session.retryAttempt;
+						const retryAttempt = this.session.execution.retryAttempt;
 						errorMessage =
 							retryAttempt > 0
 								? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
@@ -3023,9 +2669,9 @@ export class InteractiveMode {
 						event.toolCallId,
 						event.args,
 						{
-							showImages: this.settingsManager.getShowImages(),
-							imageWidthCells: this.settingsManager.getImageWidthCells(),
-							toolPreviewLines: this.settingsManager.getToolPreviewLines(),
+							showImages: this.settingsManager.read("show-images"),
+							imageWidthCells: this.settingsManager.read("image-width-cells"),
+							toolPreviewLines: this.settingsManager.read("tool-preview-lines"),
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.renderer,
@@ -3061,7 +2707,7 @@ export class InteractiveMode {
 			}
 
 			case "agent_end":
-				if (this.settingsManager.getShowTerminalProgress()) {
+				if (this.settingsManager.read("terminal-progress")) {
 					this.renderer.terminal.setProgress(false);
 				}
 				this.clearStatusIndicator("working");
@@ -3079,13 +2725,13 @@ export class InteractiveMode {
 				break;
 
 			case "compaction_start": {
-				if (this.settingsManager.getShowTerminalProgress()) {
+				if (this.settingsManager.read("terminal-progress")) {
 					this.renderer.terminal.setProgress(true);
 				}
 				// Keep editor active; submissions are queued during compaction.
 				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
-					this.session.abortCompaction();
+					this.session.execution.abortCompaction();
 				};
 				this.showStatusIndicator(new CompactionStatusIndicator(this.renderer, event.reason));
 				this.renderer.requestRender();
@@ -3093,7 +2739,7 @@ export class InteractiveMode {
 			}
 
 			case "compaction_end": {
-				if (this.settingsManager.getShowTerminalProgress()) {
+				if (this.settingsManager.read("terminal-progress")) {
 					this.renderer.terminal.setProgress(false);
 				}
 				if (this.autoCompactionEscapeHandler) {
@@ -3146,7 +2792,7 @@ export class InteractiveMode {
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
-					this.session.abortRetry();
+					this.session.execution.abortRetry();
 				};
 				this.showStatusIndicator(
 					new RetryStatusIndicator(this.renderer, event.attempt, event.maxAttempts, event.delayMs),
@@ -3231,33 +2877,14 @@ export class InteractiveMode {
 			if (assistant instanceof AssistantMessageComponent) assistant.setStats(entry.data);
 			return;
 		}
-		const renderer = this.session.extensionRunner.getEntryRenderer(entry.customType);
-		if (!renderer) {
-			return;
-		}
-		const component = new CustomEntryComponent(entry, renderer);
-		component.setExpanded(this.toolOutputExpanded);
-		if (!component.hasContent()) {
-			return;
-		}
-
-		if (this.sessionPresentation.streamingComponent) {
-			const streamingIndex = this.chatContainer.children.indexOf(this.sessionPresentation.streamingComponent);
-			if (streamingIndex >= 0) {
-				this.chatContainer.children.splice(streamingIndex, 0, component);
-				return;
-			}
-		}
-
-		this.chatContainer.addChild(component);
 	}
 
 	private updateTranscriptAnimationOptions(): void {
 		for (const child of this.chatContainer.children) {
 			if (child instanceof AssistantMessageComponent)
 				child.setAnimationOptions(
-					this.settingsManager.getUiAnimations(),
-					this.settingsManager.getAnimationIntensity(),
+					this.settingsManager.read("ui-animations"),
+					this.settingsManager.read("animation-intensity"),
 					() => this.renderer.requestRender(),
 				);
 		}
@@ -3285,7 +2912,7 @@ export class InteractiveMode {
 					message.command,
 					this.renderer,
 					message.excludeFromContext,
-					this.settingsManager.getToolPreviewLines(),
+					this.settingsManager.read("tool-preview-lines"),
 				);
 				if (message.output) {
 					component.appendOutput(message.output);
@@ -3301,14 +2928,11 @@ export class InteractiveMode {
 			}
 			case "custom": {
 				if (message.display) {
-					const renderer = this.session.extensionRunner.getMessageRenderer(message.customType);
 					const component = new CustomMessageComponent(
 						message,
-						renderer,
 						this.getMarkdownThemeWithSettings(),
 						this.outputPad,
 					);
-					component.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(component);
 				}
 				break;
@@ -3352,7 +2976,6 @@ export class InteractiveMode {
 								skillBlock.userMessage,
 								this.getMarkdownThemeWithSettings(),
 								this.outputPad,
-								this.getMarkdownTransformers(),
 							);
 							this.chatContainer.addChild(userComponent);
 						}
@@ -3361,7 +2984,6 @@ export class InteractiveMode {
 							textContent,
 							this.getMarkdownThemeWithSettings(),
 							this.outputPad,
-							this.getMarkdownTransformers(),
 						);
 						this.chatContainer.addChild(userComponent);
 					}
@@ -3378,7 +3000,6 @@ export class InteractiveMode {
 					this.getMarkdownThemeWithSettings(),
 					this.hiddenThinkingLabel,
 					this.outputPad,
-					this.getMarkdownTransformers(),
 					this.mermaidCodeBlockView,
 				);
 				this.chatContainer.addChild(assistantComponent);
@@ -3399,8 +3020,8 @@ export class InteractiveMode {
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 		// Cache misses are not persisted, unlike successful cache-warming usage.
 		// Re-derive them and inject them after the assistant messages that paid for them.
-		const cacheMisses = this.settingsManager.getShowCacheMissNotices()
-			? collectCacheMisses(this.sessionManager.getEntries(), this.session.modelRuntime)
+		const cacheMisses = this.settingsManager.read("cache-miss-notices")
+			? collectCacheMisses(this.sessionManager.getEntries(), this.runtimeHost.models)
 			: new Map<AssistantMessage, CacheMiss>();
 
 		if (options.updateFooter) {
@@ -3434,9 +3055,9 @@ export class InteractiveMode {
 							content.id,
 							content.arguments,
 							{
-								showImages: this.settingsManager.getShowImages(),
-								imageWidthCells: this.settingsManager.getImageWidthCells(),
-								toolPreviewLines: this.settingsManager.getToolPreviewLines(),
+								showImages: this.settingsManager.read("show-images"),
+								imageWidthCells: this.settingsManager.read("image-width-cells"),
+								toolPreviewLines: this.settingsManager.read("tool-preview-lines"),
 							},
 							this.getRegisteredToolDefinition(content.name),
 							this.renderer,
@@ -3448,7 +3069,7 @@ export class InteractiveMode {
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
 							if (message.stopReason === "aborted") {
-								const retryAttempt = this.session.retryAttempt;
+								const retryAttempt = this.session.execution.retryAttempt;
 								errorMessage =
 									retryAttempt > 0
 										? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
@@ -3502,7 +3123,7 @@ export class InteractiveMode {
 	}
 
 	private addCacheWarmingUsage(entry: UsageEntry): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.read("cache-miss-notices")) return;
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("dim", formatCacheWarmingUsage(entry)), 1, 0));
 	}
@@ -3512,7 +3133,7 @@ export class InteractiveMode {
 	 * from persisted summary usage and is not stored as a separate session entry.
 	 */
 	private addCompactionCostNotice(notice: CompactionCostNotice): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.read("cache-miss-notices")) return;
 
 		const { usage } = notice;
 		const tokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
@@ -3541,7 +3162,7 @@ export class InteractiveMode {
 	}
 
 	private maybeShowThinkingDropNotice(message: AssistantMessage): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.read("cache-miss-notices")) return;
 
 		const droppedCount = InteractiveMode.countDroppedThinkingBlocks(message);
 		if (droppedCount === 0) return;
@@ -3572,10 +3193,10 @@ export class InteractiveMode {
 	 * a model switch, or an idle gap past the cache TTL.
 	 */
 	private maybeShowCacheMissNotice(message: AssistantMessage): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.read("cache-miss-notices")) return;
 
 		// Entries don't contain `message` yet: message_end fires before persistence.
-		const miss = detectCacheMiss(this.sessionManager.getEntries(), message, this.session.modelRuntime);
+		const miss = detectCacheMiss(this.sessionManager.getEntries(), message, this.runtimeHost.models);
 		if (miss) this.addCacheMissNotice(miss);
 	}
 
@@ -3596,14 +3217,14 @@ export class InteractiveMode {
 	}
 
 	private getHomeResources(): SplashResources {
-		const loader = this.session.resourceLoader;
+		const loader = this.session.execution.resourceLoader;
 		return {
 			context:
 				(loader.getSystemPromptSource() ? 1 : 0) +
 				loader.getAppendSystemPromptSources().length +
 				loader.getAgentsFiles().agentsFiles.length,
 			skills: loader.getSkills().skills.length,
-			prompts: this.session.promptTemplates.length,
+			prompts: this.session.execution.promptTemplates.length,
 			extensions: loader.getExtensions().extensions.filter((extension) => !extension.hidden).length,
 		};
 	}
@@ -3908,17 +3529,17 @@ export class InteractiveMode {
 			return;
 		}
 
-		if (this.session.isCompacting) {
+		if (this.session.execution.isCompacting) {
 			this.queueCompactionMessage(input, "followUp");
 			return;
 		}
 
 		// Alt+Enter queues a follow-up message (waits until agent finishes)
-		if (this.session.isStreaming) {
+		if (this.session.execution.isStreaming) {
 			this.editor.addToHistory?.(input.text);
 			this.editor.setText("");
 			try {
-				await this.session.prompt(input.text, { images: input.images, streamingBehavior: "followUp" });
+				await this.session.execution.prompt(input.text, { images: input.images, streamingBehavior: "followUp" });
 			} catch (error) {
 				this.restoreInputToEditor(input);
 				this.showError(`Failed to queue message: ${error instanceof Error ? error.message : String(error)}`);
@@ -3943,13 +3564,13 @@ export class InteractiveMode {
 	}
 
 	private updateEditorBorderColor(): void {
-		this.defaultEditor.setThinkingLevel(this.session.thinkingLevel || "off");
+		this.defaultEditor.setThinkingLevel(this.session.selection.thinkingLevel || "off");
 		if (this.inputMode === "help") {
 			this.editor.borderColor = (text) => theme.fg("borderAccent", text);
 		} else if (this.inputMode !== "normal") {
 			this.editor.borderColor = theme.getBashModeBorderColor();
 		} else {
-			const level = this.session.thinkingLevel || "off";
+			const level = this.session.selection.thinkingLevel || "off";
 			this.editor.borderColor = theme.getThinkingBorderColor(level);
 		}
 		this.activeStatusIndicator?.invalidate();
@@ -3964,7 +3585,7 @@ export class InteractiveMode {
 		if (expanded === this.toolOutputExpanded) return;
 
 		this.toolOutputExpanded = expanded;
-		const activeHeader = this.customHeader ?? this.builtInHeader;
+		const activeHeader = this.builtInHeader;
 		if (isExpandable(activeHeader)) {
 			activeHeader.setExpanded(expanded);
 		}
@@ -4050,13 +3671,13 @@ export class InteractiveMode {
 	/** Get queued messages from the session. */
 	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
 		return {
-			steering: [...this.session.getSteeringMessages()],
-			followUp: [...this.session.getFollowUpMessages()],
+			steering: [...this.session.execution.getSteeringMessages()],
+			followUp: [...this.session.execution.getFollowUpMessages()],
 		};
 	}
 
 	private clearAllQueues(): { steering: QueuedInput[]; followUp: QueuedInput[] } {
-		return this.session.clearQueue();
+		return this.session.execution.clearQueue();
 	}
 
 	private updatePendingMessagesDisplay(): void {
@@ -4076,7 +3697,7 @@ export class InteractiveMode {
 		if (allQueued.length === 0) {
 			this.updatePendingMessagesDisplay();
 			if (options?.abort) {
-				void this.session.abort();
+				void this.session.execution.abort();
 			}
 			return 0;
 		}
@@ -4088,7 +3709,7 @@ export class InteractiveMode {
 		this.restoreImagesToEditor([...allQueued.flatMap((input) => input.images ?? []), ...(currentInput.images ?? [])]);
 		this.updatePendingMessagesDisplay();
 		if (options?.abort) {
-			void this.session.abort();
+			void this.session.execution.abort();
 		}
 		return allQueued.length;
 	}
@@ -4096,11 +3717,13 @@ export class InteractiveMode {
 	private queueCompactionMessage(input: QueuedInput, mode: "steer" | "followUp"): void {
 		this.editor.addToHistory?.(input.text);
 		this.editor.setText("");
-		void this.session.prompt(input.text, { images: input.images, streamingBehavior: mode }).catch((error) => {
-			this.restoreInputToEditor(input);
-			this.updatePendingMessagesDisplay();
-			this.showError(`Failed to send queued message: ${error instanceof Error ? error.message : String(error)}`);
-		});
+		void this.session.execution
+			.prompt(input.text, { images: input.images, streamingBehavior: mode })
+			.catch((error) => {
+				this.restoreInputToEditor(input);
+				this.updatePendingMessagesDisplay();
+				this.showError(`Failed to send queued message: ${error instanceof Error ? error.message : String(error)}`);
+			});
 		this.updatePendingMessagesDisplay();
 		this.showStatus("Queued message for after compaction");
 	}
@@ -4156,7 +3779,7 @@ export class InteractiveMode {
 					await commitInteractiveSetting(this.settingsManager, scope, id, value);
 					switch (id) {
 						case "tool-preview-lines": {
-							const lines = this.settingsManager.getToolPreviewLines();
+							const lines = this.settingsManager.read("tool-preview-lines");
 							for (const child of this.chatContainer.children) {
 								if (child instanceof ToolExecutionComponent) child.setToolPreviewLines(lines);
 								if (child instanceof BashExecutionComponent) child.setPreviewLines(lines);
@@ -4166,14 +3789,14 @@ export class InteractiveMode {
 							break;
 						}
 						case "show-images": {
-							const enabled = this.settingsManager.getShowImages();
+							const enabled = this.settingsManager.read("show-images");
 							for (const child of this.chatContainer.children) {
 								if (child instanceof ToolExecutionComponent) child.setShowImages(enabled);
 							}
 							break;
 						}
 						case "image-width-cells": {
-							const width = this.settingsManager.getImageWidthCells();
+							const width = this.settingsManager.read("image-width-cells");
 							for (const child of this.chatContainer.children) {
 								if (child instanceof ToolExecutionComponent) child.setImageWidthCells(width);
 							}
@@ -4183,8 +3806,8 @@ export class InteractiveMode {
 							this.setupAutocompleteProvider();
 							break;
 						case "ui-animations": {
-							const enabled = this.settingsManager.getUiAnimations();
-							const intensity = this.settingsManager.getAnimationIntensity();
+							const enabled = this.settingsManager.read("ui-animations");
+							const intensity = this.settingsManager.read("animation-intensity");
 							this.defaultEditor.setAnimationOptions(enabled, intensity);
 							this.composerPanel.setOptions(enabled, intensity);
 							this.helpPanel?.setOptions(enabled, intensity);
@@ -4194,8 +3817,8 @@ export class InteractiveMode {
 							break;
 						}
 						case "animation-intensity": {
-							const enabled = this.settingsManager.getUiAnimations();
-							const intensity = this.settingsManager.getAnimationIntensity();
+							const enabled = this.settingsManager.read("ui-animations");
+							const intensity = this.settingsManager.read("animation-intensity");
 							this.defaultEditor.setAnimationOptions(enabled, intensity);
 							this.composerPanel.setOptions(enabled, intensity);
 							this.helpPanel?.setOptions(enabled, intensity);
@@ -4204,7 +3827,7 @@ export class InteractiveMode {
 							break;
 						}
 						case "hide-thinking":
-							this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+							this.hideThinkingBlock = this.settingsManager.read("hide-thinking");
 							this.updateThinkingBlockVisibility();
 							break;
 						case "mermaid-rendering":
@@ -4215,10 +3838,10 @@ export class InteractiveMode {
 							this.rebuildChatFromMessages();
 							break;
 						case "show-hardware-cursor":
-							this.renderer.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
+							this.renderer.setShowHardwareCursor(this.settingsManager.read("show-hardware-cursor"));
 							break;
 						case "editor-padding": {
-							const padding = this.settingsManager.getEditorPaddingX();
+							const padding = this.settingsManager.read("editor-padding");
 							this.defaultEditor.setPaddingX(padding);
 							if (this.editor !== this.defaultEditor && this.editor.setPaddingX !== undefined) {
 								this.editor.setPaddingX(padding);
@@ -4226,9 +3849,9 @@ export class InteractiveMode {
 							break;
 						}
 						case "output-padding": {
-							const padding = this.settingsManager.getOutputPad();
+							const padding = this.settingsManager.read("output-padding");
 							this.outputPad = padding;
-							if (this.sessionPresentation.streamingComponent || this.session.isStreaming) {
+							if (this.sessionPresentation.streamingComponent || this.session.execution.isStreaming) {
 								for (const child of this.chatContainer.children) {
 									if (
 										child instanceof AssistantMessageComponent ||
@@ -4246,7 +3869,7 @@ export class InteractiveMode {
 							break;
 						}
 						case "autocomplete-max-visible": {
-							const maxVisible = this.settingsManager.getAutocompleteMaxVisible();
+							const maxVisible = this.settingsManager.read("autocomplete-max-visible");
 							this.defaultEditor.setAutocompleteMaxVisible(maxVisible);
 							if (this.editor !== this.defaultEditor && this.editor.setAutocompleteMaxVisible !== undefined) {
 								this.editor.setAutocompleteMaxVisible(maxVisible);
@@ -4254,8 +3877,8 @@ export class InteractiveMode {
 							break;
 						}
 						case "clear-on-shrink":
-							this.renderer.setClearOnShrink(this.settingsManager.getClearOnShrink());
-							if (!this.settingsManager.getClearOnShrink() && !this.activeStatusIndicator) {
+							this.renderer.setClearOnShrink(this.settingsManager.read("clear-on-shrink"));
+							if (!this.settingsManager.read("clear-on-shrink") && !this.activeStatusIndicator) {
 								this.statusContainer.clear();
 								this.statusContainer.addChild(this.notification);
 							}
@@ -4264,7 +3887,7 @@ export class InteractiveMode {
 							this.applyFullscreenScrollbarSetting();
 							break;
 						case "fullscreen-copy-on-select":
-							this.renderer.setCopyOnSelect(this.settingsManager.getFullscreenCopyOnSelect());
+							this.renderer.setCopyOnSelect(this.settingsManager.read("fullscreen-copy-on-select"));
 							break;
 					}
 				},
@@ -4284,7 +3907,7 @@ export class InteractiveMode {
 
 	private selectThinkingLevel(level: ThinkingLevel): void {
 		try {
-			this.session.setThinkingLevel(level);
+			this.session.selection.setThinkingLevel(level);
 			this.footer.invalidate();
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${level}`);
@@ -4297,12 +3920,12 @@ export class InteractiveMode {
 	private buildPowerbarHost(): PowerbarHost {
 		return {
 			requestRender: () => this.renderer.requestRender(),
-			getThinkingLevels: () => this.session.getAvailableThinkingLevels(),
-			getThinkingLevel: () => this.session.thinkingLevel || DEFAULT_THINKING_LEVEL,
+			getThinkingLevels: () => this.session.selection.getAvailableThinkingLevels(),
+			getThinkingLevel: () => this.session.selection.thinkingLevel || DEFAULT_THINKING_LEVEL,
 			getModels: () => this.getPowerbarModels(),
 			getCurrentModelIndex: () => {
 				const models = this.getPowerbarModels();
-				const current = this.session.model;
+				const current = this.session.selection.model;
 				const index = models.findIndex(
 					(entry) => entry.model.provider === current?.provider && entry.model.id === current?.id,
 				);
@@ -4346,7 +3969,7 @@ export class InteractiveMode {
 
 	private async applyPowerbarModel(model: Model<any>): Promise<void> {
 		try {
-			await this.session.setModel(model);
+			await this.session.selection.setModel(model);
 			this.updateAvailableProviderCount();
 			this.footer.invalidate();
 			this.refreshContextLine();
@@ -4410,13 +4033,13 @@ export class InteractiveMode {
 
 	/** Update the footer's available provider count from the current snapshot without refreshing catalogs. */
 	private updateAvailableProviderCount(): void {
-		const models = this.session.modelRuntime.getAvailableSnapshot();
+		const models = this.runtimeHost.models.getAvailableSnapshot();
 		const uniqueProviders = new Set(models.map((model) => model.provider));
 		this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
 	}
 
 	private async maybeWarnAboutAnthropicSubscriptionAuth(
-		model: Model<any> | undefined = this.session.model,
+		model: Model<any> | undefined = this.session.selection.model,
 	): Promise<void> {
 		if (this.settingsManager.getWarnings().anthropicExtraUsage === false) {
 			return;
@@ -4429,12 +4052,12 @@ export class InteractiveMode {
 		}
 
 		try {
-			if ((await this.session.modelRuntime.checkAuth("anthropic"))?.type === "oauth") {
+			if ((await this.runtimeHost.models.checkAuth("anthropic"))?.type === "oauth") {
 				this.anthropicSubscriptionWarningShown = true;
 				this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
 				return;
 			}
-			const apiKey = (await this.session.modelRuntime.getAuth(model.provider))?.auth.apiKey;
+			const apiKey = (await this.runtimeHost.models.getAuth(model.provider))?.auth.apiKey;
 			if (!isAnthropicSubscriptionAuthKey(apiKey)) {
 				return;
 			}
@@ -4513,7 +4136,7 @@ export class InteractiveMode {
 	}
 
 	private showUserMessageSelector(): void {
-		const userMessages = this.session.getUserMessagesForForking();
+		const userMessages = this.session.history.getUserMessagesForForking();
 
 		if (userMessages.length === 0) {
 			this.showStatus("No messages to fork from");
@@ -4568,7 +4191,7 @@ export class InteractiveMode {
 	private showTreeSelector(initialSelectedId?: string): void {
 		const tree = this.sessionManager.getTree();
 		const realLeafId = this.sessionManager.getLeafId();
-		const initialFilterMode = this.settingsManager.getTreeFilterMode();
+		const initialFilterMode = this.settingsManager.read("tree-filter-mode");
 
 		if (tree.length === 0) {
 			this.showStatus("No entries in session");
@@ -4626,13 +4249,13 @@ export class InteractiveMode {
 					}
 
 					// The user committed to navigating: stop the active response first.
-					if (this.session.isStreaming) {
+					if (this.session.execution.isStreaming) {
 						this.restoreQueuedMessagesToEditor();
-						await this.session.abort();
+						await this.session.execution.abort();
 					}
 
 					// Recheck after the dialogs and streaming abort, before replacing another operation's UI.
-					if (this.session.isCompacting) {
+					if (this.session.execution.isCompacting) {
 						this.showError(
 							"Wait for the current compaction or tree navigation to finish before navigating the session tree.",
 						);
@@ -4645,7 +4268,7 @@ export class InteractiveMode {
 
 					if (wantsSummary) {
 						this.defaultEditor.onEscape = () => {
-							this.session.abortBranchSummary();
+							this.session.execution.abortBranchSummary();
 						};
 						this.chatContainer.addChild(new Spacer(1));
 						this.showStatusIndicator(new BranchSummaryStatusIndicator(this.renderer));
@@ -4654,7 +4277,7 @@ export class InteractiveMode {
 					}
 
 					try {
-						const result = await this.session.navigateTree(entryId, {
+						const result = await this.session.execution.navigateTree(entryId, {
 							summarize: wantsSummary,
 							customInstructions,
 						});
@@ -4717,7 +4340,7 @@ export class InteractiveMode {
 		this.pageController.showSelector((done) => {
 			const selector = new SessionSelectorComponent(
 				(onProgress, signal) =>
-					SessionManager.list(
+					SessionDiscovery.list(
 						this.sessionManager.getCwd(),
 						this.sessionManager.getSessionDir(),
 						onProgress,
@@ -4725,8 +4348,8 @@ export class InteractiveMode {
 					),
 				(onProgress, signal) =>
 					this.sessionManager.usesDefaultSessionDir()
-						? SessionManager.listAll(onProgress, signal)
-						: SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress, signal),
+						? SessionDiscovery.listAll(onProgress, signal)
+						: SessionDiscovery.listAll(this.sessionManager.getSessionDir(), onProgress, signal),
 				async (sessionPath) => {
 					done();
 					await this.handleResumeSession(sessionPath);
@@ -4743,7 +4366,7 @@ export class InteractiveMode {
 					renameSession: async (sessionFilePath: string, nextName: string | undefined) => {
 						const next = (nextName ?? "").trim();
 						if (!next) return;
-						const mgr = SessionManager.open(sessionFilePath);
+						const mgr = SessionHistory.open(sessionFilePath);
 						mgr.appendSessionInfo(next);
 					},
 					showRenameHint: true,
@@ -4793,404 +4416,16 @@ export class InteractiveMode {
 		}
 	}
 
-	private getLoginProviderOptions(authType?: "oauth" | "api_key"): AuthSelectorProvider[] {
-		return getAuthSelectorProviders(this.session.modelRuntime, authType);
-	}
-
-	private findLoginProviderOptions(providerRef: string): AuthSelectorProvider[] {
-		const normalizedProviderRef = providerRef.trim().toLowerCase();
-		if (!normalizedProviderRef) {
-			return [];
-		}
-
-		return this.getLoginProviderOptions().filter(
-			(provider) =>
-				provider.id.toLowerCase() === normalizedProviderRef ||
-				provider.name.toLowerCase() === normalizedProviderRef,
-		);
-	}
-
 	private cancelActiveLogin(): void {
-		const activeLogin = this.activeLogin;
-		this.activeLogin = undefined;
-		activeLogin?.dialog.abort();
+		this.authFlow.cancelActiveLogin();
 	}
-
-	private isActiveLogin(dialog: LoginDialogComponent): boolean {
-		return this.activeLogin?.dialog === dialog && this.activeLogin.session === this.session && !dialog.signal.aborted;
-	}
-
-	private finishLoginDialog(dialog: LoginDialogComponent): boolean {
-		if (this.activeLogin?.dialog !== dialog || this.activeLogin.session !== this.session) return false;
-		this.activeLogin = undefined;
-		this.pageController.closePanel();
-		return !dialog.signal.aborted;
-	}
-
-	private async handleLoginCommand(providerRef?: string): Promise<void> {
-		if (!providerRef) {
-			this.showLoginAuthTypeSelector();
-			return;
-		}
-
-		const providerOptions = this.findLoginProviderOptions(providerRef);
-		if (providerOptions.length === 1) {
-			await this.startProviderLogin(providerOptions[0]!);
-			return;
-		}
-
-		if (providerOptions.length > 1) {
-			const providerIds = new Set(providerOptions.map((provider) => provider.id));
-			if (providerIds.size === 1) {
-				this.showLoginAuthTypeSelector(providerOptions);
-				return;
-			}
-		}
-
-		this.showLoginProviderSelector(undefined, providerRef);
-	}
-
-	private async startProviderLogin(providerOption: AuthSelectorProvider): Promise<void> {
-		if (providerOption.authType === "oauth") {
-			await this.showLoginDialog(providerOption.id, providerOption.name);
-		} else if (providerOption.method?.login) {
-			await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
-		} else {
-			this.showAmbientAuthDialog(providerOption);
-		}
-	}
-
-	private showLoginAuthTypeSelector(providerOptions?: AuthSelectorProvider[]): void {
-		const oauthProvider = providerOptions?.find((provider) => provider.authType === "oauth");
-		const oauthLoginLabel =
-			oauthProvider?.method && "loginLabel" in oauthProvider.method ? oauthProvider.method.loginLabel : undefined;
-		const subscriptionLabel = oauthLoginLabel ?? "Sign in with an account";
-		const apiKeyLabel = "Sign in with an API key";
-		const availableAuthTypes = providerOptions
-			? new Set(providerOptions.map((provider) => provider.authType))
-			: new Set<AuthSelectorProvider["authType"]>(["oauth", "api_key"]);
-		const options: string[] = [];
-		if (availableAuthTypes.has("oauth")) {
-			options.push(subscriptionLabel);
-		}
-		if (availableAuthTypes.has("api_key")) {
-			options.push(apiKeyLabel);
-		}
-
-		if (options.length === 0) {
-			this.showStatus("No login methods available.");
-			return;
-		}
-
-		if (providerOptions && options.length === 1) {
-			const providerOption = providerOptions[0];
-			if (providerOption) {
-				void this.startProviderLogin(providerOption);
-			}
-			return;
-		}
-
-		const title = providerOptions?.[0]
-			? `Select authentication method for ${providerOptions[0].name}:`
-			: "Select authentication method:";
-		const session = this.session;
-		let generation: number;
-		this.pageController.showSelector((done) => {
-			const selector = new ExtensionSelectorComponent(
-				title,
-				options,
-				(option) => {
-					if (this.session !== session || this.pageController.generation !== generation) return;
-					done();
-					const authType = option === subscriptionLabel ? "oauth" : "api_key";
-					if (providerOptions) {
-						const providerOption = providerOptions.find((provider) => provider.authType === authType);
-						if (providerOption) {
-							void this.startProviderLogin(providerOption);
-						}
-						return;
-					}
-					this.showLoginProviderSelector(authType);
-				},
-				() => {
-					if (this.session !== session || this.pageController.generation !== generation) return;
-					done();
-					this.renderer.requestRender();
-				},
-			);
-			return { component: selector, focus: selector };
-		});
-		generation = this.pageController.generation;
-	}
-
-	private showLoginProviderSelector(authType?: AuthSelectorProvider["authType"], initialSearchInput?: string): void {
-		const providerOptions = this.getLoginProviderOptions(authType);
-		if (providerOptions.length === 0) {
-			const message =
-				authType === "oauth"
-					? "No subscription providers available."
-					: authType === "api_key"
-						? "No API key providers available."
-						: "No login providers available.";
-			this.showStatus(message);
-			return;
-		}
-
-		const session = this.session;
-		let generation: number;
-		this.pageController.showSelector((done) => {
-			const selector = new OAuthSelectorComponent(
-				"login",
-				providerOptions,
-				async (providerId, selectedAuthType) => {
-					if (this.session !== session || this.pageController.generation !== generation) return;
-					done();
-
-					const providerOption = providerOptions.find(
-						(provider) => provider.id === providerId && provider.authType === selectedAuthType,
-					);
-					if (!providerOption) {
-						return;
-					}
-
-					await this.startProviderLogin(providerOption);
-				},
-				() => {
-					if (this.session !== session || this.pageController.generation !== generation) return;
-					done();
-					if (authType) {
-						this.showLoginAuthTypeSelector();
-					} else {
-						this.renderer.requestRender();
-					}
-				},
-				initialSearchInput,
-			);
-			return { component: selector, focus: selector };
-		});
-		generation = this.pageController.generation;
-	}
-
-	private async completeProviderAuthentication(
-		providerId: string,
-		providerName: string,
-		authType: "oauth" | "api_key",
-	): Promise<void> {
-		const actionLabel = authType === "oauth" ? `Logged in to ${providerName}` : `Saved API key for ${providerName}`;
-
-		const session = this.session;
-		const generation = this.pageController.generation;
-		const isCurrent = () => this.session === session && this.pageController.generation === generation;
-		this.showStatus(`${actionLabel}. Refreshing model catalog…`);
-
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 15_000);
-		void session.modelRuntime
-			.refresh({ providers: [providerId], signal: controller.signal })
-			.then(async (result) => {
-				if (!isCurrent()) return;
-				await this.updateAvailableProviderCount();
-				if (!isCurrent()) return;
-				this.footer.invalidate();
-				this.refreshContextLine();
-				this.updateEditorBorderColor();
-				const error = result.errors.get(providerId);
-				if (result.aborted) this.showWarning(`${actionLabel}, but the model catalog refresh timed out.`);
-				else if (error) this.showWarning(`${actionLabel}, but the model catalog refresh failed: ${error.message}`);
-				else this.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
-				void this.maybeWarnAboutAnthropicSubscriptionAuth();
-				this.renderer.requestRender();
-			})
-			.catch((error: unknown) => {
-				if (!isCurrent()) return;
-				this.showWarning(
-					`${actionLabel}, but its model catalog could not be refreshed: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			})
-			.finally(() => clearTimeout(timeout));
-	}
-
-	private showAmbientAuthDialog(providerOption: AuthSelectorProvider): void {
-		const session = this.session;
-		let generation: number;
-		const restoreEditor = () => {
-			if (this.session === session && this.pageController.generation === generation)
-				this.pageController.closePanel();
-		};
-
-		const dialog = new LoginDialogComponent(
-			this.renderer,
-			providerOption.id,
-			() => restoreEditor(),
-			providerOption.name,
-			`${providerOption.name} setup`,
-		);
-		dialog.showInfo(
-			`${providerOption.method?.name ?? "Authentication"} is configured outside ${APP_NAME}.`,
-			[],
-			true,
-		);
-
-		this.pageController.mountPanel(dialog, 0.5);
-		generation = this.pageController.generation;
-	}
-
-	private async showApiKeyLoginDialog(providerId: string, providerName: string): Promise<void> {
-		const session = this.session;
-
-		const dialog = new LoginDialogComponent(
-			this.renderer,
-			providerId,
-			(_success, _message) => {
-				// Completion handled below
-			},
-			providerName,
-		);
-
-		this.activeLogin = { dialog, session };
-		this.pageController.mountPanel(dialog, 0.5);
-
-		try {
-			await this.loginProvider(dialog, providerId, "api_key");
-		} catch (error: unknown) {
-			if (!this.finishLoginDialog(dialog)) return;
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			if (error instanceof CredentialSynchronizationError) {
-				this.showError(
-					`Saved API key for ${providerName}, but local model state could not be synchronized: ${errorMsg}`,
-				);
-			} else if (!dialog.signal.aborted) {
-				this.showError(`${providerName}: ${errorMsg}`, "Could not save API key");
-			}
-			return;
-		}
-		if (!this.finishLoginDialog(dialog)) return;
-		await this.completeProviderAuthentication(providerId, providerName, "api_key");
-	}
-
-	private showAuthSelect(
-		dialog: LoginDialogComponent,
-		prompt: Extract<AuthPrompt, { type: "select" }>,
-	): Promise<string> {
-		return new Promise((resolve, reject) => {
-			let generation: number;
-			const restoreDialog = () => {
-				if (!this.isActiveLogin(dialog) || this.pageController.generation !== generation) return false;
-				this.pageController.mountPanel(dialog, 0.5);
-				return true;
-			};
-			const onAbort = () => reject(new Error("Login cancelled"));
-			dialog.signal.addEventListener("abort", onAbort, { once: true });
-			const finish = (value?: string) => {
-				dialog.signal.removeEventListener("abort", onAbort);
-				if (!restoreDialog()) return;
-				if (value) resolve(value);
-				else {
-					dialog.abort();
-					reject(dialog.signal.reason);
-				}
-			};
-			const labels = prompt.options.map((option) => option.label);
-			const selector = new ExtensionSelectorComponent(
-				prompt.message,
-				labels,
-				(optionLabel) => {
-					const id = prompt.options.find((option) => option.label === optionLabel)?.id;
-					finish(id);
-				},
-				() => finish(),
-			);
-			this.pageController.mountPanel(selector, 0.5);
-			generation = this.pageController.generation;
-		});
-	}
-
-	private async showAuthPrompt(dialog: LoginDialogComponent, prompt: AuthPrompt, secret: boolean): Promise<string> {
-		if (!this.isActiveLogin(dialog) || prompt.signal?.aborted) throw new Error("Login cancelled");
-		let response: Promise<string>;
-		if (prompt.type === "select") {
-			response = this.showAuthSelect(dialog, prompt);
-		} else if (prompt.type === "manual_code") {
-			response = dialog.showManualInput(prompt.message);
-		} else {
-			response = dialog.showPrompt(prompt.message, prompt.placeholder, secret);
-		}
-		const signals = prompt.signal ? [dialog.signal, prompt.signal] : [dialog.signal];
-		if (signals.some((signal) => signal.aborted)) throw new Error("Login cancelled");
-		const onAbort = () => rejectAbort(new Error("Login cancelled"));
-		let rejectAbort: (error: Error) => void;
-		const aborted = new Promise<string>((_resolve, reject) => {
-			rejectAbort = reject;
-			for (const signal of signals) signal.addEventListener("abort", onAbort, { once: true });
-		});
-		try {
-			return await Promise.race([response, aborted]);
-		} finally {
-			for (const signal of signals) signal.removeEventListener("abort", onAbort);
-		}
-	}
-
-	private notifyAuthDialog(dialog: LoginDialogComponent, event: AuthEvent): void {
-		if (!this.isActiveLogin(dialog)) return;
-		if (event.type === "auth_url") {
-			dialog.showAuth(event.url, event.instructions);
-		} else if (event.type === "device_code") {
-			dialog.showDeviceCode(event);
-			dialog.showWaiting("Waiting for authentication...");
-		} else if (event.type === "info") {
-			dialog.showInfo(event.message, event.links);
-		} else {
-			dialog.showProgress(event.message);
-		}
-	}
-
-	private async loginProvider(
-		dialog: LoginDialogComponent,
-		providerId: string,
-		method: "api_key" | "oauth",
-	): Promise<void> {
-		const session = this.session;
-		await session.modelRuntime.login(providerId, method, {
-			signal: dialog.signal,
-			prompt: (prompt) => this.showAuthPrompt(dialog, prompt, method === "api_key"),
-			notify: (event) => this.notifyAuthDialog(dialog, event),
-		});
-	}
-
-	private async showLoginDialog(providerId: string, providerName: string): Promise<void> {
-		const session = this.session;
-		const dialog = new LoginDialogComponent(this.renderer, providerId, (_success, _message) => {}, providerName);
-		this.activeLogin = { dialog, session };
-		this.pageController.mountPanel(dialog, 0.5);
-
-		try {
-			await this.loginProvider(dialog, providerId, "oauth");
-		} catch (error: unknown) {
-			if (!this.finishLoginDialog(dialog)) return;
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			if (error instanceof CredentialSynchronizationError) {
-				this.showError(
-					`Logged in to ${providerName}, but local model state could not be synchronized: ${errorMsg}`,
-				);
-			} else if (!dialog.signal.aborted) {
-				this.showError(`${providerName}: ${errorMsg}`, "Authentication failed");
-			}
-			return;
-		}
-		if (!this.finishLoginDialog(dialog)) return;
-		await this.completeProviderAuthentication(providerId, providerName, "oauth");
-	}
-
-	// =========================================================================
-	// Command handlers
-	// =========================================================================
 
 	private async handleReloadCommand(): Promise<void> {
-		if (this.session.isStreaming) {
+		if (this.session.execution.isStreaming) {
 			this.showWarning("Wait for the current response to finish before reloading.");
 			return;
 		}
-		if (this.session.isCompacting) {
+		if (this.session.execution.isCompacting) {
 			this.showWarning("Wait for compaction to finish before reloading.");
 			return;
 		}
@@ -5231,32 +4466,32 @@ export class InteractiveMode {
 			if (chatRestoredBeforeSessionStart) {
 				return;
 			}
-			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
-			this.outputPad = this.settingsManager.getOutputPad();
+			this.hideThinkingBlock = this.settingsManager.read("hide-thinking");
+			this.outputPad = this.settingsManager.read("output-padding");
 			this.rebuildChatFromMessages();
 			chatRestoredBeforeSessionStart = true;
 		};
 
 		try {
-			await this.session.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
+			await this.session.execution.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
 			restoreChatBeforeSessionStart();
 			this.keybindings.reload();
-			const activeHeader = this.customHeader ?? this.builtInHeader;
+			const activeHeader = this.builtInHeader;
 			if (isExpandable(activeHeader)) {
 				activeHeader.setExpanded(this.toolOutputExpanded);
 			}
-			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
+			setRegisteredThemes(this.session.execution.resourceLoader.getThemes().themes);
 			this.applyRuntimeSettings();
 			await this.themeController.applyFromSettings();
 			this.setupAutocompleteProvider();
-			const runner = this.session.extensionRunner;
+			const runner = this.session.execution.extensionRunner;
 			this.setupExtensionShortcuts(runner);
 			this.showLoadedResources({
 				force: false,
 				showDiagnosticsWhenQuiet: true,
 			});
 			const savedImplicitProjectTrust = this.maybeSaveImplicitProjectTrustAfterReload();
-			const modelsJsonError = this.session.modelRuntime.getError();
+			const modelsJsonError = this.runtimeHost.models.getError();
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
 			}
@@ -5278,7 +4513,7 @@ export class InteractiveMode {
 	private async handleExportCommand(outputPath?: string): Promise<void> {
 		try {
 			if (outputPath?.endsWith(".jsonl")) {
-				const filePath = this.session.exportToJsonl(outputPath);
+				const filePath = this.session.history.exportToJsonl(outputPath);
 				this.showStatus(`Session exported to: ${filePath}`);
 			} else {
 				const filePath = await exportSessionHtml(this.session, outputPath, {
@@ -5350,7 +4585,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		const text = this.session.getLastAssistantText();
+		const text = this.session.history.getLastAssistantText();
 		if (!text) {
 			this.showError("No agent messages to copy yet.");
 			return;
@@ -5374,7 +4609,7 @@ export class InteractiveMode {
 			throw new Error("Enter a session name");
 		}
 
-		this.session.setSessionName(name);
+		this.session.execution.setSessionName(name);
 		const sessionName = this.sessionManager.getSessionName();
 		if (sessionName !== name) {
 			this.showWarning(`Session name was normalized from ${JSON.stringify(name)} to ${JSON.stringify(sessionName)}`);
@@ -5385,10 +4620,10 @@ export class InteractiveMode {
 	}
 
 	private handleSessionCommand(): void {
-		const stats = this.session.getSessionStats();
+		const stats = this.session.history.getSessionStats(this.session.selection.model);
 		const sessionName = this.sessionManager.getSessionName();
 		const entries = this.sessionManager.getEntries();
-		const cacheWaste = computeCacheWaste(entries, this.session.modelRuntime);
+		const cacheWaste = computeCacheWaste(entries, this.runtimeHost.models);
 
 		// Cost/token totals per provider/model actually used (e.g. OpenRouter `auto`
 		// resolves to a concrete responseModel). Usage without model attribution is
@@ -5425,9 +4660,9 @@ export class InteractiveMode {
 		info += `${theme.fg("dim", "Output:")} ${stats.tokens.output.toLocaleString()}\n`;
 		info += `${theme.fg("dim", "Total:")} ${stats.tokens.total.toLocaleString()}\n`;
 
-		const cacheWarmingStatus = this.session.cacheWarmingStatus;
+		const cacheWarmingStatus = this.session.execution.cacheWarmingStatus;
 		info += `\n${theme.bold("Cache Warming")}\n`;
-		info += `${theme.fg("dim", "Mode:")} ${this.settingsManager.getCacheWarmingMode()}\n`;
+		info += `${theme.fg("dim", "Mode:")} ${this.settingsManager.read("cache-warming-mode")}\n`;
 		info += `${theme.fg("dim", "Status:")} ${cacheWarmingStatus ? formatCacheWarmingStatus(cacheWarmingStatus) : "Inactive (cache warming unavailable)"}\n`;
 		const decision = cacheWarmingStatus?.decision;
 		if (decision?.economicsAvailable) {
@@ -5544,7 +4779,9 @@ export class InteractiveMode {
 			});
 		}
 		rows.sort((a, b) => a.category.localeCompare(b.category));
-		for (const [key, shortcut] of this.session.extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig())) {
+		for (const [key, shortcut] of this.session.execution.extensionRunner.getShortcuts(
+			this.keybindings.getEffectiveConfig(),
+		)) {
 			rows.push({
 				category: "Extensions",
 				label: shortcut.description ?? shortcut.extensionPath,
@@ -5564,7 +4801,7 @@ export class InteractiveMode {
 
 			this.renderer.requestRender();
 		} catch (error: unknown) {
-			if (this.session.isDisposed) await this.handleFatalRuntimeError("Failed to create session", error);
+			if (this.session.execution.isDisposed) await this.handleFatalRuntimeError("Failed to create session", error);
 			else this.showError(error instanceof Error ? error.message : String(error), "Could not create session");
 		}
 	}
@@ -5588,7 +4825,7 @@ export class InteractiveMode {
 			}),
 			"",
 			"=== Agent messages (JSONL) ===",
-			...this.session.messages.map((msg) => JSON.stringify(msg)),
+			...this.session.execution.messages.map((msg) => JSON.stringify(msg)),
 			"",
 		].join("\n");
 
@@ -5603,66 +4840,13 @@ export class InteractiveMode {
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
-		const extensionRunner = this.session.extensionRunner;
-
-		// Emit user_bash event to let extensions intercept
-		let eventResult: UserBashEventResult | undefined;
-		try {
-			eventResult = await extensionRunner.emitUserBash({
-				type: "user_bash",
-				command,
-				excludeFromContext,
-				cwd: this.sessionManager.getCwd(),
-			});
-		} catch {
-			// The extension runner already reported the error. Do not fall back to local execution.
-			return;
-		}
-
-		// If extension returned a full result, use it directly
 		this.dismissHome();
-		if (eventResult?.result) {
-			const result = eventResult.result;
-
-			// Create UI component for display
-			this.bashComponent = new BashExecutionComponent(
-				command,
-				this.renderer,
-				excludeFromContext,
-				this.settingsManager.getToolPreviewLines(),
-			);
-			if (this.session.isStreaming) {
-				this.pendingMessagesContainer.addChild(this.bashComponent);
-				this.pendingBashComponents.push(this.bashComponent);
-			} else {
-				this.chatContainer.addChild(this.bashComponent);
-			}
-
-			// Show output and complete
-			if (result.output) {
-				this.bashComponent.appendOutput(result.output);
-			}
-			this.bashComponent.setComplete(
-				result.exitCode,
-				result.cancelled,
-				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
-				result.fullOutputPath,
-			);
-
-			// Record the result in session
-			this.session.recordBashResult(command, result, { excludeFromContext });
-			this.bashComponent = undefined;
-			this.renderer.requestRender();
-			return;
-		}
-
-		// Normal execution path (possibly with custom operations)
-		const isDeferred = this.session.isStreaming;
+		const isDeferred = this.session.execution.isStreaming;
 		this.bashComponent = new BashExecutionComponent(
 			command,
 			this.renderer,
 			excludeFromContext,
-			this.settingsManager.getToolPreviewLines(),
+			this.settingsManager.read("tool-preview-lines"),
 		);
 
 		if (isDeferred) {
@@ -5676,7 +4860,7 @@ export class InteractiveMode {
 		this.renderer.requestRender();
 
 		try {
-			const result = await this.session.executeBash(
+			const result = await this.session.execution.executeBash(
 				command,
 				(chunk) => {
 					if (this.bashComponent) {
@@ -5684,7 +4868,7 @@ export class InteractiveMode {
 						this.renderer.requestRender();
 					}
 				},
-				{ excludeFromContext, operations: eventResult?.operations },
+				{ excludeFromContext },
 			);
 
 			if (this.bashComponent) {
@@ -5708,19 +4892,17 @@ export class InteractiveMode {
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
 		this.clearStatusIndicator();
-		await this.session.compact(customInstructions);
+		await this.session.execution.compact(customInstructions);
 	}
 
-	stop(fullscreenExitOutput = this.settingsManager.getFullscreenExitOutput()): void {
-		this.cancelActiveLogin();
-		this.presentation.dispose();
-		this.pageController.disposeActiveSelector();
-		if (this.settingsManager.getShowTerminalProgress()) {
+	stop(fullscreenExitOutput = this.settingsManager.read("fullscreen-exit-output")): void {
+		this.authFlow.dispose();
+		this.pageController.invalidateFlows();
+		if (this.settingsManager.read("terminal-progress")) {
 			this.renderer.terminal.setProgress(false);
 		}
 		this.clearStatusIndicator();
 		this.themeController.disableAutoSync();
-		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
 		this.defaultEditor.dispose();
 		this.composerPanel.dispose();

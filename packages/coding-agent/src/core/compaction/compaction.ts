@@ -9,28 +9,17 @@ import type { AgentMessage, StreamFn, ThinkingLevel } from "@candy/agent-core";
 import type { AssistantMessage, Model, SimpleStreamOptions, TranscriptContext, Usage } from "@candy/ai";
 import {
 	contentText,
-	getCurrentSystemMessage,
 	normalizeContext,
 	type RetryCallbacks,
 	type RetryPolicy,
 	retryAssistantCall,
 	uuidv7,
 } from "@candy/ai";
-import {
-	type ContextUsageEstimate,
-	calculateContextTokens,
-	estimateContextTokens,
-	estimateMessageTokens,
-} from "@candy/ai/utils/estimate";
+import { calculateContextTokens, estimateMessageTokens } from "@candy/ai/utils/estimate";
 import { convertToLlm } from "../messages.ts";
-import {
-	buildSessionProjection,
-	type CompactionEntry,
-	type ProjectedSessionEntry,
-	type SessionEntry,
-	type SessionProjection,
-	sessionEntryToContextMessages,
-} from "../session-manager.ts";
+import { buildSessionProjection, sessionEntryToContextMessages } from "../session-projection.ts";
+import { estimateProjectedContextTokens } from "../session-queries.ts";
+import type { CompactionEntry, ProjectedSessionEntry, SessionEntry } from "../session-records.ts";
 import {
 	computeFileLists,
 	createFileOps,
@@ -98,7 +87,7 @@ function getMessagesFromProjectedEntryForCompaction(entry: ProjectedSessionEntry
 	return entry.messages.filter((message) => message.role !== "system");
 }
 
-/** Result from compact() - SessionManager adds uuid/parentUuid when saving */
+/** Result from compact() - SessionHistory adds uuid/parentUuid when saving */
 export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
@@ -184,44 +173,6 @@ export function getLastAssistantUsage(entries: SessionEntry[]): Usage | undefine
 		}
 	}
 	return undefined;
-}
-
-/** Estimate projected context without trusting usage captured before a later edit or compaction. */
-export function estimateProjectedContextTokens(
-	projection: SessionProjection,
-	branchEntries: SessionEntry[],
-): ContextUsageEstimate {
-	const estimate = estimateContextTokens(projection.messages);
-	if (estimate.lastUsageIndex !== null) {
-		let projectedMessageIndex = 0;
-		let usageEntryId: string | undefined;
-		for (const entry of projection.entries) {
-			const nextMessageIndex = projectedMessageIndex + entry.messages.length;
-			if (estimate.lastUsageIndex < nextMessageIndex) {
-				usageEntryId = entry.sourceEntry.id;
-				break;
-			}
-			projectedMessageIndex = nextMessageIndex;
-		}
-
-		const usageEntryIndex = usageEntryId ? branchEntries.findIndex((entry) => entry.id === usageEntryId) : -1;
-		let latestInvalidatingEntryIndex = -1;
-		for (let i = branchEntries.length - 1; i >= 0; i--) {
-			const entry = branchEntries[i];
-			if (entry.type === "context_edit" || entry.type === "compaction") {
-				latestInvalidatingEntryIndex = i;
-				break;
-			}
-		}
-		if (usageEntryIndex > latestInvalidatingEntryIndex) return estimate;
-	}
-
-	const currentSystem = getCurrentSystemMessage(projection.messages);
-	let tokens = currentSystem ? estimateMessageTokens(currentSystem) : 0;
-	for (const message of projection.messages) {
-		if (message.role !== "system") tokens += estimateMessageTokens(message);
-	}
-	return { tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: null };
 }
 
 /**
@@ -842,7 +793,7 @@ Only summarize information explicitly present above. Do not infer or recreate la
 
 /**
  * Generate summaries for compaction using prepared data.
- * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
+ * Returns CompactionResult - SessionHistory adds uuid/parentUuid when saving.
  *
  * @param preparation - Pre-calculated preparation from prepareCompaction()
  * @param customInstructions - Optional custom focus for the summary

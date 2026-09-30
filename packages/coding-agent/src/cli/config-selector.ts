@@ -26,10 +26,10 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 	return new Promise((resolve) => {
 		const ui: TUI = new TuiMainScreen(
 			new ProcessTerminal(),
-			options.settingsManager.getShowHardwareCursor(),
+			options.settingsManager.read("show-hardware-cursor"),
 			options.agentDir,
 		);
-		ui.setClearOnShrink(options.settingsManager.getClearOnShrink());
+		ui.setClearOnShrink(options.settingsManager.read("clear-on-shrink"));
 		let resolved = false;
 
 		const selector = new ConfigSelectorComponent(

@@ -2,26 +2,26 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SessionManager } from "../../src/core/session-manager.ts";
+import { SessionHistory } from "../../src/core/session-history.ts";
 
 const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-describe("SessionManager.newSession with custom id", () => {
+describe("SessionHistory.newSession with custom id", () => {
 	it("uses the provided id instead of generating one", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.newSession({ id: "my-custom-id" });
 		expect(session.getSessionId()).toBe("my-custom-id");
 	});
 
 	it("uses the provided id when creating an in-memory session", () => {
-		const session = SessionManager.inMemory(process.cwd(), { id: "memory-session-id" });
+		const session = SessionHistory.inMemory(process.cwd(), { id: "memory-session-id" });
 		expect(session.getSessionId()).toBe("memory-session-id");
 		expect(session.getHeader()!.id).toBe("memory-session-id");
 		expect(session.getSessionFile()).toBeUndefined();
 	});
 
 	it("allows alphanumeric session ids with interior punctuation", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.newSession({ id: "abc-123_def.456" });
 		expect(session.getSessionId()).toBe("abc-123_def.456");
 	});
@@ -30,7 +30,7 @@ describe("SessionManager.newSession with custom id", () => {
 		const invalidIds = ["", "-abc", "abc-", "_abc", "abc_", ".abc", "abc.", "abc/def", "abc\\def", "abc def"];
 
 		for (const id of invalidIds) {
-			const session = SessionManager.inMemory();
+			const session = SessionHistory.inMemory();
 			expect(() => session.newSession({ id })).toThrow(
 				"Session id must be non-empty, contain only alphanumeric characters",
 			);
@@ -38,7 +38,7 @@ describe("SessionManager.newSession with custom id", () => {
 	});
 
 	it("generates a UUIDv7 id when no id is provided", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.newSession();
 		const id = session.getSessionId();
 		expect(id).toBeDefined();
@@ -47,7 +47,7 @@ describe("SessionManager.newSession with custom id", () => {
 	});
 
 	it("generates a UUIDv7 id when options is provided without id", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.newSession({ parentSession: "parent.jsonl" });
 		const id = session.getSessionId();
 		expect(id).toBeDefined();
@@ -56,7 +56,7 @@ describe("SessionManager.newSession with custom id", () => {
 	});
 
 	it("includes the custom id in the session header", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.newSession({ id: "header-test-id" });
 
 		const header = session.getHeader();
@@ -65,14 +65,14 @@ describe("SessionManager.newSession with custom id", () => {
 	});
 
 	it("generates a UUIDv7 id when constructed without an explicit id", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		expect(session.getSessionId()).toMatch(UUID_V7_RE);
 		expect(session.getHeader()!.id).toBe(session.getSessionId());
 	});
 
 	it("uses the provided id when creating a persisted session", () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-session-manager-"));
-		const session = SessionManager.create(tempDir, tempDir, { id: "created-session-id" });
+		const session = SessionHistory.create(tempDir, tempDir, { id: "created-session-id" });
 
 		expect(session.getSessionId()).toBe("created-session-id");
 		expect(session.getHeader()!.id).toBe("created-session-id");
@@ -83,7 +83,7 @@ describe("SessionManager.newSession with custom id", () => {
 	});
 
 	it("generates a UUIDv7 id when creating a branched session", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const firstId = session.appendMessage({
 			role: "user",
 			content: [{ type: "text", text: "hello" }],
@@ -136,7 +136,7 @@ describe("SessionManager.newSession with custom id", () => {
 `,
 		);
 
-		const forked = SessionManager.forkFrom(sourcePath, tempDir, tempDir);
+		const forked = SessionHistory.forkFrom(sourcePath, tempDir, tempDir);
 		const header = forked.getHeader();
 		expect(header).not.toBeNull();
 		expect(header!.id).toMatch(UUID_V7_RE);
@@ -157,7 +157,7 @@ describe("SessionManager.newSession with custom id", () => {
 			})}\n`,
 		);
 
-		const forked = SessionManager.forkFrom(sourcePath, tempDir, tempDir, { id: "forked-session-id" });
+		const forked = SessionHistory.forkFrom(sourcePath, tempDir, tempDir, { id: "forked-session-id" });
 		const header = forked.getHeader();
 		expect(header).not.toBeNull();
 		expect(header!.id).toBe("forked-session-id");

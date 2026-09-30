@@ -2,8 +2,7 @@ import type { Agent, ThinkingLevel } from "@candy/agent-core";
 import type { Model, RetryCallbacks } from "@candy/ai";
 import { estimateMessageTokens } from "@candy/ai/utils/estimate";
 import { type CompactionResult, compact, prepareCompaction } from "./compaction/index.ts";
-import type { ExtensionRunner, SessionBeforeCompactResult } from "./extensions/index.ts";
-import type { SessionManager } from "./session-manager.ts";
+import type { SessionHistory } from "./session-history.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 export type CompactionReason = "manual" | "threshold" | "overflow";
@@ -11,9 +10,8 @@ export type CompactionReason = "manual" | "threshold" | "overflow";
 export interface CompactionOperationHost {
 	readonly agent: Agent;
 	readonly model: Model<any> | undefined;
-	readonly sessionManager: SessionManager;
+	readonly sessionManager: SessionHistory;
 	readonly settingsManager: SettingsManager;
-	readonly extensionRunner: ExtensionRunner;
 	readonly thinkingLevel: ThinkingLevel;
 	getSummarizationRequestAuth(
 		model: Model<any>,
@@ -24,7 +22,6 @@ export interface CompactionOperationHost {
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
 	}>;
-	refreshContext(): void;
 	summarizationRetryCallbacks(reason: CompactionReason): RetryCallbacks;
 }
 
@@ -82,10 +79,7 @@ export class CompactionOperation {
 		return this.manualController !== undefined || this.automaticController !== undefined;
 	}
 
-	async run(
-		options: CompactionOperationOptions,
-		onExtensionResult: (fromExtension: boolean) => void,
-	): Promise<CompactionOperationResult | undefined> {
+	async run(options: CompactionOperationOptions): Promise<CompactionOperationResult | undefined> {
 		const model = this.host.model;
 		if (!model) throw new Error("No model selected");
 		const thinkingLevel = this.host.thinkingLevel;
@@ -107,47 +101,26 @@ export class CompactionOperation {
 			env,
 		} = await this.host.getSummarizationRequestAuth(model, options.signal);
 
-		let extensionCompaction: CompactionResult | undefined;
-		if (this.host.extensionRunner.hasHandlers("session_before_compact")) {
-			const extensionResult = (await this.host.extensionRunner.emit({
-				type: "session_before_compact",
-				preparation,
-				branchEntries,
-				customInstructions: options.customInstructions,
-				reason: options.reason,
-				willRetry: options.willRetry,
-				signal: options.signal,
-			})) as SessionBeforeCompactResult | undefined;
-			if (extensionResult?.cancel) throw new CompactionCancelledError();
-			extensionCompaction = extensionResult?.compaction;
-		}
-		onExtensionResult(extensionCompaction !== undefined);
-		this.assertNotAborted(options.signal);
-
-		const fromExtension = extensionCompaction !== undefined;
+		const fromExtension = false;
 		let result: CompactionResult;
-		if (extensionCompaction) {
-			result = extensionCompaction;
-		} else {
-			try {
-				result = await compact(
-					preparation,
-					requestModel,
-					apiKey,
-					headers,
-					options.customInstructions,
-					options.signal,
-					thinkingLevel,
-					this.host.agent.streamFunction,
-					env,
-					this.host.settingsManager.getRetrySettings(),
-					this.host.summarizationRetryCallbacks(options.reason),
-					undefined,
-				);
-			} catch (error) {
-				if (options.signal.aborted) throw new CompactionCancelledError();
-				throw error;
-			}
+		try {
+			result = await compact(
+				preparation,
+				requestModel,
+				apiKey,
+				headers,
+				options.customInstructions,
+				options.signal,
+				thinkingLevel,
+				this.host.agent.streamFunction,
+				env,
+				this.host.settingsManager.getRetrySettings(),
+				this.host.summarizationRetryCallbacks(options.reason),
+				undefined,
+			);
+		} catch (error) {
+			if (options.signal.aborted) throw new CompactionCancelledError();
+			throw error;
 		}
 		this.assertNotAborted(options.signal);
 
@@ -159,7 +132,6 @@ export class CompactionOperation {
 			fromExtension,
 			result.usage,
 		);
-		this.host.refreshContext();
 		const savedEntry = this.host.sessionManager.getEntry(entryId);
 		if (!savedEntry || savedEntry.type !== "compaction") {
 			throw new Error(`Compaction entry ${entryId} was not committed`);
@@ -169,13 +141,6 @@ export class CompactionOperation {
 			...result,
 			estimatedTokensAfter: projectedMessages.reduce((total, message) => total + estimateMessageTokens(message), 0),
 		};
-		await this.host.extensionRunner.emit({
-			type: "session_compact",
-			compactionEntry: savedEntry,
-			fromExtension,
-			reason: options.reason,
-			willRetry: options.willRetry,
-		});
 		return { result: completedResult, fromExtension };
 	}
 

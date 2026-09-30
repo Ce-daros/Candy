@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createBashTool } from "../src/core/tools/bash.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { getTestAgent } from "./execution-internals.ts";
+import { assembleTestSession as assembleAgentSession } from "./session-factory.ts";
 
 describe("AgentSession dynamic tool registration", () => {
 	let tempDir: string;
@@ -30,7 +31,7 @@ describe("AgentSession dynamic tool registration", () => {
 
 	it("exposes session state before custom bash spawn hooks and supports opting out", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
-		const sessionManager = SessionManager.create(tempDir, join(agentDir, "sessions"), { id: "bash-env-test" });
+		const sessionManager = SessionHistory.create(tempDir, join(agentDir, "sessions"), { id: "bash-env-test" });
 		let sessionEnv: NodeJS.ProcessEnv | undefined;
 		let optedOutEnv: NodeJS.ProcessEnv | undefined;
 		const resourceLoader = new DefaultResourceLoader({
@@ -76,20 +77,22 @@ describe("AgentSession dynamic tool registration", () => {
 			resourceLoader,
 		});
 
-		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash")!;
-		expect(session.systemPrompt).toContain(
+		const bashTool = getTestAgent(session.execution).state.tools.find((tool) => tool.name === "bash")!;
+		expect(session.execution.systemPrompt).toContain(
 			"You can inspect CANDY_* environment variables for current model and session details.",
 		);
 		await bashTool.execute("bash-env", { command: "printf ok" });
 		expect(sessionEnv).toMatchObject({
-			CANDY_SESSION_ID: session.sessionId,
-			CANDY_SESSION_FILE: session.sessionFile,
+			CANDY_SESSION_ID: session.execution.sessionId,
+			CANDY_SESSION_FILE: session.execution.sessionFile,
 			CANDY_PROVIDER: model.provider,
 			CANDY_MODEL: model.id,
-			CANDY_REASONING_LEVEL: session.thinkingLevel,
+			CANDY_REASONING_LEVEL: session.selection.thinkingLevel,
 		});
 
-		const optedOutBashTool = session.agent.state.tools.find((tool) => tool.name === "bash_without_session_env")!;
+		const optedOutBashTool = getTestAgent(session.execution).state.tools.find(
+			(tool) => tool.name === "bash_without_session_env",
+		)!;
 		await optedOutBashTool.execute("bash-no-env", { command: "printf ok" });
 		expect(optedOutEnv).not.toHaveProperty("CANDY_SESSION_ID");
 		expect(optedOutEnv).not.toHaveProperty("CANDY_SESSION_FILE");
@@ -97,12 +100,12 @@ describe("AgentSession dynamic tool registration", () => {
 		expect(optedOutEnv).not.toHaveProperty("CANDY_MODEL");
 		expect(optedOutEnv).not.toHaveProperty("CANDY_REASONING_LEVEL");
 
-		await session.dispose();
+		await session.execution.dispose();
 	});
 
 	it("refreshes tool registry when tools are registered after initialization", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 
 		const resourceLoader = new DefaultResourceLoader({
 			extensionModules: extensionHostModules,
@@ -140,11 +143,11 @@ describe("AgentSession dynamic tool registration", () => {
 			resourceLoader,
 		});
 
-		expect(session.getAllTools().map((tool) => tool.name)).not.toContain("dynamic_tool");
+		expect(session.execution.getAllTools().map((tool) => tool.name)).not.toContain("dynamic_tool");
 
-		await session.bindExtensions({});
+		await session.execution.bindExtensions({});
 
-		const allTools = session.getAllTools();
+		const allTools = session.execution.getAllTools();
 		const dynamicTool = allTools.find((tool) => tool.name === "dynamic_tool");
 		const readTool = allTools.find((tool) => tool.name === "read");
 
@@ -164,16 +167,18 @@ describe("AgentSession dynamic tool registration", () => {
 			scope: "temporary",
 			origin: "top-level",
 		});
-		expect(session.getActiveToolNames()).toContain("dynamic_tool");
-		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
-		expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
+		expect(session.execution.getActiveToolNames()).toContain("dynamic_tool");
+		expect(session.execution.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		expect(session.execution.systemPrompt).toContain(
+			"- Use dynamic_tool when the user asks for dynamic behavior tests.",
+		);
 
-		await session.dispose();
+		await session.execution.dispose();
 	});
 
 	it("returns source metadata for SDK custom tools", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const resourceLoader = new DefaultResourceLoader({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
@@ -204,21 +209,21 @@ describe("AgentSession dynamic tool registration", () => {
 			],
 		});
 
-		const sdkTool = session.getAllTools().find((tool) => tool.name === "sdk_tool");
+		const sdkTool = session.execution.getAllTools().find((tool) => tool.name === "sdk_tool");
 		expect(sdkTool?.sourceInfo).toMatchObject({
 			path: "<sdk:sdk_tool>",
 			source: "sdk",
 			scope: "temporary",
 			origin: "top-level",
 		});
-		expect(session.getActiveToolNames()).toContain("sdk_tool");
+		expect(session.execution.getActiveToolNames()).toContain("sdk_tool");
 
-		await session.dispose();
+		await session.execution.dispose();
 	});
 
 	it("keeps custom tools active but omits them from available tools when promptSnippet is not provided", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 
 		const resourceLoader = new DefaultResourceLoader({
 			extensionModules: extensionHostModules,
@@ -254,13 +259,13 @@ describe("AgentSession dynamic tool registration", () => {
 			resourceLoader,
 		});
 
-		await session.bindExtensions({});
+		await session.execution.bindExtensions({});
 
-		expect(session.getAllTools().map((tool) => tool.name)).toContain("hidden_tool");
-		expect(session.getActiveToolNames()).toContain("hidden_tool");
-		expect(session.systemPrompt).not.toContain("hidden_tool");
-		expect(session.systemPrompt).not.toContain("Description should not appear in available tools");
+		expect(session.execution.getAllTools().map((tool) => tool.name)).toContain("hidden_tool");
+		expect(session.execution.getActiveToolNames()).toContain("hidden_tool");
+		expect(session.execution.systemPrompt).not.toContain("hidden_tool");
+		expect(session.execution.systemPrompt).not.toContain("Description should not appear in available tools");
 
-		await session.dispose();
+		await session.execution.dispose();
 	});
 });

@@ -11,11 +11,13 @@ type SubmitContext = {
 		setText: (text: string) => void;
 	};
 	session: {
-		model?: object;
-		isCompacting: boolean;
-		isStreaming: boolean;
-		isBashRunning: boolean;
-		prompt: (text: string, options?: unknown) => Promise<void>;
+		selection: { model?: object };
+		execution: {
+			isCompacting: boolean;
+			isStreaming: boolean;
+			isBashRunning: boolean;
+			prompt: (text: string, options?: unknown) => Promise<void>;
+		};
 	};
 	flushPendingBashComponents: () => void;
 	createEditorInput: (
@@ -61,11 +63,13 @@ function createSubmitContext(): SubmitContext {
 			setText: vi.fn(),
 		},
 		session: {
-			model: {},
-			isCompacting: false,
-			isStreaming: false,
-			isBashRunning: false,
-			prompt: vi.fn(async () => {}),
+			selection: { model: {} },
+			execution: {
+				isCompacting: false,
+				isStreaming: false,
+				isBashRunning: false,
+				prompt: vi.fn(async () => {}),
+			},
 		},
 		flushPendingBashComponents: vi.fn(),
 		createEditorInput: (text) => ({ text }),

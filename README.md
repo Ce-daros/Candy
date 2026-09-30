@@ -7,6 +7,7 @@ Candy began as a fork of pi and is developed independently. Useful upstream chan
 
 - [Development philosophy and contributing](CONTRIBUTING.md)
 - [Product and interaction design](DESIGN.md)
+- [Runtime architecture and state ownership](ARCHITECTURE.md)
 - [Development rules](AGENTS.md)
 - [Terminal guide](packages/coding-agent/docs/usage.md)
 - [Coding agent](packages/coding-agent/README.md)

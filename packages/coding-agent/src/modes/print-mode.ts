@@ -78,7 +78,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
-		await session.bindExtensions({
+		await session.execution.bindExtensions({
 			mode: mode === "json" ? "json" : "print",
 			commandContextActions: createSessionCommandActions(runtimeHost),
 			onError: (err) => {
@@ -88,14 +88,14 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
-		unsubscribe = session.subscribe((event) => {
+		unsubscribe = session.execution.subscribe((event) => {
 			if (mode === "json") {
 				writeRawStdout(`${JSON.stringify(toJsonEvent(event))}\n`);
 			}
 		});
 		unsubscribeBackpressure =
 			mode === "json"
-				? session.subscribeExecution(async () => {
+				? session.execution.subscribeExecution(async () => {
 						await waitForRawStdoutBackpressure();
 					})
 				: undefined;
@@ -103,7 +103,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 	try {
 		if (mode === "json") {
-			const header = session.sessionManager.getHeader();
+			const header = session.history.getHeader();
 			if (header) {
 				writeRawStdout(`${JSON.stringify(header)}\n`);
 			}
@@ -112,15 +112,15 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		await rebindSession();
 
 		if (initialMessage) {
-			await session.prompt(initialMessage, { images: initialImages });
+			await session.execution.prompt(initialMessage, { images: initialImages });
 		}
 
 		for (const message of messages) {
-			await session.prompt(message);
+			await session.execution.prompt(message);
 		}
 
 		if (mode === "text") {
-			const state = session.state;
+			const state = session.execution.state;
 			const lastMessage = state.messages[state.messages.length - 1];
 
 			if (lastMessage?.role === "assistant") {

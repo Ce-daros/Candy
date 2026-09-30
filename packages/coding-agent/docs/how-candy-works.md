@@ -40,7 +40,7 @@ All interfaces use the same agent and session mechanisms.
 
 ## Extensions and resources
 
-Extensions are TypeScript modules loaded into the candy process. Their factory functions register tools, commands, shortcuts, providers, event handlers, renderers, and terminal UI.
+Extensions are TypeScript modules loaded into the candy process. Their factory functions register tools, commands, shortcuts, providers, and event handlers, and can request host-rendered dialogs and text updates.
 
 Skills provide on-demand instructions and supporting files. Prompt templates provide reusable message text. Themes provide terminal colors. candy packages distribute these resources through npm or git.
 

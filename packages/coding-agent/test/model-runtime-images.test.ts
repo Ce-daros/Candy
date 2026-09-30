@@ -90,18 +90,19 @@ describe("ModelRuntime image generation", () => {
 			contextWindow: 1000,
 			maxTokens: 100,
 		};
-		runtime.registerNativeProvider(
-			createProvider({
-				id: "mixed",
-				auth: { apiKey: { name: "Mixed key", resolve: async () => ({ auth: {} }) } },
-				models: [chat, imageModel("mixed", "built-in-image")],
-				images: { "test-images": { generateImages: async (model) => okImageResult(model) } },
-			}),
-		);
-
-		runtime.registerProvider("mixed", {
-			apiKey: "extension-secret",
-			models: [{ ...chat, id: "extension-chat", name: "Extension chat", baseUrl: "https://chat-proxy.test/v1" }],
+		runtime.registerNativeProvider({
+			id: "mixed",
+			name: "Mixed",
+			auth: { apiKey: { name: "Mixed key", resolve: async () => ({ auth: { apiKey: "extension-secret" } }) } },
+			getModels: () => [
+				{ ...chat, id: "extension-chat", name: "Extension chat", baseUrl: "https://chat-proxy.test/v1" },
+			],
+			stream: () => {
+				throw new Error("unused");
+			},
+			streamSimple: () => {
+				throw new Error("unused");
+			},
 		});
 
 		expect(runtime.getAllModels("mixed").map((model) => [model.type ?? "chat", model.id])).toEqual([
@@ -114,18 +115,21 @@ describe("ModelRuntime image generation", () => {
 	it("registers extension image models with their implementations", async () => {
 		const runtime = await createRuntime();
 		const observed: Array<{ apiKey: string | undefined; headers: unknown }> = [];
-		runtime.registerProvider("extension-operations", {
-			apiKey: "extension-secret",
-			models: [{ ...imageModel("ignored", "shared"), headers: { "X-Operation": "image" } }],
-			images: {
-				"test-images": {
-					generateImages: async (model, _context, options) => {
-						observed.push({ apiKey: options?.apiKey, headers: options?.headers });
-						return okImageResult(model);
+		runtime.registerNativeProvider(
+			createProvider({
+				id: "extension-operations",
+				auth: { apiKey: { name: "API key", resolve: async () => ({ auth: { apiKey: "extension-secret" } }) } },
+				models: [{ ...imageModel("extension-operations", "shared"), headers: { "X-Operation": "image" } }],
+				images: {
+					"test-images": {
+						generateImages: async (model, _context, options) => {
+							observed.push({ apiKey: options?.apiKey, headers: options?.headers });
+							return okImageResult(model);
+						},
 					},
 				},
-			},
-		});
+			}),
+		);
 
 		const image = runtime.getModelOfType("image", "extension-operations", "shared")!;
 		expect((await runtime.generateImages(image, context)).stopReason).toBe("stop");

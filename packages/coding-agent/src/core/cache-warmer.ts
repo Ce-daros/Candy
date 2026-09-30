@@ -9,7 +9,7 @@ import {
 } from "@candy/ai";
 import { getProviderEnvValue } from "@candy/ai/utils/provider-env";
 import type { ModelRuntime } from "./model-runtime.ts";
-import type { SessionEntry, SessionManager, UsageEntry } from "./session-manager.ts";
+import type { SessionEntry, SessionHistory, UsageEntry } from "./session-history.ts";
 import type { CacheWarmingMode } from "./settings-manager.ts";
 
 /** Streaming warming never continues past this long after the real request that started it. */
@@ -163,7 +163,7 @@ export class CacheWarmer {
 	private run?: ActiveRun;
 	private inactive: CacheWarmingStatus;
 	private readonly models: Pick<ModelRuntime, "streamSimple">;
-	private readonly sessionManager: Pick<SessionManager, "appendUsage" | "getBranch">;
+	private readonly sessionManager: Pick<SessionHistory, "appendUsage" | "getBranch">;
 	private readonly getMode: () => CacheWarmingMode;
 	/** Lets extensions override `event.action`; failures fall back to candy's decision. */
 	private readonly decide: (event: CacheWarmingDecisionEvent) => Promise<CacheWarmingAction>;
@@ -172,7 +172,7 @@ export class CacheWarmer {
 
 	constructor(
 		models: Pick<ModelRuntime, "streamSimple">,
-		sessionManager: Pick<SessionManager, "appendUsage" | "getBranch">,
+		sessionManager: Pick<SessionHistory, "appendUsage" | "getBranch">,
 		getMode: () => CacheWarmingMode,
 		decide: (event: CacheWarmingDecisionEvent) => Promise<CacheWarmingAction> = async (event) => event.action,
 	) {

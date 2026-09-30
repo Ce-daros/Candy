@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionSettings,
 	DEFAULT_COMPACTION_SETTINGS,
-	estimateProjectedContextTokens,
 	findCutPoint,
 	getLastAssistantUsage,
 	prepareCompaction,
@@ -24,7 +23,8 @@ import {
 	type SessionEntry,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
-} from "../src/core/session-manager.ts";
+} from "../src/core/session-history.ts";
+import { estimateProjectedContextTokens } from "../src/core/session-queries.ts";
 
 // ============================================================================
 // Test fixtures

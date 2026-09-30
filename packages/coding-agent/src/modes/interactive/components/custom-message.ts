@@ -1,7 +1,5 @@
 import type { TextContent } from "@candy/ai";
-import type { Component } from "@candy/tui";
 import { Container, Markdown, type MarkdownTheme, Spacer, Text, type TuiMouseEvent } from "@candy/tui";
-import type { MessageRenderer } from "../../../core/extensions/types.ts";
 import type { CustomMessage } from "../../../core/messages.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
@@ -12,22 +10,13 @@ import { getMarkdownTheme, theme } from "../theme/theme.ts";
  */
 export class CustomMessageComponent extends Container {
 	private message: CustomMessage<unknown>;
-	private customRenderer?: MessageRenderer;
 	private box: Container;
-	private customComponent?: Component;
 	private markdownTheme: MarkdownTheme;
-	private _expanded = false;
 	private outputPad: number;
 
-	constructor(
-		message: CustomMessage<unknown>,
-		customRenderer?: MessageRenderer,
-		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		outputPad = 1,
-	) {
+	constructor(message: CustomMessage<unknown>, markdownTheme: MarkdownTheme = getMarkdownTheme(), outputPad = 1) {
 		super();
 		this.message = message;
-		this.customRenderer = customRenderer;
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
 
@@ -36,13 +25,6 @@ export class CustomMessageComponent extends Container {
 		this.box = new Container();
 
 		this.rebuild();
-	}
-
-	setExpanded(expanded: boolean): void {
-		if (this._expanded !== expanded) {
-			this._expanded = expanded;
-			this.rebuild();
-		}
 	}
 
 	setOutputPad(outputPad: number): void {
@@ -58,33 +40,7 @@ export class CustomMessageComponent extends Container {
 	}
 
 	private rebuild(): void {
-		// Remove previous content component
-		if (this.customComponent) {
-			this.removeChild(this.customComponent);
-			this.customComponent = undefined;
-		}
 		this.removeChild(this.box);
-
-		// Try custom renderer first - it handles its own styling
-		if (this.customRenderer) {
-			try {
-				const component = this.customRenderer(
-					this.message,
-					{ expanded: this._expanded, outputPad: this.outputPad },
-					theme,
-				);
-				if (component) {
-					// Custom renderer provides its own styled component
-					this.customComponent = component;
-					this.addChild(component);
-					return;
-				}
-			} catch {
-				// Fall through to default rendering
-			}
-		}
-
-		// Default rendering uses a title and a quiet rail; custom renderers own their presentation.
 		this.addChild(this.box);
 		this.box.clear();
 

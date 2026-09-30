@@ -14,11 +14,7 @@ import { createSessionCommandActions } from "../../core/session-command-actions.
 
 import * as crypto from "node:crypto";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
-import type {
-	ExtensionUIContext,
-	ExtensionUIDialogOptions,
-	ExtensionWidgetOptions,
-} from "../../core/extensions/index.ts";
+import type { ExtensionUIContext, ExtensionUIDialogOptions } from "../../core/extensions/index.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -30,7 +26,6 @@ import type { SettingsScope } from "../../core/settings-manager.ts";
 import { commitInteractiveSetting, isInteractiveSettingId } from "../../core/settings-operations.ts";
 import { exportSessionHtml } from "../../presentation/session-html-export.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
-import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { toJsonEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
@@ -176,11 +171,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			} as RpcExtensionUIRequest);
 		},
 
-		onTerminalInput(): () => void {
-			// Raw terminal input not supported in RPC mode
-			return () => {};
-		},
-
 		setStatus(key: string, text: string | undefined): void {
 			// Fire and forget - no response needed
 			output({
@@ -192,71 +182,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			} as RpcExtensionUIRequest);
 		},
 
-		setWorkingVisible(_visible: boolean): void {
-			// Working visibility not supported in RPC mode - requires TUI loader access
-		},
-
-		setHiddenThinkingLabel(_label?: string): void {
-			// Hidden thinking label not supported in RPC mode - requires TUI message rendering access
-		},
-
-		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
-			// Only support string arrays in RPC mode - factory functions are ignored
-			if (content === undefined || Array.isArray(content)) {
-				output({
-					type: "extension_ui_request",
-					id: crypto.randomUUID(),
-					method: "setWidget",
-					widgetKey: key,
-					widgetLines: content as string[] | undefined,
-					widgetPlacement: options?.placement,
-				} as RpcExtensionUIRequest);
-			}
-			// Component factories are not supported in RPC mode - would need TUI access
-		},
-
-		setFooter(_factory: unknown): void {
-			// Custom footer not supported in RPC mode - requires TUI access
-		},
-
-		setHeader(_factory: unknown): void {
-			// Custom header not supported in RPC mode - requires TUI access
-		},
-
-		setTitle(title: string): void {
-			// Fire and forget - host can implement terminal title control
+		setWidget(key: string, content: string[] | undefined): void {
 			output({
 				type: "extension_ui_request",
 				id: crypto.randomUUID(),
-				method: "setTitle",
-				title,
-			} as RpcExtensionUIRequest);
-		},
-
-		async custom() {
-			// Custom UI not supported in RPC mode
-			return undefined as never;
-		},
-
-		pasteToEditor(text: string): void {
-			// Paste handling not supported in RPC mode - falls back to setEditorText
-			this.setEditorText(text);
-		},
-
-		setEditorText(text: string): void {
-			// Fire and forget - host can implement editor control
-			output({
-				type: "extension_ui_request",
-				id: crypto.randomUUID(),
-				method: "set_editor_text",
-				text,
-			} as RpcExtensionUIRequest);
-		},
-
-		getEditorText(): string {
-			// Synchronous method can't wait for RPC response
-			// Host should track editor state locally if needed
-			return "";
+				method: "setWidget",
+				widgetKey: key,
+				widgetLines: content,
+			});
 		},
 
 		async editor(title: string, prefill?: string): Promise<string | undefined> {
@@ -277,45 +210,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				output({ type: "extension_ui_request", id, method: "editor", title, prefill } as RpcExtensionUIRequest);
 			});
 		},
-
-		addAutocompleteProvider(): void {
-			// Autocomplete provider composition is not supported in RPC mode
-		},
-
-		setEditorComponent(): void {
-			// Custom editor components not supported in RPC mode
-		},
-
-		getEditorComponent() {
-			// Custom editor components not supported in RPC mode
-			return undefined;
-		},
-
-		get theme() {
-			return theme;
-		},
-
-		getAllThemes() {
-			return [];
-		},
-
-		getTheme(_name: string) {
-			return undefined;
-		},
-
-		async setTheme(_theme: string | Theme) {
-			// Theme switching not supported in RPC mode
-			return { success: false, error: "Theme switching not supported in RPC mode" };
-		},
-
-		getToolsExpanded() {
-			// Tool expansion not supported in RPC mode - no TUI
-			return false;
-		},
-
-		setToolsExpanded(_expanded: boolean) {
-			// Tool expansion not supported in RPC mode - no TUI
-		},
 	});
 
 	runtimeHost.setRebindSession(async () => {
@@ -324,7 +218,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
-		await session.bindExtensions({
+		await session.execution.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
 			commandContextActions: createSessionCommandActions(runtimeHost),
@@ -339,16 +233,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribe?.();
 		unsubscribeSettings?.();
 		unsubscribeBackpressure?.();
-		unsubscribe = session.subscribe((event) => {
+		unsubscribe = session.execution.subscribe((event) => {
 			output(toJsonEvent(event));
 			if (event.type === "agent_settled") {
 				void checkShutdownRequested();
 			}
 		});
-		unsubscribeBackpressure = session.subscribeExecution(async () => {
+		unsubscribeBackpressure = session.execution.subscribeExecution(async () => {
 			await waitForRawStdoutBackpressure();
 		});
-		unsubscribeSettings = session.settingsManager.subscribe((event) => {
+		unsubscribeSettings = runtimeHost.settings.subscribe((event) => {
 			const settingsEvent: RpcSettingsCommitEvent = {
 				type: "settings_commit",
 				scope: event.scope,
@@ -390,7 +284,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
-				void session
+				void session.execution
 					.prompt(command.message, {
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
@@ -410,7 +304,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "execute_command": {
 				let preflightSucceeded = false;
-				void session
+				void session.execution
 					.executeCommand(
 						{ source: command.source, name: command.name, args: command.args },
 						{
@@ -429,22 +323,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "steer": {
-				const disposition = await session.steer(command.message, command.images, { source: "rpc" });
+				const disposition = await session.execution.steer(command.message, command.images, { source: "rpc" });
 				return success(id, "steer", { disposition });
 			}
 
 			case "follow_up": {
-				const disposition = await session.followUp(command.message, command.images, { source: "rpc" });
+				const disposition = await session.execution.followUp(command.message, command.images, { source: "rpc" });
 				return success(id, "follow_up", { disposition });
 			}
 
 			case "abort": {
-				await session.abort();
+				await session.execution.abort();
 				return success(id, "abort");
 			}
 
 			case "clear_queue": {
-				return success(id, "clear_queue", session.clearQueue());
+				return success(id, "clear_queue", session.execution.clearQueue());
 			}
 
 			case "new_session": {
@@ -462,27 +356,27 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_state": {
 				const state: RpcSessionState = {
-					model: session.model,
-					thinkingLevel: session.thinkingLevel,
-					isStreaming: session.isStreaming,
-					isCompacting: session.isCompacting,
-					steeringMode: session.steeringMode,
-					followUpMode: session.followUpMode,
-					sessionFile: session.sessionFile,
-					sessionId: session.sessionId,
-					sessionName: session.sessionName,
-					autoCompactionEnabled: session.autoCompactionEnabled,
-					messageCount: session.messages.length,
-					pendingMessageCount: session.pendingMessageCount,
+					model: session.selection.model,
+					thinkingLevel: session.selection.thinkingLevel,
+					isStreaming: session.execution.isStreaming,
+					isCompacting: session.execution.isCompacting,
+					steeringMode: session.execution.steeringMode,
+					followUpMode: session.execution.followUpMode,
+					sessionFile: session.execution.sessionFile,
+					sessionId: session.execution.sessionId,
+					sessionName: session.execution.sessionName,
+					autoCompactionEnabled: session.execution.autoCompactionEnabled,
+					messageCount: session.execution.messages.length,
+					pendingMessageCount: session.execution.pendingMessageCount,
 				};
 				return success(id, "get_state", state);
 			}
 
 			case "get_settings": {
 				return success(id, "get_settings", {
-					global: session.settingsManager.getGlobalSettings(),
-					project: session.settingsManager.getProjectSettings(),
-					projectTrusted: session.settingsManager.isProjectTrusted(),
+					global: runtimeHost.settings.getGlobalSettings(),
+					project: runtimeHost.settings.getProjectSettings(),
+					projectTrusted: runtimeHost.settings.isProjectTrusted(),
 				});
 			}
 
@@ -499,7 +393,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (clear === hasValue) {
 					return error(id, command.type, "Provide exactly one of value or clear: true");
 				}
-				await commitInteractiveSetting(session.settingsManager, command.scope, command.settingId, command.value, {
+				await commitInteractiveSetting(runtimeHost.settings, command.scope, command.settingId, command.value, {
 					clear,
 				});
 				return success(id, command.type, { scope: command.scope, settingId: command.settingId, cleared: clear });
@@ -514,7 +408,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				) {
 					return error(id, command.type, "Provider and model ID must not be empty");
 				}
-				await session.settingsManager.setDefaultModelAndProvider(command.provider, command.modelId);
+				await runtimeHost.settings.setDefaultModelAndProvider(command.provider, command.modelId);
 				return success(id, command.type);
 			}
 
@@ -555,7 +449,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					}
 					session.resources.setActiveTools(command.names);
 				}
-				return success(id, command.type, { names: session.getActiveToolNames() });
+				return success(id, command.type, { names: session.execution.getActiveToolNames() });
 			}
 
 			case "default_tools": {
@@ -575,7 +469,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					}
 					await session.resources.saveDefaultTools(clear ? undefined : command.names);
 				}
-				return success(id, command.type, { names: session.settingsManager.getDefaultTools() ?? null });
+				return success(id, command.type, { names: runtimeHost.settings.getDefaultTools() ?? null });
 			}
 
 			case "read_instruction": {
@@ -606,17 +500,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_model": {
-				const models = session.modelRuntime.getAvailableSnapshot();
+				const models = session.execution.modelRuntime.getAvailableSnapshot();
 				const model = models.find((m) => m.provider === command.provider && m.id === command.modelId);
 				if (!model) {
 					return error(id, "set_model", `Model not found: ${command.provider}/${command.modelId}`);
 				}
-				await session.setModel(model);
+				await session.selection.setModel(model);
 				return success(id, "set_model", model);
 			}
 
 			case "get_available_models": {
-				const models = session.modelRuntime.getAvailableSnapshot();
+				const models = session.execution.modelRuntime.getAvailableSnapshot();
 				return success(id, "get_available_models", { models });
 			}
 
@@ -625,12 +519,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_thinking_level": {
-				session.setThinkingLevel(command.level);
+				session.selection.setThinkingLevel(command.level);
 				return success(id, "set_thinking_level");
 			}
 
 			case "cycle_thinking_level": {
-				const level = session.cycleThinkingLevel();
+				const level = session.selection.cycleThinkingLevel();
 				if (!level) {
 					return success(id, "cycle_thinking_level", null);
 				}
@@ -638,7 +532,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_available_thinking_levels": {
-				const levels = session.getAvailableThinkingLevels();
+				const levels = session.selection.getAvailableThinkingLevels();
 				return success(id, "get_available_thinking_levels", { levels });
 			}
 
@@ -647,12 +541,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_steering_mode": {
-				await session.setSteeringMode(command.mode);
+				await session.execution.setSteeringMode(command.mode);
 				return success(id, "set_steering_mode");
 			}
 
 			case "set_follow_up_mode": {
-				await session.setFollowUpMode(command.mode);
+				await session.execution.setFollowUpMode(command.mode);
 				return success(id, "set_follow_up_mode");
 			}
 
@@ -661,12 +555,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "compact": {
-				const result = await session.compact(command.customInstructions);
+				const result = await session.execution.compact(command.customInstructions);
 				return success(id, "compact", result);
 			}
 
 			case "set_auto_compaction": {
-				await session.setAutoCompactionEnabled(command.enabled);
+				await session.execution.setAutoCompactionEnabled(command.enabled);
 				return success(id, "set_auto_compaction");
 			}
 
@@ -675,12 +569,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_auto_retry": {
-				await session.setAutoRetryEnabled(command.enabled);
+				await session.execution.setAutoRetryEnabled(command.enabled);
 				return success(id, "set_auto_retry");
 			}
 
 			case "abort_retry": {
-				session.abortRetry();
+				session.execution.abortRetry();
 				return success(id, "abort_retry");
 			}
 
@@ -689,30 +583,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "bash": {
-				const eventResult = await session.extensionRunner.emitUserBash({
-					type: "user_bash",
-					command: command.command,
-					excludeFromContext: command.excludeFromContext ?? false,
-					cwd: session.sessionManager.getCwd(),
-				});
-
-				if (eventResult?.result) {
-					session.recordBashResult(command.command, eventResult.result, {
-						excludeFromContext: command.excludeFromContext,
-					});
-					return success(id, "bash", eventResult.result);
-				}
-
-				const result = await session.executeBash(command.command, undefined, {
+				const result = await session.execution.executeBash(command.command, undefined, {
 					excludeFromContext: command.excludeFromContext,
 					id,
-					operations: eventResult?.operations,
 				});
 				return success(id, "bash", result);
 			}
 
 			case "abort_bash": {
-				session.abortBash();
+				session.execution.abortBash();
 				return success(id, "abort_bash");
 			}
 
@@ -721,7 +600,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_session_stats": {
-				const stats = session.getSessionStats();
+				const stats = session.history.getSessionStats(session.selection.model);
 				return success(id, "get_session_stats", stats);
 			}
 
@@ -761,12 +640,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_fork_messages": {
-				const messages = session.getUserMessagesForForking();
+				const messages = session.history.getUserMessagesForForking();
 				return success(id, "get_fork_messages", { messages });
 			}
 
 			case "get_entries": {
-				const sessionManager = session.sessionManager;
+				const sessionManager = session.history;
 				let entries = sessionManager.getEntries();
 				if (command.since !== undefined) {
 					const sinceIndex = entries.findIndex((e) => e.id === command.since);
@@ -779,12 +658,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_tree": {
-				const sessionManager = session.sessionManager;
+				const sessionManager = session.history;
 				return success(id, "get_tree", { tree: sessionManager.getTree(), leafId: sessionManager.getLeafId() });
 			}
 
 			case "get_last_assistant_text": {
-				const text = session.getLastAssistantText();
+				const text = session.history.getLastAssistantText();
 				return success(id, "get_last_assistant_text", { text });
 			}
 
@@ -793,7 +672,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!name) {
 					return error(id, "set_session_name", "Session name cannot be empty");
 				}
-				session.setSessionName(name);
+				session.execution.setSessionName(name);
 				return success(id, "set_session_name");
 			}
 
@@ -802,7 +681,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_messages": {
-				return success(id, "get_messages", { messages: session.messages });
+				return success(id, "get_messages", { messages: session.execution.messages });
 			}
 
 			// =================================================================
@@ -810,7 +689,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_commands": {
-				return success(id, "get_commands", { commands: session.getCommands() });
+				return success(id, "get_commands", { commands: session.execution.getCommands() });
 			}
 
 			default: {

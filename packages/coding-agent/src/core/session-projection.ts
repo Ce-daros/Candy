@@ -7,7 +7,7 @@ import type {
 	SessionContext,
 	SessionEntry,
 	SessionProjection,
-} from "./session-manager.ts";
+} from "./session-history.ts";
 
 export function getLatestCompactionEntry(entries: SessionEntry[]): CompactionEntry | null {
 	for (let i = entries.length - 1; i >= 0; i--) {

@@ -1,12 +1,16 @@
+import { builtinProviders } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { createEventBus } from "../../../src/core/event-bus.ts";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../../src/core/extensions/loader.ts";
-import type { ExtensionAPI, ProviderConfig } from "../../../src/core/extensions/types.ts";
+import type { ExtensionAPI } from "../../../src/core/extensions/types.ts";
 
-const providerConfig = {
-	baseUrl: "https://provider.test/v1",
-	apiKey: "provider-test-key",
-} satisfies ProviderConfig;
+const baseProvider = builtinProviders().find((provider) => provider.id === "anthropic");
+if (!baseProvider) throw new Error("Anthropic provider is missing");
+
+function providerWithId(id: string) {
+	if (!baseProvider) throw new Error("Anthropic provider is missing");
+	return { ...baseProvider, id };
+}
 
 describe("issue #8423 extension factory failure", () => {
 	it("discards runtime changes and disables the failed API", async () => {
@@ -17,7 +21,7 @@ describe("issue #8423 extension factory failure", () => {
 		let flagDuringLoad: boolean | string | undefined;
 
 		await loadExtensionFromFactory(
-			(candy) => candy.registerProvider("working-provider", providerConfig),
+			(candy) => candy.registerProvider(providerWithId("working-provider")),
 			process.cwd(),
 			eventBus,
 			runtime,
@@ -33,7 +37,7 @@ describe("issue #8423 extension factory failure", () => {
 					candy.registerFlag("failed-flag", { type: "boolean", default: true });
 					flagDuringLoad = candy.getFlag("failed-flag");
 					candy.unregisterProvider("working-provider");
-					candy.registerProvider("failed-provider", providerConfig);
+					candy.registerProvider(providerWithId("failed-provider"));
 					throw new Error("factory failed");
 				},
 				process.cwd(),
@@ -46,7 +50,7 @@ describe("issue #8423 extension factory failure", () => {
 		eventBus.emit("factory-failure", undefined);
 		expect(flagDuringLoad).toBe(true);
 		expect(runtime.flagValues.has("failed-flag")).toBe(false);
-		expect(runtime.pendingProviderRegistrations.map(({ name }) => name)).toEqual(["working-provider"]);
+		expect(runtime.pendingProviderRegistrations.map(({ provider }) => provider.id)).toEqual(["working-provider"]);
 		expect(eventCalls).toBe(0);
 		expect(capturedApi).toBeDefined();
 		expect(() => capturedApi?.registerFlag("late-flag", { type: "boolean", default: true })).toThrow(
@@ -63,7 +67,7 @@ describe("issue #8423 extension factory failure", () => {
 		});
 		const failingLoad = loadExtensionFromFactory(
 			async (candy) => {
-				candy.registerProvider("failed-provider", providerConfig);
+				candy.registerProvider(providerWithId("failed-provider"));
 				await waitBeforeFailure;
 				throw new Error("factory failed");
 			},
@@ -74,7 +78,7 @@ describe("issue #8423 extension factory failure", () => {
 		);
 
 		await loadExtensionFromFactory(
-			(candy) => candy.registerProvider("working-provider", providerConfig),
+			(candy) => candy.registerProvider(providerWithId("working-provider")),
 			process.cwd(),
 			eventBus,
 			runtime,
@@ -83,6 +87,6 @@ describe("issue #8423 extension factory failure", () => {
 		releaseFailure();
 
 		await expect(failingLoad).rejects.toThrow("factory failed");
-		expect(runtime.pendingProviderRegistrations.map(({ name }) => name)).toEqual(["working-provider"]);
+		expect(runtime.pendingProviderRegistrations.map(({ provider }) => provider.id)).toEqual(["working-provider"]);
 	});
 });

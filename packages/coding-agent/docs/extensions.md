@@ -37,7 +37,7 @@ candy --extension ./hello.ts
 
 candy uses `jiti`, so local TypeScript extensions do not need a separate compilation step. Use [candy packages](packages.md) for distributed extensions and dependencies.
 
-Import extension contracts such as `ExtensionAPI` from `@candy/coding-agent`. Terminal components have a separate import, `@candy/coding-agent/ui`. Hosts that load extension files through the SDK must pass `extensionModules` from `@candy/coding-agent/extension-host-modules` when those files import the UI subpath. The SDK root stays headless and does not load terminal rendering code.
+Import extension contracts such as `ExtensionAPI` from `@candy/coding-agent`. The extension UI is host-rendered through dialogs and text updates; extensions do not install terminal components or renderers.
 
 <a id="extension-locations"></a>
 <a id="available-imports"></a>
@@ -61,12 +61,8 @@ Do not start processes, sockets, watchers, or timers in the factory because some
 Start long-lived resources from `session_start` or from the command or tool that needs them.
 Close session-scoped resources from an idempotent `session_shutdown` handler.
 
-A run proceeds from input and `before_agent_start`, through model, message, and tool events, to `agent_end`.
-Automatic retries, recovery, compaction, or queued work can continue afterward.
-<a id="agent_start--agent_end--agent_before_settle--agent_settled"></a>
-
-`agent_before_settle` is the final actionable boundary: it can append entries and request one continuation.
-`agent_settled` is final and notification-only; use it when an integration needs to know candy will not continue automatically.
+A run proceeds from input and `before_agent_start` through model and tool work. `turn_end` runs after an assistant response and its tool results have been committed. `agent_settled` is notification-only and fires when Candy has no remaining automatic work.
+<a id="agent_start--agent_end--agent_settled"></a>
 
 <a id="extensionapi-methods"></a>
 
@@ -82,7 +78,7 @@ Automatic retries, recovery, compaction, or queued work can continue afterward.
 | Persist non-context session data | `candy.appendEntry()` |
 | Change active tools, model, or thinking level | Session control methods on `candy` |
 | Add a model provider | `candy.registerProvider()` |
-| Add terminal rendering | Renderer registration and `ctx.ui` |
+| Ask the user or show text | `ctx.ui` |
 | Communicate with another extension | `candy.events` |
 
 Use the exported declarations in [`extensions/types.ts`](../src/core/extensions/types.ts) for exact event, context, tool, and result types.
@@ -97,30 +93,16 @@ Use the exported declarations in [`extensions/types.ts`](../src/core/extensions/
 ### Events and concurrency
 
 Handlers run in extension load and registration order. `candy.on()` returns a function that unsubscribes that registration; changes do not affect a dispatch already in progress.
-Some events notify; others transform data, replace results, or cancel an operation.
+Some events notify; others transform input or tool results, or cancel an operation.
 Use each event’s declared result type rather than assuming every return value has an effect.
 
-Events cover resource discovery, sessions, agent and message lifecycle, providers, tools, and raw input.
+Events cover resource discovery, session lifecycle, request preparation, completed turns, tools, and input.
 
 `before_agent_start` exposes both the current prompt and its structured `systemPromptOptions`. Prefer changing prompt sections, selected tools, or guidelines so candy can append a transcript delta. Returning `systemPrompt`, or setting `forceSystemPrompt`, replaces the whole prompt for that run while the transcript continues recording the structured sections. Providers receive the forced text as their leading system prompt.
 
-`message_end` can replace a finalized message while preserving its role. `tool_call` can mutate input or block execution. `tool_result` handlers compose, with each handler seeing prior changes.
+`context` transforms conversation messages; Candy restores the system prompt and tool declarations afterward. `tool_call` can mutate input or block execution. `tool_result` handlers compose, with each handler seeing prior changes.
 
-<a id="provider_stream_event"></a>
-
-`provider_stream_event` fires for each parsed provider stream event before candy normalizes it. The event identifies the provider, API, and model; `event.data` is the earliest structured value available to candy, not necessarily the original HTTP bytes or SSE frame. Treat it as read-only because mutation can affect normalization. The event is notification-only and is not persisted.
-
-Handlers are awaited in stream order, so slow handlers delay stream consumption. Handler errors are reported without changing the provider response.
-
-<a id="context_with_system"></a>
-
-`context` transforms conversation messages without prompt and tool system messages; candy restores that state afterward. Use `context_with_system` only when a request-local transformation must own the complete transcript, and keep a system message at index zero.
-
-`turn_end` and `agent_before_settle` are actionable boundaries. Their handlers can chain proposed `custom`, `custom_message`, `context_edit`, or `compaction` entries and return `continue: true` for one next model request. Guard continuation conditions because an unconditional continuation can loop. Use the exported event declarations for the complete validation and ordering contract.
-
-<a id="cache_warming_decision"></a>
-
-`cache_warming_decision` can override an idle prompt-cache refresh with `{ action: "warm" }` or `{ action: "stop" }`. The last handler that returns an action wins.
+`turn_end` is the only boundary where handlers can append `custom`, `custom_message`, or `context_edit` entries and request another model response. Handlers run in registration order, and each sees changes from earlier handlers. Return `continue: true` only when the appended context gives the model useful work; an unconditional continuation can loop. Compaction records and retry decisions belong to Candy.
 
 Tool calls from one assistant message can run in parallel.
 Do not assume a sibling call or result exists when another tool event runs.
@@ -134,7 +116,7 @@ A `user_bash` handler that returns `undefined` passes the command to the next ha
 ### Tools
 
 A custom tool defines a name, model-facing description, TypeBox parameter schema, and `execute()` function.
-Its result requires model-facing `content` and a `details` field for rendering or state reconstruction.
+Its result requires model-facing `content` and a `details` field for state reconstruction.
 Use `details: undefined` when there are no structured details. If the tool makes nested model calls, include their `usage` in the result so session totals remain accurate.
 
 Throw from `execute()` to produce a failed tool result.
@@ -158,7 +140,7 @@ candy records the initial prompt and tool set in the transcript's first system m
 
 ### Context and session changes
 
-`ExtensionContext` provides the working directory, mode, UI, session manager, model runtime, abort signal, context usage, and controls for compaction and shutdown.
+`ExtensionContext` provides the working directory, mode, UI, read-only session history, model runtime, abort signal, context usage, and controls for compaction and shutdown.
 Use `ctx.modelRuntime.streamSimple()` for provider-neutral nested model calls.
 
 Command handlers receive `ExtensionCommandContext`, which adds operations for waiting until idle, reloading, tree navigation, and session replacement.
@@ -180,9 +162,9 @@ Choose storage based on how state participates in the conversation:
 | Custom content stored and sent to the model | `candy.sendMessage()` |
 | Data outside one session | External storage |
 
-Reconstruct branch-sensitive state from `ctx.sessionManager.getBranch()` during `session_start`.
+Reconstruct branch-sensitive state from `ctx.history.getBranch()` during `session_start`.
 Do not rebuild it from every file entry because abandoned branches represent alternative histories.
-Register an entry or message renderer when custom stored content should appear in the transcript.
+Use a custom message when content should appear in the transcript; use `ctx.ui.setWidget()` for concise live status.
 
 <a id="custom-ui"></a>
 <a id="mode-behavior"></a>
@@ -191,16 +173,11 @@ Register an entry or message renderer when custom stored content should appear i
 
 ### UI and modes
 
-`ctx.ui` provides dialogs, notifications, status text, widgets, titles, editor access, and custom components.
-Use `ctx.ui.custom()` only when the interaction needs its own rendering and input.
-See [Terminal UI](tui.md) for component, focus, overlay, theme, and performance guidance.
-`ctx.ui.setTheme()` is asynchronous because an interactive theme change also persists a setting. Await its `{ success, error? }` result before reporting the outcome.
+`ctx.ui` provides select, confirm, input, and multi-line editor dialogs, notifications, status text, and plain-text widgets. Hosts own the rendering and focus behavior. `ctx.mode` reports the current host, and `ctx.hasUI` indicates whether dialogs are available.
 
-In interactive mode, built-in select and input dialogs expand above the composer. Long editor dialogs use a larger panel; confirm dialogs place Yes and No side by side. Loader text and countdowns update in place. Extensions remain responsible for their custom widget, footer, and renderer content.
+In interactive mode, dialogs follow the shared composer layout. RPC can forward supported dialogs, notifications, status text, and plain-text widgets through the [RPC Extension UI protocol](rpc-extension-ui.md). JSON and print modes have no interactive UI.
 
-Extensions load in interactive, RPC, JSON, and print modes.
-Interactive mode provides the complete terminal UI.
-RPC can forward supported dialogs and notifications through the [RPC Extension UI protocol](rpc-extension-ui.md), but not custom terminal components; JSON and print modes have no UI.
+Extensions load in interactive, RPC, JSON, and print modes. RPC can forward supported dialogs and text updates through the [RPC Extension UI protocol](rpc-extension-ui.md); JSON and print modes have no UI.
 Guard terminal-only behavior with `ctx.mode === "tui"` and use `ctx.hasUI` for interactions supported by interactive and RPC clients.
 
 Keep tool and event behavior independent from rendering so non-interactive modes remain functional.
@@ -223,4 +200,4 @@ Use `ctx.shutdown()` to request an orderly process shutdown.
 
 The exported declarations in [`extensions/types.ts`](../src/core/extensions/types.ts) are the implementation reference for every event, context, tool, and result type described here.
 
-Use [Custom Providers](custom-provider.md) for model-service integrations, [Terminal UI](tui.md) for custom components, and [candy Packages](packages.md) to install or distribute extensions with other resources.
+Use [Custom Providers](custom-provider.md) for model-service integrations, [Terminal UI](tui.md) for Candy-owned interface components, and [candy Packages](packages.md) to install or distribute extensions with other resources.

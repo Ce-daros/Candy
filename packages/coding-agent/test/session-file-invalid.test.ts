@@ -60,7 +60,7 @@ describe("--session invalid file handling", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(`Error: Unknown session entry type "event" at ${sessionFile}:1`);
-		expect(result.stderr).not.toContain("SessionManager.open");
+		expect(result.stderr).not.toContain("SessionHistory.open");
 		expect(result.stderr).not.toMatch(/\n\s+at /);
 		expect(readFileSync(sessionFile, "utf8")).toBe(originalContent);
 	});

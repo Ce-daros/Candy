@@ -15,7 +15,7 @@ import {
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "../messages.ts";
-import type { ReadonlySessionManager, SessionEntry } from "../session-manager.ts";
+import type { ReadonlySessionHistory, SessionEntry } from "../session-history.ts";
 import { completeSummarization, getSummarizationFailure } from "./compaction.ts";
 import {
 	computeFileLists,
@@ -108,7 +108,7 @@ export interface GenerateBranchSummaryOptions {
  * @returns Entries to summarize and the common ancestor
  */
 export function collectEntriesForBranchSummary(
-	session: ReadonlySessionManager,
+	session: ReadonlySessionHistory,
 	oldLeafId: string | null,
 	targetId: string,
 ): CollectEntriesResult {

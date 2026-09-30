@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { compact, DEFAULT_COMPACTION_SETTINGS, prepareCompaction } from "../../src/core/compaction/index.ts";
-import type { CompactionEntry, SessionEntry } from "../../src/core/session-manager.ts";
-import { buildSessionContext, migrateSessionEntries, parseSessionEntries } from "../../src/core/session-manager.ts";
+import type { CompactionEntry, SessionEntry } from "../../src/core/session-history.ts";
+import { buildSessionContext, migrateSessionEntries, parseSessionEntries } from "../../src/core/session-history.ts";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 

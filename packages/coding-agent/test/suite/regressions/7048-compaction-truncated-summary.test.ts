@@ -26,7 +26,6 @@ function seedCompactableSession(harness: Harness): void {
 		},
 	};
 	harness.sessionManager.appendMessage(assistant);
-	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 }
 
 describe("#7048 truncated compaction summaries", () => {
@@ -42,7 +41,7 @@ describe("#7048 truncated compaction summaries", () => {
 		seedCompactableSession(harness);
 		harness.setResponses([fauxAssistantMessage("partial summar", { stopReason: "length" })]);
 
-		await expect(harness.session.compact()).rejects.toThrow("generation hit the token cap");
+		await expect(harness.session.execution.compact()).rejects.toThrow("generation hit the token cap");
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
 	});
 });

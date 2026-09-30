@@ -1,8 +1,6 @@
 import { Container, Markdown, type MarkdownTheme, type TuiMouseEvent, truncateToWidth } from "@candy/tui";
-import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
-import { createMarkdownTransform } from "./markdown-transform.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -12,7 +10,6 @@ const PREVIEW_LINES = 8;
 export class UserMessageComponent extends Container {
 	private readonly text: string;
 	private readonly markdownTheme: MarkdownTheme;
-	private readonly markdownTransformers: readonly MarkdownTransformer[];
 	private outputPad: number;
 	private expanded = false;
 	private markdown: Markdown;
@@ -20,17 +17,11 @@ export class UserMessageComponent extends Container {
 	private renderedHeight = 0;
 	private renderedWidth = 0;
 
-	constructor(
-		text: string,
-		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		outputPad = 1,
-		markdownTransformers: readonly MarkdownTransformer[] = [],
-	) {
+	constructor(text: string, markdownTheme: MarkdownTheme = getMarkdownTheme(), outputPad = 1) {
 		super();
 		this.text = text;
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
-		this.markdownTransformers = markdownTransformers;
 		this.markdown = this.createMarkdown();
 	}
 
@@ -46,7 +37,6 @@ export class UserMessageComponent extends Container {
 			{
 				preserveOrderedListMarkers: true,
 				preserveBackslashEscapes: true,
-				transform: createMarkdownTransform("user", false, this.markdownTransformers),
 				onCopyCode: (code) => {
 					void copyToClipboard(code);
 				},

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FileEntry, SessionEntry, SessionMessageEntry } from "../../src/core/session-manager.ts";
-import { SessionManager } from "../../src/core/session-manager.ts";
+import type { FileEntry, SessionEntry, SessionMessageEntry } from "../../src/core/session-history.ts";
+import { SessionHistory } from "../../src/core/session-history.ts";
 import { resolvePath } from "../../src/utils/paths.ts";
 
 const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -9,13 +9,13 @@ function userMessage(text: string) {
 	return { role: "user" as const, content: [{ type: "text" as const, text }], timestamp: Date.now() };
 }
 
-function storedEntries(build: (source: SessionManager) => void): SessionEntry[] {
-	const source = SessionManager.inMemory("/project");
+function storedEntries(build: (source: SessionHistory) => void): SessionEntry[] {
+	const source = SessionHistory.inMemory("/project");
 	build(source);
 	return source.getEntries();
 }
 
-describe("SessionManager.inMemory with preloaded entries", () => {
+describe("SessionHistory.inMemory with preloaded entries", () => {
 	it.each([
 		{ type: "model_change", provider: 7, modelId: "model" },
 		{ type: "custom", customType: true },
@@ -23,7 +23,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 		{ type: "unsupported" },
 	])("rejects malformed metadata in $type records", (metadata) => {
 		const entry = { id: "invalid-entry", parentId: null, timestamp: "2026-01-01T00:00:00Z", ...metadata };
-		expect(() => SessionManager.inMemory("/project", undefined, [entry as never])).toThrow(/invalid-entry/);
+		expect(() => SessionHistory.inMemory("/project", undefined, [entry as never])).toThrow(/invalid-entry/);
 	});
 
 	it("adopts entries verbatim", () => {
@@ -33,7 +33,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			source.appendMessage(userMessage("again"));
 		});
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 
 		expect(session.getEntries()).toEqual(entries);
 	});
@@ -45,7 +45,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 		});
 		const lastId = entries[entries.length - 1].id;
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 		const appendedId = session.appendMessage(userMessage("continued"));
 
 		expect(session.getLeafId()).toBe(appendedId);
@@ -53,7 +53,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	});
 
 	it("reuses a projection until the session leaf changes", () => {
-		const session = SessionManager.inMemory("/project");
+		const session = SessionHistory.inMemory("/project");
 		session.appendMessage(userMessage("hello"));
 		const projection = session.buildSessionProjection();
 
@@ -67,7 +67,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			for (let i = 0; i < 50; i++) source.appendMessage(userMessage(`message ${i}`));
 		});
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 		const appendedId = session.appendMessage(userMessage("continued"));
 
 		expect(entries.some((entry) => entry.id === appendedId)).toBe(false);
@@ -81,7 +81,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			source.appendMessage(userMessage("kept"));
 		});
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 		const roots = session.getTree();
 
 		expect(roots).toHaveLength(1);
@@ -95,7 +95,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			source.appendLabelChange(labelledId, "checkpoint");
 		});
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 
 		expect(session.getLabel(labelledId)).toBe("checkpoint");
 	});
@@ -108,14 +108,14 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			source.appendCompaction("summary so far", keptId, 1000);
 		});
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 		const context = session.buildContextEntries();
 
 		expect(context.some((entry) => entry.id === keptId)).toBe(true);
 	});
 
 	it("rejects compaction references outside the compaction parent chain", () => {
-		const session = SessionManager.inMemory("/project");
+		const session = SessionHistory.inMemory("/project");
 		const rootId = session.appendMessage(userMessage("root"));
 		const unrelatedId = session.appendMessage(userMessage("unrelated branch"));
 		session.branch(rootId);
@@ -127,7 +127,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	});
 
 	it("rejects invalid message content before appending it", () => {
-		const session = SessionManager.inMemory("/project");
+		const session = SessionHistory.inMemory("/project");
 		session.appendMessage(userMessage("valid"));
 		const before = session.getEntries();
 
@@ -138,7 +138,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	});
 
 	it("accepts stored bashExecution messages without content fields", () => {
-		const session = SessionManager.inMemory("/project");
+		const session = SessionHistory.inMemory("/project");
 		session.appendMessage({
 			role: "bashExecution",
 			command: "echo ok",
@@ -155,7 +155,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	it("creates a header from the options when the entries carry none", () => {
 		const entries = storedEntries((source) => source.appendMessage(userMessage("hello")));
 
-		const session = SessionManager.inMemory("/project", { id: "restored-session" }, entries);
+		const session = SessionHistory.inMemory("/project", { id: "restored-session" }, entries);
 
 		expect(session.getSessionId()).toBe("restored-session");
 		expect(session.getHeader()!.id).toBe("restored-session");
@@ -165,7 +165,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	it("generates a session id when the options carry none", () => {
 		const entries = storedEntries((source) => source.appendMessage(userMessage("hello")));
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 
 		expect(session.getSessionId()).toMatch(UUID_V7_RE);
 		expect(session.getHeader()!.id).toBe(session.getSessionId());
@@ -174,7 +174,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	it("stays off the filesystem", () => {
 		const entries = storedEntries((source) => source.appendMessage(userMessage("hello")));
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 		session.appendMessage(userMessage("continued"));
 
 		expect(session.getSessionFile()).toBeUndefined();
@@ -182,7 +182,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 	});
 
 	it("starts an empty session when the entries are empty", () => {
-		const session = SessionManager.inMemory("/project", { id: "empty-session" }, []);
+		const session = SessionHistory.inMemory("/project", { id: "empty-session" }, []);
 
 		expect(session.getSessionId()).toBe("empty-session");
 		expect(session.getEntries()).toEqual([]);
@@ -196,7 +196,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			...body,
 		];
 
-		const session = SessionManager.inMemory("/project", { id: "ignored" }, entries);
+		const session = SessionHistory.inMemory("/project", { id: "ignored" }, entries);
 
 		expect(session.getSessionId()).toBe("stored-session");
 		expect(session.getHeader()!.cwd).toBe("/stored");
@@ -214,7 +214,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			} as unknown as SessionMessageEntry,
 		];
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
+		const session = SessionHistory.inMemory("/project", undefined, entries);
 		const restored = session.getEntries()[0] as SessionMessageEntry;
 
 		expect(session.getHeader()!.version).toBe(3);
@@ -233,7 +233,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			} as unknown as SessionMessageEntry,
 		];
 
-		expect(() => SessionManager.inMemory("/project", undefined, entries)).toThrow(
+		expect(() => SessionHistory.inMemory("/project", undefined, entries)).toThrow(
 			'Session message abc12345 has unsupported message role "hookMessage"',
 		);
 	});

@@ -3,14 +3,11 @@
  */
 
 import type { AgentMessage } from "@candy/agent-core";
-import { getCurrentSystemMessage, type ImageContent, type Model, type Provider, type ProviderHeaders } from "@candy/ai";
+import { getCurrentSystemMessage, type ImageContent, type Model, type Provider } from "@candy/ai";
 import type { KeyId } from "@candy/tui";
 import type { KeybindingsConfig } from "../../contracts/keybindings.ts";
-import type { Theme } from "../../contracts/theme.ts";
-import type { CacheWarmingAction } from "../cache-warmer.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { ModelRuntime } from "../model-runtime.ts";
-import type { SessionManager } from "../session-manager.ts";
 import {
 	type BuildSystemPromptOptions,
 	buildSystemPrompt,
@@ -18,21 +15,14 @@ import {
 	normalizeBuildSystemPromptOptions,
 } from "../system-prompt.ts";
 import type {
-	AgentBeforeSettleEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
-	BeforeProviderHeadersEvent,
-	BeforeProviderRequestEvent,
 	BoundaryContextPreview,
 	BoundaryResult,
-	CacheWarmingDecisionEvent,
-	CacheWarmingDecisionEventResult,
 	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
 	ContextUsage,
-	ContextWithSystemEvent,
-	EntryRenderer,
 	Extension,
 	ExtensionActions,
 	ExtensionCommandContext,
@@ -50,24 +40,17 @@ import type {
 	InputEventResult,
 	InputSource,
 	LoadExtensionsResult,
-	MarkdownTransformer,
-	MessageEndEvent,
-	MessageEndEventResult,
-	MessageRenderer,
 	ProjectTrustContext,
 	ProjectTrustEvent,
 	ProjectTrustEventResult,
-	ProviderConfig,
 	RegisteredCommand,
 	RegisteredTool,
 	ReplacedSessionContext,
 	ResolvedCommand,
 	ResourcesDiscoverEvent,
 	ResourcesDiscoverResult,
-	SessionBeforeCompactResult,
 	SessionBeforeForkResult,
 	SessionBeforeSwitchResult,
-	SessionBeforeTreeResult,
 	SessionBoundaryDraft,
 	SessionShutdownEvent,
 	ToolCallEvent,
@@ -167,50 +150,29 @@ type RunnerEmitEvent = Exclude<
 	| ToolResultEvent
 	| UserBashEvent
 	| ContextEvent
-	| ContextWithSystemEvent
-	| CacheWarmingDecisionEvent
-	| BeforeProviderRequestEvent
-	| BeforeProviderHeadersEvent
 	| BeforeAgentStartEvent
-	| MessageEndEvent
 	| ResourcesDiscoverEvent
 	| InputEvent
-	| TurnEndEvent
-	| AgentBeforeSettleEvent
 >;
 
-type SessionBeforeEvent = Extract<
-	RunnerEmitEvent,
-	{ type: "session_before_switch" | "session_before_fork" | "session_before_compact" | "session_before_tree" }
->;
+type SessionBeforeEvent = Extract<RunnerEmitEvent, { type: "session_before_switch" | "session_before_fork" }>;
 
-type SessionBeforeEventResult =
-	| SessionBeforeSwitchResult
-	| SessionBeforeForkResult
-	| SessionBeforeCompactResult
-	| SessionBeforeTreeResult;
+type SessionBeforeEventResult = SessionBeforeSwitchResult | SessionBeforeForkResult;
 
 type RunnerEmitResult<TEvent extends RunnerEmitEvent> = TEvent extends { type: "session_before_switch" }
 	? SessionBeforeSwitchResult | undefined
 	: TEvent extends { type: "session_before_fork" }
 		? SessionBeforeForkResult | undefined
-		: TEvent extends { type: "session_before_compact" }
-			? SessionBeforeCompactResult | undefined
-			: TEvent extends { type: "session_before_tree" }
-				? SessionBeforeTreeResult | undefined
-				: undefined;
+		: undefined;
 
 export type ExtensionErrorListener = (error: ExtensionError) => void;
 
-type BoundaryBaseEvent =
-	| Omit<TurnEndEvent, "entries" | "continue" | "context">
-	| Omit<AgentBeforeSettleEvent, "entries" | "continue" | "context">;
+type BoundaryBaseEvent = Omit<TurnEndEvent, "entries" | "continue" | "context">;
 
 interface BoundaryDispatchResult {
 	entries: SessionBoundaryDraft[];
 	continue: boolean;
 	context: BoundaryContextPreview;
-	valid: boolean;
 }
 
 export type NewSessionHandler = (options?: {
@@ -315,31 +277,10 @@ const noOpUIContext: ExtensionUIContext = {
 	select: async () => undefined,
 	confirm: async () => false,
 	input: async () => undefined,
-	notify: () => {},
-	onTerminalInput: () => () => {},
-	setStatus: () => {},
-	setWorkingVisible: () => {},
-	setHiddenThinkingLabel: () => {},
-	setWidget: () => {},
-	setFooter: () => {},
-	setHeader: () => {},
-	setTitle: () => {},
-	custom: async () => undefined as never,
-	pasteToEditor: () => {},
-	setEditorText: () => {},
-	getEditorText: () => "",
 	editor: async () => undefined,
-	addAutocompleteProvider: () => {},
-	setEditorComponent: () => {},
-	getEditorComponent: () => undefined,
-	get theme(): Theme {
-		throw new Error("UI not available");
-	},
-	getAllThemes: () => [],
-	getTheme: () => undefined,
-	setTheme: async (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
-	getToolsExpanded: () => false,
-	setToolsExpanded: () => {},
+	notify: () => {},
+	setStatus: () => {},
+	setWidget: () => {},
 };
 
 export class ExtensionRunner {
@@ -348,7 +289,7 @@ export class ExtensionRunner {
 	private uiContext: ExtensionUIContext;
 	private mode: ExtensionMode = "print";
 	private cwd: string;
-	private sessionManager: SessionManager;
+	private getHistory!: ExtensionContextActions["getHistory"];
 	private modelRuntime: ModelRuntime;
 	private getResources!: ExtensionContextActions["getResources"];
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
@@ -377,18 +318,11 @@ export class ExtensionRunner {
 	private uiPromptDepth = 0;
 	private activeUIPrompt: { kind: UIPromptKind; title?: string } | undefined;
 
-	constructor(
-		extensions: Extension[],
-		runtime: ExtensionRuntime,
-		cwd: string,
-		sessionManager: SessionManager,
-		modelRuntime: ModelRuntime,
-	) {
+	constructor(extensions: Extension[], runtime: ExtensionRuntime, cwd: string, modelRuntime: ModelRuntime) {
 		this.extensions = extensions;
 		this.runtime = runtime;
 		this.uiContext = noOpUIContext;
 		this.cwd = cwd;
-		this.sessionManager = sessionManager;
 		this.modelRuntime = modelRuntime;
 	}
 
@@ -396,29 +330,16 @@ export class ExtensionRunner {
 		actions: ExtensionActions,
 		contextActions: ExtensionContextActions,
 		providerActions?: {
-			registerProvider?: (name: string, config: ProviderConfig) => void;
-			registerNativeProvider?: (provider: Provider) => void;
+			registerProvider?: (provider: Provider) => void;
 			unregisterProvider?: (name: string) => void;
 		},
 	): boolean {
-		// Copy actions into the shared runtime (all extension APIs reference this)
-		this.runtime.sendMessage = actions.sendMessage;
-		this.runtime.sendUserMessage = actions.sendUserMessage;
-		this.runtime.appendEntry = actions.appendEntry;
-		this.runtime.setSessionName = actions.setSessionName;
-		this.runtime.getSessionName = actions.getSessionName;
-		this.runtime.setLabel = actions.setLabel;
-		this.runtime.getActiveTools = actions.getActiveTools;
-		this.runtime.getAllTools = actions.getAllTools;
-		this.runtime.setActiveTools = actions.setActiveTools;
-		this.runtime.refreshTools = actions.refreshTools;
-		this.runtime.getCommands = actions.getCommands;
-		this.runtime.setModel = actions.setModel;
-		this.runtime.getThinkingLevel = actions.getThinkingLevel;
-		this.runtime.setThinkingLevel = actions.setThinkingLevel;
+		this.runtime.actions = actions;
+		actions.refreshTools();
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;
+		this.getHistory = contextActions.getHistory;
 		this.getResources = contextActions.getResources;
 		this.isIdleFn = contextActions.isIdle;
 		this.isProjectTrustedFn = contextActions.isProjectTrusted;
@@ -433,29 +354,10 @@ export class ExtensionRunner {
 			contextActions.getSystemPromptOptions ?? (() => normalizeBuildSystemPromptOptions({ cwd: this.cwd }));
 
 		let registeredProvider = false;
-		// Flush provider registrations queued during extension loading
-		for (const { name, config, extensionPath } of this.runtime.pendingProviderRegistrations) {
+		for (const { provider, extensionPath } of this.runtime.pendingProviderRegistrations) {
 			try {
 				if (providerActions?.registerProvider) {
-					providerActions.registerProvider(name, config);
-				} else {
-					this.modelRuntime.registerProvider(name, config);
-				}
-				registeredProvider = true;
-			} catch (err) {
-				this.emitError({
-					extensionPath,
-					event: "register_provider",
-					error: err instanceof Error ? err.message : String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				});
-			}
-		}
-		this.runtime.pendingProviderRegistrations = [];
-		for (const { provider, extensionPath } of this.runtime.pendingNativeProviderRegistrations) {
-			try {
-				if (providerActions?.registerNativeProvider) {
-					providerActions.registerNativeProvider(provider);
+					providerActions.registerProvider(provider);
 				} else {
 					this.modelRuntime.registerNativeProvider(provider);
 				}
@@ -469,20 +371,13 @@ export class ExtensionRunner {
 				});
 			}
 		}
-		this.runtime.pendingNativeProviderRegistrations = [];
+		this.runtime.pendingProviderRegistrations = [];
 
 		// From this point on, provider registration and unregistration take effect immediately
 		// in the active runtime.
-		this.runtime.registerProvider = (name, config) => {
+		this.runtime.registerProvider = (provider) => {
 			if (providerActions?.registerProvider) {
-				providerActions.registerProvider(name, config);
-				return;
-			}
-			this.modelRuntime.registerProvider(name, config);
-		};
-		this.runtime.registerNativeProvider = (provider) => {
-			if (providerActions?.registerNativeProvider) {
-				providerActions.registerNativeProvider(provider);
+				providerActions.registerProvider(provider);
 				return;
 			}
 			this.modelRuntime.registerNativeProvider(provider);
@@ -531,7 +426,6 @@ export class ExtensionRunner {
 			input: (title, placeholder, opts) =>
 				this.withUIPrompt("input", title, () => ui.input(title, placeholder, opts)),
 			editor: (title, prefill) => this.withUIPrompt("editor", title, () => ui.editor(title, prefill)),
-			custom: (factory, options) => this.withUIPrompt("custom", undefined, () => ui.custom(factory, options)),
 		};
 	}
 
@@ -690,6 +584,11 @@ export class ExtensionRunner {
 		}
 	}
 
+	private getActions(): ExtensionActions {
+		if (!this.runtime.actions) throw new Error("Extension actions are unavailable until the host binds the session.");
+		return this.runtime.actions;
+	}
+
 	onError(listener: ExtensionErrorListener): () => void {
 		this.errorListeners.add(listener);
 		return () => this.errorListeners.delete(listener);
@@ -709,30 +608,6 @@ export class ExtensionRunner {
 			}
 		}
 		return false;
-	}
-
-	getMessageRenderer(customType: string): MessageRenderer | undefined {
-		for (const ext of this.extensions) {
-			const renderer = ext.messageRenderers.get(customType);
-			if (renderer) {
-				return renderer;
-			}
-		}
-		return undefined;
-	}
-
-	getMarkdownTransformers(): MarkdownTransformer[] {
-		return this.extensions.flatMap((ext) => (ext.markdownTransformer ? [ext.markdownTransformer] : []));
-	}
-
-	getEntryRenderer(customType: string): EntryRenderer | undefined {
-		for (const ext of this.extensions) {
-			const renderer = ext.entryRenderers?.get(customType);
-			if (renderer) {
-				return renderer;
-			}
-		}
-		return undefined;
 	}
 
 	private resolveRegisteredCommands(): ResolvedCommand[] {
@@ -798,7 +673,7 @@ export class ExtensionRunner {
 
 	getActiveTools(): string[] {
 		this.assertActive();
-		return this.runtime.getActiveTools();
+		return this.getActions().getActiveTools();
 	}
 
 	/**
@@ -825,9 +700,9 @@ export class ExtensionRunner {
 				runner.assertActive();
 				return runner.cwd;
 			},
-			get sessionManager() {
+			get history() {
 				runner.assertActive();
-				return runner.sessionManager;
+				return runner.getHistory();
 			},
 			get modelRuntime() {
 				runner.assertActive();
@@ -843,7 +718,7 @@ export class ExtensionRunner {
 			},
 			get thinkingLevel() {
 				runner.assertActive();
-				return runner.runtime.getThinkingLevel();
+				return runner.getActions().getThinkingLevel();
 			},
 			isIdle: () => {
 				runner.assertActive();
@@ -929,13 +804,13 @@ export class ExtensionRunner {
 
 	async emitBoundary(
 		baseEvent: BoundaryBaseEvent,
-		buildContext: (entries: SessionBoundaryDraft[]) => BoundaryContextPreview | Promise<BoundaryContextPreview>,
+		commit: (entries: readonly SessionBoundaryDraft[]) => BoundaryContextPreview | Promise<BoundaryContextPreview>,
 	): Promise<BoundaryDispatchResult> {
 		const ctx = this.createContext();
-		let entries: SessionBoundaryDraft[] = [];
+		const entries: SessionBoundaryDraft[] = [];
 		let shouldContinue = false;
-		let context = await buildContext(entries);
-		let valid = true;
+		let context = await commit([]);
+		const continuationAllowed = baseEvent.outcome === "completed";
 
 		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, baseEvent.type)) {
 			for (const handler of handlers) {
@@ -944,11 +819,15 @@ export class ExtensionRunner {
 					entries,
 					continue: shouldContinue,
 					context,
-				} as TurnEndEvent | AgentBeforeSettleEvent;
+				} as TurnEndEvent;
 				try {
 					const handlerResult = (await handler(event, ctx)) as BoundaryResult | undefined;
-					if (handlerResult?.entries !== undefined) entries = handlerResult.entries;
-					if (handlerResult?.continue !== undefined) shouldContinue = handlerResult.continue;
+					const additions = handlerResult?.entries ?? [];
+					if (additions.length > 0) {
+						context = await commit(additions);
+						entries.push(...additions);
+					}
+					if (continuationAllowed && handlerResult?.continue === true) shouldContinue = true;
 				} catch (err) {
 					this.emitError({
 						extensionPath: ext.path,
@@ -956,35 +835,21 @@ export class ExtensionRunner {
 						error: err instanceof Error ? err.message : String(err),
 						stack: err instanceof Error ? err.stack : undefined,
 					});
-				}
-
-				try {
-					context = await buildContext(entries);
-					valid = true;
-				} catch (err) {
-					valid = false;
-					this.emitError({
-						extensionPath: ext.path,
-						event: baseEvent.type,
-						error: `Invalid boundary entries: ${err instanceof Error ? err.message : String(err)}`,
-						stack: err instanceof Error ? err.stack : undefined,
-					});
+					throw err;
 				}
 			}
 		}
 
-		return valid
-			? { entries, continue: shouldContinue, context, valid: true }
-			: { entries: [], continue: false, context, valid: false };
+		if (shouldContinue && !context.canContinue) {
+			const error = new Error("turn_end requested continuation without runnable model context");
+			this.emitError({ extensionPath: "<boundary>", event: baseEvent.type, error: error.message });
+			throw error;
+		}
+		return { entries, continue: shouldContinue, context };
 	}
 
 	private isSessionBeforeEvent(event: RunnerEmitEvent): event is SessionBeforeEvent {
-		return (
-			event.type === "session_before_switch" ||
-			event.type === "session_before_fork" ||
-			event.type === "session_before_compact" ||
-			event.type === "session_before_tree"
-		);
+		return event.type === "session_before_switch" || event.type === "session_before_fork";
 	}
 
 	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
@@ -1016,69 +881,6 @@ export class ExtensionRunner {
 		}
 
 		return result as RunnerEmitResult<TEvent>;
-	}
-
-	/** Returns the event's own action unless a handler overrides it; the last override wins. */
-	async emitCacheWarmingDecision(event: CacheWarmingDecisionEvent): Promise<CacheWarmingAction> {
-		const ctx = this.createContext();
-		let action = event.action;
-
-		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, event.type)) {
-			for (const handler of handlers) {
-				try {
-					const result = (await handler(event, ctx)) as CacheWarmingDecisionEventResult | undefined;
-					if (result?.action !== undefined) action = result.action;
-				} catch (err) {
-					this.emitError({
-						extensionPath: ext.path,
-						event: event.type,
-						error: err instanceof Error ? err.message : String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
-				}
-			}
-		}
-
-		return action;
-	}
-
-	async emitMessageEnd(event: MessageEndEvent): Promise<AgentMessage | undefined> {
-		const ctx = this.createContext();
-		let currentMessage = event.message;
-		let modified = false;
-
-		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "message_end")) {
-			for (const handler of handlers) {
-				try {
-					const currentEvent: MessageEndEvent = { ...event, message: currentMessage };
-					const handlerResult = (await handler(currentEvent, ctx)) as MessageEndEventResult | undefined;
-					if (!handlerResult?.message) continue;
-
-					if (handlerResult.message.role !== currentMessage.role) {
-						this.emitError({
-							extensionPath: ext.path,
-							event: "message_end",
-							error: "message_end handlers must return a message with the same role",
-						});
-						continue;
-					}
-
-					currentMessage = handlerResult.message;
-					modified = true;
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "message_end",
-						error: message,
-						stack,
-					});
-				}
-			}
-		}
-
-		return modified ? currentMessage : undefined;
 	}
 
 	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
@@ -1184,11 +986,7 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
-	/**
-	 * Run the request-time transforms in two phases. `context` handlers see the conversation
-	 * only and candy restores the prompt and tool state after each; `context_with_system`
-	 * handlers then see the full transcript and their output is used as returned.
-	 */
+	/** Run each context handler against the conversation and restore the system message afterward. */
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const ctx = this.createContext();
 		let currentMessages = structuredClone(messages);
@@ -1219,98 +1017,8 @@ export class ExtensionRunner {
 				}
 			}
 		}
-
-		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "context_with_system")) {
-			for (const handler of handlers) {
-				try {
-					const hadLeadingSystemMessage = currentMessages[0]?.role === "system";
-					const event: ContextWithSystemEvent = { type: "context_with_system", messages: currentMessages };
-					const handlerResult = (await handler(event, ctx)) as ContextEventResult | undefined;
-					currentMessages = handlerResult?.messages ?? currentMessages;
-					// Providers read the prompt and initial tools from the leading system message.
-					// Losing it is never intended; report it but honor the handler's output.
-					if (hadLeadingSystemMessage && currentMessages[0]?.role !== "system") {
-						this.emitError({
-							extensionPath: ext.path,
-							event: "context_with_system",
-							error: "Handler removed the leading system message; the request has no prompt or initial tool declarations. Keep it at index 0 or replace a dropped prefix with getCurrentSystemMessage().",
-						});
-					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "context_with_system",
-						error: message,
-						stack,
-					});
-				}
-			}
-		}
-
 		return currentMessages;
 	}
-
-	async emitBeforeProviderRequest(payload: unknown): Promise<unknown> {
-		const ctx = this.createContext();
-		let currentPayload = payload;
-
-		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "before_provider_request")) {
-			for (const handler of handlers) {
-				try {
-					const event: BeforeProviderRequestEvent = {
-						type: "before_provider_request",
-						payload: currentPayload,
-					};
-					const handlerResult = await handler(event, ctx);
-					if (handlerResult !== undefined) {
-						currentPayload = handlerResult;
-					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_provider_request",
-						error: message,
-						stack,
-					});
-				}
-			}
-		}
-
-		return currentPayload;
-	}
-
-	async emitBeforeProviderHeaders(headers: ProviderHeaders): Promise<ProviderHeaders> {
-		const ctx = this.createContext();
-
-		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "before_provider_headers")) {
-			for (const handler of handlers) {
-				try {
-					// Handlers mutate `headers` in place; the return value is ignored.
-					const event: BeforeProviderHeadersEvent = {
-						type: "before_provider_headers",
-						headers,
-					};
-					await handler(event, ctx);
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_provider_headers",
-						error: message,
-						stack,
-					});
-				}
-			}
-		}
-
-		return headers;
-	}
-
 	async emitBeforeAgentStart(
 		prompt: string,
 		images: ImageContent[] | undefined,

@@ -1,13 +1,13 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@candy/agent-core";
 import { fauxAssistantMessage, fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../../../src/core/agent-session.ts";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { convertToLlm } from "../../../src/core/messages.ts";
-import { SessionManager } from "../../../src/core/session-manager.ts";
+import type { SessionExecutionConfig } from "../../../src/core/session-execution.ts";
+import { SessionHistory } from "../../../src/core/session-history.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
 import { exportSessionHtml } from "../../../src/presentation/session-html-export.ts";
@@ -39,19 +39,19 @@ describe("regression #5596: missing configured theme export", () => {
 		modelRuntime.registerNativeProvider(configuredFauxProvider(faux));
 
 		const settingsManager = SettingsManager.inMemory({ theme: "missing-theme" });
-		const sessionManager = SessionManager.create(tempDir, join(tempDir, "sessions"));
-		const agent = new Agent({
+		const sessionManager = SessionHistory.create(tempDir, join(tempDir, "sessions"));
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "faux-key",
 			initialState: {
 				model,
-				systemPrompt: "You are a test assistant.",
+
 				tools: [],
 			},
 			convertToLlm,
 			streamFn: faux.provider.streamSimple,
-		});
+		};
 		const session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
@@ -59,13 +59,13 @@ describe("regression #5596: missing configured theme export", () => {
 			resourceLoader: createTestResourceLoader(),
 		});
 		cleanups.push(async () => {
-			await session.dispose();
+			await session.execution.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
 		});
 
-		await session.prompt("hi");
+		await session.execution.prompt("hi");
 		initTheme(settingsManager.getTheme());
 
 		const outputPath = join(tempDir, "export.html");

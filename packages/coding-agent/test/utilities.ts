@@ -1,3 +1,4 @@
+import type { SessionExecutionConfig } from "../src/core/session-execution.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 /**
  * Shared test utilities for coding-agent tests.
@@ -6,7 +7,6 @@ import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Agent } from "@candy/agent-core";
 import type { OAuthCredentials } from "@candy/ai";
 import { builtinProviders } from "@candy/ai/providers/all";
 import { AgentSession } from "../src/core/agent-session.ts";
@@ -20,7 +20,7 @@ import type {
 } from "../src/core/extensions/index.ts";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/extensions/loader.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createCodingTools } from "../src/index.ts";
 import { getTestModel, streamBuiltinSimple } from "./ai.ts";
@@ -183,7 +183,7 @@ export interface TestSessionOptions {
  */
 export interface TestSessionContext {
 	session: AgentSession;
-	sessionManager: SessionManager;
+	sessionManager: SessionHistory;
 	tempDir: string;
 	cleanup: () => Promise<void>;
 }
@@ -255,17 +255,17 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	mkdirSync(tempDir, { recursive: true });
 
 	const model = getTestModel("anthropic", "claude-sonnet-4-5");
-	const agent = new Agent({
+	const agentOptions: SessionExecutionConfig["agentOptions"] = {
 		getApiKey: () => API_KEY,
 		initialState: {
 			model,
-			systemPrompt: options.systemPrompt ?? "You are a helpful assistant. Be extremely concise.",
+
 			tools: createCodingTools(process.cwd()),
 		},
 		streamFn: streamBuiltinSimple,
-	});
+	};
 
-	const sessionManager = options.inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);
+	const sessionManager = options.inMemory ? SessionHistory.inMemory() : SessionHistory.create(tempDir);
 	const settingsManager = SettingsManager.create(tempDir, tempDir);
 
 	if (options.settingsOverrides) {
@@ -276,7 +276,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 
 	const session = new AgentSession({
-		agent,
+		agentOptions,
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
@@ -285,10 +285,10 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	});
 
 	// Must subscribe to enable session persistence
-	session.subscribe(() => {});
+	session.execution.subscribe(() => {});
 
 	const cleanup = async () => {
-		await session.dispose();
+		await session.execution.dispose();
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
 		}
@@ -298,7 +298,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 }
 
 /**
- * Build a session tree for testing using SessionManager.
+ * Build a session tree for testing using SessionHistory.
  * Returns the IDs of all created entries.
  *
  * Example tree structure:
@@ -309,7 +309,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
  * ```
  */
 export function buildTestTree(
-	session: SessionManager,
+	session: SessionHistory,
 	structure: {
 		messages: Array<{ role: "user" | "assistant"; text: string; branchFrom?: string }>;
 	},

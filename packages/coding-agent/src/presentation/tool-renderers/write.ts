@@ -2,14 +2,13 @@
  * Presentation for the write tool.
  *
  * Renderers live apart from the implementation so a process that only displays tool output does not
- * load the execution path or its typebox parameter schema. `write.ts` spreads these into its
- * definition, so the tool's public shape is unchanged.
+ * load the execution path or its typebox parameter schema.
  */
 
 import { Container, Text } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
-import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
 import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.ts";
+import type { ToolRenderers, ToolRenderResultOptions } from "../tool-render-types.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "../tool-render-utils.ts";
 
 type WriteHighlightCache = {
@@ -135,7 +134,7 @@ function formatWriteResult(
 	return theme.fg("error", output);
 }
 
-export const writeRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> = {
+export const writeRenderers: ToolRenderers = {
 	renderCall(args, theme, context) {
 		const renderArgs = args as { path?: string; file_path?: string; content?: string } | undefined;
 		const rawPath = str(renderArgs?.file_path ?? renderArgs?.path);

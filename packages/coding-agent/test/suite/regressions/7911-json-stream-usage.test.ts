@@ -14,7 +14,7 @@ describe("regression #7911: JSON message updates retain usage", () => {
 		harness = await createHarness();
 		harness.setResponses([fauxAssistantMessage("hello")]);
 
-		await harness.session.prompt("respond");
+		await harness.session.execution.prompt("respond");
 
 		// #7290's delta-only wire projection dropped this fixed-size metadata with the snapshots.
 		const update = harness

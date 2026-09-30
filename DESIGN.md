@@ -2,7 +2,7 @@
 
 Candy should feel compact, responsive, and alive. The conversation stays readable, controls stay close to the work, and color and motion give the interface a recognizable character.
 
-This document records the current product model and the rules used to extend it. Engineering principles live in [CONTRIBUTING.md](CONTRIBUTING.md); implementation rules live in [AGENTS.md](AGENTS.md).
+This document records the current product model and the rules used to extend it. State ownership and runtime boundaries live in [ARCHITECTURE.md](ARCHITECTURE.md); engineering principles live in [CONTRIBUTING.md](CONTRIBUTING.md); implementation rules live in [AGENTS.md](AGENTS.md).
 
 ## Character
 
@@ -36,6 +36,8 @@ Ctrl+L and mouse interaction open the selectors. Shift+Tab has no Powerbar actio
 Thinking stays available for models without reasoning, with Off as its only choice. An empty model scope still allows access to Sources. A search with no matches cannot open Details for some other model.
 
 Opening a page captures its origin: selector, search, highlighted identity, and visible position. Closing it restores that origin. Cancelling a nested selector returns to its parent page. A successful session replacement returns to Thinking while following the existing draft handling rules.
+
+Product pages, selectors, authentication dialogs, and reading or editing flows share one lifecycle. Opening a child suspends the parent. Returning cancels the child's asynchronous work and disposes it before resuming the parent. Session replacement closes the old flows and retires their callbacks. A failed candidate creation leaves the current conversation and its working state available; a failure after shutdown starts is shown as a replacement failure.
 
 ### Sources
 

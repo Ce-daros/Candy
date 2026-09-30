@@ -14,7 +14,12 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findMostRecentSession, loadEntriesFromFile, SessionManager } from "../../src/core/session-manager.ts";
+import {
+	findMostRecentSession,
+	loadEntriesFromFile,
+	SessionDiscovery,
+	SessionHistory,
+} from "../../src/core/session-history.ts";
 import { assistantMsg, readSessionFileRoles, userMsg } from "../utilities.ts";
 
 const HEADER_SCAN_LIMIT_BYTES = 1024 * 1024;
@@ -113,7 +118,7 @@ describe("loadEntriesFromFile", () => {
 		const file = join(tempDir, "unterminated-save.jsonl");
 		const content = '{"type":"session","version":3,"id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}';
 		writeFileSync(file, content);
-		const session = SessionManager.open(file, tempDir);
+		const session = SessionHistory.open(file, tempDir);
 		expect(readFileSync(file, "utf8")).toBe(content);
 
 		session.appendMessage(userMsg("hello"));
@@ -126,7 +131,7 @@ describe("loadEntriesFromFile", () => {
 		const file = join(tempDir, "v2.jsonl");
 		const content = '{"type":"session","version":2,"id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n';
 		writeFileSync(file, content);
-		const session = SessionManager.open(file, tempDir);
+		const session = SessionHistory.open(file, tempDir);
 		expect(readFileSync(file, "utf8")).toBe(content);
 		expect(session.getHeader()?.version).toBe(3);
 
@@ -161,7 +166,7 @@ describe("loadEntriesFromFile", () => {
 		const storedCwd = join(tempDir, "stored-project");
 		writeSessionHeader(file, storedCwd, sessionId, prefix);
 
-		const sessionManager = SessionManager.open(file, tempDir);
+		const sessionManager = SessionHistory.open(file, tempDir);
 		expect(sessionManager.getSessionId()).toBe(sessionId);
 		expect(sessionManager.getCwd()).toBe(storedCwd);
 	});
@@ -175,7 +180,7 @@ describe("loadEntriesFromFile", () => {
 			const file = join(tempDir, `${name}.jsonl`);
 			writeSessionHeader(file, storedCwd, id, prefix);
 			for (const cwdOverride of [undefined, overrideCwd]) {
-				const sessionManager = SessionManager.open(file, tempDir, cwdOverride);
+				const sessionManager = SessionHistory.open(file, tempDir, cwdOverride);
 				expect(sessionManager.getSessionId()).toBe(id);
 				expect(sessionManager.getCwd()).toBe(cwdOverride ?? storedCwd);
 			}
@@ -205,7 +210,7 @@ describe("loadEntriesFromFile", () => {
 			'{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"role":"user","content":"hi","timestamp":1}}\n',
 		);
 
-		expect(() => SessionManager.open(file, tempDir)).toThrow(`${file}:2`);
+		expect(() => SessionHistory.open(file, tempDir)).toThrow(`${file}:2`);
 	});
 });
 
@@ -222,7 +227,7 @@ describe("session append commits", () => {
 	});
 
 	it("does not publish an entry when the first history write fails", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		const sessionFile = session.getSessionFile();
 		if (!sessionFile) throw new Error("Persistent session should have a file path");
 		mkdirSync(sessionFile);
@@ -323,7 +328,7 @@ describe("findMostRecentSession", () => {
 	});
 });
 
-describe("SessionManager custom flat session directory", () => {
+describe("SessionHistory custom flat session directory", () => {
 	let tempDir: string;
 	let projectA: string;
 	let projectB: string;
@@ -341,7 +346,7 @@ describe("SessionManager custom flat session directory", () => {
 	});
 
 	function createPersistedSession(cwd: string, label: string): string {
-		const session = SessionManager.create(cwd, tempDir);
+		const session = SessionHistory.create(cwd, tempDir);
 		session.appendMessage({ role: "user", content: label, timestamp: Date.now() });
 		session.appendMessage({
 			role: "assistant",
@@ -372,13 +377,13 @@ describe("SessionManager custom flat session directory", () => {
 		await new Promise((r) => setTimeout(r, 10));
 		const sessionB = createPersistedSession(projectB, "from B");
 
-		const currentA = await SessionManager.list(projectA, tempDir);
+		const currentA = await SessionDiscovery.list(projectA, tempDir);
 		expect(currentA.map((session) => session.path)).toEqual([sessionA]);
 
-		const all = await SessionManager.listAll(tempDir);
+		const all = await SessionDiscovery.listAll(tempDir);
 		expect(new Set(all.map((session) => session.path))).toEqual(new Set([sessionA, sessionB]));
 
-		const continuedA = SessionManager.continueRecent(projectA, tempDir);
+		const continuedA = SessionHistory.continueRecent(projectA, tempDir);
 		expect(continuedA.getSessionFile()).toBe(sessionA);
 	});
 
@@ -386,7 +391,7 @@ describe("SessionManager custom flat session directory", () => {
 		createPersistedSession(projectA, "from A");
 		createPersistedSession(projectB, "from B");
 		const controller = new AbortController();
-		const listing = SessionManager.listAll(
+		const listing = SessionDiscovery.listAll(
 			tempDir,
 			(_loaded, _total, partialSessions) => {
 				if (partialSessions) controller.abort();
@@ -395,11 +400,13 @@ describe("SessionManager custom flat session directory", () => {
 		);
 
 		await expect(listing).rejects.toMatchObject({ name: "AbortError" });
-		await expect(SessionManager.listAll(undefined, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+		await expect(SessionDiscovery.listAll(undefined, controller.signal)).rejects.toMatchObject({
+			name: "AbortError",
+		});
 	});
 });
 
-describe("SessionManager.setSessionFile with corrupted files", () => {
+describe("SessionHistory.setSessionFile with corrupted files", () => {
 	let tempDir: string;
 
 	beforeEach(() => {
@@ -415,7 +422,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		const emptyFile = join(tempDir, "empty.jsonl");
 		writeFileSync(emptyFile, "");
 
-		const sm = SessionManager.open(emptyFile, tempDir);
+		const sm = SessionHistory.open(emptyFile, tempDir);
 
 		// Should have created a new session with valid header
 		expect(sm.getSessionId()).toBeTruthy();
@@ -435,7 +442,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 			'{"type":"message","id":"abc","parentId":"orphaned","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":"test"}}\n';
 		writeFileSync(noHeaderFile, originalContent);
 
-		expect(() => SessionManager.open(noHeaderFile, tempDir)).toThrow(
+		expect(() => SessionHistory.open(noHeaderFile, tempDir)).toThrow(
 			`Session file has no valid header: ${noHeaderFile}`,
 		);
 		expect(readFileSync(noHeaderFile, "utf-8")).toBe(originalContent);
@@ -446,7 +453,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		const originalContent = '{"type":"event","data":"not a session"}\n';
 		writeFileSync(nonSessionFile, originalContent);
 
-		expect(() => SessionManager.open(nonSessionFile, tempDir)).toThrow(
+		expect(() => SessionHistory.open(nonSessionFile, tempDir)).toThrow(
 			`Unknown session entry type "event" at ${nonSessionFile}:1`,
 		);
 		expect(readFileSync(nonSessionFile, "utf-8")).toBe(originalContent);
@@ -456,7 +463,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		const explicitPath = join(tempDir, "my-session.jsonl");
 		writeFileSync(explicitPath, "");
 
-		const sm = SessionManager.open(explicitPath, tempDir);
+		const sm = SessionHistory.open(explicitPath, tempDir);
 
 		// The session file path should be preserved
 		expect(sm.getSessionFile()).toBe(explicitPath);
@@ -466,17 +473,17 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		const emptyFile = join(tempDir, "empty.jsonl");
 		writeFileSync(emptyFile, "");
 
-		const sm1 = SessionManager.open(emptyFile, tempDir);
+		const sm1 = SessionHistory.open(emptyFile, tempDir);
 		const sessionId = sm1.getSessionId();
 		sm1.appendMessage(userMsg("hello"));
 
-		const sm2 = SessionManager.open(emptyFile, tempDir);
+		const sm2 = SessionHistory.open(emptyFile, tempDir);
 		expect(sm2.getSessionId()).toBe(sessionId);
 		expect(sm2.getHeader()?.type).toBe("session");
 	});
 });
 
-describe("SessionManager session file creation", () => {
+describe("SessionHistory session file creation", () => {
 	let tempDir: string;
 
 	beforeEach(() => {
@@ -488,7 +495,7 @@ describe("SessionManager session file creation", () => {
 	});
 
 	it("does not create a file for a session with only setup entries", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		session.appendModelChange("anthropic", "claude-sonnet-4-5");
 		session.appendThinkingLevelChange("off");
 
@@ -497,17 +504,17 @@ describe("SessionManager session file creation", () => {
 
 	// #10000: the first prompt must survive a first turn that never produces an assistant message
 	it("creates the file when the first user message is appended", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		session.appendModelChange("anthropic", "claude-sonnet-4-5");
 		session.appendMessage(userMsg("first question"));
 
 		const file = session.getSessionFile()!;
 		expect(readSessionFileRoles(file)).toEqual(["session", "model_change", "user"]);
-		expect(SessionManager.open(file, tempDir).buildSessionContext().messages).toHaveLength(1);
+		expect(SessionHistory.open(file, tempDir).buildSessionContext().messages).toHaveLength(1);
 	});
 
 	it("appends later entries to the file without rewriting earlier ones", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		session.appendMessage(userMsg("first question"));
 		session.appendCustomEntry("preset-state", { name: "plan" });
 		session.appendMessage(assistantMsg("first answer"));
@@ -516,7 +523,7 @@ describe("SessionManager session file creation", () => {
 	});
 
 	it("commits model and thinking entries together only after the journal write succeeds", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		session.appendMessage(userMsg("first question"));
 		const file = session.getSessionFile()!;
 		const entries = session.getEntries();
@@ -530,7 +537,7 @@ describe("SessionManager session file creation", () => {
 	});
 
 	it("links model and thinking entries in one selection commit", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		const userEntryId = session.appendMessage(userMsg("first question"));
 		const selection = session.appendModelSelection("anthropic", "claude-sonnet-4-5", "high");
 		const modelEntry = session.getEntry(selection.modelChangeId);
@@ -549,7 +556,7 @@ describe("SessionManager session file creation", () => {
 	});
 
 	it("keeps the active leaf and projection when a branch summary cannot be written", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		const first = session.appendMessage(userMsg("first"));
 		const leaf = session.appendMessage(assistantMsg("answer"));
 		const entries = session.getEntries();
@@ -565,7 +572,7 @@ describe("SessionManager session file creation", () => {
 	});
 
 	it("does not create a partial first log when setup data cannot be serialized", () => {
-		const session = SessionManager.create(tempDir, tempDir);
+		const session = SessionHistory.create(tempDir, tempDir);
 		const circular: { self?: unknown } = {};
 		circular.self = circular;
 		session.appendCustomEntry("circular", circular);
@@ -581,7 +588,7 @@ describe("SessionManager session file creation", () => {
 	it("keeps the source identity when writing a fork fails", () => {
 		const directory = join(tempDir, "sessions");
 		mkdirSync(directory);
-		const session = SessionManager.create(tempDir, directory);
+		const session = SessionHistory.create(tempDir, directory);
 		const leaf = session.appendMessage(userMsg("source"));
 		const id = session.getSessionId();
 		const file = session.getSessionFile();

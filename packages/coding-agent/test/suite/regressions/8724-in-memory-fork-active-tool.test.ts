@@ -43,9 +43,9 @@ describe("regression #8724: in-memory fork during an active tool turn", () => {
 		const services: AgentSessionServices = {
 			cwd: harness.tempDir,
 			agentDir: harness.tempDir,
-			modelRuntime: harness.session.modelRuntime,
+			modelRuntime: harness.session.execution.modelRuntime,
 			settingsManager: harness.settingsManager,
-			resourceLoader: harness.session.resourceLoader,
+			resourceLoader: harness.session.execution.resourceLoader,
 			diagnostics: [],
 			dispose: async () => {},
 		};
@@ -73,20 +73,20 @@ describe("regression #8724: in-memory fork during an active tool turn", () => {
 			fauxAssistantMessage(fauxToolCall("block", {}), { stopReason: "toolUse" }),
 			fauxAssistantMessage("unused after abort"),
 		]);
-		await runtime.session.prompt("first prompt");
-		const firstUserEntryId = runtime.session.getUserMessagesForForking()[0]?.entryId;
+		await runtime.session.execution.prompt("first prompt");
+		const firstUserEntryId = runtime.session.history.getUserMessagesForForking()[0]?.entryId;
 		expect(firstUserEntryId).toBeDefined();
 
-		const outgoingPrompt = runtime.session.prompt("start blocking tool");
+		const outgoingPrompt = runtime.session.execution.prompt("start blocking tool");
 		await toolStarted;
 		const forkResult = await runtime.fork(firstUserEntryId!);
 		await outgoingPrompt;
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 
 		expect(forkResult).toEqual({ cancelled: false, selectedText: "first prompt" });
-		expect(runtime.session.messages.map((message) => message.role)).toEqual(["system"]);
+		expect(runtime.session.execution.messages.map((message) => message.role)).toEqual(["system"]);
 		expect(
-			runtime.session.sessionManager
+			runtime.session.history
 				.getEntries()
 				.filter((entry) => entry.type === "message")
 				.map((entry) => entry.message.role),
@@ -99,7 +99,7 @@ describe("regression #8724: in-memory fork during an active tool turn", () => {
 				return fauxAssistantMessage("next response");
 			},
 		]);
-		await runtime.session.prompt("next prompt");
+		await runtime.session.execution.prompt("next prompt");
 
 		expect(capturedRoles).toEqual(["system", "system", "user"]);
 	});

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { SessionEntry } from "../src/core/session-manager.ts";
+import type { SessionEntry } from "../src/core/session-history.ts";
 import { SessionPresentation } from "../src/modes/interactive/session-presentation.ts";
 
 describe("session presentation state", () => {

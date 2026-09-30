@@ -10,7 +10,8 @@ import {
 } from "@candy/ai";
 import { type FauxProviderHandle, fauxProvider } from "@candy/ai/providers/faux";
 import { describe, expect, it } from "vitest";
-import { Agent, type AgentEvent, type StreamFn } from "../src/index.ts";
+import type { AgentEvent, StreamFn } from "../src/index.ts";
+import { Agent } from "./test-agent.ts";
 import { calculateTool } from "./utils/calculate.ts";
 
 function createFauxProvider(options: Parameters<typeof fauxProvider>[0] = {}): FauxProviderHandle {
@@ -296,7 +297,7 @@ describe("Agent.continue() with faux provider", () => {
 				stopReason: "stop",
 				timestamp: Date.now(),
 			};
-			agent.state.messages = [assistantMessage];
+			agent.history.messages = [assistantMessage];
 
 			await expect(agent.continue()).rejects.toThrow("Cannot continue from message role: assistant");
 		});
@@ -321,7 +322,7 @@ describe("Agent.continue() with faux provider", () => {
 				content: [{ type: "text", text: "Say exactly: HELLO WORLD" }],
 				timestamp: Date.now(),
 			};
-			agent.state.messages = [userMessage];
+			agent.history.messages = [userMessage];
 
 			await agent.continue();
 
@@ -388,7 +389,7 @@ describe("Agent.continue() with faux provider", () => {
 				timestamp: Date.now(),
 			};
 
-			agent.state.messages = [userMessage, assistantMessage, toolResult];
+			agent.history.messages = [userMessage, assistantMessage, toolResult];
 
 			await agent.continue();
 

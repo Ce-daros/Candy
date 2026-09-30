@@ -15,14 +15,14 @@ describe("tree navigation during an active response", () => {
 			harness.setResponses([
 				async () => {
 					const activeLeafId = harness.sessionManager.getLeafId();
-					navigationResult = await harness.session
+					navigationResult = await harness.session.execution
 						.navigateTree(targetId, { summarize: false })
 						.catch((error) => error);
 					leafUnchanged = activeLeafId !== targetId && harness.sessionManager.getLeafId() === activeLeafId;
 					return fauxAssistantMessage("response");
 				},
 			]);
-			await harness.session.prompt("second");
+			await harness.session.execution.prompt("second");
 
 			expect(navigationResult).toEqual(
 				new Error("Wait for the current response to finish before navigating the session tree."),

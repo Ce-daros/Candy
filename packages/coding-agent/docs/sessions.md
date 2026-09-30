@@ -43,7 +43,7 @@ Choose Compact in History to compact manually. You can add instructions when the
 
 Compaction can fail if the provider is unavailable or cannot accept the summarization request. Correct the provider problem and choose Compact again. Disabling automatic compaction does not disable the manual action.
 
-See [Compaction Reference](compaction.md) for thresholds, retained boundaries, branch-summary behavior, and extension hooks.
+See [Compaction Reference](compaction.md) for thresholds, retained boundaries, and branch-summary behavior.
 
 ## Control session storage
 

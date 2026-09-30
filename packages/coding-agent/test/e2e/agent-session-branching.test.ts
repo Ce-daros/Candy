@@ -1,5 +1,6 @@
 import { extensionHostModules } from "../../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../../src/presentation/resource-theme-adapter.ts";
+import { getTestAgent } from "../execution-internals.ts";
 /**
  * Tests for AgentSession forking behavior.
  *
@@ -23,14 +24,14 @@ import {
 	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import { SessionManager } from "../../src/core/session-manager.ts";
+import { SessionHistory } from "../../src/core/session-history.ts";
 import { API_KEY } from "../utilities.ts";
 
 describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	let session: AgentSession;
 	let runtimeHost: AgentSessionRuntime;
 	let tempDir: string;
-	let sessionManager: SessionManager;
+	let sessionManager: SessionHistory;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-branching-test-${Date.now()}`);
@@ -48,7 +49,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 
 	async function createSession(noSession: boolean = false) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-		sessionManager = noSession ? SessionManager.inMemory(tempDir) : SessionManager.create(tempDir);
+		sessionManager = noSession ? SessionHistory.inMemory(tempDir) : SessionHistory.create(tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: API_KEY! }));
 
@@ -87,17 +88,17 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 			sessionManager,
 		});
 		session = runtimeHost.session;
-		session.subscribe(() => {});
+		session.execution.subscribe(() => {});
 		return session;
 	}
 
 	it("should allow forking from single message", async () => {
 		await createSession();
 
-		await session.prompt("Say hello");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Say hello");
+		await getTestAgent(session.execution).waitForIdle();
 
-		const userMessages = session.getUserMessagesForForking();
+		const userMessages = session.history.getUserMessagesForForking();
 		expect(userMessages.length).toBe(1);
 		expect(userMessages[0].text).toBe("Say hello");
 
@@ -106,45 +107,45 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		session = runtimeHost.session;
 		expect(result.selectedText).toBe("Say hello");
 
-		expect(session.messages.length).toBe(0);
-		expect(session.sessionFile).not.toBeNull();
-		expect(existsSync(session.sessionFile!)).toBe(false);
+		expect(session.execution.messages.length).toBe(0);
+		expect(session.execution.sessionFile).not.toBeNull();
+		expect(existsSync(session.execution.sessionFile!)).toBe(false);
 	});
 
 	it("should support in-memory forking in --no-session mode", async () => {
 		await createSession(true);
 
-		expect(session.sessionFile).toBeUndefined();
+		expect(session.execution.sessionFile).toBeUndefined();
 
-		await session.prompt("Say hi");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Say hi");
+		await getTestAgent(session.execution).waitForIdle();
 
-		const userMessages = session.getUserMessagesForForking();
+		const userMessages = session.history.getUserMessagesForForking();
 		expect(userMessages.length).toBe(1);
-		expect(session.messages.length).toBeGreaterThan(0);
+		expect(session.execution.messages.length).toBeGreaterThan(0);
 
 		const result = await runtimeHost.fork(userMessages[0].entryId);
 		expect(result.cancelled).toBe(false);
 		session = runtimeHost.session;
 		expect(result.selectedText).toBe("Say hi");
 
-		expect(session.messages.length).toBe(0);
-		expect(session.sessionFile).toBeUndefined();
+		expect(session.execution.messages.length).toBe(0);
+		expect(session.execution.sessionFile).toBeUndefined();
 	});
 
 	it("should fork from middle of conversation", async () => {
 		await createSession();
 
-		await session.prompt("Say one");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Say one");
+		await getTestAgent(session.execution).waitForIdle();
 
-		await session.prompt("Say two");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Say two");
+		await getTestAgent(session.execution).waitForIdle();
 
-		await session.prompt("Say three");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("Say three");
+		await getTestAgent(session.execution).waitForIdle();
 
-		const userMessages = session.getUserMessagesForForking();
+		const userMessages = session.history.getUserMessagesForForking();
 		expect(userMessages.length).toBe(3);
 
 		const secondMessage = userMessages[1];
@@ -153,8 +154,8 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		session = runtimeHost.session;
 		expect(result.selectedText).toBe("Say two");
 
-		expect(session.messages.length).toBe(2);
-		expect(session.messages[0].role).toBe("user");
-		expect(session.messages[1].role).toBe("assistant");
+		expect(session.execution.messages.length).toBe(2);
+		expect(session.execution.messages[0].role).toBe("user");
+		expect(session.execution.messages[1].role).toBe("assistant");
 	}, 60000);
 });

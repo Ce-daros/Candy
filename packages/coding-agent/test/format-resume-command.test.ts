@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { APP_NAME } from "../src/config.ts";
-import type { SessionManager } from "../src/core/session-manager.ts";
+import type { SessionHistory } from "../src/core/session-history.ts";
 import { formatResumeCommand } from "../src/modes/interactive/interactive-mode.ts";
 
 const tempDirs: string[] = [];
@@ -33,27 +33,27 @@ function createTempFile(): string {
 	return file;
 }
 
-function createSessionManager(options: {
+function createSessionHistory(options: {
 	persisted?: boolean;
 	sessionFile?: string;
 	sessionId?: string;
 	sessionDir?: string;
 	usesDefaultSessionDir?: boolean;
-}): SessionManager {
+}): SessionHistory {
 	return {
 		isPersisted: () => options.persisted ?? true,
 		getSessionFile: () => options.sessionFile,
 		getSessionId: () => options.sessionId ?? "0197f6e4-4cf9-7f44-a2d8-f8f7f49ee9d3",
 		getSessionDir: () => options.sessionDir ?? "/tmp/pi-sessions",
 		usesDefaultSessionDir: () => options.usesDefaultSessionDir ?? true,
-	} as unknown as SessionManager;
+	} as unknown as SessionHistory;
 }
 
 describe("formatResumeCommand", () => {
 	it("returns a session resume command for default session dirs", () => {
 		setStdoutIsTTY(true);
 		const sessionFile = createTempFile();
-		const sessionManager = createSessionManager({ sessionFile, sessionId: "test-session" });
+		const sessionManager = createSessionHistory({ sessionFile, sessionId: "test-session" });
 
 		expect(formatResumeCommand(sessionManager)).toBe(`${APP_NAME} --session test-session`);
 	});
@@ -61,7 +61,7 @@ describe("formatResumeCommand", () => {
 	it("includes unquoted safe session dirs for non-default session dirs", () => {
 		setStdoutIsTTY(true);
 		const sessionFile = createTempFile();
-		const sessionManager = createSessionManager({
+		const sessionManager = createSessionHistory({
 			sessionFile,
 			sessionId: "test-session",
 			sessionDir: "/tmp/custom-pi-sessions",
@@ -76,7 +76,7 @@ describe("formatResumeCommand", () => {
 	it("quotes session dirs containing spaces", () => {
 		setStdoutIsTTY(true);
 		const sessionFile = createTempFile();
-		const sessionManager = createSessionManager({
+		const sessionManager = createSessionHistory({
 			sessionFile,
 			sessionId: "test-session",
 			sessionDir: "/tmp/custom candy sessions",
@@ -91,7 +91,7 @@ describe("formatResumeCommand", () => {
 	it("quotes session dirs containing single quotes", () => {
 		setStdoutIsTTY(true);
 		const sessionFile = createTempFile();
-		const sessionManager = createSessionManager({
+		const sessionManager = createSessionHistory({
 			sessionFile,
 			sessionId: "test-session",
 			sessionDir: "/tmp/custom candy's sessions",
@@ -106,7 +106,7 @@ describe("formatResumeCommand", () => {
 	it("returns undefined when stdout is not a TTY", () => {
 		setStdoutIsTTY(false);
 		const sessionFile = createTempFile();
-		const sessionManager = createSessionManager({ sessionFile });
+		const sessionManager = createSessionHistory({ sessionFile });
 
 		expect(formatResumeCommand(sessionManager)).toBeUndefined();
 	});
@@ -114,21 +114,21 @@ describe("formatResumeCommand", () => {
 	it("returns undefined for in-memory sessions", () => {
 		setStdoutIsTTY(true);
 		const sessionFile = createTempFile();
-		const sessionManager = createSessionManager({ persisted: false, sessionFile });
+		const sessionManager = createSessionHistory({ persisted: false, sessionFile });
 
 		expect(formatResumeCommand(sessionManager)).toBeUndefined();
 	});
 
 	it("returns undefined when the session file is missing", () => {
 		setStdoutIsTTY(true);
-		const sessionManager = createSessionManager({ sessionFile: "/tmp/pi-missing-session.jsonl" });
+		const sessionManager = createSessionHistory({ sessionFile: "/tmp/pi-missing-session.jsonl" });
 
 		expect(formatResumeCommand(sessionManager)).toBeUndefined();
 	});
 
 	it("returns undefined when the session file is not set", () => {
 		setStdoutIsTTY(true);
-		const sessionManager = createSessionManager({ sessionFile: undefined });
+		const sessionManager = createSessionHistory({ sessionFile: undefined });
 
 		expect(formatResumeCommand(sessionManager)).toBeUndefined();
 	});

@@ -15,9 +15,9 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Args } from "../src/cli/args.ts";
 import { ENV_AGENT_DIR } from "../src/config.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionDiscovery, SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createSessionManager } from "../src/main.ts";
+import { createSessionHistory } from "../src/main.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
 // --import takes a module specifier, not a filesystem path.
@@ -92,7 +92,7 @@ function args(overrides: Partial<Args>): Args {
 	};
 }
 
-function persistSession(session: SessionManager, content: string): void {
+function persistSession(session: SessionHistory, content: string): void {
 	session.appendMessage({ role: "user", content, timestamp: Date.now() });
 	session.appendMessage({
 		role: "assistant",
@@ -129,7 +129,7 @@ describe("--session-id", () => {
 		const settingsManager = SettingsManager.inMemory();
 		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-		const readOnly = await createSessionManager(
+		const readOnly = await createSessionHistory(
 			args({ sessionId: "read-only", help: true }),
 			projectDir,
 			sessionDir,
@@ -138,7 +138,7 @@ describe("--session-id", () => {
 		expect(readOnly.getSessionId()).toBe("read-only");
 		expect(readOnly.getSessionFile()).toBeUndefined();
 
-		const created = await createSessionManager(
+		const created = await createSessionHistory(
 			args({ sessionId: "persisted-id" }),
 			projectDir,
 			sessionDir,
@@ -148,7 +148,7 @@ describe("--session-id", () => {
 		expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("creating a new session"));
 
 		consoleError.mockClear();
-		const reopened = await createSessionManager(
+		const reopened = await createSessionHistory(
 			args({ sessionId: "persisted-id" }),
 			projectDir,
 			sessionDir,
@@ -164,12 +164,12 @@ describe("--session-id", () => {
 		const projectDir = join(tempRoot, "project");
 		const sessionDir = join(tempRoot, "sessions");
 		mkdirSync(projectDir, { recursive: true });
-		const unrelated = SessionManager.create(projectDir, sessionDir, { id: "unrelated-id" });
+		const unrelated = SessionHistory.create(projectDir, sessionDir, { id: "unrelated-id" });
 		persistSession(unrelated, "large transcript contents must not be loaded");
-		const list = vi.spyOn(SessionManager, "list").mockRejectedValue(new Error("unexpected full listing"));
+		const list = vi.spyOn(SessionDiscovery, "list").mockRejectedValue(new Error("unexpected full listing"));
 		vi.spyOn(console, "error").mockImplementation(() => {});
 
-		const created = await createSessionManager(
+		const created = await createSessionHistory(
 			args({ sessionId: "fresh-id" }),
 			projectDir,
 			sessionDir,
@@ -185,12 +185,12 @@ describe("--session-id", () => {
 		const projectDir = join(tempRoot, "project");
 		const sessionDir = join(tempRoot, "sessions");
 		mkdirSync(projectDir, { recursive: true });
-		const original = SessionManager.create(projectDir, sessionDir, { id: "renamed-id" });
+		const original = SessionHistory.create(projectDir, sessionDir, { id: "renamed-id" });
 		persistSession(original, "persist me");
 		const renamedPath = join(sessionDir, "imported-session.jsonl");
 		renameSync(original.getSessionFile()!, renamedPath);
 
-		const reopened = await createSessionManager(
+		const reopened = await createSessionHistory(
 			args({ sessionId: "renamed-id" }),
 			projectDir,
 			sessionDir,
@@ -207,11 +207,11 @@ describe("--session-id", () => {
 		const sessionDir = join(tempRoot, "sessions");
 		mkdirSync(projectA, { recursive: true });
 		mkdirSync(projectB, { recursive: true });
-		const foreign = SessionManager.create(projectB, sessionDir, { id: "foreign-id" });
+		const foreign = SessionHistory.create(projectB, sessionDir, { id: "foreign-id" });
 		persistSession(foreign, "foreign session");
 
-		expect(SessionManager.findById(projectA, "foreign-id", sessionDir)).toBeUndefined();
-		expect(SessionManager.findById(projectB, "foreign-id", sessionDir)).toBe(foreign.getSessionFile());
+		expect(SessionDiscovery.findById(projectA, "foreign-id", sessionDir)).toBeUndefined();
+		expect(SessionDiscovery.findById(projectB, "foreign-id", sessionDir)).toBe(foreign.getSessionFile());
 	});
 
 	it("rejects an existing fork target in process", async () => {
@@ -219,9 +219,9 @@ describe("--session-id", () => {
 		const projectDir = join(tempRoot, "project");
 		const sessionDir = join(tempRoot, "sessions");
 		mkdirSync(projectDir, { recursive: true });
-		const source = SessionManager.create(projectDir, sessionDir, { id: "source-id" });
+		const source = SessionHistory.create(projectDir, sessionDir, { id: "source-id" });
 		persistSession(source, "source");
-		const target = SessionManager.create(projectDir, sessionDir, { id: "existing-id" });
+		const target = SessionHistory.create(projectDir, sessionDir, { id: "existing-id" });
 		persistSession(target, "target");
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		vi.spyOn(process, "exit").mockImplementation((code) => {
@@ -229,7 +229,7 @@ describe("--session-id", () => {
 		});
 
 		await expect(
-			createSessionManager(
+			createSessionHistory(
 				args({ fork: "source-id", sessionId: "existing-id" }),
 				projectDir,
 				sessionDir,

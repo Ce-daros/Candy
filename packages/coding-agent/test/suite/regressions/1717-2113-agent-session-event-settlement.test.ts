@@ -26,12 +26,12 @@ describe("regressions #1717/#2113: agent session event settlement", () => {
 		}
 	});
 
-	it("keeps persisted assistant/toolResult message order when extension message_end handlers yield", async () => {
+	it("keeps persisted assistant/toolResult message order when extension turn_end handlers yield", async () => {
 		const harness = await createHarness({
 			tools: [createEchoTool()],
 			extensionFactories: [
 				(candy) => {
-					candy.on("message_end", async (event) => {
+					candy.on("turn_end", async (event) => {
 						if (event.message.role === "assistant") {
 							await new Promise((resolve) => setTimeout(resolve, 20));
 						}
@@ -46,7 +46,7 @@ describe("regressions #1717/#2113: agent session event settlement", () => {
 			}),
 			fauxAssistantMessage("done"),
 		]);
-		await harness.session.prompt("run tools");
+		await harness.session.execution.prompt("run tools");
 
 		const branchMessages = harness.sessionManager
 			.getBranch()
@@ -89,7 +89,7 @@ describe("regressions #1717/#2113: agent session event settlement", () => {
 			fauxAssistantMessage("done"),
 		]);
 
-		await harness.session.prompt("run tool");
+		await harness.session.execution.prompt("run tool");
 
 		expect(branchRolesAtToolCall).toEqual([["system", "user", "assistant"]]);
 	});

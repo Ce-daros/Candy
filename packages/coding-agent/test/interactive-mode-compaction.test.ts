@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { Usage } from "@candy/ai";
 import { Container } from "@candy/tui";
 import { describe, expect, test, vi } from "vitest";
-import type { SessionEntry } from "../src/core/session-manager.ts";
+import type { SessionEntry } from "../src/core/session-history.ts";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { SessionPresentation } from "../src/modes/interactive/session-presentation.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -14,7 +15,7 @@ describe("InteractiveMode compaction events", () => {
 	test("repaints the context line when its rounded length changes", () => {
 		let percent = 41.2;
 		const context = {
-			session: { getContextUsage: () => ({ percent }) },
+			session: { execution: { getContextUsage: () => ({ percent }) } },
 			renderer: { requestRender: vi.fn() },
 			lastContextPercent: undefined as number | null | undefined,
 		};
@@ -41,7 +42,7 @@ describe("InteractiveMode compaction events", () => {
 			cost: { input: 0.01, output: 0.02, cacheRead: 0.03, cacheWrite: 0.065, total: 0.125 },
 		};
 		const addCompactionCostNotice = Reflect.get(InteractiveMode.prototype, "addCompactionCostNotice") as (
-			this: { chatContainer: Container; settingsManager: { getShowCacheMissNotices(): boolean } },
+			this: { chatContainer: Container; settingsManager: SettingsManager },
 			notice: {
 				type: "compaction_cost";
 				kind: "compaction" | "branch_summary";
@@ -52,7 +53,7 @@ describe("InteractiveMode compaction events", () => {
 		initTheme("dark");
 		const enabled = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => true },
+			settingsManager: SettingsManager.inMemory({ showCacheMissNotices: true }),
 		};
 		addCompactionCostNotice.call(enabled, { type: "compaction_cost", kind: "compaction", usage });
 		addCompactionCostNotice.call(enabled, {
@@ -66,7 +67,7 @@ describe("InteractiveMode compaction events", () => {
 
 		const disabled = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => false },
+			settingsManager: SettingsManager.inMemory({ showCacheMissNotices: false }),
 		};
 		addCompactionCostNotice.call(disabled, { type: "compaction_cost", kind: "compaction", usage });
 		expect(disabled.chatContainer.children).toHaveLength(0);
@@ -178,7 +179,7 @@ describe("InteractiveMode compaction events", () => {
 			showError: vi.fn(),
 			showStatus: vi.fn(),
 			clearStatusIndicator: vi.fn(),
-			settingsManager: { getShowTerminalProgress: () => false },
+			settingsManager: SettingsManager.inMemory({ terminal: { showTerminalProgress: false } }),
 			renderer: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 		};
 
@@ -229,10 +230,9 @@ describe("InteractiveMode compaction events", () => {
 			footer: { invalidate: vi.fn() },
 			refreshContextLine: vi.fn(),
 			activeStatusIndicator: undefined,
-			workingVisible: true,
 			showWorkingStatusIndicator: vi.fn(),
 			clearStatusIndicator: vi.fn(),
-			settingsManager: { getShowTerminalProgress: () => true },
+			settingsManager: SettingsManager.inMemory({ terminal: { showTerminalProgress: true } }),
 			renderer: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 		};
 		const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
@@ -247,11 +247,10 @@ describe("InteractiveMode compaction events", () => {
 		expect(fakeThis.clearStatusIndicator).not.toHaveBeenCalled();
 		expect(fakeThis.renderer.requestRender).toHaveBeenCalledTimes(1);
 
-		fakeThis.workingVisible = false;
 		await handleEvent.call(fakeThis, { type: "turn_start" });
 
-		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(1);
-		expect(fakeThis.clearStatusIndicator).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(2);
+		expect(fakeThis.clearStatusIndicator).not.toHaveBeenCalled();
 		expect(fakeThis.renderer.requestRender).toHaveBeenCalledTimes(2);
 	});
 
@@ -261,7 +260,7 @@ describe("InteractiveMode compaction events", () => {
 		const ui = {
 			clearAllQueues: () => ({ steering: [], followUp: [] }),
 			updatePendingMessagesDisplay: vi.fn(),
-			session: { abort },
+			session: { execution: { abort } },
 		};
 		const restoreQueuedMessagesToEditor = Reflect.get(InteractiveMode.prototype, "restoreQueuedMessagesToEditor") as (
 			this: typeof ui,
@@ -277,7 +276,7 @@ describe("InteractiveMode compaction events", () => {
 		const fakeThis = {
 			editor: { addToHistory: vi.fn(), setText: vi.fn(), getText: vi.fn(() => "") },
 			session: {
-				prompt: vi.fn().mockResolvedValue(undefined),
+				execution: { prompt: vi.fn().mockResolvedValue(undefined) },
 			},
 			updatePendingMessagesDisplay: vi.fn(),
 			showError: vi.fn(),
@@ -291,7 +290,7 @@ describe("InteractiveMode compaction events", () => {
 		const images = [{ type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" }];
 		queueCompactionMessage.call(fakeThis, { text: "change direction", images }, "steer");
 
-		expect(fakeThis.session.prompt).toHaveBeenCalledWith("change direction", {
+		expect(fakeThis.session.execution.prompt).toHaveBeenCalledWith("change direction", {
 			images,
 			streamingBehavior: "steer",
 		});
@@ -303,7 +302,7 @@ describe("InteractiveMode compaction events", () => {
 		const fakeThis = {
 			editor: { addToHistory: vi.fn(), setText: vi.fn(), getText: vi.fn(() => "") },
 			session: {
-				prompt: vi.fn().mockResolvedValue(undefined),
+				execution: { prompt: vi.fn().mockResolvedValue(undefined) },
 			},
 			updatePendingMessagesDisplay: vi.fn(),
 			showError: vi.fn(),
@@ -316,7 +315,7 @@ describe("InteractiveMode compaction events", () => {
 		) => void;
 		queueCompactionMessage.call(fakeThis, { text: "/compact" }, "followUp");
 
-		expect(fakeThis.session.prompt).toHaveBeenCalledWith("/compact", {
+		expect(fakeThis.session.execution.prompt).toHaveBeenCalledWith("/compact", {
 			images: undefined,
 			streamingBehavior: "followUp",
 		});
@@ -339,7 +338,7 @@ describe("InteractiveMode compaction events", () => {
 			createEditorInput: () => ({ text: "draft", images: [] }),
 			restoreImagesToEditor,
 			updatePendingMessagesDisplay: vi.fn(),
-			session: { abort: vi.fn() },
+			session: { execution: { abort: vi.fn() } },
 		};
 		const restoreQueuedMessagesToEditor = Reflect.get(InteractiveMode.prototype, "restoreQueuedMessagesToEditor") as (
 			this: typeof fakeThis,

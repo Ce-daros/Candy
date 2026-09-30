@@ -4,7 +4,7 @@ Candy is an agent harness built for daily work in the terminal. It should feel q
 
 Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated individually and cherry-picked when they serve this product.
 
-This document explains engineering decisions and contributions. [DESIGN.md](DESIGN.md) defines the product and interaction design. [AGENTS.md](AGENTS.md) contains the implementation, testing, dependency, and Git rules.
+This document explains engineering decisions and contributions. [DESIGN.md](DESIGN.md) defines the product and interaction design. [ARCHITECTURE.md](ARCHITECTURE.md) defines runtime state ownership and dependency direction. [AGENTS.md](AGENTS.md) contains the implementation, testing, dependency, and Git rules.
 
 ## Development philosophy
 
@@ -37,6 +37,14 @@ Presentation owns pages, focus, navigation, cancellation, and component lifetime
 The Powerbar needs directional events and selection state. It does not need to understand provider authentication or become a registry for arbitrary pages. History should call the established session and tree flows. Another client should call the same business operations rather than reconstructing them from terminal input.
 
 Extract a shared mechanism when real callers need the same behavior. Prefer a small typed interface with a clear owner. Every hook, abstraction, and configuration option adds a contract that someone must maintain.
+
+History owns committed records and projection; execution owns queues and running work; the application runtime owns session replacement and service lifetime. Keep SDK, RPC, and terminal business operations on these same capabilities. Split modules when ownership or behavior changes, and remove the protocols and callers that the new implementation replaces.
+
+### Coordinate authorized parallel work
+
+When the user requests Luna subagents, use two `gpt-6-luna` agents with `high` reasoning for parallel exploration and bounded implementation. The main thread owns architecture, common contracts, state and lifetime changes, shared integration files, and final validation. Establish interfaces and file ownership before development; announce contract changes to each affected agent.
+
+Agents deliver their changes, removed APIs, tests actually run, and remaining integration issues. They do not expand scope or delegate further. Mark finished agents done with `interrupt_agent`. Preserve other workspace changes, review the combined diff, and validate cross-module behavior before delivery. Subagents require explicit user authorization under [AGENTS.md](AGENTS.md).
 
 ### Preserve the user's work
 

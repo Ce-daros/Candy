@@ -20,7 +20,7 @@ describe("regression #7925: tool-call metadata is available when streaming start
 			fauxAssistantMessage("done"),
 		]);
 
-		await harness.session.prompt("write a file");
+		await harness.session.execution.prompt("write a file");
 
 		const update = harness
 			.eventsOfType("message_update")

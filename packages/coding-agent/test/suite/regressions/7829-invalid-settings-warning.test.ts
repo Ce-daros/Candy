@@ -33,6 +33,7 @@ describe("issue #7829 invalid settings warning", () => {
 				version: "test",
 				showWarning: (InteractiveMode.prototype as unknown as { showWarning(message: string): void }).showWarning,
 				session: harness.session,
+				runtimeHost: { models: harness.modelRuntime },
 				checkForPackageUpdates: vi.fn().mockResolvedValue([]),
 				checkTmuxKeyboardSetup: vi.fn().mockResolvedValue(undefined),
 				maybeWarnAboutAnthropicSubscriptionAuth: vi.fn(),

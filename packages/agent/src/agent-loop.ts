@@ -148,7 +148,7 @@ export async function runAgentLoopContinue(
 	}
 
 	const newMessages: AgentMessage[] = [];
-	const currentContext: AgentContext = { ...context };
+	const currentContext: AgentContext = { ...context, messages: context.messages.slice() };
 
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });

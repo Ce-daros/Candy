@@ -3,8 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.ts";
 import type { ToolDefinition } from "../../core/extensions/types.ts";
-import type { SessionEntry } from "../../core/session-manager.ts";
-import { SessionManager } from "../../core/session-manager.ts";
+import type { SessionEntry } from "../../core/session-history.ts";
+import { SessionHistory } from "../../core/session-history.ts";
 import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.ts";
 import { normalizePath, resolvePath } from "../../utils/paths.ts";
 
@@ -122,8 +122,8 @@ function generateThemeVars(themeName?: string): string {
 }
 
 interface SessionData {
-	header: ReturnType<SessionManager["getHeader"]>;
-	entries: ReturnType<SessionManager["getEntries"]>;
+	header: ReturnType<SessionHistory["getHeader"]>;
+	entries: ReturnType<SessionHistory["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
 	tools?: Array<Pick<ToolDefinition, "name" | "description" | "parameters">>;
@@ -224,11 +224,11 @@ function preRenderCustomTools(
 }
 
 /**
- * Export session to HTML using SessionManager and AgentState.
+ * Export session to HTML using SessionHistory and AgentState.
  * Used by TUI's /export command.
  */
 export async function exportSessionToHtml(
-	sm: SessionManager,
+	sm: SessionHistory,
 	state?: AgentState,
 	options?: ExportOptions | string,
 ): Promise<string> {
@@ -287,7 +287,7 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 		throw new Error(`File not found: ${resolvedInputPath}`);
 	}
 
-	const sm = SessionManager.open(resolvedInputPath);
+	const sm = SessionHistory.open(resolvedInputPath);
 
 	const sessionData: SessionData = {
 		header: sm.getHeader(),

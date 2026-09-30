@@ -57,7 +57,7 @@ describe("issue #2023 queued slash-command follow-up", () => {
 		]);
 
 		const sawToolStart = new Promise<void>((resolve) => {
-			const unsubscribe = harness.session.subscribe((event) => {
+			const unsubscribe = harness.session.execution.subscribe((event) => {
 				if (event.type === "tool_execution_start" && event.toolName === "wait") {
 					unsubscribe();
 					resolve();
@@ -65,7 +65,7 @@ describe("issue #2023 queued slash-command follow-up", () => {
 			});
 		});
 
-		const promptPromise = harness.session.prompt("start");
+		const promptPromise = harness.session.execution.prompt("start");
 		await sawToolStart;
 		await new Promise((resolve) => setTimeout(resolve, 0));
 

@@ -1,3 +1,5 @@
+import type { SessionExecutionConfig } from "../src/core/session-execution.ts";
+import { getTestAgent } from "./execution-internals.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 /**
  * Tests for AgentSession concurrent prompt guard.
@@ -6,7 +8,6 @@ import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@candy/agent-core";
 import type { AssistantMessage, AssistantMessageEvent, ImageContent, TextContent } from "@candy/ai";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { EventStream } from "@candy/ai/utils/event-stream";
@@ -14,13 +15,8 @@ import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import {
-	type BuildSystemPromptOptions,
-	type NormalizedBuildSystemPromptOptions,
-	normalizeBuildSystemPromptOptions,
-} from "../src/core/system-prompt.ts";
 import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
 
 // Mock stream that mimics AssistantMessageEventStream
@@ -70,7 +66,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		delete (globalThis as typeof globalThis & { testExtensionApi?: unknown }).testExtensionApi;
 		delete (globalThis as typeof globalThis & { testCommandRuns?: unknown }).testCommandRuns;
 		if (session) {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
@@ -82,11 +78,11 @@ describe("AgentSession concurrent prompt guard", () => {
 		let abortSignal: AbortSignal | undefined;
 
 		// Use a stream function that responds to abort
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
 			initialState: {
 				model,
-				systemPrompt: "Test",
+
 				tools: [],
 			},
 			streamFn: (_model, _context, options) => {
@@ -105,9 +101,9 @@ describe("AgentSession concurrent prompt guard", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
@@ -115,7 +111,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
@@ -130,21 +126,21 @@ describe("AgentSession concurrent prompt guard", () => {
 		await createSession();
 
 		// Start first prompt (don't await, it will block until abort)
-		const firstPrompt = session.prompt("First message");
+		const firstPrompt = session.execution.prompt("First message");
 
 		// Wait a tick for isStreaming to be set
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
 		// Verify we're streaming
-		expect(session.isStreaming).toBe(true);
+		expect(session.execution.isStreaming).toBe(true);
 
 		// Second prompt should reject
-		await expect(session.prompt("Second message")).rejects.toThrow(
+		await expect(session.execution.prompt("Second message")).rejects.toThrow(
 			"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
 		);
 
 		// Cleanup
-		await session.abort();
+		await session.execution.abort();
 		await firstPrompt.catch(() => {}); // Ignore abort error
 	});
 
@@ -152,15 +148,15 @@ describe("AgentSession concurrent prompt guard", () => {
 		await createSession();
 
 		// Start first prompt
-		const firstPrompt = session.prompt("First message");
+		const firstPrompt = session.execution.prompt("First message");
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
 		// steer should work while streaming
-		await expect(session.steer("Steering message")).resolves.toBe("queued");
-		expect(session.pendingMessageCount).toBe(1);
+		await expect(session.execution.steer("Steering message")).resolves.toBe("queued");
+		expect(session.execution.pendingMessageCount).toBe(1);
 
 		// Cleanup
-		await session.abort();
+		await session.execution.abort();
 		await firstPrompt.catch(() => {});
 	});
 
@@ -168,15 +164,15 @@ describe("AgentSession concurrent prompt guard", () => {
 		await createSession();
 
 		// Start first prompt
-		const firstPrompt = session.prompt("First message");
+		const firstPrompt = session.execution.prompt("First message");
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
 		// followUp should work while streaming
-		await expect(session.followUp("Follow-up message")).resolves.toBe("queued");
-		expect(session.pendingMessageCount).toBe(1);
+		await expect(session.execution.followUp("Follow-up message")).resolves.toBe("queued");
+		expect(session.execution.pendingMessageCount).toBe(1);
 
 		// Cleanup
-		await session.abort();
+		await session.execution.abort();
 		await firstPrompt.catch(() => {});
 	});
 
@@ -187,11 +183,11 @@ describe("AgentSession concurrent prompt guard", () => {
 		let lastInputSource: string | undefined;
 		const queueEvents: Array<{ steering: readonly string[]; followUp: readonly string[] }> = [];
 
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
 			initialState: {
 				model,
-				systemPrompt: "Test",
+
 				tools: [],
 			},
 			streamFn: (_model, context, options) => {
@@ -230,9 +226,9 @@ describe("AgentSession concurrent prompt guard", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
@@ -250,22 +246,22 @@ describe("AgentSession concurrent prompt guard", () => {
 		]);
 
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader({ extensionsResult }),
 		});
-		session.subscribe((event) => {
+		session.execution.subscribe((event) => {
 			if (event.type === "queue_update") {
 				queueEvents.push({ steering: event.steering, followUp: event.followUp });
 			}
 		});
 
-		const firstPrompt = session.prompt("First message");
+		const firstPrompt = session.execution.prompt("First message");
 		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(session.isStreaming).toBe(true);
+		expect(session.execution.isStreaming).toBe(true);
 
 		const candy = (
 			globalThis as typeof globalThis & {
@@ -279,12 +275,12 @@ describe("AgentSession concurrent prompt guard", () => {
 		candy!.sendUserMessage("Steer from extension", { deliverAs: "steer" });
 		await new Promise((resolve) => setTimeout(resolve, 25));
 
-		expect(session.pendingMessageCount).toBe(1);
-		expect(session.getSteeringMessages()).toContain("Steer from extension");
+		expect(session.execution.pendingMessageCount).toBe(1);
+		expect(session.execution.getSteeringMessages()).toContain("Steer from extension");
 		expect(lastInputSource).toBe("extension");
 		expect(queueEvents.some((event) => event.steering.includes("Steer from extension"))).toBe(true);
 
-		await session.abort();
+		await session.execution.abort();
 		await firstPrompt.catch(() => {});
 
 		expect(sawSteeringMessage).toBe(true);
@@ -293,11 +289,11 @@ describe("AgentSession concurrent prompt guard", () => {
 	it("should allow prompt() after previous completes", async () => {
 		// Create session with a stream that completes immediately
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
 			initialState: {
 				model,
-				systemPrompt: "Test",
+
 				tools: [],
 			},
 			streamFn: () => {
@@ -308,16 +304,16 @@ describe("AgentSession concurrent prompt guard", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
@@ -326,13 +322,13 @@ describe("AgentSession concurrent prompt guard", () => {
 		});
 
 		// First prompt completes
-		await session.prompt("First message");
+		await session.execution.prompt("First message");
 
 		// Should not be streaming anymore
-		expect(session.isStreaming).toBe(false);
+		expect(session.execution.isStreaming).toBe(false);
 
 		// Second prompt should work
-		await expect(session.prompt("Second message")).resolves.not.toThrow();
+		await expect(session.execution.prompt("Second message")).resolves.not.toThrow();
 	});
 
 	it("should wait for queued agent events before emitting tool_call", async () => {
@@ -354,11 +350,11 @@ describe("AgentSession concurrent prompt guard", () => {
 			},
 		};
 
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
 			initialState: {
 				model,
-				systemPrompt: "Test",
+
 				tools: [tool],
 			},
 			streamFn: async (_model, context) => {
@@ -414,68 +410,40 @@ describe("AgentSession concurrent prompt guard", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
+		const snapshots: string[][] = [];
+		const extensionsResult = await createTestExtensionsResult([
+			(candy) => {
+				candy.on("tool_call", () => {
+					snapshots.push(
+						sessionManager
+							.getEntries()
+							.filter((entry) => entry.type === "message")
+							.map((entry) => entry.message.role),
+					);
+				});
+			},
+		]);
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: modelRuntime,
-			resourceLoader: createTestResourceLoader(),
+			resourceLoader: createTestResourceLoader({ extensionsResult }),
 			baseToolsOverride: { dummy: tool },
+			initialActiveToolNames: ["dummy"],
 		});
 
-		const snapshots: string[][] = [];
-		const sessionWithRunner = session as unknown as {
-			_extensionRunner?: {
-				hasHandlers: (eventType: string) => boolean;
-				emit: (event: { type: string; message?: { role?: string } }) => Promise<void>;
-				emitMessageEnd: (event: { type: string; message?: { role?: string } }) => Promise<undefined>;
-				emitToolCall: (event: { type: string; toolCallId: string }) => Promise<undefined>;
-				emitInput: (
-					text: string,
-					images: unknown,
-					source: "interactive" | "rpc" | "extension",
-					streamingBehavior?: "steer" | "followUp",
-				) => Promise<{ action: "continue" }>;
-				emitBeforeAgentStart: (
-					prompt: string,
-					images: unknown,
-					systemPromptOptions: BuildSystemPromptOptions,
-				) => Promise<{ messages: []; systemPromptOptions: NormalizedBuildSystemPromptOptions }>;
-				invalidate: (message?: string) => void;
-			};
-		};
-		sessionWithRunner._extensionRunner = {
-			hasHandlers: (eventType) => eventType === "tool_call",
-			emit: async () => {},
-			emitMessageEnd: async () => undefined,
-			emitToolCall: async () => {
-				snapshots.push(
-					sessionManager
-						.getEntries()
-						.filter((entry) => entry.type === "message")
-						.map((entry) => entry.message.role),
-				);
-				return undefined;
-			},
-			emitInput: async () => ({ action: "continue" }),
-			emitBeforeAgentStart: async (_prompt, _images, systemPromptOptions) => ({
-				messages: [],
-				systemPromptOptions: normalizeBuildSystemPromptOptions(systemPromptOptions),
-			}),
-			invalidate: () => {},
-		};
-
-		await session.prompt("hi");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("hi");
+		await getTestAgent(session.execution).waitForIdle();
 
 		expect(snapshots).toEqual([
 			["system", "user", "assistant"],
@@ -483,7 +451,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		]);
 	});
 
-	it("should persist message_end events in order with slow extension handlers", async () => {
+	it("persists messages in order while an execution subscriber is slow", async () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const tool = {
 			name: "dummy",
@@ -502,11 +470,11 @@ describe("AgentSession concurrent prompt guard", () => {
 			},
 		};
 
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
 			initialState: {
 				model,
-				systemPrompt: "Test",
+
 				tools: [tool],
 			},
 			streamFn: async (_model, context) => {
@@ -563,62 +531,33 @@ describe("AgentSession concurrent prompt guard", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
 			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
+			initialActiveToolNames: ["dummy"],
 		});
 
-		const sessionWithRunner = session as unknown as {
-			_extensionRunner?: {
-				hasHandlers: (eventType: string) => boolean;
-				emit: (event: { type: string; message?: { role?: string } }) => Promise<void>;
-				emitMessageEnd: (event: { type: string; message?: { role?: string } }) => Promise<undefined>;
-				emitInput: (
-					text: string,
-					images: unknown,
-					source: "interactive" | "rpc" | "extension",
-					streamingBehavior?: "steer" | "followUp",
-				) => Promise<{ action: "continue" }>;
-				emitBeforeAgentStart: (
-					prompt: string,
-					images: unknown,
-					systemPromptOptions: BuildSystemPromptOptions,
-				) => Promise<{ messages: []; systemPromptOptions: NormalizedBuildSystemPromptOptions }>;
-				invalidate: (message?: string) => void;
-			};
-		};
-		sessionWithRunner._extensionRunner = {
-			hasHandlers: () => false,
-			emit: async () => {},
-			emitMessageEnd: async (event) => {
-				if (event.type === "message_end" && event.message?.role === "assistant") {
-					await new Promise((resolve) => setTimeout(resolve, 40));
-				}
-				return undefined;
-			},
-			emitInput: async () => ({ action: "continue" }),
-			emitBeforeAgentStart: async (_prompt, _images, systemPromptOptions) => ({
-				messages: [],
-				systemPromptOptions: normalizeBuildSystemPromptOptions(systemPromptOptions),
-			}),
-			invalidate: () => {},
-		};
+		session.execution.subscribeExecution(async (event) => {
+			if (event.type === "message_end" && event.message.role === "assistant") {
+				await new Promise((resolve) => setTimeout(resolve, 40));
+			}
+		});
 
-		await session.prompt("hi");
-		await session.agent.waitForIdle();
+		await session.execution.prompt("hi");
+		await getTestAgent(session.execution).waitForIdle();
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		const messageEntries = sessionManager.getEntries().filter((entry) => entry.type === "message");
@@ -627,7 +566,6 @@ describe("AgentSession concurrent prompt guard", () => {
 			"user",
 			"assistant",
 			"toolResult",
-			"system",
 			"assistant",
 		]);
 	});

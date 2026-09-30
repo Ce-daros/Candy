@@ -1,10 +1,10 @@
 /** Boundary checks for extension-produced messages and migrated session history. */
 
-import type { AgentMessage, AgentToolResult } from "@candy/agent-core";
+import type { AgentToolResult } from "@candy/agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { type SessionEntry, sessionEntryToContextMessages } from "../../src/core/session-manager.ts";
+import { type SessionEntry, sessionEntryToContextMessages } from "../../src/core/session-history.ts";
 import type { ExtensionFactory } from "../../src/index.ts";
 import { createHarness } from "./harness.ts";
 
@@ -40,34 +40,13 @@ describe("lax message content handling", () => {
 				fauxAssistantMessage("done"),
 			]);
 
-			await harness.session.prompt("search something");
+			await harness.session.execution.prompt("search something");
 
-			const toolResults = harness.session.messages.filter((message) => message.role === "toolResult");
+			const toolResults = harness.session.execution.messages.filter((message) => message.role === "toolResult");
 			expect(toolResults).toHaveLength(1);
 			expect(toolResults[0].content).toEqual([]);
 			// The follow-up turn consumed the normalized tool result without crashing.
 			expect(harness.getPendingResponseCount()).toBe(0);
-		} finally {
-			await harness.cleanup();
-		}
-	});
-
-	it("rejects null content in message_end extension replacements", async () => {
-		const extensionFactories: ExtensionFactory[] = [
-			(candy) => {
-				candy.on("message_end", async (event) => {
-					if (event.message.role !== "assistant") return undefined;
-					// Simulate an untyped JS extension replacing a message without content.
-					return { message: { ...event.message, content: null } as unknown as AgentMessage };
-				});
-			},
-		];
-		const harness = await createHarness({ extensionFactories });
-
-		try {
-			harness.setResponses([fauxAssistantMessage("hello")]);
-			await expect(harness.session.prompt("hi")).rejects.toThrow("content array");
-			expect(harness.session.messages.some((message) => message.role === "assistant")).toBe(false);
 		} finally {
 			await harness.cleanup();
 		}
@@ -78,14 +57,14 @@ describe("lax message content handling", () => {
 
 		try {
 			await expect(
-				harness.session.sendCustomMessage({
+				harness.session.execution.sendCustomMessage({
 					customType: "test",
 					content: null as unknown as string,
 					display: false,
 					details: undefined,
 				}),
 			).rejects.toThrow("must contain text or content parts");
-			expect(harness.session.messages.some((message) => message.role === "custom")).toBe(false);
+			expect(harness.session.execution.messages.some((message) => message.role === "custom")).toBe(false);
 		} finally {
 			await harness.cleanup();
 		}

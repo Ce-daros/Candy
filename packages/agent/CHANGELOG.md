@@ -8,17 +8,15 @@
 - Removed the unused session-search type entrypoint (`SearchQuery`, `SessionSearchHit`, `EntrySearchHit`, and `SessionSearchService`).
 - Removed the unused Harness/Pico APIs, session backends, Chord services, and their package entrypoints. The package now exposes the Agent and Agent loop APIs used by Candy.
 - Removed the process-wide default stream function. Every `Agent` and low-level agent loop caller must pass its `streamFn` directly.
+- `Agent` now requires a fixed loop host and externally owned `AgentInputs`. The host supplies projected history, commits messages, prepares requests, and handles turn completion. Removed runtime hook installation, callback wrapping, and the Agent's independent conversation and input-queue ownership.
+- Renamed `@earendil-works/pi-agent-core` to `@candy/agent-core`. Update package dependencies and imports.
+- `AgentState.model` is now optional, and `Agent.clearModel()` removes the active model without changing conversation state. Check that `agent.state.model` exists before using it; `prompt()` and `continue()` reject when no model is selected. Code that assumed a model was always present must select one or handle the empty state.
 
 ### Added
 
-- Added `Agent.finalizeMessage()` returning `{ message, entryId }` before messages enter the running context or reach listeners. `message_end` and `turn_end` expose those committed entry IDs.
-- Added read-only snapshots of queued steering and follow-up messages so hosts can inspect pending input without owning or mutating the Agent queues.
+- The loop host commits each final message before listeners receive it. `message_end` and `turn_end` expose the committed entry IDs; streaming updates remain transient.
+- Added read-only snapshots of steering and follow-up messages held by the externally supplied `AgentInputs` owner.
 - Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.
-
-### Breaking Changes
-
-- Renamed `@earendil-works/pi-agent-core` to `@candy/agent-core`. Update package dependencies and imports.
-- `AgentState.model` is now optional, and `Agent.clearModel()` removes the active model without changing conversation state. Check that `agent.state.model` exists before using it; `prompt()` and `continue()` reject when no model is selected. Code that assumed a model was always present must select one or handle the empty state.
 
 ## [0.87.1] - 2026-09-22
 

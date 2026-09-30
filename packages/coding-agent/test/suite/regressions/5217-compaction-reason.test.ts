@@ -1,95 +1,32 @@
 import { fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExtensionFactory } from "../../../src/index.ts";
 import { createHarness, type Harness } from "../harness.ts";
+import { useSummaryResponses } from "../summarization.ts";
 
-type SessionWithCompactionInternals = {
-	_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
-};
-
-interface RecordedCompactionEvent {
-	type: "session_before_compact" | "session_compact";
-	reason: "manual" | "threshold" | "overflow";
-	willRetry: boolean;
-}
-
-function recordingExtension(recorded: RecordedCompactionEvent[]): ExtensionFactory {
-	return (candy) => {
-		candy.on("session_before_compact", async (event) => {
-			recorded.push({ type: event.type, reason: event.reason, willRetry: event.willRetry });
-			return {
-				compaction: {
-					summary: "summary from extension",
-					firstKeptEntryId: event.preparation.firstKeptEntryId,
-					tokensBefore: event.preparation.tokensBefore,
-					details: {},
-				},
-			};
-		});
-		candy.on("session_compact", async (event) => {
-			recorded.push({ type: event.type, reason: event.reason, willRetry: event.willRetry });
-		});
-	};
-}
-
-async function createCompactionHarness(recorded: RecordedCompactionEvent[]): Promise<Harness> {
-	const harness = await createHarness({
-		settings: { compaction: { keepRecentTokens: 1 } },
-		extensionFactories: [recordingExtension(recorded)],
-	});
-	harness.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two")]);
-	await harness.session.prompt("first");
-	await harness.session.prompt("second");
-	return harness;
-}
-
-describe("issue #5217 compaction reason on extension events", () => {
+describe("compaction reason", () => {
 	const harnesses: Harness[] = [];
-
 	afterEach(async () => {
-		while (harnesses.length > 0) {
-			await harnesses.pop()?.cleanup();
-		}
+		for (const h of harnesses.splice(0)) await h.cleanup();
 	});
-
-	it("reports manual reason for compact()", async () => {
-		const recorded: RecordedCompactionEvent[] = [];
-		const harness = await createCompactionHarness(recorded);
-		harnesses.push(harness);
-
-		await harness.session.compact();
-
-		expect(recorded).toEqual([
-			{ type: "session_before_compact", reason: "manual", willRetry: false },
-			{ type: "session_compact", reason: "manual", willRetry: false },
-		]);
-	});
-
-	it("reports threshold reason for auto-compaction", async () => {
-		const recorded: RecordedCompactionEvent[] = [];
-		const harness = await createCompactionHarness(recorded);
-		harnesses.push(harness);
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
-
-		await sessionInternals._runAutoCompaction("threshold", false);
-
-		expect(recorded).toEqual([
-			{ type: "session_before_compact", reason: "threshold", willRetry: false },
-			{ type: "session_compact", reason: "threshold", willRetry: false },
-		]);
-	});
-
-	it("reports overflow reason and willRetry for overflow recovery", async () => {
-		const recorded: RecordedCompactionEvent[] = [];
-		const harness = await createCompactionHarness(recorded);
-		harnesses.push(harness);
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
-
-		await sessionInternals._runAutoCompaction("overflow", true);
-
-		expect(recorded).toEqual([
-			{ type: "session_before_compact", reason: "overflow", willRetry: true },
-			{ type: "session_compact", reason: "overflow", willRetry: true },
-		]);
+	it.each(["manual", "threshold", "overflow"] as const)("reports %s and its retry decision", async (reason) => {
+		const h = await createHarness({ settings: { compaction: { keepRecentTokens: 1 } } });
+		harnesses.push(h);
+		h.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two")]);
+		await h.session.execution.prompt("first");
+		await h.session.execution.prompt("second");
+		useSummaryResponses(h, [fauxAssistantMessage("summary"), fauxAssistantMessage("summary")]);
+		if (reason === "manual") await h.session.execution.compact();
+		else
+			await (
+				h.session.execution as unknown as { _runAutoCompaction(reason: string, retry: boolean): Promise<boolean> }
+			)._runAutoCompaction(reason, reason === "overflow");
+		expect(h.eventsOfType("compaction_start")).toEqual([{ type: "compaction_start", reason }]);
+		expect(h.eventsOfType("compaction_end")).toHaveLength(1);
+		expect(h.eventsOfType("compaction_end")[0]).toMatchObject({
+			reason,
+			willRetry: reason === "overflow",
+			aborted: false,
+			result: { summary: expect.stringContaining("summary") },
+		});
 	});
 });

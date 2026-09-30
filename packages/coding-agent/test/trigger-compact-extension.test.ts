@@ -8,7 +8,7 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
 		hasUI: false,
 		ui: {} as ExtensionContext["ui"],
 		cwd: process.cwd(),
-		sessionManager: {} as ExtensionContext["sessionManager"],
+		history: {} as ExtensionContext["history"],
 		modelRuntime: {} as ExtensionContext["modelRuntime"],
 		resources: {} as ExtensionContext["resources"],
 		model: undefined,

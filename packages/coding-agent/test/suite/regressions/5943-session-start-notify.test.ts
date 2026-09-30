@@ -1,11 +1,10 @@
-import { fauxAssistantMessage } from "@candy/ai";
 import { Container, Text } from "@candy/tui";
 import { describe, expect, it, vi } from "vitest";
-import type { Theme } from "../../../src/contracts/theme.ts";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.ts";
 import type { ExtensionUIContext } from "../../../src/core/extensions/index.ts";
+import { SettingsManager } from "../../../src/core/settings-manager.ts";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
-import { initTheme, theme } from "../../../src/modes/interactive/theme/theme.ts";
+import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
 import { createHarness } from "../harness.ts";
 
 function createUiContext(
@@ -16,30 +15,9 @@ function createUiContext(
 		confirm: async () => false,
 		input: async () => undefined,
 		notify: onNotify,
-		onTerminalInput: () => () => {},
 		setStatus: () => {},
-		setWorkingVisible: () => {},
-		setHiddenThinkingLabel: () => {},
 		setWidget: () => {},
-		setFooter: () => {},
-		setHeader: () => {},
-		setTitle: () => {},
-		custom: async <T>() => undefined as T,
-		pasteToEditor: () => {},
-		setEditorText: () => {},
-		getEditorText: () => "",
 		editor: async () => undefined,
-		addAutocompleteProvider: () => {},
-		setEditorComponent: () => {},
-		getEditorComponent: () => undefined,
-		get theme() {
-			return theme;
-		},
-		getAllThemes: () => [],
-		getTheme: () => undefined,
-		setTheme: async (_theme: string | Theme) => ({ success: false, error: "Theme switching not available in tests" }),
-		getToolsExpanded: () => false,
-		setToolsExpanded: () => {},
 	};
 }
 
@@ -49,23 +27,25 @@ type LoadedResourcesContext = {
 	loadedResourcesContainer: Container;
 	chatContainer: Container;
 	options: { verbose?: boolean };
-	settingsManager: { getQuietStartup: () => boolean };
+	settingsManager: SettingsManager;
 	sessionManager: { getCwd: () => string };
 	session: {
-		promptTemplates: [];
-		resourceLoader: {
-			getAgentsFiles: () => LoadedResourcesResult<{ agentsFiles: Array<{ path: string }> }>;
-			getSystemPromptSource: () => { path: string } | undefined;
-			getAppendSystemPromptSources: () => Array<{ path: string }>;
-			getSkills: () => LoadedResourcesResult<{ skills: [] }>;
-			getPrompts: () => LoadedResourcesResult<{ prompts: [] }>;
-			getThemes: () => LoadedResourcesResult<{ themes: [] }>;
-			getExtensions: () => { extensions: []; errors: [] };
-		};
-		extensionRunner: {
-			getCommandDiagnostics: () => [];
-			getShortcutDiagnostics: () => [];
-			getRegisteredCommands: () => [];
+		execution: {
+			promptTemplates: [];
+			resourceLoader: {
+				getAgentsFiles: () => LoadedResourcesResult<{ agentsFiles: Array<{ path: string }> }>;
+				getSystemPromptSource: () => { path: string } | undefined;
+				getAppendSystemPromptSources: () => Array<{ path: string }>;
+				getSkills: () => LoadedResourcesResult<{ skills: [] }>;
+				getPrompts: () => LoadedResourcesResult<{ prompts: [] }>;
+				getThemes: () => LoadedResourcesResult<{ themes: [] }>;
+				getExtensions: () => { extensions: []; errors: [] };
+			};
+			extensionRunner: {
+				getCommandDiagnostics: () => [];
+				getShortcutDiagnostics: () => [];
+				getRegisteredCommands: () => [];
+			};
 		};
 	};
 	getStartupExpansionState: () => boolean;
@@ -98,25 +78,17 @@ type RebindContext = {
 type ReloadCommandContext = {
 	hideThinkingBlock: boolean;
 	session: {
-		isStreaming: boolean;
-		isCompacting: boolean;
-		reload: (options?: { beforeSessionStart?: () => void | Promise<void> }) => Promise<void>;
-		resourceLoader: { getThemes: () => { themes: [] } };
-		extensionRunner: unknown;
-		modelRuntime: { getError: () => string | undefined };
+		execution: {
+			isStreaming: boolean;
+			isCompacting: boolean;
+			reload: (options?: { beforeSessionStart?: () => void | Promise<void> }) => Promise<void>;
+			resourceLoader: { getThemes: () => { themes: [] } };
+			extensionRunner: unknown;
+		};
 	};
-	settingsManager: {
-		getHttpIdleTimeoutMs: () => number;
-		getHideThinkingBlock: () => boolean;
-		getOutputPad: () => 0 | 1;
-		getEditorPaddingX: () => number;
-		getAutocompleteMaxVisible: () => number;
-		getShowHardwareCursor: () => boolean;
-		getClearOnShrink: () => boolean;
-	};
+	runtimeHost: { models: { getError: () => string | undefined } };
+	settingsManager: SettingsManager;
 	keybindings: { reload: () => void };
-	customHeader?: unknown;
-	builtInHeader?: unknown;
 	editorContainer: { clear: () => void; addChild: (component: unknown) => void };
 	renderer: {
 		setFocus: (component: unknown) => void;
@@ -154,8 +126,8 @@ type ReloadCommandContextOverrides = Omit<
 	Partial<ReloadCommandContext>,
 	"session" | "settingsManager" | "keybindings" | "editorContainer" | "renderer" | "defaultEditor" | "themeController"
 > & {
-	session?: Partial<ReloadCommandContext["session"]>;
-	settingsManager?: Partial<ReloadCommandContext["settingsManager"]>;
+	session?: { execution?: Partial<ReloadCommandContext["session"]["execution"]> };
+	settingsManager?: SettingsManager;
 	keybindings?: Partial<ReloadCommandContext["keybindings"]>;
 	editorContainer?: Partial<ReloadCommandContext["editorContainer"]>;
 	renderer?: Partial<ReloadCommandContext["renderer"]>;
@@ -168,26 +140,19 @@ function createReloadCommandContext(overrides: ReloadCommandContextOverrides = {
 	return {
 		hideThinkingBlock: overrides.hideThinkingBlock ?? false,
 		session: {
-			isStreaming: false,
-			isCompacting: false,
-			reload: async (options) => {
-				await options?.beforeSessionStart?.();
+			execution: {
+				isStreaming: false,
+				isCompacting: false,
+				reload: async (options) => {
+					await options?.beforeSessionStart?.();
+				},
+				resourceLoader: { getThemes: () => ({ themes: [] }) },
+				extensionRunner: {},
+				...overrides.session?.execution,
 			},
-			resourceLoader: { getThemes: () => ({ themes: [] }) },
-			extensionRunner: {},
-			modelRuntime: { getError: () => undefined },
-			...overrides.session,
 		},
-		settingsManager: {
-			getHttpIdleTimeoutMs: () => 0,
-			getHideThinkingBlock: () => false,
-			getOutputPad: () => 1,
-			getEditorPaddingX: () => 1,
-			getAutocompleteMaxVisible: () => 10,
-			getShowHardwareCursor: () => false,
-			getClearOnShrink: () => false,
-			...overrides.settingsManager,
-		},
+		runtimeHost: { models: { getError: () => undefined } },
+		settingsManager: overrides.settingsManager ?? SettingsManager.inMemory(),
 		keybindings: { reload: () => {}, ...overrides.keybindings },
 		editorContainer: { clear: () => {}, addChild: () => {}, ...overrides.editorContainer },
 		renderer: {
@@ -200,8 +165,6 @@ function createReloadCommandContext(overrides: ReloadCommandContextOverrides = {
 		editor,
 		defaultEditor: { setPaddingX: () => {}, setAutocompleteMaxVisible: () => {}, ...overrides.defaultEditor },
 		themeController: { applyFromSettings: async () => {}, ...overrides.themeController },
-		customHeader: overrides.customHeader,
-		builtInHeader: overrides.builtInHeader,
 		resetExtensionUI: overrides.resetExtensionUI ?? (() => {}),
 		rebuildChatFromMessages: overrides.rebuildChatFromMessages ?? (() => {}),
 		setupAutocompleteProvider: overrides.setupAutocompleteProvider ?? (() => {}),
@@ -236,23 +199,25 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 		loadedResourcesContainer: new Container(),
 		chatContainer: new Container(),
 		options: { verbose: true },
-		settingsManager: { getQuietStartup: () => false },
+		settingsManager: SettingsManager.inMemory(),
 		sessionManager: { getCwd: () => "/repo" },
 		session: {
-			promptTemplates: [],
-			resourceLoader: {
-				getAgentsFiles: () => ({ agentsFiles: [{ path: "/repo/AGENTS.md" }], diagnostics: [] }),
-				getSystemPromptSource: () => undefined,
-				getAppendSystemPromptSources: () => [],
-				getSkills: () => ({ skills: [], diagnostics: [] }),
-				getPrompts: () => ({ prompts: [], diagnostics: [] }),
-				getThemes: () => ({ themes: [], diagnostics: [] }),
-				getExtensions: () => ({ extensions: [], errors: [] }),
-			},
-			extensionRunner: {
-				getCommandDiagnostics: () => [],
-				getShortcutDiagnostics: () => [],
-				getRegisteredCommands: () => [],
+			execution: {
+				promptTemplates: [],
+				resourceLoader: {
+					getAgentsFiles: () => ({ agentsFiles: [{ path: "/repo/AGENTS.md" }], diagnostics: [] }),
+					getSystemPromptSource: () => undefined,
+					getAppendSystemPromptSources: () => [],
+					getSkills: () => ({ skills: [], diagnostics: [] }),
+					getPrompts: () => ({ prompts: [], diagnostics: [] }),
+					getThemes: () => ({ themes: [], diagnostics: [] }),
+					getExtensions: () => ({ extensions: [], errors: [] }),
+				},
+				extensionRunner: {
+					getCommandDiagnostics: () => [],
+					getShortcutDiagnostics: () => [],
+					getRegisteredCommands: () => [],
+				},
 			},
 		},
 		getStartupExpansionState: () => false,
@@ -312,7 +277,7 @@ describe("regression #5943: session_start transient UI", () => {
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
 					events.push("bind");
-					await harness.session.bindExtensions({
+					await harness.session.execution.bindExtensions({
 						uiContext: createUiContext((message) => events.push(`notify:${message}`)),
 						mode: "tui",
 					});
@@ -379,14 +344,14 @@ describe("regression #5943: session_start transient UI", () => {
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
 					events.push("bind");
-					await harness.session.bindExtensions({
+					await harness.session.execution.bindExtensions({
 						uiContext: createUiContext(() => {}),
 						mode: "tui",
 					});
 				},
 				subscribeToAgent: () => {
 					events.push("subscribe");
-					harness.session.subscribe((event) => {
+					harness.session.execution.subscribe((event) => {
 						if (event.type !== "message_start" && event.type !== "message_end") {
 							return;
 						}
@@ -423,7 +388,6 @@ describe("regression #5943: session_start transient UI", () => {
 				},
 			],
 		});
-		harness.setResponses([fauxAssistantMessage("assistant from start")]);
 
 		try {
 			const session = {};
@@ -442,14 +406,14 @@ describe("regression #5943: session_start transient UI", () => {
 				renderCurrentSessionState: () => events.push("render"),
 				bindCurrentSessionExtensions: async () => {
 					events.push("bind");
-					await harness.session.bindExtensions({
+					await harness.session.execution.bindExtensions({
 						uiContext: createUiContext(() => {}),
 						mode: "tui",
 					});
 				},
 				subscribeToAgent: () => {
 					events.push("subscribe");
-					harness.session.subscribe((event) => {
+					harness.session.execution.subscribe((event) => {
 						if (event.type !== "message_start" && event.type !== "message_end") {
 							return;
 						}
@@ -462,12 +426,11 @@ describe("regression #5943: session_start transient UI", () => {
 			};
 
 			await interactiveModePrototype.rebindCurrentSession.call(context, { renderBeforeBind: true });
-			await harness.session.agent.waitForIdle();
+			await harness.session.execution.waitForIdle();
 
 			expect(events.slice(0, 3)).toEqual(["render", "subscribe", "bind"]);
 			expect(events).toContain("message_start:user:user from start");
 			expect(events).toContain("message_end:user:user from start");
-			expect(events).toContain("message_end:assistant:assistant from start");
 		} finally {
 			await harness.cleanup();
 		}
@@ -490,14 +453,14 @@ describe("regression #5943: session_start transient UI", () => {
 		});
 
 		try {
-			await harness.session.bindExtensions({
+			await harness.session.execution.bindExtensions({
 				uiContext: createUiContext((message) => events.push(message)),
 				mode: "tui",
 			});
 			expect(events).toEqual(["start:startup", "notify:startup"]);
 
 			events.length = 0;
-			await harness.session.reload({ beforeSessionStart });
+			await harness.session.execution.reload({ beforeSessionStart });
 
 			expect(beforeSessionStart).toHaveBeenCalledTimes(1);
 			expect(events).toEqual(["render", "start:reload", "notify:reload"]);
@@ -511,12 +474,14 @@ describe("regression #5943: session_start transient UI", () => {
 		const events: string[] = [];
 		let context: ReloadCommandContext;
 		context = createReloadCommandContext({
-			settingsManager: { getHideThinkingBlock: () => true },
+			settingsManager: SettingsManager.inMemory({ hideThinkingBlock: true }),
 			session: {
-				reload: async (options) => {
-					events.push("reload");
-					await options?.beforeSessionStart?.();
-					events.push(`start:${context.hideThinkingBlock}`);
+				execution: {
+					reload: async (options) => {
+						events.push("reload");
+						await options?.beforeSessionStart?.();
+						events.push(`start:${context.hideThinkingBlock}`);
+					},
 				},
 			},
 			rebuildChatFromMessages: () => {
@@ -547,10 +512,12 @@ describe("regression #5943: session_start transient UI", () => {
 		const context = createReloadCommandContext({
 			editor,
 			session: {
-				reload: async (options) => {
-					await options?.beforeSessionStart?.();
-					markReloadWaiting();
-					await reloadFinished;
+				execution: {
+					reload: async (options) => {
+						await options?.beforeSessionStart?.();
+						markReloadWaiting();
+						await reloadFinished;
+					},
 				},
 			},
 			renderer: {

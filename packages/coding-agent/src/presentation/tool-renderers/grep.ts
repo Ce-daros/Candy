@@ -2,15 +2,14 @@
  * Presentation for the grep tool.
  *
  * Renderers live apart from the implementation so a process that only displays tool output does not
- * load the execution path or its typebox parameter schema. `grep.ts` spreads these into its
- * definition, so the tool's public shape is unchanged.
+ * load the execution path or its typebox parameter schema.
  */
 
 import { Text } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
-import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
 import type { GrepToolDetails } from "../../core/tools/grep.ts";
 import { DEFAULT_MAX_BYTES, formatSize } from "../../core/tools/truncate.ts";
+import type { ToolRenderers, ToolRenderResultOptions } from "../tool-render-types.ts";
 import { getTextOutput, invalidArgText, shortenPath, str } from "../tool-render-utils.ts";
 
 function formatGrepCall(
@@ -67,7 +66,7 @@ function formatGrepResult(
 	return text;
 }
 
-export const grepRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> = {
+export const grepRenderers: ToolRenderers<any, GrepToolDetails> = {
 	renderCall(args, theme, context) {
 		const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 		text.setText(formatGrepCall(args as any, theme));

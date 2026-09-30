@@ -51,7 +51,7 @@ function stallNextCredentialList(harness: Harness): StalledCredentialList {
 }
 
 async function waitForRecoveryRefresh(stalledList: StalledCredentialList, harness: Harness): Promise<void> {
-	const refresh = harness.session.modelRuntime.refresh({ allowNetwork: false });
+	const refresh = harness.session.execution.modelRuntime.refresh({ allowNetwork: false });
 	await vi.waitFor(() => expect(stalledList.getCallCount()).toBe(2));
 	await refresh;
 }
@@ -69,7 +69,7 @@ describe("issue #7301 stalled availability refresh", () => {
 
 	it("recovers without letting the stalled refresh overwrite the newer snapshot", async () => {
 		harness = await createHarness({ withConfiguredAuth: false });
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.session.execution.modelRuntime;
 		await harness.authStorage.modify("stale-provider", async () => ({ type: "api_key", key: "stale-key" }));
 		await runtime.refresh({ allowNetwork: false });
 		expect(runtime.getProviderAuthStatus("stale-provider")).toEqual({ configured: true, source: "stored" });
@@ -92,7 +92,7 @@ describe("issue #7301 stalled availability refresh", () => {
 
 	it("does not let a stale failure overwrite newer availability error state", async () => {
 		harness = await createHarness({ withConfiguredAuth: false });
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.session.execution.modelRuntime;
 		stalledList = stallNextCredentialList(harness);
 		const staleRefresh = runtime.getAvailable();
 		await stalledList.started;
@@ -107,7 +107,7 @@ describe("issue #7301 stalled availability refresh", () => {
 
 	it("does not let a stale provider-scoped failure overwrite a newer availability pass", async () => {
 		harness = await createHarness();
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.session.execution.modelRuntime;
 		const models = Reflect.get(runtime, "models") as Models;
 		const originalGetAvailability = models.getAvailability.bind(models);
 		const started = createDeferred();

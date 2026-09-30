@@ -1,6 +1,6 @@
 # Settings Reference
 
-This reference lists user-configurable settings, their types, defaults, and purposes. Project settings override agent-directory settings. Resource lists are combined. See [Configuration](configuration.md) for file locations and trust behavior.
+This reference lists user-configurable settings, their types, defaults, and purposes. Project values override agent-directory values for settings that support project scope. `defaultProjectTrust` and `cacheWarming` are global-only. Resource lists are combined. See [Configuration](configuration.md) for file locations and trust behavior.
 
 Type `/` in an empty editor to open Command and search individual settings. Simple values save immediately. The Theme picker previews changes while you move and restores the previous theme if you cancel. Model-specific settings are in Model → Details; steering, follow-up, and retry controls are in Thinking → Agent → Behavior.
 
@@ -18,7 +18,7 @@ Type `/` in an empty editor to open Command and search individual settings. Simp
 | `showCacheMissNotices` | boolean | `false` | Show notices for significant cache misses, successful cache warming, compaction usage, and provider recovery. |
 | `cacheWarming` | `"off" \| "streaming" \| "idle"` | `"streaming"` | Keep eligible provider prompt caches warm during active runs or, with `"idle"`, between runs. Global setting only. |
 
-Cache warming runs only when the model declares a cache lifetime and candy estimates at least $0.05 in avoided cache-miss cost. Refresh usage counts toward session totals but does not enter model context. History → Session details shows the next decision; extensions can override it with `cache_warming_decision`. See [Prompt Cache Lifetimes](models.md#prompt-cache-lifetimes).
+Cache warming runs only when the model declares a cache lifetime and candy estimates at least $0.05 in avoided cache-miss cost. Refresh usage counts toward session totals but does not enter model context. History → Session details shows the next decision. See [Prompt Cache Lifetimes](models.md#prompt-cache-lifetimes).
 
 See [Choose a Model](models.md) for model selection and thinking controls.
 

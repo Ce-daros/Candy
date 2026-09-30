@@ -1,6 +1,6 @@
 # Configuration
 
-candy supports user-level and project configuration. User-level configuration lives in the agent directory, which defaults to `~/.candy/agent`. Project configuration lives in `.candy` under the working directory and loads after [project trust](security.md#understand-project-trust) is granted. The only exception is `sessionDir`, which candy reads before resolving trust so it can locate sessions.
+candy supports user-level and project configuration. User-level configuration lives in the agent directory, which defaults to `~/.candy/agent`. Project configuration lives in `.candy` under the working directory and loads after [project trust](security.md#understand-project-trust) is granted. Project values override user values only for settings that support project scope; `defaultProjectTrust` and `cacheWarming` are user-level only. The only setting candy reads before resolving trust is `sessionDir`, so it can locate sessions.
 
 In interactive mode, type `/` in an empty editor to open Command and change common preferences. For other options, ask candy to update the configuration or edit the relevant files directly. Choose Reload in Command after manually changing settings, keybindings, instructions, or resources.
 

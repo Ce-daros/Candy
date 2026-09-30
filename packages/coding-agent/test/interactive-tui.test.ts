@@ -165,7 +165,7 @@ describe("InteractiveMode right-click paste", () => {
 });
 
 type CopyCommandContext = {
-	session: { getLastAssistantText: () => string | undefined };
+	session: { history: { getLastAssistantText: () => string | undefined } };
 	renderer: ReturnType<typeof createInteractiveTui>;
 	showStatus: (message: string) => void;
 	showError: (message: string) => void;
@@ -197,7 +197,7 @@ describe("InteractiveMode copy confirmation", () => {
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 		const context: CopyCommandContext = {
-			session: { getLastAssistantText },
+			session: { history: { getLastAssistantText } },
 			renderer: ui,
 			showStatus,
 			showError,
@@ -238,7 +238,7 @@ describe("InteractiveMode copy confirmation", () => {
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 		const context: CopyCommandContext = {
-			session: { getLastAssistantText },
+			session: { history: { getLastAssistantText } },
 			renderer: ui,
 			showStatus,
 			showError,
@@ -278,7 +278,7 @@ describe("InteractiveMode copy confirmation", () => {
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 		const context: CopyCommandContext = {
-			session: { getLastAssistantText: () => "assistant response" },
+			session: { history: { getLastAssistantText: () => "assistant response" } },
 			renderer: ui,
 			showStatus,
 			showError,
@@ -325,7 +325,8 @@ const interactiveModePrototype = InteractiveMode.prototype as unknown as Interac
 
 describe("clear-on-shrink status spacing", () => {
 	const notification: Component = new Text("", 0, 0);
-	it.each([true, false])("routes every status through the editor opt-in (%s)", (embedWorkingStatus) => {
+	it("embeds every status in the product editor", () => {
+		const embedWorkingStatus = true;
 		initTheme("dark");
 		const tui = { requestRender: vi.fn() } as unknown as TUI;
 		const editor: StatusEditor = { embedWorkingStatus, setWorkingStatusIndicator: vi.fn() };
@@ -350,7 +351,6 @@ describe("clear-on-shrink status spacing", () => {
 			for (const indicator of indicators) {
 				interactiveModePrototype.showStatusIndicator.call(context, indicator);
 				expect(context.activeStatusIndicator).toBe(indicator);
-				expect(context.activeWorkingIndicatorEmbedded).toBe(embedWorkingStatus);
 				if (embedWorkingStatus) {
 					expect(editor.setWorkingStatusIndicator).toHaveBeenLastCalledWith(indicator);
 					expect(context.statusContainer.children).toEqual([notification]);
@@ -385,24 +385,4 @@ describe("clear-on-shrink status spacing", () => {
 			expect(context.statusContainer.children).toEqual([notification]);
 		},
 	);
-
-	it("uses the standalone row for a custom editor that has not opted in", () => {
-		const defaultEditor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
-		const customEditor = { embedWorkingStatus: false, setWorkingStatusIndicator: vi.fn() };
-		const context: ClearStatusContext = {
-			activeStatusIndicator: { kind: "working", dispose: vi.fn() },
-			activeWorkingIndicatorEmbedded: false,
-			statusContainer: new Container(),
-			notification,
-			defaultEditor,
-			editor: customEditor,
-			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
-		};
-
-		interactiveModePrototype.clearStatusIndicator.call(context);
-
-		expect(defaultEditor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
-		expect(customEditor.setWorkingStatusIndicator).not.toHaveBeenCalled();
-		expect(context.statusContainer.children).toEqual([notification]);
-	});
 });

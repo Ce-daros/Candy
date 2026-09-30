@@ -4,7 +4,7 @@ import {
 	createAgentSessionRuntime,
 	createSyntheticSourceInfo,
 	type PromptTemplate,
-	SessionManager,
+	SessionHistory,
 } from "@candy/coding-agent";
 
 const deployTemplate: PromptTemplate = {
@@ -22,7 +22,7 @@ const deployTemplate: PromptTemplate = {
 const cwd = process.cwd();
 const runtime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		promptsOverride: (current) => ({
 			prompts: [...current.prompts, deployTemplate],

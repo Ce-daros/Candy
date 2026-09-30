@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import { serializeSessionEntry, writeSessionFile } from "./session-jsonl.ts";
-import { CURRENT_SESSION_VERSION, type SessionHeader, type SessionManager } from "./session-manager.ts";
+import { CURRENT_SESSION_VERSION, type ReadonlySessionHistory, type SessionHeader } from "./session-records.ts";
 
 /** The current session branch as serializable entries, including its header. */
-export function sessionBranchEntries(sessionManager: SessionManager): object[] {
+export function sessionBranchEntries(sessionManager: ReadonlySessionHistory): object[] {
 	const timestamp = new Date().toISOString();
 	const header: SessionHeader = {
 		type: "session",
@@ -24,14 +24,14 @@ export function sessionBranchEntries(sessionManager: SessionManager): object[] {
 }
 
 /** Serialize the current session branch as JSONL. */
-export function serializeSessionBranch(sessionManager: SessionManager): string {
+export function serializeSessionBranch(sessionManager: ReadonlySessionHistory): string {
 	return sessionBranchEntries(sessionManager)
 		.map((entry) => serializeSessionEntry(entry))
 		.join("");
 }
 
 /** Write the current session branch as JSONL. */
-export function exportSessionToJsonl(sessionManager: SessionManager, outputPath?: string): string {
+export function exportSessionToJsonl(sessionManager: ReadonlySessionHistory, outputPath?: string): string {
 	const filePath = resolvePath(
 		outputPath ?? `session-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`,
 		process.cwd(),

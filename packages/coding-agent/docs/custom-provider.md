@@ -1,159 +1,57 @@
 # Custom Providers
 
-A provider extension connects candy to a model service that needs custom authentication, model discovery, request handling, or streaming. If the service already speaks a supported API, configure it in `models.json` instead.
+A provider extension connects Candy to a model service that needs custom authentication, discovery, refresh, or streaming. Use [`models.json`](models.md#configure-a-compatible-endpoint) when the service already speaks a supported API and only needs model or endpoint configuration.
 
-Provider extensions run inside candy and can inspect credentials, prompts, tool definitions, model responses, and usage. Treat them as trusted code and avoid logging secrets or provider payloads.
-
-## Choose the smallest integration
-
-| Requirement | Use |
-|---|---|
-| Add models behind a supported API | [`models.json`](models.md#configure-a-compatible-endpoint) |
-| Change an existing provider endpoint or headers | `models.json` or a small provider extension |
-| Discover models dynamically | A provider with `refreshModels` |
-| Add a login flow in Sources | A provider with native or legacy OAuth configuration |
-| Implement an unsupported wire protocol | A provider with `stream` or `streamSimple` |
-
-A provider extension is an [extension](extensions.md), so it follows the same loading, trust, reload, and error behavior.
+Provider extensions run inside Candy and can inspect credentials, prompts, tool definitions, responses, and usage. Load them only from sources you trust.
 
 ## Register a provider
 
-Call `candy.registerProvider()` from the extension factory. candy waits for asynchronous factories before startup continues, so providers registered there are available to startup model selection and `candy --list-models`.
-
-There are two registration forms:
-
-- Register a complete `Provider` from `@candy/ai` for native authentication, filtering, discovery, refresh, and streaming behavior.
-- Register a provider name with `ProviderConfig` for the legacy configuration form used by existing extensions.
-
-Prefer a complete provider for new integrations that own more than static endpoint and model metadata. candy composes `models.json` overrides above a registered native provider.
-
-Registering only `baseUrl` or `headers` for an existing provider preserves its built-in models. Supplying `models` in the legacy form replaces that provider's models across chat and image operations. An omitted `type` means `"chat"`; image models require an explicit discriminant and an implementation keyed by their `api` value through the `images` field.
-
-For example, a mixed-operation provider can register non-chat models and their implementations together:
+Register a native `Provider` from `@candy/ai` in the extension factory:
 
 ```typescript
-candy.registerProvider("media-tools", {
-  apiKey: "$MEDIA_TOOLS_API_KEY",
-  models: [
-    {
-      type: "image",
-      id: "image-v1",
-      name: "Image V1",
-      api: "media-images",
-      baseUrl: "https://media.example.com/v1",
-      input: ["text"],
-      output: ["image"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    },
-  ],
-  images: {
-    "media-images": { generateImages: async (model, context, options) => result },
-  },
-});
+import type { ExtensionAPI } from "@candy/coding-agent";
+import type { Provider } from "@candy/ai";
+
+const provider: Provider = {
+	id: "company-ai",
+	name: "Company AI",
+	baseUrl: "https://ai.example.com/v1",
+	auth: {
+		apiKey: {
+			name: "API key",
+			login: async (interaction) => ({
+				type: "api_key",
+				key: await interaction.prompt({ type: "secret", message: "Company AI API key" }),
+			}),
+		},
+	},
+	getModels: () => [],
+	stream: (model, context, options) => companyStream(model, context, options),
+};
+
+export default function (candy: ExtensionAPI) {
+	candy.registerProvider(provider);
+}
 ```
 
-Model-level `baseUrl` values take precedence over the provider endpoint. If no `models` list is supplied, built-in models of every operation remain registered. Equal model IDs in different operations remain distinct, including their model-specific headers.
+The factory may be asynchronous. Candy installs providers registered during setup before startup model selection. A registration made by a later command or event handler takes effect in the active runtime. `candy.unregisterProvider(provider.id)` removes that runtime registration and restores the built-in provider if one used the same ID.
 
-Calls made after initial extension loading take effect immediately. Use `candy.unregisterProvider()` to remove the dynamic provider and restore built-in behavior that it replaced.
+Provider implementations own model discovery, authentication, refresh, request conversion, streaming, and image operations. See the native [`Provider` contract](../../ai/src/models.ts) and existing implementations under [`packages/ai/src/providers`](../../ai/src/providers).
 
+`models.json` remains the configuration path for compatible endpoints, API keys, headers, model additions, model overrides, and compatibility flags. Its configured values apply over built-in or registered native providers.
 
-## Provide authentication
+## Extend a supported API
 
-Static providers can resolve an API key from a literal, environment interpolation, or a command. These values use the same syntax as `models.json`:
+Reuse Candy's API implementation when the service follows an existing protocol. A native provider can supply authentication, endpoint information, model filtering, and catalog refresh while delegating request conversion and streaming to a compatible API provider.
 
-- `$NAME` and `${NAME}` read environment variables.
-- A leading `!command` uses command output.
-- `$$` emits a literal `$`.
-- `$!` emits a literal leading `!`.
+Compatibility flags describe verified differences in an otherwise supported protocol. Do not enable them only because a service claims compatibility.
 
-Use native provider authentication when the integration needs stored credentials, custom resolution, provider-scoped environment, or multiple login methods.
+## Implement streaming
 
-An OAuth provider supplies a display name, login flow, token refresh, and access-token resolution. After registration it appears in Sources, and candy stores returned credentials in `~/.candy/agent/auth.json`.
+Implement a provider stream only when no existing API implementation can represent the service. Study the implementations under [`packages/ai/src/api`](../../ai/src/api) first.
 
-OAuth callbacks are UI-neutral. They can open an authorization URL, show a device code, report progress, request input, or ask the user to choose a login method. Honor cancellation and the supplied abort signal during network requests.
-
-Never write access tokens, refresh tokens, authorization headers, or complete provider responses to ordinary logs.
-
-## Supply and refresh models
-
-Every model needs an ID, display name, input capabilities, and cost metadata. Chat models also need a context window, an output limit, and reasoning support; image models declare their output modalities. Choose the API implementation at the provider level unless one model requires an override.
-
-Set `promptCache.short` or `promptCache.long` to the provider's best-effort cache lifetime in seconds when candy should keep an idle prompt cache warm. Leave them unset to disable cache warming for that retention tier.
-
-Compatibility flags describe verified differences in an otherwise supported API. Do not enable them based only on an endpoint claiming compatibility.
-
-Confirm the request fields and response behavior against the actual server.
-
-Use `refreshModels` when the available catalog comes from a live service. Pass `context.signal` to blocking I/O so callers can cancel refreshes.
-
-The two registration forms have different refresh contracts:
-
-- A complete `Provider` returns nothing. It calls `context.publish({ update })` to install provider-owned model state, after which its synchronous `getModels()` exposes the latest list.
-- Legacy `ProviderConfig.refreshModels` returns mixed-operation model definitions. candy replaces that registration’s live models with the returned list and applies any requested persistence.
-
-Publish persisted catalog data only when it should survive across runs. A live service such as llama.cpp can update its in-memory list without persisting it; a remote catalog can retain a snapshot for offline startup.
-
-## Reuse a supported streaming API
-
-Use one of candy AI’s API implementations whenever the provider protocol matches it.
-
-Supported implementations cover Anthropic Messages, OpenAI Chat Completions and Responses, Google Generative AI and Vertex, and Mistral Conversations.
-
-The provider can still customize authentication, base URLs, headers, model filtering, and discovery while delegating request conversion and streaming to an existing API implementation.
-
-This is safer than copying a stream implementation because it preserves candy’s message conversion, tool handling, usage accounting, cancellation, and compatibility behavior.
-
-## Implement custom streaming
-
-Implement `streamSimple` only when no existing API implementation can represent the service. Study the implementations under [`packages/ai/src/api`](../../ai/src/api) first.
-
-The stream receives a normalized `TranscriptContext`. System prompts and tool declarations live in transcript system messages, so read them with `getCurrentSystemPrompt(context.messages)` and `getCurrentTools(context.messages)` rather than expecting `context.systemPrompt` or `context.tools`. A model that supports mid-conversation system messages can receive them in place; otherwise call `collapseSystemMessages(context)` to fold later system messages into the leading one.
-
-A custom stream must:
-
-1. Create an assistant message with provider, model, timestamp, pending stop reason, content, and zeroed usage.
-2. After request setup succeeds, emit one `start` event before content events.
-3. Update the message while emitting balanced text, thinking, and tool-call events.
-4. Finalize usage, cost, content, and stop reason.
-5. Emit exactly one terminal `done` or `error` event and close the stream.
-6. Convert cancellation into an aborted result.
-
-Request setup can fail before `start`; in that case the stream can terminate directly with `error`. Missing request authentication may also throw synchronously before a stream is returned.
-
-Content indexes refer to blocks in the assistant message. Update each block before emitting the event whose `partial` field exposes that state. Tool-call arguments must contain valid parsed input by `toolcall_end`.
-
-The stream must also honor request instrumentation supplied through `SimpleStreamOptions`:
-
-- Call `options.onPayload` before sending the provider request and use any replacement payload it returns.
-- Call `options.onResponse` after receiving the response but before consuming its body.
-- Await `options.onProviderStreamEvent?.(providerEvent, model)` for each parsed provider event before normalizing it.
-- Pass through the abort signal and provider-scoped environment.
-
-These hooks power extension request inspection, response-header events, and provider-stream observation. Omitting them makes the provider behave differently from candy’s built-in providers.
-
-## Report failures and usage
-
-Set a concrete terminal stop reason. Error and aborted messages need an `errorMessage`; successful messages need accurate input, output, cache, total-token, and cost values.
-
-candy can compact and retry after recognized context-overflow errors. If the service uses an unknown message, normalize only that provider’s overflow response to `context_length_exceeded` in a guarded `message_end` handler.
-
-Do not rewrite rate limits or transient provider failures as context overflow. Those failures use candy’s normal retry behavior instead.
+A provider stream must create a valid assistant message, emit balanced content and tool-call events, finalize usage and stop reason, emit one terminal `done` or `error` event, close the stream, and honor cancellation. Request setup may fail before the first `start` event. Report context overflow only when the service actually rejected the request for context length; Candy owns recovery and retry scheduling.
 
 ## Test the integration
 
-Test at least:
-
-- ordinary and empty text responses
-- tool calls and tool results
-- image input and image tool results when supported
-- usage and cost accounting
-- abort behavior
-- context overflow
-- malformed or partial streams
-- Unicode boundaries
-- cross-provider session handoff
-- authentication refresh and cancellation
-
-The provider tests under [`packages/ai/test`](../../ai/test) define the behavior expected from built-in providers. Adapt the relevant suites rather than relying only on manual prompts.
-
-Run the extension directly while developing, then move it to a discovered extension location or distribute it through a [candy package](packages.md). Use **Reload** in Command after changing a discovered provider extension in an active session.
+Test ordinary and empty responses, tool calls and results, supported image operations, usage and cost, cancellation, overflow, malformed streams, Unicode boundaries, cross-provider session restore, authentication refresh, and refresh cancellation. Use faux providers and isolated credentials; do not use real user credentials or paid model calls.

@@ -12,7 +12,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import type { SessionTreeNode } from "../../../core/session-manager.ts";
+import type { SessionTreeNode } from "../../../core/session-history.ts";
 import { selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { scrollCounter } from "./list-scaffold.ts";
 import { type FlatNode, flattenSessionTree, type GutterInfo, type ToolCallInfo } from "./tree-projection.ts";

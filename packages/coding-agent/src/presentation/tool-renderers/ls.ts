@@ -2,15 +2,14 @@
  * Presentation for the ls tool.
  *
  * Renderers live apart from the implementation so a process that only displays tool output does not
- * load the execution path or its typebox parameter schema. `ls.ts` spreads these into its
- * definition, so the tool's public shape is unchanged.
+ * load the execution path or its typebox parameter schema.
  */
 
 import { Text } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
-import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
 import type { LsToolDetails } from "../../core/tools/ls.ts";
 import { DEFAULT_MAX_BYTES, formatSize } from "../../core/tools/truncate.ts";
+import type { ToolRenderers, ToolRenderResultOptions } from "../tool-render-types.ts";
 import { getTextOutput, renderToolPath, str } from "../tool-render-utils.ts";
 
 function formatLsCall(args: { path?: string; limit?: number } | undefined, theme: Theme, cwd: string): string {
@@ -55,7 +54,7 @@ function formatLsResult(
 	return text;
 }
 
-export const lsRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> = {
+export const lsRenderers: ToolRenderers<any, LsToolDetails> = {
 	renderCall(args, theme, context) {
 		const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 		text.setText(formatLsCall(args as any, theme, context.cwd));

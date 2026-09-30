@@ -13,13 +13,13 @@ import {
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
 import { createSessionCommandActions } from "../../../src/core/session-command-actions.ts";
-import { SessionManager } from "../../../src/core/session-manager.ts";
+import { SessionHistory } from "../../../src/core/session-history.ts";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "../../../src/index.ts";
 import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
 import { configuredFauxProvider } from "../../ai.ts";
 
-function getText(message: AgentSession["messages"][number]): string {
+function getText(message: AgentSession["execution"]["messages"][number]): string {
 	if (!("content" in message)) {
 		return "";
 	}
@@ -90,12 +90,12 @@ describe("regression #2860: replaced session callbacks", () => {
 		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(tempDir),
+			sessionManager: SessionHistory.create(tempDir),
 		});
 
 		const rebindSession = async (): Promise<void> => {
 			const session = runtime.session;
-			await session.bindExtensions({
+			await session.execution.bindExtensions({
 				commandContextActions: createSessionCommandActions(runtime),
 			});
 		};
@@ -138,14 +138,14 @@ describe("regression #2860: replaced session callbacks", () => {
 					handler: async (_args, ctx) => {
 						oldCtx = ctx;
 						oldPi = candy;
-						oldSessionFile = ctx.sessionManager.getSessionFile();
+						oldSessionFile = ctx.history.getSessionFile();
 						await ctx.newSession({
 							parentSession: oldSessionFile,
 							withSession: async (replacedCtx) => {
 								events.push(`with:${currentInstance}`);
-								replacementSessionFile = replacedCtx.sessionManager.getSessionFile();
+								replacementSessionFile = replacedCtx.history.getSessionFile();
 								try {
-									oldCtx?.sessionManager.getSessionFile();
+									oldCtx?.history.getSessionFile();
 								} catch {
 									staleCtxThrows = true;
 								}
@@ -165,7 +165,7 @@ describe("regression #2860: replaced session callbacks", () => {
 
 		expect(events).toEqual(["start:1"]);
 
-		await runtime.session.executeCommand({ source: "extension", name: "repro", args: "" });
+		await runtime.session.execution.executeCommand({ source: "extension", name: "repro", args: "" });
 
 		expect(events).toEqual(["start:1", "shutdown:1", "start:2", "with:1"]);
 		expect(replacementSessionFile).toBeDefined();
@@ -173,7 +173,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		expect(staleCtxThrows).toBe(true);
 		expect(staleCandyThrows).toBe(true);
 		expect(
-			runtime.session.messages
+			runtime.session.execution.messages
 				.filter((message) => message.role !== "system")
 				.map((message) => `${message.role}:${getText(message)}`),
 		).toEqual(["user:Hello from the new session!", "assistant:hello reply"]);
@@ -185,7 +185,7 @@ describe("regression #2860: replaced session callbacks", () => {
 				candy.registerCommand("fork-it", {
 					description: "fork-it",
 					handler: async (_args, ctx) => {
-						const leafId = ctx.sessionManager.getLeafId();
+						const leafId = ctx.history.getLeafId();
 						if (!leafId) {
 							throw new Error("Missing leaf id");
 						}
@@ -201,11 +201,11 @@ describe("regression #2860: replaced session callbacks", () => {
 			["seed reply", "fork reply"],
 		);
 
-		await runtime.session.prompt("seed");
-		await runtime.session.executeCommand({ source: "extension", name: "fork-it", args: "" });
+		await runtime.session.execution.prompt("seed");
+		await runtime.session.execution.executeCommand({ source: "extension", name: "fork-it", args: "" });
 
 		expect(
-			runtime.session.messages
+			runtime.session.execution.messages
 				.filter((message) => message.role !== "system")
 				.map((message) => `${message.role}:${getText(message)}`),
 		).toEqual(["user:seed", "assistant:seed reply", "user:fork callback message", "assistant:fork reply"]);
@@ -229,19 +229,19 @@ describe("regression #2860: replaced session callbacks", () => {
 			["root reply", "target reply", "switch reply"],
 		);
 
-		await runtime.session.prompt("root");
-		const originalSessionPath = runtime.session.sessionFile;
+		await runtime.session.execution.prompt("root");
+		const originalSessionPath = runtime.session.execution.sessionFile;
 		const newSessionResult = await runtime.newSession();
 		expect(newSessionResult.cancelled).toBe(false);
-		await runtime.session.prompt("target");
-		targetSessionPath = runtime.session.sessionFile!;
+		await runtime.session.execution.prompt("target");
+		targetSessionPath = runtime.session.execution.sessionFile!;
 		await runtime.switchSession(originalSessionPath!);
 
-		await runtime.session.executeCommand({ source: "extension", name: "switch-it", args: "" });
+		await runtime.session.execution.executeCommand({ source: "extension", name: "switch-it", args: "" });
 
-		expect(runtime.session.sessionFile).toBe(targetSessionPath);
+		expect(runtime.session.execution.sessionFile).toBe(targetSessionPath);
 		expect(
-			runtime.session.messages
+			runtime.session.execution.messages
 				.filter((message) => message.role !== "system")
 				.map((message) => `${message.role}:${getText(message)}`),
 		).toEqual(["user:target", "assistant:target reply", "user:switch callback message", "assistant:switch reply"]);

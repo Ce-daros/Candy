@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@candy/agent-core";
 import type { AssistantMessage, Usage } from "@candy/ai";
-import type { SessionEntry } from "../../core/session-manager.ts";
-import { sessionEntryToContextMessages } from "../../core/session-manager.ts";
+import type { SessionEntry } from "../../core/session-history.ts";
+import { sessionEntryToContextMessages } from "../../core/session-history.ts";
 import type { AssistantMessageComponent } from "./components/assistant-message.ts";
 
 export type CompactionCostNotice = {

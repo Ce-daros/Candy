@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../../../src/config.ts";
-import { SessionManager } from "../../../src/core/session-manager.ts";
+import { SessionDiscovery } from "../../../src/core/session-history.ts";
 
 const DIRECTORY_LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 
@@ -44,7 +44,7 @@ describe("regression #7497: discover sessions through symlinked directories", ()
 		const aliasDir = join(sessionsDir, "--linked--");
 		symlinkSync(targetDir, aliasDir, DIRECTORY_LINK_TYPE);
 
-		const sessions = await SessionManager.listAll();
+		const sessions = await SessionDiscovery.listAll();
 
 		expect(sessions.map((session) => session.id)).toEqual(["linked"]);
 		expect(sessions[0]?.path).toBe(join(aliasDir, "linked.jsonl"));
@@ -57,7 +57,7 @@ describe("regression #7497: discover sessions through symlinked directories", ()
 		symlinkSync(targetDir, join(sessionsDir, "--broken--"), DIRECTORY_LINK_TYPE);
 		rmSync(targetDir, { recursive: true });
 
-		const sessions = await SessionManager.listAll();
+		const sessions = await SessionDiscovery.listAll();
 
 		expect(sessions.map((session) => session.id)).toEqual(["regular"]);
 	});
@@ -68,7 +68,7 @@ describe("regression #7497: discover sessions through symlinked directories", ()
 		writeFileSync(targetFile, "");
 		symlinkSync(targetFile, join(sessionsDir, "--file--"), "file");
 
-		const sessions = await SessionManager.listAll();
+		const sessions = await SessionDiscovery.listAll();
 
 		expect(sessions.map((session) => session.id)).toEqual(["regular"]);
 	});

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { type CreateAgentSessionRuntimeFactory, createRuntimeFromFactory } from "../src/core/agent-session-runtime.ts";
 import { getMissingSessionCwdIssue, MissingSessionCwdError } from "../src/core/session-cwd.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 
 function createTempDir(name: string): string {
 	const dir = join(tmpdir(), `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -42,7 +42,7 @@ describe("session cwd handling", () => {
 		cleanupPaths.push(fallbackCwd, sessionDir);
 		writeSessionFile(sessionFile, missingCwd);
 
-		const sessionManager = SessionManager.open(sessionFile);
+		const sessionManager = SessionHistory.open(sessionFile);
 		const issue = getMissingSessionCwdIssue(sessionManager, fallbackCwd);
 		expect(issue).toEqual({
 			sessionFile: sessionManager.getSessionFile(),
@@ -59,7 +59,7 @@ describe("session cwd handling", () => {
 		cleanupPaths.push(fallbackCwd, sessionDir);
 		writeSessionFile(sessionFile, missingCwd);
 
-		const sessionManager = SessionManager.open(sessionFile, undefined, fallbackCwd);
+		const sessionManager = SessionHistory.open(sessionFile, undefined, fallbackCwd);
 		expect(sessionManager.getCwd()).toBe(fallbackCwd);
 		expect(getMissingSessionCwdIssue(sessionManager, fallbackCwd)).toBeUndefined();
 	});
@@ -72,7 +72,7 @@ describe("session cwd handling", () => {
 		cleanupPaths.push(fallbackCwd, sessionDir);
 		writeSessionFile(sessionFile, missingCwd);
 
-		const sessionManager = SessionManager.open(sessionFile);
+		const sessionManager = SessionHistory.open(sessionFile);
 		let createRuntimeCalled = false;
 		const createRuntime: CreateAgentSessionRuntimeFactory = async () => {
 			createRuntimeCalled = true;

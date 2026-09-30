@@ -1,6 +1,6 @@
-import type { Agent, AgentMessage } from "@candy/agent-core";
+import type { AgentInputs, AgentMessage } from "@candy/agent-core";
 import type { ImageContent, TextContent } from "@candy/ai";
-import type { PromptOptions, QueuedInput } from "./agent-session.ts";
+import type { PromptOptions, QueuedInput } from "./session-execution.ts";
 
 export type InputQueueMode = "steer" | "followUp";
 
@@ -12,11 +12,11 @@ export interface DeferredInput extends QueuedInput {
 }
 
 export class SessionInputExecution {
-	private readonly agent: Agent;
+	private readonly agent: AgentInputs;
 	private readonly onQueueChanged: () => void;
 	private deferredInputs: DeferredInput[] = [];
 
-	constructor(agent: Agent, onQueueChanged: () => void) {
+	constructor(agent: AgentInputs, onQueueChanged: () => void) {
 		this.agent = agent;
 		this.onQueueChanged = onQueueChanged;
 	}

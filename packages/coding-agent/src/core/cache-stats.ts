@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@candy/ai";
-import type { SessionEntry } from "./session-manager.ts";
+import type { SessionEntry } from "./session-history.ts";
 
 /**
  * Prompt-cache TTL: idle gaps longer than this are worth mentioning as the

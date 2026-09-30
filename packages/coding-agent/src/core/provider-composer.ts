@@ -7,24 +7,18 @@ import {
 	type AuthInteraction,
 	type AuthResult,
 	type Credential,
-	type ImageApi,
 	isModelType,
 	lazyStream,
 	type Model,
 	type ModelAuth,
 	type OAuthAuth,
-	type OAuthCredentials,
-	type OAuthLoginCallbacks,
 	type Provider,
 	type ProviderHeaders,
-	type ProviderImages,
-	type RefreshModelsContext,
 	type SimpleStreamOptions,
 	type StreamOptions,
 	type TranscriptContext,
 } from "@candy/ai";
 import { createBuiltinApiStreams } from "@candy/ai/api/streams";
-import { imageErrorResult } from "@candy/ai/utils/model-operations";
 import type { ModelConfig, ModelsJsonModel, ModelsJsonModelOverride, ModelsJsonProvider } from "./model-config.ts";
 import {
 	getConfigValueEnvVarNames,
@@ -33,65 +27,6 @@ import {
 	resolveConfigValueOrThrow,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.ts";
-
-export interface ExtensionOAuthConfig {
-	name: string;
-	/** Whether access through this auth method is backed by a provider subscription. */
-	isSubscription?: boolean;
-	login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
-	refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials>;
-	getApiKey(credentials: OAuthCredentials): string;
-}
-
-interface ProviderModelConfigBase {
-	id: string;
-	name: string;
-	api?: string;
-	baseUrl?: string;
-	input: ("text" | "image")[];
-	inputLimits?: AnyModel["inputLimits"];
-	cost: AnyModel["cost"];
-	headers?: Record<string, string>;
-}
-
-export interface ProviderChatModelConfig extends ProviderModelConfigBase {
-	type?: "chat";
-	api?: Api;
-	reasoning: boolean;
-	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
-	promptCache?: Model<Api>["promptCache"];
-	contextWindow: number;
-	maxTokens: number;
-	samplingParams?: Record<string, unknown>;
-	compat?: Model<Api>["compat"];
-}
-
-export interface ProviderImageModelConfig extends ProviderModelConfigBase {
-	type: "image";
-	api?: ImageApi;
-	output: ("text" | "image")[];
-}
-
-export type ProviderModelConfig = ProviderChatModelConfig | ProviderImageModelConfig;
-
-/** Input type for the extension registerProvider API. */
-export interface ProviderConfigInput {
-	name?: string;
-	baseUrl?: string;
-	apiKey?: string;
-	api?: Api;
-	streamSimple?: (
-		model: Model<Api>,
-		context: TranscriptContext,
-		options?: SimpleStreamOptions,
-	) => AssistantMessageEventStream;
-	images?: Partial<Record<ImageApi, ProviderImages>>;
-	headers?: Record<string, string>;
-	authHeader?: boolean;
-	oauth?: ExtensionOAuthConfig;
-	models?: ProviderModelConfig[];
-	refreshModels?(context: RefreshModelsContext): Promise<ProviderModelConfig[]>;
-}
 
 export type AuthStatus = {
 	configured: boolean;
@@ -224,42 +159,6 @@ function findModelDefaults(models: readonly AnyModel[], modelId: string, api?: A
 	);
 }
 
-function findExtensionModelDefaults(
-	models: readonly AnyModel[],
-	definition: ProviderModelConfig,
-): AnyModel | undefined {
-	const type = definition.type ?? "chat";
-	const candidates = models.filter((model) => isModelType(model, type));
-	return (
-		candidates.find((model) => model.id === definition.id) ??
-		(definition.api ? candidates.find((model) => model.api === definition.api) : undefined) ??
-		(type === "chat" ? candidates.find((model) => model.api === "openai-completions") : undefined) ??
-		candidates[0]
-	);
-}
-
-function extensionModelFromDefinition(
-	providerId: string,
-	models: readonly AnyModel[],
-	config: ProviderConfigInput,
-	definition: ProviderModelConfig,
-): AnyModel {
-	const type = definition.type ?? "chat";
-	const defaults = findExtensionModelDefaults(models, definition);
-	const api = definition.api ?? (type === "chat" ? config.api : undefined) ?? defaults?.api;
-	if (!api) {
-		throw new Error(
-			`Provider ${providerId}, model ${definition.id}: no "api" specified. Set it at model level${type === "chat" ? " or provider level" : ""}.`,
-		);
-	}
-	const baseUrl = definition.baseUrl ?? config.baseUrl ?? defaults?.baseUrl;
-	if (!baseUrl) throw new Error(`Provider ${providerId}: "baseUrl" is required when defining custom models.`);
-	if (definition.type === "image") {
-		return { ...definition, api: api as ImageApi, provider: providerId, baseUrl, headers: undefined };
-	}
-	return { ...definition, api: api as Api, provider: providerId, baseUrl, headers: undefined };
-}
-
 function applyModelsJson(
 	providerId: string,
 	baseModels: readonly AnyModel[],
@@ -297,39 +196,6 @@ function applyModelsJson(
 	return models;
 }
 
-function applyExtension(
-	providerId: string,
-	models: readonly AnyModel[],
-	config: ProviderConfigInput | undefined,
-): AnyModel[] {
-	if (!config) return [...models];
-	if (!config.models) {
-		return config.baseUrl ? models.map((model) => ({ ...model, baseUrl: config.baseUrl! })) : [...models];
-	}
-	return config.models.map((definition) => extensionModelFromDefinition(providerId, models, config, definition));
-}
-
-function adaptOAuth(config: ExtensionOAuthConfig): OAuthAuth {
-	return {
-		name: config.name,
-		isSubscription: config.isSubscription,
-		login: async (callbacks) => {
-			const credential = await config.login({
-				onAuth: (info) => callbacks.notify({ type: "auth_url", ...info }),
-				onDeviceCode: (info) => callbacks.notify({ type: "device_code", ...info }),
-				onPrompt: (prompt) => callbacks.prompt({ type: "text", ...prompt }),
-				onProgress: (message) => callbacks.notify({ type: "progress", message }),
-				onManualCodeInput: () => callbacks.prompt({ type: "manual_code", message: "Paste the authorization code" }),
-				onSelect: (prompt) => callbacks.prompt({ type: "select", ...prompt }),
-				signal: callbacks.signal,
-			});
-			return { ...credential, type: "oauth" };
-		},
-		refresh: async (credential, signal) => ({ ...(await config.refreshToken(credential, signal)), type: "oauth" }),
-		toAuth: async (credential) => ({ apiKey: config.getApiKey(credential) }),
-	};
-}
-
 function withConfiguredAuth(
 	auth: ModelAuth,
 	headers: Record<string, string> | undefined,
@@ -344,19 +210,12 @@ function withConfiguredAuth(
 	return { ...auth, headers: mergedHeaders };
 }
 
-function configuredApiKey(
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): string | undefined {
-	return extension?.apiKey ?? config?.apiKey;
+function configuredApiKey(config: ModelsJsonProvider | undefined): string | undefined {
+	return config?.apiKey;
 }
 
-function configuredHeaders(
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): Record<string, string> | undefined {
-	if (!config?.headers && !extension?.headers) return undefined;
-	return { ...config?.headers, ...extension?.headers };
+function configuredHeaders(config: ModelsJsonProvider | undefined): Record<string, string> | undefined {
+	return config?.headers;
 }
 
 async function configContextEnv(
@@ -377,16 +236,15 @@ function composeApiKeyAuth(
 	providerId: string,
 	base: Provider | undefined,
 	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
 	commandCache: Map<string, string>,
 ): ApiKeyAuth | undefined {
 	const inherited = base?.auth.apiKey;
-	const rawKey = configuredApiKey(config, extension);
-	const oauth = extension?.oauth ?? base?.auth.oauth;
+	const rawKey = configuredApiKey(config);
+	const oauth = base?.auth.oauth;
 	// OAuth-only providers get no fabricated API-key login method.
 	if (!inherited && rawKey === undefined && oauth) return undefined;
-	const rawHeaders = configuredHeaders(config, extension);
-	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
+	const rawHeaders = configuredHeaders(config);
+	const authHeader = config?.authHeader ?? false;
 	return {
 		name: inherited?.name ?? "API key",
 		login:
@@ -450,13 +308,12 @@ function composeOAuthAuth(
 	providerId: string,
 	base: Provider | undefined,
 	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
 	commandCache: Map<string, string>,
 ): OAuthAuth | undefined {
-	const oauth = extension?.oauth ? adaptOAuth(extension.oauth) : base?.auth.oauth;
+	const oauth = base?.auth.oauth;
 	if (!oauth) return undefined;
-	const rawHeaders = configuredHeaders(config, extension);
-	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
+	const rawHeaders = configuredHeaders(config);
+	const authHeader = config?.authHeader ?? false;
 	return {
 		...oauth,
 		toAuth: async (credential, signal) => {
@@ -473,59 +330,28 @@ function composeOAuthAuth(
 	};
 }
 
-function rawModelHeaders(
-	model: AnyModel,
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): Record<string, string> | undefined {
-	// models.json definitions and overrides are chat-only. Extension definitions
-	// are matched by operation and id so colliding models cannot share headers.
+function rawModelHeaders(model: AnyModel, config: ModelsJsonProvider | undefined): Record<string, string> | undefined {
+	// models.json model definitions and overrides apply to chat models.
 	const chatDefinition = isModelType(model, "chat")
 		? config?.models?.find((entry) => entry.id === model.id)
 		: undefined;
-	const extensionModel = extension?.models?.find(
-		(entry) => (entry.type ?? "chat") === (model.type ?? "chat") && entry.id === model.id,
-	);
 	const headers = {
 		...(isModelType(model, "chat") ? config?.modelOverrides?.[model.id]?.headers : undefined),
 		...chatDefinition?.headers,
-		...extensionModel?.headers,
 	};
 	return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
-export function validateExtensionProvider(
-	providerId: string,
-	base: Provider | undefined,
-	modelsConfig: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput,
-): void {
-	if (extension.streamSimple && !extension.api) {
-		throw new Error(`Provider ${providerId}: "api" is required when registering streamSimple.`);
-	}
-	applyExtension(providerId, applyModelsJson(providerId, getAllProviderModels(base), modelsConfig), extension);
-}
-
-/** Compose built-in, models.json, and extension layers without reading credentials. */
+/** Compose the provider catalog with models.json without reading credentials. */
 export function composeModelProvider(
 	providerId: string,
 	base: Provider | undefined,
 	modelConfig: ModelConfig,
-	extension: ProviderConfigInput | undefined,
 	commandCache = new Map<string, string>(),
 ): Provider {
 	const config = modelConfig.getProvider(providerId);
-	let refreshedExtensionModels: ProviderConfigInput["models"];
-	const currentExtension = (): ProviderConfigInput | undefined =>
-		extension && refreshedExtensionModels ? { ...extension, models: refreshedExtensionModels } : extension;
-	// models.json modelOverrides are the topmost user-config layer: they apply once,
-	// after custom-model upserts, extension model replacement, and legacy OAuth projection.
 	const getAllModels = (): AnyModel[] => {
-		const models = applyExtension(
-			providerId,
-			applyModelsJson(providerId, getAllProviderModels(base), config),
-			currentExtension(),
-		);
+		const models = applyModelsJson(providerId, getAllProviderModels(base), config);
 		return models.map((model) => {
 			const override = config?.modelOverrides?.[model.id];
 			return override && isModelType(model, "chat") ? applyModelOverride(model, override) : model;
@@ -533,8 +359,8 @@ export function composeModelProvider(
 	};
 	// Validate eagerly so registration/reload reports structural errors immediately.
 	getAllModels();
-	const apiKey = composeApiKeyAuth(providerId, base, config, extension, commandCache);
-	const oauth = composeOAuthAuth(providerId, base, config, extension, commandCache);
+	const apiKey = composeApiKeyAuth(providerId, base, config, commandCache);
+	const oauth = composeOAuthAuth(providerId, base, config, commandCache);
 	if (!apiKey && !oauth) throw new Error(`Provider ${providerId}: no authentication method configured.`);
 
 	const supportsBaseApi = (model: Model<Api>) => base?.getModels().some((entry) => entry.api === model.api) ?? false;
@@ -545,9 +371,6 @@ export function composeModelProvider(
 		simple: boolean,
 	): AssistantMessageEventStream =>
 		lazyStream(model, async () => {
-			if (extension?.streamSimple && model.api === extension.api) {
-				return extension.streamSimple(model, context, options as SimpleStreamOptions);
-			}
 			if (base && supportsBaseApi(model)) {
 				return simple
 					? base.streamSimple(model, context, options as SimpleStreamOptions)
@@ -562,33 +385,17 @@ export function composeModelProvider(
 
 	const provider: Provider = {
 		id: providerId,
-		name: extension?.name ?? config?.name ?? base?.name ?? extension?.oauth?.name ?? providerId,
-		baseUrl: extension?.baseUrl ?? config?.baseUrl ?? base?.baseUrl,
+		name: config?.name ?? base?.name ?? providerId,
+		baseUrl: config?.baseUrl ?? base?.baseUrl,
 		headers: base?.headers,
 		auth: { ...(apiKey ? { apiKey } : {}), ...(oauth ? { oauth } : {}) },
 		getModels: () => getAllModels().filter((model) => isModelType(model, "chat")),
 		getAllModels,
-		refreshModels:
-			base?.refreshModels || extension?.refreshModels
-				? async (context) => {
-						await base?.refreshModels?.(context);
-						let refreshed: NonNullable<ProviderConfigInput["models"]> | undefined;
-						if (extension?.refreshModels) refreshed = await extension.refreshModels(context);
-						if (context.signal.aborted) return;
-						await context.publish({
-							update: () => {
-								if (refreshed) {
-									// Validate before publishing the new synchronous list.
-									applyExtension(providerId, applyModelsJson(providerId, getAllProviderModels(base), config), {
-										...extension,
-										models: refreshed,
-									});
-									refreshedExtensionModels = refreshed;
-								}
-							},
-						});
-					}
-				: undefined,
+		refreshModels: base?.refreshModels
+			? async (context) => {
+					await base?.refreshModels?.(context);
+				}
+			: undefined,
 		filterModels: base?.filterModels
 			? (models, credential: Credential | undefined) => base.filterModels!(models, credential)
 			: undefined,
@@ -607,18 +414,8 @@ export function composeModelProvider(
 	if (cancelDeferred) {
 		provider.cancelDeferred = (model, handle, options) => cancelDeferred(model, handle, options);
 	}
-	const extensionImages = extension?.images;
 	const generateImages = base?.generateImages;
-	if (generateImages || Object.keys(extensionImages ?? {}).length > 0) {
-		provider.generateImages = (model, context, options) => {
-			const implementation = extensionImages?.[model.api];
-			if (implementation) return implementation.generateImages(model, context, options);
-			if (generateImages) return generateImages(model, context, options);
-			return Promise.resolve(
-				imageErrorResult(model, new Error(`Provider ${providerId} has no image implementation for "${model.api}"`)),
-			);
-		};
-	}
+	if (generateImages) provider.generateImages = generateImages;
 
 	return provider;
 }
@@ -626,23 +423,14 @@ export function composeModelProvider(
 export function resolveConfiguredModelHeaders(
 	model: AnyModel,
 	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
 	env?: Record<string, string>,
 	options: { signal?: AbortSignal; cache?: Map<string, string> } = {},
 ): Promise<Record<string, string> | undefined> {
-	return resolveHeadersOrThrow(
-		rawModelHeaders(model, config, extension),
-		`model "${model.provider}/${model.id}"`,
-		env,
-		options,
-	);
+	return resolveHeadersOrThrow(rawModelHeaders(model, config), `model "${model.provider}/${model.id}"`, env, options);
 }
 
-export function configuredRequestAuthStatus(
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): AuthStatus | undefined {
-	const value = configuredApiKey(config, extension);
+export function configuredRequestAuthStatus(config: ModelsJsonProvider | undefined): AuthStatus | undefined {
+	const value = configuredApiKey(config);
 	if (value === undefined) return undefined;
 	if (isCommandConfigValue(value)) return { configured: true, source: "models_json_command" };
 	const names = getConfigValueEnvVarNames(value);
@@ -651,5 +439,5 @@ export function configuredRequestAuthStatus(
 			? { configured: true, source: "environment", label: names.join(", ") }
 			: { configured: false };
 	}
-	return { configured: true, source: extension?.apiKey !== undefined ? "fallback" : "models_json_key" };
+	return { configured: true, source: "models_json_key" };
 }

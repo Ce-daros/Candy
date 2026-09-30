@@ -9,7 +9,8 @@ import {
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { Agent, type AgentEvent, type AgentTool, type AgentToolUpdateCallback, type StreamFn } from "../src/index.ts";
+import type { AgentEvent, AgentMessageCommit, AgentTool, AgentToolUpdateCallback, StreamFn } from "../src/index.ts";
+import { Agent } from "./test-agent.ts";
 
 // Mock stream that mimics AssistantMessageEventStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -372,11 +373,15 @@ describe("Agent", () => {
 		});
 		const messageEndEvents: Extract<AgentEvent, { type: "message_end" }>[] = [];
 		const turnEndEvents: Extract<AgentEvent, { type: "turn_end" }>[] = [];
-		agent.finalizeMessage = (message) => ({
-			message:
-				message.role === "assistant" ? { ...message, content: [{ type: "text", text: "finalized" }] } : message,
-			entryId: `entry-${message.role}`,
-		});
+		agent.loopHost.commit = (message) => {
+			const committed: AgentMessageCommit = {
+				message:
+					message.role === "assistant" ? { ...message, content: [{ type: "text", text: "finalized" }] } : message,
+				entryId: `entry-${message.role}`,
+			};
+			agent.history.commit(committed.message);
+			return committed;
+		};
 		agent.subscribe((event) => {
 			if (event.type === "message_end") messageEndEvents.push(event);
 			if (event.type === "turn_end") turnEndEvents.push(event);
@@ -664,18 +669,18 @@ describe("Agent", () => {
 
 		// Test replaceMessages
 		const messages = [{ role: "user" as const, content: "Hello", timestamp: Date.now() }];
-		agent.state.messages = messages;
+		agent.history.messages = messages;
 		expect(agent.state.messages).toEqual(messages);
 		expect(agent.state.messages).not.toBe(messages); // Should be a copy
 
 		// Test appendMessage
 		const newMessage = { role: "assistant" as const, content: [{ type: "text" as const, text: "Hi" }] };
-		agent.state.messages.push(newMessage as any);
+		agent.history.commit(newMessage as any);
 		expect(agent.state.messages).toHaveLength(2);
 		expect(agent.state.messages[1]).toBe(newMessage);
 
 		// Test clearMessages
-		agent.state.messages = [];
+		agent.history.messages = [];
 		expect(agent.state.messages).toEqual([]);
 	});
 
@@ -683,7 +688,7 @@ describe("Agent", () => {
 		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		const message = { role: "user" as const, content: "Steering message", timestamp: Date.now() };
-		agent.steer(message);
+		agent.inputs.steer(message);
 
 		// The message is queued but not yet in state.messages
 		expect(agent.state.messages).not.toContainEqual(message);
@@ -693,7 +698,7 @@ describe("Agent", () => {
 		const agent = createAgent({ streamFn: unusedStreamFunction });
 
 		const message = { role: "user" as const, content: "Follow-up message", timestamp: Date.now() };
-		agent.followUp(message);
+		agent.inputs.followUp(message);
 
 		// The message is queued but not yet in state.messages
 		expect(agent.state.messages).not.toContainEqual(message);
@@ -827,7 +832,7 @@ describe("Agent", () => {
 			},
 		});
 
-		agent.state.messages = [
+		agent.history.messages = [
 			{
 				role: "user",
 				content: [{ type: "text", text: "Initial" }],
@@ -836,7 +841,7 @@ describe("Agent", () => {
 			createAssistantMessage("Initial response"),
 		];
 
-		agent.followUp({
+		agent.inputs.followUp({
 			role: "user",
 			content: [{ type: "text", text: "Queued follow-up" }],
 			timestamp: Date.now(),
@@ -874,9 +879,9 @@ describe("Agent", () => {
 				return stream;
 			},
 		});
-		agent.state.messages = [createUserMessage("Initial"), createAssistantMessage("Initial response")];
-		agent.steer(createUserMessage("Steering 1"));
-		agent.steer(createUserMessage("Steering 2"));
+		agent.history.messages = [createUserMessage("Initial"), createAssistantMessage("Initial response")];
+		agent.inputs.steer(createUserMessage("Steering 1"));
+		agent.inputs.steer(createUserMessage("Steering 2"));
 
 		await expect(agent.continue()).resolves.toBeUndefined();
 
@@ -890,7 +895,7 @@ describe("Agent", () => {
 		}
 	});
 
-	it("keeps legacy prepareNextTurn signal callback behavior", async () => {
+	it("provides the active signal to the fixed next-turn host", async () => {
 		const schema = Type.Object({});
 		const tool: AgentTool<typeof schema> = {
 			name: "noop",
@@ -903,9 +908,11 @@ describe("Agent", () => {
 		let sawAbortSignal = false;
 		const agent = createAgent({
 			initialState: { tools: [tool] },
-			prepareNextTurn: async (signal) => {
-				sawAbortSignal = signal instanceof AbortSignal;
-				return undefined;
+			host: {
+				prepareNextTurn: async (_context, signal) => {
+					sawAbortSignal = signal instanceof AbortSignal;
+					return undefined;
+				},
 			},
 			streamFn: () => {
 				requestCount++;
@@ -945,10 +952,12 @@ describe("Agent", () => {
 		let callbackContextRoles: string[] = [];
 		const agent = createAgent({
 			initialState: { tools: [tool] },
-			finishTurn: (context, signal) => {
-				sawAbortSignal = signal instanceof AbortSignal;
-				callbackContextRoles = context.context.messages.map((message) => message.role);
-				return { action: "end" };
+			host: {
+				finishTurn: (context, signal) => {
+					sawAbortSignal = signal instanceof AbortSignal;
+					callbackContextRoles = context.context.messages.map((message) => message.role);
+					return { action: "end" };
+				},
 			},
 			streamFn: () => {
 				requestCount++;
@@ -982,36 +991,36 @@ describe("Agent", () => {
 		const agent = createAgent({ initialState: { messages }, streamFn: unusedStreamFunction });
 		const steering = createUserMessage("steering");
 		const followUp = createUserMessage("follow-up");
-		agent.steer(steering);
-		agent.followUp(followUp);
+		agent.inputs.steer(steering);
+		agent.inputs.followUp(followUp);
 
 		await expect(agent.continue()).rejects.toThrow("No messages to continue from");
-		expect(agent.peekQueuedMessages()).toEqual([steering]);
-		agent.clearSteeringQueue();
-		expect(agent.peekQueuedMessages()).toEqual([followUp]);
+		expect(agent.inputs.peekQueuedMessages()).toEqual([steering]);
+		agent.inputs.clearSteeringQueue();
+		expect(agent.inputs.peekQueuedMessages()).toEqual([followUp]);
 	});
 
-	it("keeps queue input metadata with the agent-owned entries", () => {
+	it("keeps queue input metadata with the caller-owned entries", () => {
 		const agent = createAgent({ streamFn: unusedStreamFunction });
 		const steering = createUserMessage("steering");
 		const followUp = createUserMessage("follow-up");
 		const sourceImage = { type: "image" as const, data: "source", mimeType: "image/png" };
-		agent.steer(steering, { text: "original steering", images: [sourceImage] });
-		agent.followUp(followUp, { text: "original follow-up" });
+		agent.inputs.steer(steering, { text: "original steering", images: [sourceImage] });
+		agent.inputs.followUp(followUp, { text: "original follow-up" });
 		sourceImage.data = "mutated source";
 
-		const snapshot = agent.getQueuedInputs();
+		const snapshot = agent.inputs.getQueuedInputs();
 		expect(snapshot.steering.map(({ text }) => text)).toEqual(["original steering"]);
 		expect(snapshot.followUp.map(({ text }) => text)).toEqual(["original follow-up"]);
 		expect(snapshot.steering[0]?.images?.[0]?.data).toBe("source");
 		const snapshotImage = snapshot.steering[0]?.images?.[0];
 		if (!snapshotImage) throw new Error("expected queued image snapshot");
 		snapshotImage.data = "mutated snapshot";
-		expect(agent.withdrawQueuedInputs()).toEqual({
+		expect(agent.inputs.withdrawQueuedInputs()).toEqual({
 			steering: [{ text: "original steering", images: [{ type: "image", data: "source", mimeType: "image/png" }] }],
 			followUp: [{ text: "original follow-up" }],
 		});
-		expect(agent.hasQueuedMessages()).toBe(false);
+		expect(agent.inputs.hasQueuedMessages()).toBe(false);
 	});
 
 	it.each([
@@ -1051,7 +1060,7 @@ describe("Agent", () => {
 				return stream;
 			},
 		});
-		agent.followUp(createUserMessage("follow-up"));
+		agent.inputs.followUp(createUserMessage("follow-up"));
 
 		await agent.continue();
 
@@ -1081,8 +1090,8 @@ describe("Agent", () => {
 				return stream;
 			},
 		});
-		agent.steer(createUserMessage("first"));
-		agent.steer(createUserMessage("second"));
+		agent.inputs.steer(createUserMessage("first"));
+		agent.inputs.steer(createUserMessage("second"));
 
 		await agent.continue();
 
@@ -1113,8 +1122,8 @@ describe("Agent", () => {
 				return stream;
 			},
 		});
-		agent.steer(createUserMessage("steering"));
-		agent.followUp(createUserMessage("follow-up"));
+		agent.inputs.steer(createUserMessage("steering"));
+		agent.inputs.followUp(createUserMessage("follow-up"));
 
 		await agent.continue();
 
@@ -1130,7 +1139,7 @@ describe("Agent", () => {
 			const queuedDuringResponse = createUserMessage("steering");
 			const followUp = createUserMessage("follow-up");
 			const agent = createAgent({
-				finishTurn: () => ({ action: "continue" }),
+				host: { finishTurn: () => ({ action: "continue" }) },
 				streamFn: () => {
 					const stream = new MockAssistantStream();
 					queueMicrotask(() => {
@@ -1147,18 +1156,18 @@ describe("Agent", () => {
 					return stream;
 				},
 			});
-			agent.followUp(followUp);
+			agent.inputs.followUp(followUp);
 			agent.subscribe((event) => {
 				if (event.type === "message_end" && event.message.role === "assistant") {
-					agent.steer(queuedDuringResponse);
+					agent.inputs.steer(queuedDuringResponse);
 				}
 			});
 
 			await agent.prompt("start");
 
-			expect(agent.peekQueuedMessages()).toEqual([queuedDuringResponse]);
-			agent.clearSteeringQueue();
-			expect(agent.peekQueuedMessages()).toEqual([followUp]);
+			expect(agent.inputs.peekQueuedMessages()).toEqual([queuedDuringResponse]);
+			agent.inputs.clearSteeringQueue();
+			expect(agent.inputs.peekQueuedMessages()).toEqual([followUp]);
 		},
 	);
 
@@ -1166,7 +1175,7 @@ describe("Agent", () => {
 		const queuedDuringResponse = createUserMessage("steering");
 		const followUp = createUserMessage("follow-up");
 		const agent = createAgent({
-			finishTurn: () => ({ action: "end" }),
+			host: { finishTurn: () => ({ action: "end" }) },
 			streamFn: () => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(() =>
@@ -1175,18 +1184,18 @@ describe("Agent", () => {
 				return stream;
 			},
 		});
-		agent.followUp(followUp);
+		agent.inputs.followUp(followUp);
 		agent.subscribe((event) => {
 			if (event.type === "message_end" && event.message.role === "assistant") {
-				agent.steer(queuedDuringResponse);
+				agent.inputs.steer(queuedDuringResponse);
 			}
 		});
 
 		await agent.prompt("start");
 
-		expect(agent.peekQueuedMessages()).toEqual([queuedDuringResponse]);
-		agent.clearSteeringQueue();
-		expect(agent.peekQueuedMessages()).toEqual([followUp]);
+		expect(agent.inputs.peekQueuedMessages()).toEqual([queuedDuringResponse]);
+		agent.inputs.clearSteeringQueue();
+		expect(agent.inputs.peekQueuedMessages()).toEqual([followUp]);
 	});
 
 	it("previews the next selected queued messages without consuming them", () => {
@@ -1198,14 +1207,14 @@ describe("Agent", () => {
 		const first = createUserMessage("first steering");
 		const second = createUserMessage("second steering");
 		const followUp = createUserMessage("follow-up");
-		agent.steer(first);
-		agent.steer(second);
-		agent.followUp(followUp);
+		agent.inputs.steer(first);
+		agent.inputs.steer(second);
+		agent.inputs.followUp(followUp);
 
-		expect(agent.peekQueuedMessages()).toEqual([first]);
-		expect(agent.peekQueuedMessages()).toEqual([first]);
-		agent.clearSteeringQueue();
-		expect(agent.peekQueuedMessages()).toEqual([followUp]);
+		expect(agent.inputs.peekQueuedMessages()).toEqual([first]);
+		expect(agent.inputs.peekQueuedMessages()).toEqual([first]);
+		agent.inputs.clearSteeringQueue();
+		expect(agent.inputs.peekQueuedMessages()).toEqual([followUp]);
 	});
 
 	it("forwards provider stream event observers through AgentOptions", async () => {

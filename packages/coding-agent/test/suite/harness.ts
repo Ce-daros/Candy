@@ -17,7 +17,8 @@ import {
 } from "@candy/ai/providers/faux";
 import type { AgentSession, AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import { SessionManager } from "../../src/core/session-manager.ts";
+import type { ModelRuntime } from "../../src/core/model-runtime.ts";
+import { SessionHistory } from "../../src/core/session-history.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
@@ -48,13 +49,13 @@ export function getMessageText(message: unknown): string {
 }
 
 export function getUserTexts(harness: Harness): string[] {
-	return harness.session.messages
+	return harness.session.execution.messages
 		.filter((message) => message.role === "user")
 		.map((message) => getMessageText(message));
 }
 
 export function getAssistantTexts(harness: Harness): string[] {
-	return harness.session.messages
+	return harness.session.execution.messages
 		.filter((message) => message.role === "assistant")
 		.map((message) => getMessageText(message));
 }
@@ -75,9 +76,10 @@ export interface HarnessOptions {
 
 export interface Harness {
 	session: AgentSession;
-	sessionManager: SessionManager;
+	sessionManager: SessionHistory;
 	settingsManager: SettingsManager;
 	authStorage: AuthStorage;
+	readonly modelRuntime: ModelRuntime;
 	faux: FauxProviderHandle;
 	models: [Model<string>, ...Model<string>[]];
 	getModel(): Model<string>;
@@ -108,7 +110,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const toolMap = options.tools ? Object.fromEntries(options.tools.map((tool) => [tool.name, tool])) : undefined;
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
 
-	const sessionManager = SessionManager.inMemory(tempDir);
+	const sessionManager = SessionHistory.inMemory(tempDir);
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();
@@ -148,7 +150,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	});
 
 	const events: AgentSessionEvent[] = [];
-	session.subscribe((event) => {
+	session.execution.subscribe((event) => {
 		events.push(event);
 	});
 
@@ -157,6 +159,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		sessionManager,
 		settingsManager,
 		authStorage,
+		modelRuntime,
 		faux,
 		models: faux.models,
 		getModel: faux.getModel,
@@ -169,7 +172,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		},
 		tempDir,
 		async cleanup() {
-			await session.dispose();
+			await session.execution.dispose();
 			await modelRuntime.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true });

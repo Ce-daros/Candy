@@ -1,6 +1,6 @@
 /** Filter discovered skills and add one supplied by the host. */
 
-import { createAgentSessionRuntime, createSyntheticSourceInfo, SessionManager, type Skill } from "@candy/coding-agent";
+import { createAgentSessionRuntime, createSyntheticSourceInfo, SessionHistory, type Skill } from "@candy/coding-agent";
 
 const customSkill: Skill = {
 	name: "my-skill",
@@ -14,7 +14,7 @@ const customSkill: Skill = {
 const cwd = process.cwd();
 const runtime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		skillsOverride: (current) => ({
 			skills: [

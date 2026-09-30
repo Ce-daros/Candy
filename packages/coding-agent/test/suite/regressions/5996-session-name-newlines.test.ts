@@ -15,7 +15,7 @@ describe("regression #5996: session names do not contain newlines", () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 
-		harness.session.setSessionName("hello\nworld\r\nagain");
+		harness.session.execution.setSessionName("hello\nworld\r\nagain");
 
 		expect(harness.sessionManager.getSessionName()).toBe("hello world again");
 		expect(harness.eventsOfType("session_info_changed").map((event) => event.name)).toEqual(["hello world again"]);

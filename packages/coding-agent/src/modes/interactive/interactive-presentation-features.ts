@@ -58,7 +58,7 @@ export class SourcesController extends FeatureController {
 		this.onScopeChanged();
 	}
 	openSources(): void {
-		const runtime = this.host.session().modelRuntime;
+		const runtime = this.host.models();
 		const settings = this.host.settings();
 		this.page(
 			"sources",
@@ -105,7 +105,7 @@ export class SourcesController extends FeatureController {
 	}
 
 	private openProvider(providerId: string): void {
-		const runtime = this.host.session().modelRuntime;
+		const runtime = this.host.models();
 		const settings = this.host.settings();
 		const provider = runtime.getProvider(providerId);
 		let catalogStatus = `${runtime.getModels(providerId).length} models`;
@@ -377,7 +377,7 @@ export class HistoryController extends FeatureController {
 					.historyCommands()
 					.map((item) => ({ ...item, group: item.id === "local:New session" ? "Sessions" : "Files" })),
 				action("context", "Context", async () => {
-					const usage = this.host.session().getContextUsage();
+					const usage = this.host.session().execution.getContextUsage();
 					this.host.read(
 						"Context",
 						usage
@@ -400,10 +400,10 @@ export class HistoryController extends FeatureController {
 						id,
 						name,
 						async (args) => this.host.historyAction(id, args),
-						id === "rename" ? this.host.session().sessionManager.getSessionName() : undefined,
+						id === "rename" ? this.host.session().history.getSessionName() : undefined,
 						mode,
 					),
-					initialArgs: id === "rename" ? this.host.session().sessionManager.getSessionName() : undefined,
+					initialArgs: id === "rename" ? this.host.session().history.getSessionName() : undefined,
 					inline: id === "rename",
 					group: id === "details" || id === "compact" || id === "rename" ? "Current session" : "Sessions",
 				})),
@@ -435,7 +435,7 @@ export class AgentController extends FeatureController {
 			"Instructions",
 			() => [
 				action("effective", "Effective instructions", async () =>
-					this.host.read("Instructions", session.systemPrompt),
+					this.host.read("Instructions", session.execution.systemPrompt),
 				),
 				...files.map((file) =>
 					action(file.path, file.path, async () => {
@@ -472,14 +472,14 @@ export class AgentController extends FeatureController {
 			"Tools",
 			(page) => [
 				action("save", "Save current tools as default", async () => {
-					await session.resources.saveDefaultTools(session.getActiveToolNames());
+					await session.resources.saveDefaultTools(session.execution.getActiveToolNames());
 					this.refresh(page);
 				}),
 				action("clear-default", "Use inherited default tools", async () => {
 					await session.resources.saveDefaultTools(undefined);
 					this.refresh(page);
 				}),
-				...session.getAllTools().map((tool) => ({
+				...session.execution.getAllTools().map((tool) => ({
 					...action(
 						tool.name,
 						tool.name,
@@ -490,9 +490,9 @@ export class AgentController extends FeatureController {
 							),
 						tool.sourceInfo?.path,
 					),
-					checked: session.getActiveToolNames().includes(tool.name),
+					checked: session.execution.getActiveToolNames().includes(tool.name),
 					toggle: async () => {
-						const active = session.getActiveToolNames();
+						const active = session.execution.getActiveToolNames();
 						session.resources.setActiveTools(
 							active.includes(tool.name) ? active.filter((name) => name !== tool.name) : [...active, tool.name],
 						);
@@ -514,16 +514,16 @@ export class AgentController extends FeatureController {
 	private openBehavior(): void {
 		const session = this.host.session();
 		this.page("agent", "Behavior", (page) => [
-			action("steering", `Steering: ${session.steeringMode}`, async () => {
-				await session.setSteeringMode(session.steeringMode === "all" ? "one-at-a-time" : "all");
+			action("steering", `Steering: ${session.execution.steeringMode}`, async () => {
+				await session.execution.setSteeringMode(session.execution.steeringMode === "all" ? "one-at-a-time" : "all");
 				this.refresh(page);
 			}),
-			action("follow-up", `Follow-up: ${session.followUpMode}`, async () => {
-				await session.setFollowUpMode(session.followUpMode === "all" ? "one-at-a-time" : "all");
+			action("follow-up", `Follow-up: ${session.execution.followUpMode}`, async () => {
+				await session.execution.setFollowUpMode(session.execution.followUpMode === "all" ? "one-at-a-time" : "all");
 				this.refresh(page);
 			}),
-			action("retry", `Automatic retry: ${session.autoRetryEnabled ? "On" : "Off"}`, async () => {
-				await session.setAutoRetryEnabled(!session.autoRetryEnabled);
+			action("retry", `Automatic retry: ${session.execution.autoRetryEnabled ? "On" : "Off"}`, async () => {
+				await session.execution.setAutoRetryEnabled(!session.execution.autoRetryEnabled);
 				this.refresh(page);
 			}),
 		]);
@@ -551,8 +551,8 @@ export class CommandController extends FeatureController {
 			...this.host.settingsActions().map((item) => ({ ...item, group: "Settings" })),
 			...this.host
 				.session()
-				.getCommands()
-				.filter((command) => command.source !== "skill" || this.host.settings().getEnableSkillCommands())
+				.execution.getCommands()
+				.filter((command) => command.source !== "skill" || this.host.settings().read("skill-commands"))
 				.map((command) => ({
 					id: `${command.source}:${command.name}`,
 					group: "Resources",
@@ -565,17 +565,17 @@ export class CommandController extends FeatureController {
 						if (command.source === "extension") {
 							const custom = await this.host
 								.session()
-								.extensionRunner.getCommand(command.name)
+								.execution.extensionRunner.getCommand(command.name)
 								?.getArgumentCompletions?.(text);
 							if (custom?.length) return custom;
 						}
 						return (await this.host.completeArguments?.(text, signal, force)) ?? null;
 					},
 					execute: async (args: string) => {
-						if (command.source !== "extension" && !this.host.session().model) {
+						if (command.source !== "extension" && !this.host.session().selection.model) {
 							throw new Error("Select a model before sending a message");
 						}
-						await this.host.session().executeCommand(
+						await this.host.session().execution.executeCommand(
 							{ source: command.source, name: command.name, args },
 							{
 								streamingBehavior: "steer",

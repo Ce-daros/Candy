@@ -1,11 +1,8 @@
 import type { AssistantMessage, ToolResultMessage } from "@candy/ai";
 import { describe, expect, it } from "vitest";
-import {
-	DEFAULT_COMPACTION_SETTINGS,
-	estimateProjectedContextTokens,
-	prepareCompaction,
-} from "../src/core/compaction/index.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { DEFAULT_COMPACTION_SETTINGS, prepareCompaction } from "../src/core/compaction/index.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
+import { estimateProjectedContextTokens } from "../src/core/session-queries.ts";
 
 function assistant(text: string): AssistantMessage {
 	return {
@@ -35,7 +32,7 @@ function text(message: { content: string | Array<{ type: string; text?: string }
 
 describe("session context edits", () => {
 	it("omits a target only from model projection", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "request", timestamp: Date.now() });
 		const assistantId = session.appendMessage(assistant("partial"));
 		const result: ToolResultMessage = {
@@ -57,7 +54,7 @@ describe("session context edits", () => {
 	});
 
 	it("replaces only content and lets the latest edit win", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const targetId = session.appendMessage(assistant("original"));
 		session.appendContextEdit(targetId, { content: [{ type: "text", text: "first" }] });
 		session.appendContextEdit(targetId, null);
@@ -72,7 +69,7 @@ describe("session context edits", () => {
 	});
 
 	it("normalizes string replacements for array-only assistant and tool-result roles", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const assistantId = session.appendMessage(assistant("original"));
 		const resultId = session.appendMessage({
 			role: "toolResult",
@@ -103,7 +100,7 @@ describe("session context edits", () => {
 	});
 
 	it("normalizes imported string replacements while projecting array-only roles", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const assistantId = session.appendMessage(assistant("original"));
 		const editId = session.appendContextEdit(assistantId, null);
 		const edit = session.getEntry(editId);
@@ -117,7 +114,7 @@ describe("session context edits", () => {
 	});
 
 	it("keeps edits branch-relative", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const targetId = session.appendMessage({ role: "user", content: "original", timestamp: Date.now() });
 		session.appendContextEdit(targetId, { content: "edited" });
 		expect(text(session.buildSessionProjection().messages[0] as { content: string })).toBe("edited");
@@ -127,7 +124,7 @@ describe("session context edits", () => {
 	});
 
 	it("uses a self-referencing compaction to retain no preceding entries", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "discarded", timestamp: Date.now() });
 		const compactionId = session.appendCompaction("exact handoff", null, 100);
 		session.appendMessage({ role: "user", content: "after", timestamp: Date.now() });
@@ -146,7 +143,7 @@ describe("session context edits", () => {
 	});
 
 	it("applies post-compaction edits to retained pre-compaction entries", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "summarized", timestamp: Date.now() });
 		const retainedId = session.appendMessage({ role: "user", content: "original retained", timestamp: Date.now() });
 		session.appendCompaction("summary", retainedId, 100);
@@ -160,7 +157,7 @@ describe("session context edits", () => {
 	});
 
 	it("uses only the newest summary when a repeated compaction retains entries before the older compaction", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "summarized first", timestamp: Date.now() });
 		const retainedId = session.appendMessage({ role: "user", content: "retained", timestamp: Date.now() });
 		session.appendCompaction("first summary", retainedId, 100);
@@ -180,7 +177,7 @@ describe("session context edits", () => {
 	});
 
 	it("supports repeated retain-none compactions", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "discarded", timestamp: Date.now() });
 		session.appendCompaction("first handoff", null, 100);
 		session.appendMessage({ role: "user", content: "also discarded", timestamp: Date.now() });
@@ -193,7 +190,7 @@ describe("session context edits", () => {
 	});
 
 	it("does not trust pre-edit assistant usage for projected context estimates", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const largeUserId = session.appendMessage({
 			role: "user",
 			content: "discarded input ".repeat(2_000),
@@ -213,7 +210,7 @@ describe("session context edits", () => {
 	});
 
 	it("uses assistant usage captured after the latest context edit", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const userId = session.appendMessage({ role: "user", content: "original", timestamp: Date.now() });
 		session.appendContextEdit(userId, { content: "edited" });
 		const response = assistant("answer");
@@ -228,7 +225,7 @@ describe("session context edits", () => {
 	});
 
 	it("does not reuse post-edit assistant usage after a later compaction", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const userId = session.appendMessage({ role: "user", content: "small input", timestamp: Date.now() });
 		session.appendContextEdit(userId, { content: "edited input" });
 		const response = assistant("answer");
@@ -242,7 +239,7 @@ describe("session context edits", () => {
 	});
 
 	it("includes effective system and tool context in edited estimates", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({
 			role: "system",
 			content: "system prompt ".repeat(3_000),
@@ -265,7 +262,7 @@ describe("session context edits", () => {
 	});
 
 	it("does not advance past a boundary replacement of the candidate input", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "old request", timestamp: Date.now() });
 		session.appendMessage(assistant("old answer"));
 		const replacedUserId = session.appendMessage({
@@ -288,7 +285,7 @@ describe("session context edits", () => {
 	});
 
 	it("does not let metadata move the cut past unsent boundary input", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({ role: "user", content: "old request", timestamp: Date.now() });
 		session.appendMessage(assistant("old answer"));
 		const instructionId = session.appendCustomMessageEntry("next-work", "UNSENT-INSTRUCTION ".repeat(100), false);
@@ -304,7 +301,7 @@ describe("session context edits", () => {
 	});
 
 	it("does not treat an omitted custom message as a recovery attempt", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		session.appendMessage({
 			role: "user",
 			content: "unanswered input ".repeat(100),
@@ -321,7 +318,7 @@ describe("session context edits", () => {
 	});
 
 	it("advances past input for an omitted assistant recovery suffix with metadata", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const userId = session.appendMessage({
 			role: "user",
 			content: "recovery input ".repeat(100),
@@ -346,7 +343,7 @@ describe("session context edits", () => {
 	});
 
 	it("prepares compaction from edited model content", () => {
-		const session = SessionManager.inMemory();
+		const session = SessionHistory.inMemory();
 		const omittedId = session.appendMessage({ role: "user", content: "OMIT-ME ".repeat(100), timestamp: Date.now() });
 		session.appendMessage(assistant("old answer ".repeat(100)));
 		session.appendContextEdit(omittedId, null);

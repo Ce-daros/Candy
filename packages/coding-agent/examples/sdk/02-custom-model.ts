@@ -36,13 +36,13 @@ if (available.length > 0) {
 
 	const session = sessionRuntime.session;
 	try {
-		session.subscribe((event) => {
+		session.execution.subscribe((event) => {
 			if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 				process.stdout.write(event.assistantMessageEvent.delta);
 			}
 		});
 
-		await session.prompt("Say hello in one sentence.");
+		await session.execution.prompt("Say hello in one sentence.");
 		console.log();
 	} finally {
 		await sessionRuntime.dispose();

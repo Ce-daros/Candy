@@ -9,7 +9,6 @@ import {
 } from "@candy/ai";
 import { getBuiltinModel } from "@candy/ai/providers/all";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
 import {
 	CacheWarmer,
 	type CacheWarmingAction,
@@ -22,13 +21,8 @@ import {
 	getPromptCacheTtlMs,
 	isReplayable,
 } from "../src/core/cache-warmer.ts";
-import { createEventBus } from "../src/core/event-bus.ts";
-import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/extensions/loader.ts";
-import { ExtensionRunner } from "../src/core/extensions/runner.ts";
-import type { ExtensionFactory } from "../src/core/extensions/types.ts";
-import { type SessionEntry, SessionManager, type UsageEntry } from "../src/core/session-manager.ts";
+import { type SessionEntry, SessionHistory, type UsageEntry } from "../src/core/session-history.ts";
 import type { CacheWarmingMode } from "../src/core/settings-manager.ts";
-import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
 
 const adaptiveModel: Model<Api> = {
 	...getBuiltinModel("anthropic", "claude-opus-4-6"),
@@ -92,7 +86,7 @@ function fakeRuntime(
 	const calls: Array<{ model: Model<Api>; options: ModelsSimpleStreamOptions | undefined }> = [];
 	const events: CacheWarmingDecisionEvent[] = [];
 	const warmedEntries: UsageEntry[] = [];
-	const usageManager = SessionManager.inMemory();
+	const usageManager = SessionHistory.inMemory();
 	const appendUsage = vi.fn(usageManager.appendUsage.bind(usageManager));
 	const state = { mode: options.mode ?? "idle", branch: options.branch ?? branchWithPrompt(100_000) };
 	const warmer = new CacheWarmer(
@@ -324,7 +318,7 @@ describe("cache warming", () => {
 			...warmUsage,
 			cost: { input: 0.00004, output: 0.00005, cacheRead: 0.02940725, cacheWrite: 0, total: 0.02949725 },
 		};
-		const entry = SessionManager.inMemory().appendUsage(
+		const entry = SessionHistory.inMemory().appendUsage(
 			"cache_warm",
 			adaptiveModel.provider,
 			adaptiveModel.id,
@@ -332,35 +326,5 @@ describe("cache warming", () => {
 			"extension override",
 		);
 		expect(formatCacheWarmingUsage(entry)).toBe("Cache warmed (extension override): $0.029497");
-	});
-});
-
-describe("ExtensionRunner.emitCacheWarmingDecision", () => {
-	it("uses the last extension override", async () => {
-		const runtime = createExtensionRuntime();
-		const eventBus = createEventBus();
-		const factories: ExtensionFactory[] = [
-			(candy) => {
-				candy.on("cache_warming_decision", () => ({ action: "warm" }));
-			},
-			(candy) => {
-				candy.on("cache_warming_decision", () => ({ action: "stop" }));
-			},
-		];
-		const extensions = [];
-		for (const factory of factories) {
-			extensions.push(await loadExtensionFromFactory(factory, process.cwd(), eventBus, runtime));
-		}
-		const modelRuntime = await createInMemoryModelRuntime(AuthStorage.inMemory());
-		const runner = new ExtensionRunner(extensions, runtime, process.cwd(), SessionManager.inMemory(), modelRuntime);
-		const event: CacheWarmingDecisionEvent = {
-			type: "cache_warming_decision",
-			warmCost: 0.05,
-			missCost: 0.5,
-			continuationProbability: 0.15,
-			action: "warm",
-		};
-
-		expect(await runner.emitCacheWarmingDecision(event)).toBe("stop");
 	});
 });

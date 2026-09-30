@@ -13,12 +13,10 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@candy/tui";
-import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { copyToClipboard } from "../../../utils/clipboard.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { activityInk, activityRail } from "./activity-rail.ts";
-import { createMarkdownTransform } from "./markdown-transform.ts";
 import { PanelTransition } from "./panel-transition.ts";
 import { TranscriptNotice } from "./transcript-notice.ts";
 
@@ -66,7 +64,6 @@ export class AssistantMessageComponent extends Container {
 	private markdownTheme: MarkdownTheme;
 	private hiddenThinkingLabel: string;
 	private outputPad: number;
-	private markdownTransformers: readonly MarkdownTransformer[];
 	private codeBlockView?: (
 		code: string,
 		language: string | undefined,
@@ -130,7 +127,6 @@ export class AssistantMessageComponent extends Container {
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		hiddenThinkingLabel = "Thinking...",
 		outputPad = 1,
-		markdownTransformers: readonly MarkdownTransformer[] = [],
 		codeBlockView?: (
 			code: string,
 			language: string | undefined,
@@ -145,7 +141,6 @@ export class AssistantMessageComponent extends Container {
 		this.markdownTheme = markdownTheme;
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
-		this.markdownTransformers = markdownTransformers;
 		this.codeBlockView = codeBlockView;
 
 		// Container for text/thinking content
@@ -266,7 +261,6 @@ export class AssistantMessageComponent extends Container {
 						},
 					},
 					{
-						transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
 						maxProseWidth: PROSE_WIDTH,
 						codeBlockView: (code, language, width, complete) =>
 							this.codeBlockView?.(code, language, width, this.isStreaming, complete),
@@ -367,11 +361,6 @@ export class AssistantMessageComponent extends Container {
 									color: (text: string) => theme.fg("thinkingText", text),
 								},
 								{
-									transform: createMarkdownTransform(
-										"assistant-thinking",
-										this.isStreaming,
-										this.markdownTransformers,
-									),
 									onCopyCode: (code) => {
 										void copyToClipboard(code);
 									},

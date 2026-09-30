@@ -29,7 +29,7 @@ describe("assistant transcript interaction", () => {
 			smoke = await createInteractiveSmoke({ terminal, empty: true, transcript: true, animations });
 			await smoke.harness.settingsManager.commitSetting("global", "hideThinkingBlock", true);
 			await smoke.mode.init();
-			const prompt = smoke.runtime.session.prompt("pig pig pork 中文");
+			const prompt = smoke.runtime.session.execution.prompt("pig pig pork 中文");
 			await vi.waitFor(
 				async () => {
 					await terminal.waitForRender();
@@ -59,13 +59,13 @@ describe("assistant transcript interaction", () => {
 			await terminal.waitForRender();
 			await click(terminal, "✦ Final reply.");
 			expect(text(terminal)).toContain("TPS");
-			const sessionFile = smoke.runtime.session.sessionFile!;
+			const sessionFile = smoke.runtime.session.execution.sessionFile!;
 			await smoke.runtime.switchSession(sessionFile);
 			await terminal.waitForRender();
 			expect(text(terminal)).not.toContain("TPS");
 			await click(terminal, "✦ Final reply.");
 			expect(text(terminal)).toContain("TPS");
-			expect(smoke.runtime.session.messages.some((message) => message.role === "custom")).toBe(false);
+			expect(smoke.runtime.session.execution.messages.some((message) => message.role === "custom")).toBe(false);
 		},
 		15000,
 	);

@@ -4,12 +4,12 @@
  * Configure provider auth through ModelRuntime.
  */
 
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 const cwd = process.cwd();
 const runtime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	modelRuntimeOptions: {
 		authPath: "/tmp/my-app/auth.json",
 		modelsPath: "/tmp/my-app/models.json",

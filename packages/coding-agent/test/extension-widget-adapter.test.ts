@@ -1,25 +1,30 @@
-import { Container, type TUI } from "@candy/tui";
+import type { TUI } from "@candy/tui";
 import { describe, expect, it, vi } from "vitest";
 import { ExtensionWidgetAdapter } from "../src/modes/interactive/extension-widget-adapter.ts";
 
 describe("ExtensionWidgetAdapter", () => {
-	it("owns placement, replacement, and disposal of extension widgets", () => {
+	it("renders text widgets in registration order and removes cleared entries", () => {
 		const requestRender = vi.fn();
 		const adapter = new ExtensionWidgetAdapter({ requestRender } as unknown as TUI);
-		const dispose = vi.fn();
-		const previous = Object.assign(new Container(), { dispose });
-		const next = new Container();
 
-		adapter.set("status", () => previous);
-		adapter.set("status", () => next, { placement: "belowEditor" });
+		adapter.set("status", ["ready", "working"]);
+		adapter.set("notice", ["connected"]);
 
-		expect(dispose).toHaveBeenCalledOnce();
-		expect(adapter.above.children).not.toContain(previous);
-		expect(adapter.below.children).toContain(next);
+		expect(adapter.above.render(40)).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining("ready"),
+				expect.stringContaining("working"),
+				expect.stringContaining("connected"),
+			]),
+		);
+		expect(requestRender).toHaveBeenCalledTimes(2);
+
+		adapter.set("status", undefined);
+		expect(adapter.above.render(40).join("\n")).not.toContain("ready");
 
 		adapter.clear();
 
-		expect(adapter.below.children).toHaveLength(0);
-		expect(requestRender).toHaveBeenCalledTimes(3);
+		expect(adapter.above.render(40).join("\n")).not.toContain("connected");
+		expect(requestRender).toHaveBeenCalledTimes(4);
 	});
 });

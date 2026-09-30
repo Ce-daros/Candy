@@ -13,8 +13,7 @@ import {
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
-import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import {
 	buildSystemPromptSections,
@@ -24,6 +23,7 @@ import {
 import type { ExtensionFactory } from "../src/index.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { assembleTestSession as assembleAgentSession, seedHistory } from "./session-factory.ts";
 import { createHarness } from "./suite/harness.ts";
 
 describe("system prompt updates", () => {
@@ -31,25 +31,25 @@ describe("system prompt updates", () => {
 		const harness = await createHarness();
 		try {
 			harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
-			await harness.session.prompt("one");
-			await harness.session.prompt("two");
+			await harness.session.execution.prompt("one");
+			await harness.session.execution.prompt("two");
 			const systemEntries = harness.sessionManager
 				.getEntries()
 				.filter((entry) => entry.type === "message" && entry.message.role === "system");
 			expect(systemEntries).toHaveLength(1);
-			expect(harness.session.messages.map((message) => message.role)).toEqual([
+			expect(harness.session.execution.messages.map((message) => message.role)).toEqual([
 				"system",
 				"user",
 				"assistant",
 				"user",
 				"assistant",
 			]);
-			const head = harness.session.messages[0];
+			const head = harness.session.execution.messages[0];
 			if (head?.role !== "system") throw new Error("expected system message");
 			expect(head.content).toBe("");
 			expect(Object.keys(head.sections ?? {})).toEqual(["preamble", "tools", "rules", "docs", "cwd"]);
 			expect(head.toolsAdded?.map((tool) => tool.name)).toEqual(["read", "bash", "edit", "write"]);
-			expect(getSystemMessageText(head)).toBe(harness.session.systemPrompt);
+			expect(getSystemMessageText(head)).toBe(harness.session.execution.systemPrompt);
 		} finally {
 			await harness.cleanup();
 		}
@@ -58,7 +58,7 @@ describe("system prompt updates", () => {
 	test("opens a transcript without a system message and declares the prompt on the first request", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-system-prompt-migration-"));
 		try {
-			const sessionManager = SessionManager.inMemory(tempDir);
+			const sessionManager = SessionHistory.inMemory(tempDir);
 			sessionManager.appendMessage({ role: "user", content: "existing", timestamp: 1 });
 			const created = await assembleAgentSession({
 				extensionModules: extensionHostModules,
@@ -72,11 +72,11 @@ describe("system prompt updates", () => {
 			});
 			try {
 				// Nothing is synthesized or persisted until a request needs it.
-				expect(created.session.messages.map((message) => message.role)).toEqual(["user"]);
+				expect(created.session.execution.messages.map((message) => message.role)).toEqual(["user"]);
 				expect(sessionManager.buildSessionContext().messages.map((message) => message.role)).toEqual(["user"]);
-				expect(getCurrentSystemMessage(created.session.messages)).toBeUndefined();
+				expect(getCurrentSystemMessage(created.session.execution.messages)).toBeUndefined();
 			} finally {
-				created.session.dispose();
+				created.session.execution.dispose();
 			}
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
@@ -130,7 +130,7 @@ describe("system prompt updates", () => {
 					return fauxAssistantMessage(text);
 				}),
 			);
-			for (const text of ["one", "two", "three", "four"]) await harness.session.prompt(text);
+			for (const text of ["one", "two", "three", "four"]) await harness.session.execution.prompt(text);
 			const systemMessages = requests.map((request) =>
 				request.messages.filter((message) => message.role === "system"),
 			);
@@ -157,7 +157,7 @@ describe("system prompt updates", () => {
 			]);
 
 			// The transcript only records the structured sections, never the forced text.
-			const recorded = harness.session.messages.flatMap((message) =>
+			const recorded = harness.session.execution.messages.flatMap((message) =>
 				message.role === "system" ? [message.sections] : [],
 			);
 			expect(recorded).toEqual([
@@ -165,7 +165,9 @@ describe("system prompt updates", () => {
 				{ plan_mode: "<plan_mode>\nPlan only.\n</plan_mode>" },
 				{ plan_mode: null },
 			]);
-			expect(getCurrentSystemPrompt(harness.session.messages)).toBe(harness.session.systemPrompt);
+			expect(getCurrentSystemPrompt(harness.session.execution.messages)).toBe(
+				harness.session.execution.systemPrompt,
+			);
 		} finally {
 			await harness.cleanup();
 		}
@@ -203,9 +205,9 @@ describe("system prompt updates", () => {
 					return fauxAssistantMessage("second");
 				},
 			]);
-			await harness.session.prompt("first");
-			harness.session.setActiveToolsByName(["second"]);
-			await harness.session.prompt("second");
+			await harness.session.execution.prompt("first");
+			harness.session.execution.setActiveToolsByName(["second"]);
+			await harness.session.execution.prompt("second");
 			expect(requests).toHaveLength(3);
 
 			expect(Object.keys(requests[0] ?? {})).toEqual(["messages"]);
@@ -228,9 +230,9 @@ describe("system prompt updates", () => {
 			const result = requests[2]?.messages.filter((message) => message.role === "toolResult").at(-1);
 			expect(result).toMatchObject({ role: "toolResult", toolName: "first", isError: true });
 
-			const current = getCurrentSystemMessage(harness.session.messages);
+			const current = getCurrentSystemMessage(harness.session.execution.messages);
 			expect(current?.toolsAdded?.map((value) => value.name)).toEqual(["second"]);
-			expect(getSystemMessageText(current!)).toBe(harness.session.systemPrompt);
+			expect(getSystemMessageText(current!)).toBe(harness.session.execution.systemPrompt);
 		} finally {
 			await harness.cleanup();
 		}
@@ -265,13 +267,13 @@ describe("system prompt updates", () => {
 					return fauxAssistantMessage("second");
 				},
 			]);
-			await harness.session.prompt("first");
-			await harness.session.prompt("second");
+			await harness.session.execution.prompt("first");
+			await harness.session.execution.prompt("second");
 			expect(requests).toHaveLength(2);
 			const update = requests[1]?.messages.filter((message) => message.role === "system").at(-1);
 			expect(update?.toolsRemoved).toEqual([{ name: "first" }]);
 			expect(update?.toolsAdded).toBeUndefined();
-			expect(harness.session.getActiveToolNames()).toEqual(["second"]);
+			expect(harness.session.execution.getActiveToolNames()).toEqual(["second"]);
 		} finally {
 			await harness.cleanup();
 		}
@@ -288,8 +290,8 @@ describe("system prompt updates", () => {
 		const harness = await createHarness({ tools: [executableTool], initialActiveToolNames: ["plain"] });
 		try {
 			harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
-			await harness.session.prompt("one");
-			const head = harness.session.messages[0];
+			await harness.session.execution.prompt("one");
+			const head = harness.session.execution.messages[0];
 			if (head?.role !== "system") throw new Error("expected system message");
 			const declaration = head.toolsAdded?.[0];
 			if (!declaration) throw new Error("expected tool declaration");
@@ -297,9 +299,9 @@ describe("system prompt updates", () => {
 			expect(Object.hasOwn(declaration, "execute")).toBe(false);
 
 			// Simulate a resume: the persisted JSON must replay to the same declarations.
-			harness.session.agent.state.messages = JSON.parse(JSON.stringify(harness.session.messages));
-			await harness.session.prompt("two");
-			expect(harness.session.messages.filter((message) => message.role === "system")).toHaveLength(1);
+			seedHistory(harness.session.history, JSON.parse(JSON.stringify(harness.session.execution.messages)));
+			await harness.session.execution.prompt("two");
+			expect(harness.session.execution.messages.filter((message) => message.role === "system")).toHaveLength(1);
 		} finally {
 			await harness.cleanup();
 		}

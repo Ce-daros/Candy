@@ -1,6 +1,7 @@
 import type { StreamFn } from "@candy/agent-core";
 import { type AssistantMessage, createAssistantMessageEventStream, fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { getTestAgent } from "../../execution-internals.ts";
 import { createHarness, type Harness } from "../harness.ts";
 
 /**
@@ -48,7 +49,6 @@ describe("#6647 compaction retries transient summarization failures", () => {
 		};
 		assistant.content = [{ type: "text", text: "assistant response to compact" }];
 		harness.sessionManager.appendMessage(assistant);
-		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 	}
 
 	/** streamFn that responds with the given sequence of assistant messages across calls. */
@@ -75,7 +75,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 			});
 			return stream;
 		};
-		harness.session.agent.streamFunction = streamFunction;
+		getTestAgent(harness.session.execution).streamFunction = streamFunction;
 		return () => callCount;
 	}
 
@@ -96,7 +96,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 		};
 		const getCallCount = useScriptedStreamFn(harness, [error("terminated"), error("terminated"), success]);
 
-		const result = await harness.session.compact();
+		const result = await harness.session.execution.compact();
 
 		expect(result.summary).toContain("recovered summary");
 		expect(getCallCount()).toBe(3); // 1 prefix-summary attempt + 2 retries
@@ -123,7 +123,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 		};
 		const getCallCount = useScriptedStreamFn(harness, [error]);
 
-		await expect(harness.session.compact()).rejects.toThrow("insufficient_quota");
+		await expect(harness.session.execution.compact()).rejects.toThrow("insufficient_quota");
 		expect(getCallCount()).toBe(1);
 		expect(harness.eventsOfType("summarization_retry_scheduled")).toHaveLength(0);
 	});
@@ -140,7 +140,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 		};
 		const getCallCount = useScriptedStreamFn(harness, [error]);
 
-		await expect(harness.session.compact()).rejects.toThrow("terminated");
+		await expect(harness.session.execution.compact()).rejects.toThrow("terminated");
 		expect(getCallCount()).toBe(1);
 		expect(harness.eventsOfType("summarization_retry_scheduled")).toHaveLength(0);
 	});
@@ -157,7 +157,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 		};
 		const getCallCount = useScriptedStreamFn(harness, [error, error, error]);
 
-		await expect(harness.session.compact()).rejects.toThrow("terminated");
+		await expect(harness.session.execution.compact()).rejects.toThrow("terminated");
 		expect(getCallCount()).toBe(3); // 1 initial + 2 retries
 		const starts = harness.eventsOfType("summarization_retry_scheduled");
 		const ends = harness.eventsOfType("summarization_retry_finished");
@@ -178,10 +178,10 @@ describe("#6647 compaction retries transient summarization failures", () => {
 		};
 		useScriptedStreamFn(harness, [error, error, error]);
 
-		const compactPromise = harness.session.compact();
+		const compactPromise = harness.session.execution.compact();
 		// Let the first error resolve and the retry backoff sleep start.
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		harness.session.abortCompaction();
+		harness.session.execution.abortCompaction();
 
 		// The aborted retry backoff is normalized to an aborted assistant message,
 		// which compaction classifies as aborted.

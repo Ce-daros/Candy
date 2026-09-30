@@ -1,8 +1,8 @@
-import { type AssistantMessage, fauxAssistantMessage, fauxProvider } from "@candy/ai";
+import { type AssistantMessage, fauxAssistantMessage, fauxProvider, type Provider } from "@candy/ai";
 import { expect, it } from "vitest";
 import { createHarness } from "../harness.ts";
 
-// Regression for #8964: extensions can stream responses from providers registered with candy.registerProvider().
+// Regression for #8964: extensions can stream responses from native providers registered with candy.registerProvider().
 it.each(["stream", "streamSimple"] as const)(
 	"allows an extension command to use ctx.modelRuntime.%s",
 	async (method) => {
@@ -19,13 +19,16 @@ it.each(["stream", "streamSimple"] as const)(
 		const harness = await createHarness({
 			extensionFactories: [
 				(candy) => {
-					candy.registerProvider(faux.provider.id, {
-						api: faux.api,
-						baseUrl: faux.getModel().baseUrl,
-						apiKey: "extension-key",
-						models: faux.models,
-						streamSimple: faux.provider.streamSimple,
-					});
+					const provider: Provider = {
+						...faux.provider,
+						auth: {
+							apiKey: {
+								name: "Test API key",
+								resolve: async () => ({ auth: { apiKey: "extension-key" }, source: "test" }),
+							},
+						},
+					};
+					candy.registerProvider(provider);
 				},
 				(candy) => {
 					candy.registerCommand("stream-custom", {
@@ -45,7 +48,7 @@ it.each(["stream", "streamSimple"] as const)(
 			],
 		});
 		try {
-			await harness.session.executeCommand({ source: "extension", name: "stream-custom", args: "" });
+			await harness.session.execution.executeCommand({ source: "extension", name: "stream-custom", args: "" });
 
 			expect(result).toMatchObject({
 				stopReason: "stop",

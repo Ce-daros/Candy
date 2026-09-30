@@ -1,11 +1,11 @@
 /** Add host-provided AGENTS.md content to the discovered context files. */
 
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 const cwd = process.cwd();
 const runtime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		agentsFilesOverride: (current) => ({
 			agentsFiles: [

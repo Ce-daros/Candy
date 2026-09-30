@@ -14,7 +14,7 @@ import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { InteractiveSettingId, InteractiveSettingValue } from "../../core/interactive-setting-values.ts";
 import type { ResourceType } from "../../core/resource-configuration.ts";
 import type { ResourceOperations } from "../../core/resource-operations.ts";
-import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { SessionEntry, SessionTreeNode } from "../../core/session-history.ts";
 import type { Settings, SettingsScope } from "../../core/settings-manager.ts";
 import type { JsonAgentSessionEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";

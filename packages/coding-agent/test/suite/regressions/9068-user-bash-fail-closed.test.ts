@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AgentSessionRuntime } from "../../../src/core/agent-session-runtime.ts";
+import * as bashExecutor from "../../../src/core/bash-executor.ts";
 import type { ExtensionAPI, UserBashEvent, UserBashEventResult } from "../../../src/core/extensions/types.ts";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
 import { runRpcMode } from "../../../src/modes/rpc/rpc-mode.ts";
@@ -20,8 +21,6 @@ vi.mock("../../../src/core/output-guard.js", () => ({
 		rpcIo.outputLines.push(line);
 	},
 }));
-
-vi.mock("../../../src/modes/interactive/theme/theme.js", () => ({ theme: {} }));
 
 vi.mock("../../../src/modes/interactive/components/bash-execution.js", () => ({
 	BashExecutionComponent: class {
@@ -76,6 +75,9 @@ function parseOutputLines(): Array<Record<string, unknown>> {
 function createRuntimeHost(harness: Harness): AgentSessionRuntime {
 	return {
 		session: harness.session,
+		settings: harness.settingsManager,
+		models: harness.modelRuntime,
+		resources: harness.session.resources,
 		newSession: vi.fn(async () => ({ cancelled: true })),
 		switchSession: vi.fn(async () => ({ cancelled: true })),
 		fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),
@@ -119,6 +121,8 @@ type InteractiveBashContext = {
 	editor: { addToHistory?: (text: string) => void };
 	session: Harness["session"];
 	sessionManager: Harness["sessionManager"];
+	settingsManager: Harness["settingsManager"];
+	dismissHome(): void;
 	renderer: { requestRender(): void };
 	inputMode: "normal" | "shell" | "shell-no-context";
 	chatContainer: { addChild(component: unknown): void };
@@ -182,7 +186,7 @@ afterEach(async () => {
 describe("RPC user_bash failure handling (#9068)", () => {
 	test.each(rpcCases)("$name", async ({ extension, error, executeCount }) => {
 		const rpc = await startRpcHarness(extension);
-		const executeBash = vi.spyOn(rpc.harness.session, "executeBash").mockResolvedValue(localResult);
+		const executeBash = vi.spyOn(bashExecutor, "executeBashWithOperations").mockResolvedValue(localResult);
 
 		try {
 			rpc.send({ id: "bash-request", type: "bash", command: "pwd" });
@@ -214,7 +218,7 @@ describe("RPC user_bash failure handling (#9068)", () => {
 			expect(executeBash).toHaveBeenCalledTimes(executeCount);
 		} finally {
 			executeBash.mockRestore();
-			rpc.cleanup();
+			await rpc.cleanup();
 		}
 	});
 });
@@ -235,12 +239,14 @@ describe("Interactive user_bash failure handling (#9068)", () => {
 				},
 			],
 		});
-		const executeBash = vi.spyOn(harness.session, "executeBash").mockResolvedValue(localResult);
+		const executeBash = vi.spyOn(bashExecutor, "executeBashWithOperations").mockResolvedValue(localResult);
 		const context: InteractiveBashContext = {
 			defaultEditor: {},
 			editor: { addToHistory: vi.fn() },
 			session: harness.session,
 			sessionManager: harness.sessionManager,
+			settingsManager: harness.settingsManager,
+			dismissHome: vi.fn(),
 			renderer: { requestRender: vi.fn() },
 			inputMode: shellMode,
 			chatContainer: { addChild: vi.fn() },

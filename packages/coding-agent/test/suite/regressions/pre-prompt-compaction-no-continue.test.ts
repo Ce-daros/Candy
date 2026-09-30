@@ -1,6 +1,8 @@
 import { type AssistantMessage, fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestAgent } from "../../execution-internals.ts";
 import { createHarness, getUserTexts, type Harness } from "../harness.ts";
+import { useSummaryResponses } from "../summarization.ts";
 
 function createUsage(totalTokens: number) {
 	return {
@@ -27,20 +29,12 @@ describe("pre-prompt compaction regression", () => {
 		const harness = await createHarness({
 			models: [{ id: "faux-1", contextWindow: 100, maxTokens: 100 }],
 			settings: { compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 0 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", async (event) => ({
-						compaction: {
-							summary: "pre-prompt summary",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-							details: {},
-						},
-					}));
-				},
-			],
 		});
 		harnesses.push(harness);
+		useSummaryResponses(harness, [
+			fauxAssistantMessage("pre-prompt summary"),
+			fauxAssistantMessage("pre-prompt summary"),
+		]);
 
 		const now = Date.now();
 		const model = harness.getModel();
@@ -57,11 +51,10 @@ describe("pre-prompt compaction regression", () => {
 			usage: createUsage(100),
 		};
 		harness.sessionManager.appendMessage(lengthStopAssistant);
-		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 		harness.setResponses([fauxAssistantMessage("answered next prompt")]);
-		const continueSpy = vi.spyOn(harness.session.agent, "continue");
+		const continueSpy = vi.spyOn(getTestAgent(harness.session.execution), "continue");
 
-		await expect(harness.session.prompt("next prompt")).resolves.toBeUndefined();
+		await expect(harness.session.execution.prompt("next prompt")).resolves.toBeUndefined();
 
 		expect(continueSpy).not.toHaveBeenCalled();
 		expect(harness.eventsOfType("compaction_end").at(-1)).toMatchObject({

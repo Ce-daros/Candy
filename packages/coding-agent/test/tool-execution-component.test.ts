@@ -13,9 +13,10 @@ import { type BashOperations, createBashToolDefinition } from "../src/core/tools
 import { createEditToolDefinition } from "../src/core/tools/edit.ts";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.ts";
 import { createWriteToolDefinition } from "../src/core/tools/write.ts";
-import { ToolExecutionComponent, type ToolRenderers } from "../src/modes/interactive/components/tool-execution.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
-import { withBuiltInRenderers } from "../src/presentation/tool-renderers/index.ts";
+import type { ToolRenderers } from "../src/presentation/tool-render-types.ts";
+import { getBuiltInToolRenderers } from "../src/presentation/tool-renderers/index.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 function createBaseToolDefinition(name = "custom_tool"): ToolDefinition {
@@ -36,19 +37,16 @@ function createToolExecutionComponent(
 	toolCallId: string,
 	args: any,
 	options: ConstructorParameters<typeof ToolExecutionComponent>[3],
-	toolDefinition: ToolRenderers | ToolDefinition<any, any, any> | undefined,
+	toolDefinition: ToolRenderers | ToolDefinition<any, any> | undefined,
 	ui: TUI,
 	cwd: string,
 ): ToolExecutionComponent {
-	return new ToolExecutionComponent(
-		toolName,
-		toolCallId,
-		args,
-		options,
-		withBuiltInRenderers(toolName, toolDefinition),
-		ui,
-		cwd,
-	);
+	const renderers =
+		toolDefinition !== undefined &&
+		("renderCall" in toolDefinition || "renderResult" in toolDefinition || "renderShell" in toolDefinition)
+			? (toolDefinition as ToolRenderers)
+			: getBuiltInToolRenderers(toolName);
+	return new ToolExecutionComponent(toolName, toolCallId, args, options, renderers ?? {}, ui, cwd);
 }
 function createFakeTui(): TUI {
 	return {
@@ -104,7 +102,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("stacks custom call and result renderers like the old implementation", () => {
-		const toolDefinition: ToolDefinition = {
+		const toolDefinition: ToolDefinition & ToolRenderers = {
 			...createBaseToolDefinition(),
 			renderCall: () => new Text("custom call", 0, 0),
 			renderResult: () => new Text("custom result", 0, 0),
@@ -136,7 +134,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("self-rendered empty tool rows take no layout space", () => {
-		const toolDefinition: ToolDefinition = {
+		const toolDefinition: ToolDefinition & ToolRenderers = {
 			...createBaseToolDefinition(),
 			renderShell: "self",
 			renderCall: () => new Text("", 0, 0),
@@ -167,16 +165,12 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("uses built-in rendering for built-in overrides without custom renderers", () => {
-		const overrideDefinition: ToolDefinition = {
-			...createBaseToolDefinition("edit"),
-		};
-
 		const component = createToolExecutionComponent(
 			"edit",
 			"tool-2",
 			{ path: "README.md", oldText: "before", newText: "after" },
 			{},
-			withBuiltInRenderers("edit", overrideDefinition),
+			getBuiltInToolRenderers("edit"),
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -417,8 +411,8 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toContain("src/example.ts:");
 	});
 
-	test("inherits missing built-in result renderer slot from the built-in tool", () => {
-		const overrideDefinition: ToolDefinition = {
+	test("uses a supplied call renderer without inheriting a result renderer", () => {
+		const overrideDefinition: ToolDefinition & ToolRenderers = {
 			...createBaseToolDefinition("read"),
 			renderCall: () => new Text("override call", 0, 0),
 		};
@@ -428,7 +422,7 @@ describe("ToolExecutionComponent parity", () => {
 			"tool-4b",
 			{ path: "notes.txt" },
 			{},
-			withBuiltInRenderers("read", overrideDefinition),
+			overrideDefinition,
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -437,10 +431,11 @@ describe("ToolExecutionComponent parity", () => {
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("override call");
 		expect(rendered).toContain("hello");
+		expect(rendered).not.toContain("read notes.txt");
 	});
 
-	test("inherits missing built-in call renderer slot from the built-in tool", () => {
-		const overrideDefinition: ToolDefinition = {
+	test("uses a supplied result renderer without inheriting a call renderer", () => {
+		const overrideDefinition: ToolDefinition & ToolRenderers = {
 			...createBaseToolDefinition("read"),
 			renderResult: () => new Text("override result", 0, 0),
 		};
@@ -450,14 +445,14 @@ describe("ToolExecutionComponent parity", () => {
 			"tool-4c",
 			{ path: "README.md" },
 			{},
-			withBuiltInRenderers("read", overrideDefinition),
+			overrideDefinition,
 			createFakeTui(),
 			process.cwd(),
 		);
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("read");
-		expect(rendered).toContain("README.md");
+		expect(rendered).not.toContain("README.md");
 		expect(rendered).toContain("override result");
 	});
 
@@ -507,7 +502,7 @@ describe("ToolExecutionComponent parity", () => {
 
 	test("shares renderer state across custom call and result slots", () => {
 		type RenderState = { token?: string };
-		const toolDefinition: ToolDefinition<any, unknown, RenderState> = {
+		const toolDefinition: ToolDefinition<any, unknown> & ToolRenderers<any, unknown, RenderState> = {
 			...createBaseToolDefinition(),
 			renderCall: (_args, _theme, context) => {
 				context.state.token ??= "shared-token";
@@ -534,7 +529,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("exposes args in render result context", () => {
-		const toolDefinition: ToolDefinition = {
+		const toolDefinition: ToolDefinition & ToolRenderers = {
 			...createBaseToolDefinition(),
 			renderCall: () => new Text("call", 0, 0),
 			renderResult: (_result, _options, _theme, context) =>
@@ -763,7 +758,7 @@ describe("ToolExecutionComponent parity", () => {
 			`tool-${name}-summary`,
 			args,
 			{},
-			withBuiltInRenderers(name, createBaseToolDefinition(name)),
+			getBuiltInToolRenderers(name),
 			createFakeTui(),
 			process.cwd(),
 		);

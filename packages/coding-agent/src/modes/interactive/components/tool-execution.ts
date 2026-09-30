@@ -1,4 +1,3 @@
-import type { AgentToolResult } from "@candy/agent-core";
 import {
 	Box,
 	type Component,
@@ -12,26 +11,7 @@ import {
 	type TuiMouseEvent,
 	truncateToWidth,
 } from "@candy/tui";
-import type { Theme } from "../../../contracts/theme.ts";
-import type { ToolDefinition, ToolRenderContext, ToolRenderResultOptions } from "../../../core/extensions/types.ts";
-
-/**
- * What this component needs from a tool: how to draw it. It neither executes tools nor reads their
- * parameter schemas, so a definition and a bare renderer pair are equally acceptable.
- *
- * The renderer parameters are `any` on purpose: a `ToolDefinition` types them from its schema, and
- * narrowing them here would make those definitions unassignable.
- */
-export interface ToolRenderers {
-	renderShell?: "default" | "self";
-	renderCall?: (args: any, theme: Theme, context: ToolRenderContext<any, any>) => Component;
-	renderResult?: (
-		result: AgentToolResult<any>,
-		options: ToolRenderResultOptions,
-		theme: Theme,
-		context: ToolRenderContext<any, any>,
-	) => Component;
-}
+import type { ToolRenderContext, ToolRenderers } from "../../../presentation/tool-render-types.ts";
 
 import { getTextOutput as getRenderedTextOutput } from "../../../presentation/tool-render-utils.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
@@ -91,7 +71,7 @@ export class ToolExecutionComponent extends Container {
 		toolCallId: string,
 		args: any,
 		options: ToolExecutionOptions = {},
-		toolDefinition: ToolRenderers | ToolDefinition<any, any, any> | undefined,
+		toolDefinition: ToolRenderers | undefined,
 		ui: TUI,
 		cwd: string,
 	) {
@@ -123,11 +103,11 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
-	private getCallRenderer(): ToolDefinition<any, any>["renderCall"] | undefined {
+	private getCallRenderer(): ToolRenderers["renderCall"] | undefined {
 		return this.toolDefinition?.renderCall;
 	}
 
-	private getResultRenderer(): ToolDefinition<any, any>["renderResult"] | undefined {
+	private getResultRenderer(): ToolRenderers["renderResult"] | undefined {
 		return this.toolDefinition?.renderResult;
 	}
 

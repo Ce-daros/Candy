@@ -2,6 +2,7 @@ import { fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PromptDisposition } from "../../../src/core/agent-session.ts";
 import { createHarness, getMessageText, getUserTexts, type Harness } from "../harness.ts";
+import { useSummaryResponses } from "../summarization.ts";
 
 describe("issue #7150: RPC prompt during manual compaction", () => {
 	const harnesses: Harness[] = [];
@@ -24,24 +25,16 @@ describe("issue #7150: RPC prompt during manual compaction", () => {
 
 		const harness = await createHarness({
 			settings: { compaction: { keepRecentTokens: 1 } },
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", async (event) => {
-						markCompactionStarted();
-						await compactionReleased;
-						return {
-							compaction: {
-								summary: "manual compacted",
-								firstKeptEntryId: event.preparation.firstKeptEntryId,
-								tokensBefore: event.preparation.tokensBefore,
-								details: {},
-							},
-						};
-					});
-				},
-			],
 		});
 		harnesses.push(harness);
+		useSummaryResponses(harness, [
+			async () => {
+				markCompactionStarted();
+				await compactionReleased;
+				return fauxAssistantMessage("manual compacted");
+			},
+			fauxAssistantMessage("manual compacted"),
+		]);
 
 		const timestamp = Date.now();
 		harness.sessionManager.appendMessage({
@@ -60,16 +53,15 @@ describe("issue #7150: RPC prompt during manual compaction", () => {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 		});
-		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 		harness.setResponses([fauxAssistantMessage("probe response")]);
 
-		const compactPromise = harness.session.compact();
+		const compactPromise = harness.session.execution.compact();
 		await compactionStarted;
 
 		let preflightResult: PromptDisposition | undefined;
 		let promptError: unknown;
 		try {
-			await harness.session.prompt("PROBE-7150", {
+			await harness.session.execution.prompt("PROBE-7150", {
 				source: "rpc",
 				preflightResult: (result) => {
 					preflightResult = result;

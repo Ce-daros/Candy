@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionDiscovery } from "../src/core/session-history.ts";
 import { createInteractiveSmoke, type InteractiveSmoke } from "./fixtures/interactive-smoke.ts";
 
 type InteractiveState = {
@@ -164,13 +164,13 @@ describe("interactive presentation from terminal input", () => {
 
 	it("starts a new session from History and returns to the composer", async () => {
 		const { state, terminal } = await start();
-		const previousSession = smoke!.runtime.session.sessionFile;
+		const previousSession = smoke!.runtime.session.execution.sessionFile;
 		terminal.sendInput("\x0c");
 		terminal.sendInput("\t");
 		terminal.sendInput("\x1b[A");
 		terminal.sendInput("New session");
 		terminal.sendInput("\r");
-		await vi.waitFor(() => expect(smoke!.runtime.session.sessionFile).not.toBe(previousSession));
+		await vi.waitFor(() => expect(smoke!.runtime.session.execution.sessionFile).not.toBe(previousSession));
 		await terminal.waitForRender();
 		expect(state.presentation.surface).toBeUndefined();
 		expect(state.defaultEditor.getText()).toBe("");
@@ -230,18 +230,18 @@ describe("interactive presentation from terminal input", () => {
 	it("replaces the runtime for a clone and a switch using persisted faux sessions", async () => {
 		await start();
 		const runtime = smoke!.runtime;
-		const initialFile = runtime.session.sessionFile;
-		const leaf = runtime.session.sessionManager.getLeafId();
+		const initialFile = runtime.session.execution.sessionFile;
+		const leaf = runtime.session.history.getLeafId();
 		expect(leaf).toBeTruthy();
 		const clone = await runtime.fork(leaf!, { position: "at" });
 		expect(clone.cancelled).toBe(false);
-		expect(runtime.session.sessionFile).not.toBe(initialFile);
-		const sessions = await SessionManager.list(smoke!.harness.tempDir, join(smoke!.harness.tempDir, "sessions"));
+		expect(runtime.session.execution.sessionFile).not.toBe(initialFile);
+		const sessions = await SessionDiscovery.list(smoke!.harness.tempDir, join(smoke!.harness.tempDir, "sessions"));
 		const other = sessions.find((session) => session.firstMessage === "Another session");
 		expect(other).toBeDefined();
 		const switched = await runtime.switchSession(other!.path);
 		expect(switched.cancelled).toBe(false);
-		expect(runtime.session.sessionFile).toBe(other!.path);
+		expect(runtime.session.execution.sessionFile).toBe(other!.path);
 	});
 
 	it("keeps History reachable from an Off-only model and ignores Shift+Tab", async () => {
@@ -252,7 +252,7 @@ describe("interactive presentation from terminal input", () => {
 		terminal.sendInput("\x1b[C");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
-		expect(smoke!.runtime.session.model?.id).toBe("candy-off");
+		expect(smoke!.runtime.session.selection.model?.id).toBe("candy-off");
 		terminal.sendInput("\x0c");
 		terminal.sendInput("\t");
 		expect(state.footer.getPowerbarSelector()).toBe("thinking");
@@ -285,7 +285,7 @@ describe("interactive presentation from terminal input", () => {
 
 	it("reuses the empty-session home after New session and keeps its tip stable while redrawing", async () => {
 		const { state, terminal } = await start({ empty: true });
-		const previousSession = smoke!.runtime.session.sessionFile;
+		const previousSession = smoke!.runtime.session.execution.sessionFile;
 		const initial = plainText(terminal);
 		const initialFacts = homeFacts(initial);
 		const initialTip = homeTip(initial);
@@ -307,7 +307,7 @@ describe("interactive presentation from terminal input", () => {
 		expect(state.presentation.surface).toBe("history");
 		terminal.sendInput("New session");
 		terminal.sendInput("\r");
-		await vi.waitFor(() => expect(smoke!.runtime.session.sessionFile).not.toBe(previousSession));
+		await vi.waitFor(() => expect(smoke!.runtime.session.execution.sessionFile).not.toBe(previousSession));
 		await terminal.waitForRender();
 		const nextHome = plainText(terminal);
 		expect(homeFacts(nextHome)).toEqual(initialFacts);
@@ -319,7 +319,7 @@ describe("interactive presentation from terminal input", () => {
 
 	it("keeps a submitted draft in the composer when no model is selected", async () => {
 		const { state, terminal } = await start({ empty: true });
-		smoke!.runtime.session.clearModel();
+		smoke!.runtime.session.selection.clearModel();
 		terminal.sendInput("keep this draft");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
@@ -331,7 +331,7 @@ describe("interactive presentation from terminal input", () => {
 
 	it("clearing quick selection from Sources clears the active model on exit", async () => {
 		const { state, terminal } = await start();
-		expect(smoke!.runtime.session.model).toBeDefined();
+		expect(smoke!.runtime.session.selection.model).toBeDefined();
 		terminal.sendInput("\x0c");
 		terminal.sendInput("\x1b[A");
 		await terminal.waitForRender();
@@ -341,7 +341,7 @@ describe("interactive presentation from terminal input", () => {
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b");
 		await vi.waitFor(() => expect(state.presentation.surface).toBeUndefined());
-		expect(smoke!.runtime.session.model).toBeUndefined();
+		expect(smoke!.runtime.session.selection.model).toBeUndefined();
 		await terminal.waitForRender();
 		expect(plainText(terminal)).toContain("No models selected");
 	});
@@ -361,7 +361,7 @@ describe("interactive presentation from terminal input", () => {
 		await new Promise((resolve) => setTimeout(resolve, 200));
 		await terminal.waitForRender();
 		expect(
-			smoke!.runtime.session.messages.some(
+			smoke!.runtime.session.execution.messages.some(
 				(message) => message.role === "user" && JSON.stringify(message.content).includes("Another session"),
 			),
 			terminal.getViewport().join("\n"),

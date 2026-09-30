@@ -12,7 +12,7 @@ import type {
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { assertSessionCwdExists } from "./session-cwd.ts";
-import { SessionManager } from "./session-manager.ts";
+import { SessionHistory } from "./session-history.ts";
 
 /**
  * Result returned by runtime creation.
@@ -35,7 +35,7 @@ export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResul
 export type CreateAgentSessionRuntimeFactory = (options: {
 	cwd: string;
 	agentDir: string;
-	sessionManager: SessionManager;
+	sessionManager: SessionHistory;
 	sessionStartEvent?: SessionStartEvent;
 	projectTrustContext?: ProjectTrustContext;
 }) => Promise<CreateAgentSessionRuntimeResult>;
@@ -119,6 +119,16 @@ export class AgentSessionRuntime {
 		return this._session;
 	}
 
+	get settings() {
+		return this._services.settingsManager;
+	}
+	get models() {
+		return this._services.modelRuntime;
+	}
+	get resources() {
+		return this._session.resources;
+	}
+
 	get cwd(): string {
 		return this._services.cwd;
 	}
@@ -151,7 +161,7 @@ export class AgentSessionRuntime {
 		reason: "new" | "resume",
 		targetSessionFile?: string,
 	): Promise<{ cancelled: boolean }> {
-		const runner = this.session.extensionRunner;
+		const runner = this.session.execution.extensionRunner;
 		if (!runner.hasHandlers("session_before_switch")) {
 			return { cancelled: false };
 		}
@@ -168,7 +178,7 @@ export class AgentSessionRuntime {
 		entryId: string,
 		options: { position: "before" | "at" },
 	): Promise<{ cancelled: boolean }> {
-		const runner = this.session.extensionRunner;
+		const runner = this.session.execution.extensionRunner;
 		if (!runner.hasHandlers("session_before_fork")) {
 			return { cancelled: false };
 		}
@@ -186,12 +196,12 @@ export class AgentSessionRuntime {
 		// results) is persisted to the outgoing session before it is replaced.
 		const errors: unknown[] = [];
 		try {
-			await this.session.abort();
+			await this.session.execution.abort();
 		} catch (error) {
 			errors.push(error);
 		}
 		try {
-			await emitSessionShutdownEvent(this.session.extensionRunner, {
+			await emitSessionShutdownEvent(this.session.execution.extensionRunner, {
 				type: "session_shutdown",
 				reason,
 				targetSessionFile,
@@ -205,7 +215,7 @@ export class AgentSessionRuntime {
 			errors.push(error);
 		}
 		try {
-			await this.session.dispose();
+			await this.session.execution.dispose();
 		} catch (error) {
 			errors.push(error);
 		}
@@ -221,7 +231,7 @@ export class AgentSessionRuntime {
 		const errors = [error];
 		if (candidate) {
 			try {
-				await candidate.dispose();
+				await candidate.execution.dispose();
 			} catch (disposeError) {
 				errors.push(disposeError);
 			}
@@ -257,7 +267,7 @@ export class AgentSessionRuntime {
 			await this.rebindSession(this.session);
 		}
 		if (withSession) {
-			await withSession(this.session.createReplacedSessionContext());
+			await withSession(this.session.execution.createReplacedSessionContext());
 		}
 	}
 
@@ -312,8 +322,8 @@ export class AgentSessionRuntime {
 			return beforeResult;
 		}
 
-		const previousSessionFile = this.session.sessionFile;
-		const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
+		const previousSessionFile = this.session.execution.sessionFile;
+		const sessionManager = SessionHistory.open(sessionPath, undefined, options?.cwdOverride);
 		assertSessionCwdExists(sessionManager, this.cwd);
 		await this.replaceSession(
 			() =>
@@ -337,7 +347,7 @@ export class AgentSessionRuntime {
 
 	private async newSessionOperation(options?: {
 		parentSession?: string;
-		setup?: (sessionManager: SessionManager) => Promise<void>;
+		setup?: (sessionManager: SessionHistory) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
 		const beforeResult = await this.emitBeforeSwitch("new");
@@ -345,11 +355,11 @@ export class AgentSessionRuntime {
 			return beforeResult;
 		}
 
-		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
+		const previousSessionFile = this.session.execution.sessionFile;
+		const sessionDir = this.session.history.getSessionDir();
+		const sessionManager = this.session.history.isPersisted()
+			? SessionHistory.create(this.cwd, sessionDir)
+			: SessionHistory.inMemory(this.cwd);
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
@@ -362,8 +372,7 @@ export class AgentSessionRuntime {
 		});
 		try {
 			if (options?.setup) {
-				await options.setup(replacement.session.sessionManager);
-				replacement.session.refreshContext();
+				await options.setup(replacement.session.history);
 			}
 		} catch (error) {
 			return this.discardCandidate(
@@ -390,7 +399,7 @@ export class AgentSessionRuntime {
 
 	clone(options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> }): Promise<{ cancelled: boolean }> {
 		return this.enqueueReplacement(async () => {
-			const leafId = this.session.sessionManager.getLeafId();
+			const leafId = this.session.history.getLeafId();
 			if (!leafId) throw new Error("Nothing to clone yet");
 			const { cancelled } = await this.forkOperation(leafId, { position: "at", ...options });
 			return { cancelled };
@@ -409,7 +418,7 @@ export class AgentSessionRuntime {
 		let targetLeafId: string | null;
 		let selectedText: string | undefined;
 
-		const selectedEntry = this.session.sessionManager.getEntry(entryId);
+		const selectedEntry = this.session.history.getEntry(entryId);
 		if (!selectedEntry) {
 			throw new Error("Invalid entry ID for forking");
 		}
@@ -424,15 +433,15 @@ export class AgentSessionRuntime {
 			selectedText = extractUserMessageText(selectedEntry.message.content);
 		}
 
-		const previousSessionFile = this.session.sessionFile;
-		if (this.session.sessionManager.isPersisted()) {
-			const currentSessionFile = this.session.sessionFile;
+		const previousSessionFile = this.session.execution.sessionFile;
+		if (this.session.history.isPersisted()) {
+			const currentSessionFile = this.session.execution.sessionFile;
 			if (!currentSessionFile) {
 				throw new Error("Persisted session is missing a session file");
 			}
-			const sessionDir = this.session.sessionManager.getSessionDir();
+			const sessionDir = this.session.history.getSessionDir();
 			if (!targetLeafId) {
-				const sessionManager = SessionManager.create(this.cwd, sessionDir);
+				const sessionManager = SessionHistory.create(this.cwd, sessionDir);
 				sessionManager.newSession({ parentSession: currentSessionFile });
 				await this.replaceSession(
 					() =>
@@ -452,7 +461,7 @@ export class AgentSessionRuntime {
 			if (!existsSync(currentSessionFile)) {
 				throw new Error("This session has not been saved yet. Send a message before cloning or forking it.");
 			}
-			const sessionManager = SessionManager.open(currentSessionFile, sessionDir);
+			const sessionManager = SessionHistory.open(currentSessionFile, sessionDir);
 			const forkedSessionPath = sessionManager.createBranchedSession(targetLeafId);
 			if (!forkedSessionPath) {
 				throw new Error("Failed to create forked session");
@@ -473,7 +482,7 @@ export class AgentSessionRuntime {
 			return { cancelled: false, selectedText };
 		}
 
-		const sessionManager = SessionManager.inMemory(this.cwd, undefined, this.session.sessionManager.getEntries());
+		const sessionManager = SessionHistory.inMemory(this.cwd, undefined, this.session.history.getEntries());
 		if (!targetLeafId) {
 			sessionManager.newSession({ parentSession: previousSessionFile });
 		} else {
@@ -511,8 +520,8 @@ export class AgentSessionRuntime {
 			throw new SessionImportFileNotFoundError(resolvedPath);
 		}
 
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const source = SessionManager.open(resolvedPath, sessionDir, cwdOverride);
+		const sessionDir = this.session.history.getSessionDir();
+		const source = SessionHistory.open(resolvedPath, sessionDir, cwdOverride);
 		assertSessionCwdExists(source, this.cwd);
 		source.buildSessionContext();
 		if (!existsSync(sessionDir)) {
@@ -533,13 +542,13 @@ export class AgentSessionRuntime {
 			return beforeResult;
 		}
 
-		const previousSessionFile = this.session.sessionFile;
+		const previousSessionFile = this.session.execution.sessionFile;
 		if (!sourceAlreadyStored) {
 			copyFileSync(resolvedPath, destinationPath, constants.COPYFILE_EXCL);
 		}
 
 		try {
-			const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);
+			const sessionManager = SessionHistory.open(destinationPath, sessionDir, cwdOverride);
 			await this.replaceSession(
 				() =>
 					this.createRuntime({
@@ -552,7 +561,7 @@ export class AgentSessionRuntime {
 				sessionManager.getSessionFile(),
 			);
 		} catch (error) {
-			if (!sourceAlreadyStored && this.session.sessionFile !== destinationPath) {
+			if (!sourceAlreadyStored && this.session.execution.sessionFile !== destinationPath) {
 				return this.discardCandidate(error, undefined, undefined, destinationPath);
 			}
 			throw error;
@@ -565,12 +574,15 @@ export class AgentSessionRuntime {
 			this.disposed = true;
 			const errors: unknown[] = [];
 			try {
-				await this.session.abort();
+				await this.session.execution.abort();
 			} catch (error) {
 				errors.push(error);
 			}
 			try {
-				await emitSessionShutdownEvent(this.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+				await emitSessionShutdownEvent(this.session.execution.extensionRunner, {
+					type: "session_shutdown",
+					reason: "quit",
+				});
 			} catch (error) {
 				errors.push(error);
 			}
@@ -580,7 +592,7 @@ export class AgentSessionRuntime {
 				errors.push(error);
 			}
 			try {
-				await this.session.dispose();
+				await this.session.execution.dispose();
 			} catch (error) {
 				errors.push(error);
 			}
@@ -607,7 +619,7 @@ export async function createRuntimeFromFactory(
 	options: {
 		cwd: string;
 		agentDir: string;
-		sessionManager: SessionManager;
+		sessionManager: SessionHistory;
 		sessionStartEvent?: SessionStartEvent;
 	},
 ): Promise<AgentSessionRuntime> {

@@ -3,8 +3,8 @@ import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { SessionHeader } from "../src/core/session-manager.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import type { SessionHeader } from "../src/core/session-history.ts";
+import { SessionDiscovery, SessionHistory } from "../src/core/session-history.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 function createSessionFile(path: string): void {
@@ -17,9 +17,9 @@ function createSessionFile(path: string): void {
 	};
 	writeFileSync(path, `${JSON.stringify(header)}\n`, "utf8");
 
-	// SessionManager only persists once it has seen at least one assistant message.
+	// SessionHistory only persists once it has seen at least one assistant message.
 	// Add a minimal assistant entry so subsequent appends are persisted.
-	const mgr = SessionManager.open(path);
+	const mgr = SessionHistory.open(path);
 	mgr.appendMessage({
 		role: "assistant",
 		content: [{ type: "text", text: "hi" }],
@@ -54,7 +54,7 @@ describe("SessionInfo.modified", () => {
 		// Ensure the file mtime can differ from our message timestamp even on coarse filesystems.
 		await new Promise((r) => setTimeout(r, 10));
 
-		const mgr = SessionManager.open(filePath);
+		const mgr = SessionHistory.open(filePath);
 		const msgTime = Date.now();
 		mgr.appendMessage({
 			role: "assistant",
@@ -74,7 +74,7 @@ describe("SessionInfo.modified", () => {
 			timestamp: msgTime,
 		});
 
-		const sessions = await SessionManager.list("/tmp", dirname(filePath));
+		const sessions = await SessionDiscovery.list("/tmp", dirname(filePath));
 		const s = sessions.find((x) => x.path === filePath);
 		expect(s).toBeDefined();
 		expect(s!.modified.getTime()).toBe(msgTime);

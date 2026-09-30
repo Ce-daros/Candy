@@ -6,8 +6,8 @@
  * graph out of a process that only renders.
  */
 
-import type { ToolDefinition } from "../../core/extensions/types.ts";
 import type { ToolName } from "../../core/tools/index.ts";
+import type { ToolRenderers } from "../tool-render-types.ts";
 import { createShellRenderers } from "./bash.ts";
 import { editRenderers } from "./edit.ts";
 import { findRenderers } from "./find.ts";
@@ -16,7 +16,7 @@ import { lsRenderers } from "./ls.ts";
 import { readRenderers } from "./read.ts";
 import { writeRenderers } from "./write.ts";
 
-export type ToolRenderers = Pick<ToolDefinition<any, any>, "renderCall" | "renderResult">;
+export type { ToolRenderers } from "../tool-render-types.ts";
 
 export {
 	createShellRenderers,
@@ -28,36 +28,22 @@ export {
 	writeRenderers,
 };
 
+const builtInToolRenderers: Record<ToolName, ToolRenderers> = {
+	read: readRenderers,
+	bash: createShellRenderers("$", "bash"),
+	powershell: createShellRenderers("PS>", "powershell"),
+	edit: editRenderers,
+	write: writeRenderers,
+	grep: grepRenderers,
+	find: findRenderers,
+	ls: lsRenderers,
+};
+
 /** Renderers for every built-in tool, keyed by tool name. */
 export function createAllToolRenderers(): Record<ToolName, ToolRenderers> {
-	return {
-		read: readRenderers,
-		bash: createShellRenderers("$", "bash"),
-		powershell: createShellRenderers("PS>", "powershell"),
-		edit: editRenderers,
-		write: writeRenderers,
-		grep: grepRenderers,
-		find: findRenderers,
-		ls: lsRenderers,
-	};
+	return builtInToolRenderers;
 }
 
-/**
- * Merge built-in renderers into a tool definition that does not supply its own.
- *
- * Keep built-in presentation out of tool execution definitions. Callers merge these callbacks only
- * when they need to display built-in tool output.
- */
-export function withBuiltInRenderers<TDefinition extends ToolRenderers>(
-	toolName: string,
-	definition: TDefinition | undefined,
-): TDefinition | ToolRenderers | undefined {
-	const builtIn = createAllToolRenderers()[toolName as ToolName];
-	if (!definition) return builtIn;
-	if (!builtIn) return definition;
-	return {
-		...definition,
-		renderCall: definition.renderCall ?? builtIn.renderCall,
-		renderResult: definition.renderResult ?? builtIn.renderResult,
-	};
+export function getBuiltInToolRenderers(toolName: string): ToolRenderers | undefined {
+	return Object.hasOwn(builtInToolRenderers, toolName) ? builtInToolRenderers[toolName as ToolName] : undefined;
 }

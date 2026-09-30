@@ -44,7 +44,7 @@ describe("quick selection reconciliation", () => {
 		const previousModelChanges = harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change");
 
 		expect(await reconcileQuickSelection(harness.session)).toBe("unchanged");
-		expect(harness.session.model?.id).toBe("faux-1");
+		expect(harness.session.selection.model?.id).toBe("faux-1");
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change")).toEqual(
 			previousModelChanges,
 		);
@@ -58,7 +58,7 @@ describe("quick selection reconciliation", () => {
 		]);
 
 		expect(await reconcileQuickSelection(harness.session)).toBe("selected");
-		expect(harness.session.model?.id).toBe("faux-2");
+		expect(harness.session.selection.model?.id).toBe("faux-2");
 		expect(harness.settingsManager.getDefaultModel()).toBeUndefined();
 	});
 
@@ -68,7 +68,7 @@ describe("quick selection reconciliation", () => {
 		const previousModelChanges = harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change");
 
 		expect(await reconcileQuickSelection(harness.session)).toBe("empty");
-		expect(harness.session.model).toBeUndefined();
+		expect(harness.session.selection.model).toBeUndefined();
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change")).toEqual(
 			previousModelChanges,
 		);
@@ -79,10 +79,10 @@ describe("quick selection reconciliation", () => {
 	it("leaves the model cleared and surfaces authentication failure instead of falling back", async () => {
 		const harness = await create();
 		await harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
-		harness.session.modelRuntime.checkAuth = async () => undefined;
+		harness.session.execution.modelRuntime.checkAuth = async () => undefined;
 
 		await expect(reconcileQuickSelection(harness.session)).rejects.toThrow();
-		expect(harness.session.model).toBeUndefined();
+		expect(harness.session.selection.model).toBeUndefined();
 	});
 
 	it("honors an already-aborted signal before changing the model", async () => {
@@ -94,7 +94,7 @@ describe("quick selection reconciliation", () => {
 		await expect(reconcileQuickSelection(harness.session, controller.signal)).rejects.toMatchObject({
 			name: "AbortError",
 		});
-		expect(harness.session.model?.id).toBe("faux-1");
+		expect(harness.session.selection.model?.id).toBe("faux-1");
 	});
 
 	it("does not apply a model when authentication resolves after cancellation", async () => {
@@ -103,22 +103,24 @@ describe("quick selection reconciliation", () => {
 		const auth = new Promise<void>((resolve) => {
 			finishAuth = resolve;
 		});
-		harness.session.modelRuntime.checkAuth = async () => {
+		harness.session.execution.modelRuntime.checkAuth = async () => {
 			await auth;
 			return { type: "api_key", source: "test" };
 		};
 		const controller = new AbortController();
-		const settingModel = harness.session.setModel(harness.getModel("faux-2")!, { signal: controller.signal });
+		const settingModel = harness.session.selection.setModel(harness.getModel("faux-2")!, {
+			signal: controller.signal,
+		});
 		controller.abort();
 		finishAuth();
 
 		await expect(settingModel).rejects.toMatchObject({ name: "AbortError" });
-		expect(harness.session.model?.id).toBe("faux-1");
+		expect(harness.session.selection.model?.id).toBe("faux-1");
 	});
 
 	it("rejects reconciliation for a disposed session", async () => {
 		const harness = await create();
-		await harness.session.dispose();
+		await harness.session.execution.dispose();
 
 		await expect(reconcileQuickSelection(harness.session)).rejects.toThrow("disposed");
 	});
@@ -141,11 +143,11 @@ describe("quick selection reconciliation", () => {
 				return fauxAssistantMessage("done");
 			},
 		]);
-		const prompt = harness.session.prompt("hello");
+		const prompt = harness.session.execution.prompt("hello");
 		await started;
 
 		await expect(reconcileQuickSelection(harness.session)).rejects.toThrow("busy");
-		expect(harness.session.model?.id).toBe("faux-1");
+		expect(harness.session.selection.model?.id).toBe("faux-1");
 		finishResponse();
 		await prompt;
 	});

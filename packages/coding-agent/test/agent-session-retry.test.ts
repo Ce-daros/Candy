@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, type AgentEvent, type AgentTool } from "@candy/agent-core";
+import type { AgentEvent, AgentTool } from "@candy/agent-core";
 import type { AssistantMessage, AssistantMessageEvent } from "@candy/ai";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { EventStream } from "@candy/ai/utils/event-stream";
@@ -9,7 +9,8 @@ import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import type { SessionExecutionConfig } from "../src/core/session-execution.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 import { createTestResourceLoader } from "./utilities.ts";
@@ -63,7 +64,7 @@ describe("AgentSession retry", () => {
 
 	afterEach(async () => {
 		if (session) {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
@@ -83,9 +84,9 @@ describe("AgentSession retry", () => {
 		let callCount = 0;
 
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
-			initialState: { model, systemPrompt: "Test", tools: [] },
+			initialState: { model, tools: [] },
 			streamFn: () => {
 				callCount++;
 				const stream = new MockAssistantStream();
@@ -105,9 +106,9 @@ describe("AgentSession retry", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
@@ -115,7 +116,7 @@ describe("AgentSession retry", () => {
 		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries, baseDelayMs: 1, maxAgentDelayMs } });
 
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
@@ -124,7 +125,7 @@ describe("AgentSession retry", () => {
 		});
 
 		if (delayAssistantMessageEndMs > 0) {
-			const sessionWithHook = session as unknown as SessionWithExtensionEmitHook;
+			const sessionWithHook = session.execution as unknown as SessionWithExtensionEmitHook;
 			const original = sessionWithHook._emitExtensionEvent.bind(sessionWithHook);
 			sessionWithHook._emitExtensionEvent = async (event: AgentEvent) => {
 				if (event.type === "message_end" && event.message.role === "assistant") {
@@ -140,44 +141,44 @@ describe("AgentSession retry", () => {
 	it("retries after a transient error and succeeds", async () => {
 		const created = await createSession({ failCount: 1 });
 		const events: string[] = [];
-		created.session.subscribe((event) => {
+		created.session.execution.subscribe((event) => {
 			if (event.type === "auto_retry_start") events.push(`start:${event.attempt}`);
 			if (event.type === "auto_retry_end") events.push(`end:success=${event.success}`);
 		});
 
-		await created.session.prompt("Test");
+		await created.session.execution.prompt("Test");
 
 		expect(created.getCallCount()).toBe(2);
 		expect(events).toEqual(["start:1", "end:success=true"]);
-		expect(created.session.isRetrying).toBe(false);
+		expect(created.session.execution.isRetrying).toBe(false);
 	});
 
 	it("exhausts max retries and emits failure", async () => {
 		const created = await createSession({ failCount: 99, maxRetries: 2 });
 		const events: string[] = [];
-		created.session.subscribe((event) => {
+		created.session.execution.subscribe((event) => {
 			if (event.type === "auto_retry_start") events.push(`start:${event.attempt}`);
 			if (event.type === "auto_retry_end") events.push(`end:success=${event.success}`);
 		});
 
-		await created.session.prompt("Test");
+		await created.session.execution.prompt("Test");
 
 		expect(created.getCallCount()).toBe(3);
 		expect(events).toContain("start:1");
 		expect(events).toContain("start:2");
 		expect(events).toContain("end:success=false");
-		expect(created.session.isRetrying).toBe(false);
+		expect(created.session.execution.isRetrying).toBe(false);
 	});
 
 	it("caps agent retry delay", async () => {
 		// Regression for #8826.
 		const created = await createSession({ failCount: 4, maxRetries: 5, maxAgentDelayMs: 5 });
 		const delays: number[] = [];
-		created.session.subscribe((event) => {
+		created.session.execution.subscribe((event) => {
 			if (event.type === "auto_retry_start") delays.push(event.delayMs);
 		});
 
-		await created.session.prompt("Test");
+		await created.session.execution.prompt("Test");
 
 		expect(delays).toEqual([1, 2, 4, 5]);
 	});
@@ -185,10 +186,10 @@ describe("AgentSession retry", () => {
 	it("prompt waits for retry completion even when assistant message_end handling is delayed", async () => {
 		const created = await createSession({ failCount: 1, delayAssistantMessageEndMs: 40 });
 
-		await created.session.prompt("Test");
+		await created.session.execution.prompt("Test");
 
 		expect(created.getCallCount()).toBe(2);
-		expect(created.session.isRetrying).toBe(false);
+		expect(created.session.execution.isRetrying).toBe(false);
 	});
 
 	it("retries provider network_error failures", async () => {
@@ -214,22 +215,22 @@ describe("AgentSession retry", () => {
 			});
 			return stream;
 		};
-		created.session.dispose();
+		created.session.execution.dispose();
 
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
-			initialState: { model, systemPrompt: "Test", tools: [] },
+			initialState: { model, tools: [] },
 			streamFn: streamFn,
-		});
-		const sessionManager = SessionManager.inMemory();
+		};
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } });
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
@@ -238,12 +239,12 @@ describe("AgentSession retry", () => {
 		});
 
 		const events: string[] = [];
-		session.subscribe((event) => {
+		session.execution.subscribe((event) => {
 			if (event.type === "auto_retry_start") events.push(`start:${event.attempt}`);
 			if (event.type === "auto_retry_end") events.push(`end:success=${event.success}`);
 		});
 
-		await session.prompt("Test");
+		await session.execution.prompt("Test");
 
 		expect(callCount).toBe(2);
 		expect(events).toEqual(["start:1", "end:success=true"]);
@@ -251,7 +252,7 @@ describe("AgentSession retry", () => {
 
 	it("prompt waits for full agent loop when retry produces tool calls", async () => {
 		// Regression: when auto-retry fires and the retry response includes tool_use,
-		// session.prompt() must wait for the entire tool loop to finish before returning.
+		// session.execution.prompt() must wait for the entire tool loop to finish before returning.
 		// Previously, _resolveRetry() on the first successful message_end would unblock
 		// waitForRetry() while the agent was still executing tools.
 		let callCount = 0;
@@ -269,9 +270,9 @@ describe("AgentSession retry", () => {
 		};
 
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-		const agent = new Agent({
+		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
-			initialState: { model, systemPrompt: "Test", tools: [] },
+			initialState: { model, tools: [] },
 			streamFn: () => {
 				callCount++;
 				const stream = new MockAssistantStream();
@@ -305,9 +306,9 @@ describe("AgentSession retry", () => {
 				});
 				return stream;
 			},
-		});
+		};
 
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRuntime = await createTestModelRuntime(authStorage, tempDir);
@@ -315,7 +316,7 @@ describe("AgentSession retry", () => {
 		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } });
 
 		session = new AgentSession({
-			agent,
+			agentOptions,
 			sessionManager,
 			settingsManager,
 			cwd: tempDir,
@@ -324,16 +325,16 @@ describe("AgentSession retry", () => {
 			baseToolsOverride: { echo: echoTool },
 		});
 
-		await session.prompt("Test");
+		await session.execution.prompt("Test");
 
 		// All three LLM calls must have completed
 		expect(callCount).toBe(3);
 		// Tool must have been executed
 		expect(toolExecuted.value).toBe(true);
 		// Agent must not be streaming after prompt returns
-		expect(session.isStreaming).toBe(false);
+		expect(session.execution.isStreaming).toBe(false);
 		// A follow-up prompt must work (no "Agent is already processing" error)
-		await session.prompt("Follow-up");
+		await session.execution.prompt("Follow-up");
 		expect(callCount).toBe(4);
 	});
 });

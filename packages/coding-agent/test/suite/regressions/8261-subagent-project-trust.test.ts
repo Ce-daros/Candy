@@ -34,7 +34,7 @@ async function runProjectAgent(options: RunOptions): Promise<{ confirmCalls: num
 		);
 		harness.settingsManager.setProjectTrusted(options.trusted);
 
-		await harness.session.bindExtensions({
+		await harness.session.execution.bindExtensions({
 			uiContext: { confirm } as unknown as ExtensionUIContext,
 			mode: "tui",
 		});
@@ -52,9 +52,9 @@ async function runProjectAgent(options: RunOptions): Promise<{ confirmCalls: num
 			fauxAssistantMessage("done"),
 		]);
 
-		await harness.session.prompt("Delegate this task");
+		await harness.session.execution.prompt("Delegate this task");
 
-		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		const toolResult = harness.session.execution.messages.find((message) => message.role === "toolResult");
 		return {
 			confirmCalls: confirm.mock.calls.length,
 			toolResult: getMessageText(toolResult),

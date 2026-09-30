@@ -12,7 +12,7 @@ function createSession(options: {
 	thinkingLevel?: string;
 }): AgentSession {
 	return {
-		state: {
+		selection: {
 			model: {
 				id: options.modelId ?? "test-model",
 				name: options.modelName,

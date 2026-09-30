@@ -18,7 +18,7 @@ import {
 	visibleWindow,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
+import type { SessionInfo, SessionListProgress } from "../../../core/session-history.ts";
 import { KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { metaSeparator, selectionCursor, theme } from "../theme/theme.ts";

@@ -34,7 +34,7 @@ import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSessionRuntime } from "../src/index.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
@@ -322,34 +322,34 @@ async function main(): Promise<void> {
 		thinkingLevel: "low",
 		customTools: [deterministicProbeTool() as unknown as ToolDefinition],
 		resourceLoaderFactory: () => resourceLoader,
-		sessionManager: SessionManager.open(args.sessionPath),
+		sessionManager: SessionHistory.open(args.sessionPath),
 		settingsManager,
 		modelRuntime,
 	});
 	const session = runtime.session;
 	try {
-	session.setActiveToolsByName(["deterministic_probe"]);
+	session.execution.setActiveToolsByName(["deterministic_probe"]);
 
 	const records: SubrequestRecord[] = [];
 	const turnElapsedMs: number[] = [];
 	let previousCacheRead: number | null = null;
 
 	console.log(`provider openai-codex, model gpt-5.5`);
-	console.log(`session ${session.sessionFile}`);
+	console.log(`session ${session.execution.sessionFile}`);
 	console.log(`turns ${args.turns}, transport ${args.transport}, reasoning low, maxTokens ${args.maxTokens}`);
 	console.log("");
 
 	for (let turn = 1; turn <= args.turns; turn++) {
 		const prompt = buildPrompt(turn);
 		const promptTokens = estimateTokens(prompt);
-		const previousMessagesLength = session.messages.length;
-		const websocketStatsBefore = getWebSocketStatsSnapshot(session.sessionId);
+		const previousMessagesLength = session.execution.messages.length;
+		const websocketStatsBefore = getWebSocketStatsSnapshot(session.execution.sessionId);
 		const startedAt = Date.now();
-		await session.prompt(prompt);
+		await session.execution.prompt(prompt);
 		const elapsedMs = Date.now() - startedAt;
 		turnElapsedMs.push(elapsedMs);
 
-		const newMessages = session.messages.slice(previousMessagesLength);
+		const newMessages = session.execution.messages.slice(previousMessagesLength);
 		const assistantMessages = newMessages.filter((message): message is AssistantMessage =>
 			Boolean(message && typeof message === "object" && (message as { role?: unknown }).role === "assistant"),
 		);
@@ -411,7 +411,7 @@ async function main(): Promise<void> {
 			previousCacheRead = assistant.usage.cacheRead;
 		}
 
-		const websocketStatsAfter = getWebSocketStatsSnapshot(session.sessionId);
+		const websocketStatsAfter = getWebSocketStatsSnapshot(session.execution.sessionId);
 		const websocketStatsForTurn = diffWebSocketStats(websocketStatsAfter, websocketStatsBefore);
 		console.log(
 			[
@@ -454,7 +454,7 @@ async function main(): Promise<void> {
 			`max ${(Math.max(...turnElapsedMs) / 1000).toFixed(2)}s`,
 		].join(" | "),
 	);
-	const websocketStats = getOpenAICodexWebSocketDebugStats(session.sessionId);
+	const websocketStats = getOpenAICodexWebSocketDebugStats(session.execution.sessionId);
 	const requestedWebsocket =
 		args.transport === "websocket" || args.transport === "websocket-cached" || args.transport === "auto";
 	const observedWebsocket = Boolean(websocketStats && websocketStats.requests > 0);
@@ -492,7 +492,7 @@ async function main(): Promise<void> {
 			console.log(`  turn ${violation.turn}.${violation.subrequest}: ${violation.previous} -> ${violation.current}`);
 		}
 	}
-	console.log(`session file: ${session.sessionFile}`);
+	console.log(`session file: ${session.execution.sessionFile}`);
 
 	} finally {
 		await runtime.dispose();

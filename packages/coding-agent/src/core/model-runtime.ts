@@ -45,9 +45,7 @@ import {
 	type AuthStatus,
 	composeModelProvider,
 	configuredRequestAuthStatus,
-	type ProviderConfigInput,
 	resolveConfiguredModelHeaders,
-	validateExtensionProvider,
 } from "./provider-composer.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
 
@@ -112,7 +110,6 @@ export class ModelRuntime implements Models {
 	private readonly defaultBuiltins: ReadonlyMap<string, Provider>;
 	private readonly builtins = new Map<string, Provider>();
 	private readonly nativeExtensionProviders = new Map<string, Provider>();
-	private readonly extensionProviders = new Map<string, ProviderConfigInput>();
 	private readonly compositionErrors = new Map<string, string>();
 	private readonly modelsPath: string | undefined;
 	private readonly modelNetworkEnabled: boolean;
@@ -186,13 +183,10 @@ export class ModelRuntime implements Models {
 			modelsStore,
 			decorateAuth: async (model, resolution, options) => {
 				if (!resolution) return undefined;
-				return resolveConfiguredModelHeaders(
-					model,
-					this.config.getProvider(model.provider),
-					this.extensionProviders.get(model.provider),
-					resolution.env,
-					{ signal: options.signal, cache: this.commandCache },
-				);
+				return resolveConfiguredModelHeaders(model, this.config.getProvider(model.provider), resolution.env, {
+					signal: options.signal,
+					cache: this.commandCache,
+				});
 			},
 		});
 		this.rebuildProviders();
@@ -248,26 +242,24 @@ export class ModelRuntime implements Models {
 			...this.builtins.keys(),
 			...this.nativeExtensionProviders.keys(),
 			...this.config.getProviderIds(),
-			...this.extensionProviders.keys(),
 		]);
 	}
 
 	private recomposeProvider(providerId: string): void {
 		const base = this.nativeExtensionProviders.get(providerId) ?? this.builtins.get(providerId);
-		const extension = this.extensionProviders.get(providerId);
-		if (!base && !this.config.getProvider(providerId) && !extension) {
+		if (!base && !this.config.getProvider(providerId)) {
 			this.models.deleteProvider(providerId);
 			this.compositionErrors.delete(providerId);
 			return;
 		}
-		if (base && !this.config.getProvider(providerId) && !extension) {
+		if (base && !this.config.getProvider(providerId)) {
 			// No overlays: use the builtin untouched so its auth/login/stream behavior is exact.
 			this.models.setProvider(base);
 			this.compositionErrors.delete(providerId);
 			return;
 		}
 		try {
-			this.models.setProvider(composeModelProvider(providerId, base, this.config, extension, this.commandCache));
+			this.models.setProvider(composeModelProvider(providerId, base, this.config, this.commandCache));
 			this.compositionErrors.delete(providerId);
 		} catch (error) {
 			this.compositionErrors.set(providerId, error instanceof Error ? error.message : String(error));
@@ -477,12 +469,8 @@ export class ModelRuntime implements Models {
 		return errors.length > 0 ? errors.join("\n\n") : undefined;
 	}
 
-	getRegisteredProviderConfig(providerId: string): ProviderConfigInput | undefined {
-		return this.extensionProviders.get(providerId);
-	}
-
 	getRegisteredProviderIds(): readonly string[] {
-		return [...new Set([...this.extensionProviders.keys(), ...this.nativeExtensionProviders.keys()])];
+		return [...this.nativeExtensionProviders.keys()];
 	}
 
 	getRegisteredNativeProvider(providerId: string): Provider | undefined {
@@ -588,10 +576,7 @@ export class ModelRuntime implements Models {
 	getProviderAuthStatus(providerId: string): AuthStatus {
 		if (this.credentials.hasRuntimeApiKey(providerId)) return { configured: true, source: "runtime" };
 		if (this.snapshot.storedProviders.has(providerId)) return { configured: true, source: "stored" };
-		const configured = configuredRequestAuthStatus(
-			this.config.getProvider(providerId),
-			this.extensionProviders.get(providerId),
-		);
+		const configured = configuredRequestAuthStatus(this.config.getProvider(providerId));
 		if (configured) return configured;
 		const check = this.snapshot.auth.get(providerId);
 		return check ? { configured: true, source: "environment", label: check.source } : { configured: false };
@@ -746,53 +731,14 @@ export class ModelRuntime implements Models {
 		this.assertActive();
 		if (!provider.id.trim()) throw new Error("Provider id must not be empty.");
 		this.commandCache.clear();
-		this.extensionProviders.delete(provider.id);
 		this.nativeExtensionProviders.set(provider.id, provider);
 		this.recomposeProvider(provider.id);
 		this.updateModelSnapshot();
 	}
 
-	registerProvider(providerId: string, config: ProviderConfigInput): void {
-		this.assertActive();
-		// Validate before replacing the registration so a failed update preserves it.
-		validateExtensionProvider(providerId, this.builtins.get(providerId), this.config.getProvider(providerId), config);
-		this.commandCache.clear();
-		this.nativeExtensionProviders.delete(providerId);
-		// Re-registration merges defined values over the previous registration.
-		const previous = this.extensionProviders.get(providerId);
-		const effective: ProviderConfigInput = { ...previous };
-		for (const [key, value] of Object.entries(config)) {
-			if (value !== undefined) (effective as Record<string, unknown>)[key] = value;
-		}
-		this.extensionProviders.set(providerId, effective);
-		this.recomposeProvider(providerId);
-		this.updateModelSnapshot();
-		if (
-			this.snapshot.storedProviders.has(providerId) ||
-			configuredRequestAuthStatus(this.config.getProvider(providerId), effective)?.configured
-		) {
-			const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
-			const auth = new Map(this.snapshot.auth);
-			// Provisional entry until the async refresh lands; never clobber a real check result.
-			if (!auth.get(providerId)) {
-				auth.set(providerId, {
-					type: effective.oauth && !effective.apiKey ? "oauth" : "api_key",
-					source: "configured provider",
-				});
-			}
-			this.snapshot = {
-				...this.snapshot,
-				auth,
-				configuredProviders,
-				available: this.snapshot.all.filter((model) => configuredProviders.has(model.provider)),
-			};
-		}
-	}
-
 	unregisterProvider(providerId: string): void {
 		this.assertActive();
 		this.commandCache.clear();
-		this.extensionProviders.delete(providerId);
 		this.nativeExtensionProviders.delete(providerId);
 		this.recomposeProvider(providerId);
 		this.updateModelSnapshot();

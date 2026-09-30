@@ -3,6 +3,7 @@ import { setKeybindings } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reconcileQuickSelection } from "../src/core/quick-selection.ts";
 import type { CommandPanel } from "../src/modes/interactive/components/command-panel.ts";
+import { InteractiveFlowStack } from "../src/modes/interactive/interactive-flow-stack.ts";
 import { InteractivePresentation, type PresentationHost } from "../src/modes/interactive/interactive-presentation.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { KeybindingsManager } from "../src/presentation/keybindings.ts";
@@ -11,6 +12,7 @@ import { createHarness, type Harness } from "./suite/harness.ts";
 describe("interactive presentation", () => {
 	let harness: Harness;
 	let presentation: InteractivePresentation;
+	let flows: InteractiveFlowStack;
 	let panel: CommandPanel;
 	let host: PresentationHost;
 	beforeEach(async () => {
@@ -30,6 +32,7 @@ describe("interactive presentation", () => {
 		);
 		host = {
 			session: () => harness.session,
+			models: () => harness.modelRuntime,
 			settings: () => harness.settingsManager,
 			mount: (content) => {
 				panel = content;
@@ -51,7 +54,8 @@ describe("interactive presentation", () => {
 			historyCommands: () => [],
 			historyAction: vi.fn(async () => {}),
 		};
-		presentation = new InteractivePresentation(host);
+		flows = new InteractiveFlowStack();
+		presentation = new InteractivePresentation(host, flows);
 	});
 	afterEach(async () => {
 		presentation.dispose();
@@ -88,7 +92,7 @@ describe("interactive presentation", () => {
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain(`${highlighted.provider} · second`);
 		await choose("Set as default");
 		expect(harness.settingsManager.getDefaultModel()).toBe("second");
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 	});
 
 	it("cycles thinking in Details without opening another page", async () => {
@@ -138,7 +142,7 @@ describe("interactive presentation", () => {
 		await choose("missing-provider");
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("missing-model");
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("Unavailable");
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 	});
 
 	it("resumes History at its selected action after a child closes", async () => {
@@ -148,6 +152,29 @@ describe("interactive presentation", () => {
 		presentation.resume();
 		expect(panel.getQuery()).toBe("Tree");
 		expect(panel.getSelectedId()).toBe("tree");
+	});
+
+	it("aborts a child page on cancel and restores its parent selection", async () => {
+		presentation.open("sources");
+		const sources = flows.current;
+		await choose(harness.modelRuntime.getProvider(harness.models[0].provider)!.name);
+		const provider = flows.current;
+		expect(provider).not.toBe(sources);
+		panel.handleInput("\x1b");
+
+		expect(provider?.controller.signal.aborted).toBe(true);
+		expect(flows.current).toBe(sources);
+		expect(panel.getSelectedId()).toBe(harness.models[0].provider);
+	});
+
+	it("aborts every page when its session flow is invalidated", async () => {
+		presentation.open("sources");
+		const page = flows.current;
+
+		flows.clear();
+
+		expect(page?.controller.signal.aborted).toBe(true);
+		expect(flows.current).toBeUndefined();
 	});
 
 	it("leaves a rejected parameter in its input", async () => {
@@ -166,10 +193,10 @@ describe("interactive presentation", () => {
 	it("changes Behavior through the session runtime", async () => {
 		presentation.open("agent");
 		await choose("Behavior");
-		const previous = harness.session.steeringMode;
+		const previous = harness.session.execution.steeringMode;
 		await choose("Steering");
-		expect(harness.session.steeringMode).not.toBe(previous);
-		expect(harness.settingsManager.getSteeringMode()).toBe(harness.session.steeringMode);
+		expect(harness.session.execution.steeringMode).not.toBe(previous);
+		expect(harness.settingsManager.read("steering-mode")).toBe(harness.session.execution.steeringMode);
 	});
 
 	it("clears one model compaction override while retaining the other", async () => {
@@ -189,7 +216,7 @@ describe("interactive presentation", () => {
 		const unavailable = { provider: "missing-provider", modelId: "saved-model" };
 		await harness.settingsManager.commitSetting("global", "scopedModels", [unavailable]);
 		presentation.open("sources");
-		await choose(harness.session.modelRuntime.getProvider(provider)!.name);
+		await choose(harness.modelRuntime.getProvider(provider)!.name);
 		panel.handleInput("First");
 		panel.handleInput("\x1b[B");
 		panel.handleInput(" ");
@@ -201,7 +228,7 @@ describe("interactive presentation", () => {
 		panel.handleInput("\x01");
 		await settle();
 		expect(harness.settingsManager.getScopedModels()).toEqual([unavailable, { provider, modelId: "first" }]);
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 		panel.handleInput("\x1b");
 		await choose("");
 		await choose("Select all provider models");
@@ -214,7 +241,7 @@ describe("interactive presentation", () => {
 	it("keeps automatic scope when bulk keys have no matches", async () => {
 		await harness.settingsManager.setScopedModels(undefined);
 		presentation.open("sources");
-		await choose(harness.session.modelRuntime.getProvider(harness.models[0].provider)!.name);
+		await choose(harness.modelRuntime.getProvider(harness.models[0].provider)!.name);
 		panel.handleInput("no-such-model");
 		panel.handleInput("\x01");
 		panel.handleInput("\x04");
@@ -222,7 +249,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("only offers removal for a stored provider credential", async () => {
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.modelRuntime;
 		const provider = harness.models[0].provider;
 		const list = vi.spyOn(runtime, "listCredentials").mockResolvedValue([]);
 		presentation.open("sources");
@@ -239,16 +266,16 @@ describe("interactive presentation", () => {
 
 	it("clears saved default tools without altering the current session tools", async () => {
 		await harness.settingsManager.setDefaultTools([]);
-		const tools = harness.session.getActiveToolNames();
+		const tools = harness.session.execution.getActiveToolNames();
 		presentation.open("agent");
 		await choose("Tools");
 		await choose("Use inherited default tools");
 		expect(harness.settingsManager.getGlobalSettings().defaultTools).toBeUndefined();
-		expect(harness.session.getActiveToolNames()).toEqual(tools);
+		expect(harness.session.execution.getActiveToolNames()).toEqual(tools);
 	});
 
 	it("prefills Rename with the current session name", async () => {
-		harness.session.setSessionName("Research notes");
+		harness.session.execution.setSessionName("Research notes");
 		presentation.open("history");
 		await choose("Rename");
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("> Research notes");
@@ -267,25 +294,25 @@ describe("interactive presentation", () => {
 
 	it("reconciles only when leaving Sources after an edit", async () => {
 		presentation.open("sources");
-		await choose(harness.session.modelRuntime.getProvider(harness.models[0].provider)!.name);
+		await choose(harness.modelRuntime.getProvider(harness.models[0].provider)!.name);
 		await choose("First");
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 		panel.handleInput("\x1b");
 		expect(host.applyQuickSelection).not.toHaveBeenCalled();
 		panel.handleInput("\x1b");
 		await settle();
 		expect(host.applyQuickSelection).toHaveBeenCalledOnce();
-		expect(harness.session.model?.id).toBe("second");
+		expect(harness.session.selection.model?.id).toBe("second");
 		expect(host.exit).toHaveBeenCalledOnce();
 	});
 
 	it("clears the active model when leaving an empty quick selection", async () => {
 		presentation.open("sources");
 		await choose("Clear quick selection");
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 		panel.handleInput("\x1b");
 		await settle();
-		expect(harness.session.model).toBeUndefined();
+		expect(harness.session.selection.model).toBeUndefined();
 		expect(harness.settingsManager.getScopedModels()).toEqual([]);
 	});
 
@@ -295,12 +322,12 @@ describe("interactive presentation", () => {
 		panel.handleInput("\x1b");
 		await settle();
 		expect(host.applyQuickSelection).not.toHaveBeenCalled();
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 	});
 
 	it("rejects scope edits while busy before persisting", async () => {
 		const before = harness.settingsManager.getScopedModels();
-		vi.spyOn(harness.session, "isStreaming", "get").mockReturnValue(true);
+		vi.spyOn(harness.session.execution, "isStreaming", "get").mockReturnValue(true);
 		presentation.open("sources");
 		await choose("Clear quick selection");
 		expect(harness.settingsManager.getScopedModels()).toEqual(before);
@@ -314,11 +341,11 @@ describe("interactive presentation", () => {
 		panel.handleInput("\x1b");
 		await settle();
 		expect(host.applyQuickSelection).not.toHaveBeenCalled();
-		expect(harness.session.model?.id).toBe("first");
+		expect(harness.session.selection.model?.id).toBe("first");
 	});
 
 	it("renders an authentication result on its action row only", async () => {
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.modelRuntime;
 		presentation.open("sources");
 		await choose(runtime.getProvider(harness.models[0].provider)!.name);
 		vi.spyOn(runtime, "getAvailability").mockResolvedValue({
@@ -333,7 +360,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("keeps authentication errors inspectable and ignores late checks", async () => {
-		const runtime = harness.session.modelRuntime;
+		const runtime = harness.modelRuntime;
 		presentation.open("sources");
 		await choose(runtime.getProvider(harness.models[0].provider)!.name);
 		const check = vi.spyOn(runtime, "getAvailability").mockRejectedValue(new Error("Credentials could not be read"));

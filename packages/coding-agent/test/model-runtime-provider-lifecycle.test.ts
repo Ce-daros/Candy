@@ -272,17 +272,32 @@ describe("extension provider model lifecycle", () => {
 			modelsPath: null,
 			allowModelNetwork: false,
 		});
-		runtime.registerProvider("extension-dynamic", {
-			baseUrl: "http://localhost:8080/v1",
-			apiKey: "local",
-			api: "openai-completions",
-			refreshModels: async () => [
-				{
-					...model("live"),
-					provider: "extension-dynamic",
-					baseUrl: "http://localhost:8080/v1",
-				},
-			],
+		let currentModels: Model<"openai-completions">[] = [];
+		runtime.registerNativeProvider({
+			id: "extension-dynamic",
+			name: "Extension dynamic",
+			auth: { apiKey: { name: "API key", resolve: async () => ({ auth: { apiKey: "local" } }) } },
+			getModels: () => currentModels,
+			refreshModels: async ({ publish }) => {
+				const nextModels = [
+					{
+						...model("live"),
+						provider: "extension-dynamic",
+						baseUrl: "http://localhost:8080/v1",
+					},
+				];
+				await publish({
+					update: () => {
+						currentModels = nextModels;
+					},
+				});
+			},
+			stream: () => {
+				throw new Error("unused");
+			},
+			streamSimple: () => {
+				throw new Error("unused");
+			},
 		});
 
 		await runtime.refresh({ allowNetwork: false });

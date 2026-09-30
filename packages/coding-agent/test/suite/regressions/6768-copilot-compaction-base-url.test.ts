@@ -6,6 +6,7 @@ import {
 	type Provider,
 } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { getTestAgent } from "../../execution-internals.ts";
 import { createHarness, type Harness } from "../harness.ts";
 
 const INDIVIDUAL_BASE_URL = "https://api.individual.githubcopilot.com";
@@ -35,7 +36,6 @@ function seedCompactableSession(harness: Harness): void {
 		},
 	};
 	harness.sessionManager.appendMessage(assistant);
-	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 }
 
 describe("issue #6768 Copilot compaction base URL", () => {
@@ -50,7 +50,7 @@ describe("issue #6768 Copilot compaction base URL", () => {
 		harness = await createHarness();
 		seedCompactableSession(harness);
 		const catalogModel = { ...harness.getModel(), baseUrl: INDIVIDUAL_BASE_URL };
-		harness.session.agent.state.model = catalogModel;
+		getTestAgent(harness.session.execution).state.model = catalogModel;
 
 		let requestBaseUrl: string | undefined;
 		const respond = (requestModel: Model<string>) => {
@@ -101,13 +101,13 @@ describe("issue #6768 Copilot compaction base URL", () => {
 			refresh: "refresh-token",
 			expires: Date.now() + 60 * 60_000,
 		}));
-		const modelRuntime = harness.session.modelRuntime;
+		const modelRuntime = harness.session.execution.modelRuntime;
 		modelRuntime.registerNativeProvider(provider);
 		await modelRuntime.refresh({ allowNetwork: false, providers: [catalogModel.provider] });
-		harness.session.agent.streamFunction = (model, context, options) =>
+		getTestAgent(harness.session.execution).streamFunction = (model, context, options) =>
 			modelRuntime.streamSimple(model, context, options);
 
-		await harness.session.compact();
+		await harness.session.execution.compact();
 
 		expect(requestBaseUrl).toBe(ENTERPRISE_BASE_URL);
 	});

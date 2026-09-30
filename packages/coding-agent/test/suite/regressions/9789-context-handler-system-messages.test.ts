@@ -1,20 +1,8 @@
 import type { AgentMessage } from "@candy/agent-core";
 import { fauxAssistantMessage, getCurrentSystemPrompt, getCurrentTools, type TranscriptContext } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExtensionFactory } from "../../../src/index.ts";
 import { createHarness, type Harness } from "../harness.ts";
-
-/** Compaction supplied by an extension hook, as in the reported sessions. */
-const compactViaHook: ExtensionFactory = (candy) => {
-	candy.on("session_before_compact", async (event) => ({
-		compaction: {
-			summary: "extension summary",
-			firstKeptEntryId: event.preparation.firstKeptEntryId,
-			tokensBefore: event.preparation.tokensBefore,
-			details: { source: "test" },
-		},
-	}));
-};
+import { useSummaryResponses } from "../summarization.ts";
 
 function captureRequest(harness: Harness, text: string): () => TranscriptContext {
 	let request: TranscriptContext | undefined;
@@ -37,10 +25,14 @@ function toolNames(context: TranscriptContext): string[] {
 async function compactSession(harness: Harness): Promise<void> {
 	harness.settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 	harness.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two")]);
-	await harness.session.prompt("first");
-	await harness.session.prompt("second");
-	await harness.session.compact();
-	expect(harness.session.messages.map((message) => message.role).slice(0, 2)).toEqual(["system", "compactionSummary"]);
+	await harness.session.execution.prompt("first");
+	await harness.session.execution.prompt("second");
+	useSummaryResponses(harness, [fauxAssistantMessage("summary"), fauxAssistantMessage("summary")]);
+	await harness.session.execution.compact();
+	expect(harness.session.execution.messages.map((message) => message.role).slice(0, 2)).toEqual([
+		"system",
+		"compactionSummary",
+	]);
 }
 
 describe("context handlers and system messages", () => {
@@ -55,7 +47,6 @@ describe("context handlers and system messages", () => {
 		const seen: AgentMessage[][] = [];
 		const harness = await createHarness({
 			extensionFactories: [
-				compactViaHook,
 				(candy) => {
 					candy.on("context", async (event) => {
 						seen.push(event.messages);
@@ -69,13 +60,13 @@ describe("context handlers and system messages", () => {
 		await compactSession(harness);
 		const getRequest = captureRequest(harness, "after compaction");
 
-		await harness.session.prompt("third");
+		await harness.session.execution.prompt("third");
 
 		const request = getRequest();
 		expect(seen.at(-1)?.some((message) => message.role === "system")).toBe(false);
 		expect(request.messages[0]?.role).toBe("system");
-		expect(toolNames(request)).toEqual(harness.session.getActiveToolNames());
-		expect(getCurrentSystemPrompt(request.messages)).toBe(harness.session.systemPrompt);
+		expect(toolNames(request)).toEqual(harness.session.execution.getActiveToolNames());
+		expect(getCurrentSystemPrompt(request.messages)).toBe(harness.session.execution.systemPrompt);
 		expect(request.messages.filter((message) => message.role === "system")).toHaveLength(1);
 	});
 
@@ -93,10 +84,10 @@ describe("context handlers and system messages", () => {
 		});
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("one")]);
-		await harness.session.prompt("first");
+		await harness.session.execution.prompt("first");
 		const getRequest = captureRequest(harness, "two");
 
-		await harness.session.prompt("second");
+		await harness.session.execution.prompt("second");
 
 		const systemMessages = getRequest().messages.filter((message) => message.role === "system");
 		expect(systemMessages).toHaveLength(2);
@@ -120,11 +111,11 @@ describe("context handlers and system messages", () => {
 		harnesses.push(harness);
 		const getRequest = captureRequest(harness, "done");
 
-		await harness.session.prompt("hello");
+		await harness.session.execution.prompt("hello");
 
 		const request = getRequest();
 		expect(request.messages.map((message) => message.role)).toEqual(["system", "user", "user"]);
-		expect(toolNames(request)).toEqual(harness.session.getActiveToolNames());
+		expect(toolNames(request)).toEqual(harness.session.execution.getActiveToolNames());
 	});
 
 	it("keeps system messages a handler adds after the replayed head", async () => {
@@ -140,82 +131,12 @@ describe("context handlers and system messages", () => {
 		harnesses.push(harness);
 		const getRequest = captureRequest(harness, "done");
 
-		await harness.session.prompt("hello");
+		await harness.session.execution.prompt("hello");
 
 		const request = getRequest();
 		expect(request.messages.map((message) => message.role)).toEqual(["system", "system", "user"]);
-		expect(toolNames(request)).toEqual(harness.session.getActiveToolNames());
-		expect(getCurrentSystemPrompt(request.messages)).toContain(harness.session.systemPrompt);
+		expect(toolNames(request)).toEqual(harness.session.execution.getActiveToolNames());
+		expect(getCurrentSystemPrompt(request.messages)).toContain(harness.session.execution.systemPrompt);
 		expect(getCurrentSystemPrompt(request.messages)).toContain("ephemeral reminder");
-	});
-});
-
-describe("context_with_system handlers", () => {
-	const harnesses: Harness[] = [];
-
-	afterEach(async () => {
-		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
-	});
-
-	it("runs after context handlers on the restored transcript and sends its output verbatim", async () => {
-		const seen: AgentMessage[][] = [];
-		const harness = await createHarness({
-			extensionFactories: [
-				compactViaHook,
-				(candy) => {
-					candy.on("context_with_system", async (event) => {
-						seen.push(event.messages);
-						return {
-							messages: event.messages.map((message) =>
-								message.role === "system" && message.toolsAdded
-									? { ...message, toolsAdded: message.toolsAdded.filter((tool) => tool.name !== "bash") }
-									: message,
-							),
-						};
-					});
-					// Registered after, but runs first: context handlers precede context_with_system.
-					candy.on("context", async (event) => {
-						const summary = event.messages.findIndex((message) => message.role === "compactionSummary");
-						return { messages: event.messages.slice(summary) };
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		await compactSession(harness);
-		const getRequest = captureRequest(harness, "after compaction");
-
-		await harness.session.prompt("third");
-
-		const input = seen.at(-1);
-		expect(input?.[0]?.role).toBe("system");
-		expect(input?.[1]?.role).toBe("compactionSummary");
-		expect(harness.session.getActiveToolNames()).toContain("bash");
-		expect(toolNames(getRequest())).toEqual(harness.session.getActiveToolNames().filter((name) => name !== "bash"));
-	});
-
-	it("reports a handler that drops the leading system message but honors its output", async () => {
-		const harness = await createHarness({
-			extensionFactories: [
-				(candy) => {
-					candy.on("context_with_system", async (event) => ({
-						messages: event.messages.filter((message) => message.role !== "system"),
-					}));
-				},
-			],
-		});
-		harnesses.push(harness);
-		const errors: string[] = [];
-		harness.session.extensionRunner.onError((error) => {
-			errors.push(`${error.event}: ${error.error}`);
-		});
-		const getRequest = captureRequest(harness, "done");
-
-		await harness.session.prompt("hello");
-
-		expect(getRequest().messages.map((message) => message.role)).toEqual(["user"]);
-		expect(errors).toEqual([
-			expect.stringMatching(/^context_with_system: Handler removed the leading system message/),
-		]);
 	});
 });

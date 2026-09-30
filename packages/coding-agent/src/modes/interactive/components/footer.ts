@@ -157,9 +157,9 @@ export class FooterComponent implements EditorBottomStatus {
 	/** Expand the thinking level track out of the effort label. Returns false when the Powerbar is unavailable. */
 	openPowerbarThinking(): boolean {
 		if (!this.powerbar) return false;
-		const model = this.session.state.model;
+		const model = this.session.selection.model;
 		const modelName = model ? modelDisplayName(model) : "no-model";
-		const thinkingLevel = model?.reasoning ? this.session.state.thinkingLevel : "off";
+		const thinkingLevel = model?.reasoning ? this.session.selection.thinkingLevel : "off";
 		const anchorLabel = thinkingLevel.charAt(0).toUpperCase() + thinkingLevel.slice(1);
 		this.powerbar.openThinking({
 			anchorWidth: visibleWidth(anchorLabel),
@@ -175,7 +175,7 @@ export class FooterComponent implements EditorBottomStatus {
 	/** Expand the model track out of the model label. Returns false when the Powerbar is unavailable. */
 	openPowerbarModelBrowse(): boolean {
 		if (!this.powerbar) return false;
-		const model = this.session.state.model;
+		const model = this.session.selection.model;
 		const modelName = model ? modelDisplayName(model) : "no-model";
 		this.powerbar.openModelBrowse({ anchorWidth: visibleWidth(modelName) });
 		return true;
@@ -218,9 +218,9 @@ export class FooterComponent implements EditorBottomStatus {
 	}
 
 	restorePowerbar(snapshot: PowerbarSnapshot): void {
-		const model = this.session.state.model;
+		const model = this.session.selection.model;
 		const modelName = model ? modelDisplayName(model) : "no-model";
-		const level = model?.reasoning ? this.session.state.thinkingLevel : "off";
+		const level = model?.reasoning ? this.session.selection.thinkingLevel : "off";
 		const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
 		this.powerbar?.restore(snapshot, {
 			modelAnchorWidth: visibleWidth(modelName),
@@ -264,7 +264,7 @@ export class FooterComponent implements EditorBottomStatus {
 
 	/** Display name from the model catalog. */
 	private modelLabel(): string {
-		const model = this.session.state.model;
+		const model = this.session.selection.model;
 		const name = model ? modelDisplayName(model) : "No model selected";
 		if (!model) return theme.fg("error", name);
 		if (this.frameMotion) return this.frameMotion.paintLabel(name, "accent");
@@ -273,8 +273,10 @@ export class FooterComponent implements EditorBottomStatus {
 
 	/** Thinking level, including Off for models without reasoning. */
 	private thinkingLabel(): string {
-		const model = this.session.state.model;
-		const level = model?.reasoning ? (this.frameMotion?.getThinking() ?? this.session.state.thinkingLevel) : "off";
+		const model = this.session.selection.model;
+		const level = model?.reasoning
+			? (this.frameMotion?.getThinking() ?? this.session.selection.thinkingLevel)
+			: "off";
 		const label = `${level.charAt(0).toUpperCase() + level.slice(1)} ${thinkingMeter(level)}`;
 		if (this.frameMotion) return this.frameMotion.paintThinking(label);
 		return theme.getThinkingBorderColor(level)(label);

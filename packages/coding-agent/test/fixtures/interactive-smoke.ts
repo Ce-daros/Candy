@@ -9,7 +9,7 @@ import {
 	type CreateAgentSessionRuntimeFactory,
 	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
-import { SessionManager } from "../../src/core/session-manager.ts";
+import { SessionHistory } from "../../src/core/session-history.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { createHarness, type Harness } from "../suite/harness.ts";
@@ -77,7 +77,7 @@ export async function createInteractiveSmoke(
 		),
 	);
 	const sessionDir = join(harness.tempDir, "sessions");
-	const sessionManager = SessionManager.create(harness.tempDir, sessionDir);
+	const sessionManager = SessionHistory.create(harness.tempDir, sessionDir);
 	if (!options.empty) {
 		sessionManager.appendMessage(userMsg("First question"));
 		const firstAssistant = sessionManager.appendMessage(fauxAssistantMessage("First answer"));
@@ -87,16 +87,16 @@ export async function createInteractiveSmoke(
 		sessionManager.appendMessage(userMsg("Branch question"));
 		sessionManager.appendMessage(fauxAssistantMessage("Branch answer"));
 	}
-	const otherSession = SessionManager.create(harness.tempDir, sessionDir);
+	const otherSession = SessionHistory.create(harness.tempDir, sessionDir);
 	otherSession.appendMessage(userMsg("Another session"));
 	otherSession.appendMessage(fauxAssistantMessage("Another answer"));
 	initTheme(options.theme ?? "dark", false);
 	const services: AgentSessionServices = {
 		cwd: harness.tempDir,
 		agentDir: harness.tempDir,
-		modelRuntime: harness.session.modelRuntime,
+		modelRuntime: harness.session.execution.modelRuntime,
 		settingsManager: harness.settingsManager,
-		resourceLoader: harness.session.resourceLoader,
+		resourceLoader: harness.session.execution.resourceLoader,
 		diagnostics: [],
 		dispose: async () => {},
 	};
@@ -108,13 +108,13 @@ export async function createInteractiveSmoke(
 			agentDir: harness.tempDir,
 			model: harness.getModel(),
 			noTools: "all",
-			modelRuntime: harness.session.modelRuntime,
-			resourceLoader: harness.session.resourceLoader,
+			modelRuntime: harness.session.execution.modelRuntime,
+			resourceLoader: harness.session.execution.resourceLoader,
 			sessionStartEvent,
 		});
 		return {
 			session,
-			extensionsResult: harness.session.resourceLoader.getExtensions(),
+			extensionsResult: harness.session.execution.resourceLoader.getExtensions(),
 			services: { ...services, cwd },
 			diagnostics: [],
 		};

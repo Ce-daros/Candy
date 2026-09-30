@@ -36,7 +36,7 @@ describe("#8537 custom messages injected during tool execution", () => {
 		const harness = await createHarness({ tools: [slowTool] });
 		harnesses.push(harness);
 		notify = () =>
-			harness.session.sendCustomMessage(
+			harness.session.execution.sendCustomMessage(
 				{ customType: "subagent-reply", content: "subagent replied", display: true },
 				{ triggerTurn: false },
 			);
@@ -46,9 +46,9 @@ describe("#8537 custom messages injected during tool execution", () => {
 			fauxAssistantMessage("done"),
 		]);
 
-		await harness.session.prompt("hi");
+		await harness.session.execution.prompt("hi");
 
-		expect(roles(harness.session.messages)).toEqual([
+		expect(roles(harness.session.execution.messages)).toEqual([
 			"system",
 			"user",
 			"assistant",
@@ -74,7 +74,7 @@ describe("#8537 custom messages injected during tool execution", () => {
 		const harness = await createHarness({ tools: [slowTool] });
 		harnesses.push(harness);
 		notify = () =>
-			harness.session.sendCustomMessage(
+			harness.session.execution.sendCustomMessage(
 				{ customType: "subagent-reply", content: "subagent replied", display: true },
 				{ triggerTurn: false },
 			);
@@ -84,7 +84,7 @@ describe("#8537 custom messages injected during tool execution", () => {
 			fauxAssistantMessage("done"),
 		]);
 
-		await harness.session.prompt("hi");
+		await harness.session.execution.prompt("hi");
 
 		const entryKinds = harness.sessionManager
 			.getBranch()
@@ -116,7 +116,7 @@ describe("#8537 custom messages injected during tool execution", () => {
 		const harness = await createHarness({ tools: [slowTool] });
 		harnesses.push(harness);
 		notify = () =>
-			harness.session.sendCustomMessage(
+			harness.session.execution.sendCustomMessage(
 				{ customType: "subagent-reply", content: "subagent replied", display: true },
 				{ triggerTurn: false },
 			);
@@ -127,10 +127,10 @@ describe("#8537 custom messages injected during tool execution", () => {
 			fauxAssistantMessage("second turn"),
 		]);
 
-		await harness.session.prompt("hi");
-		await harness.session.prompt("and now?");
+		await harness.session.execution.prompt("hi");
+		await harness.session.execution.prompt("and now?");
 
-		const llmMessages = convertToLlm(harness.session.messages);
+		const llmMessages = convertToLlm(harness.session.execution.messages);
 		const openToolCallIds = new Set<string>();
 		for (const message of llmMessages) {
 			if (message.role === "assistant") {

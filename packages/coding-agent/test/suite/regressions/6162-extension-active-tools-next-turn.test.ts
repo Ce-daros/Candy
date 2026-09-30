@@ -45,7 +45,7 @@ describe("extension active tools next-turn refresh", () => {
 		const harness = await createHarness({ extensionFactories: [registerSwitchTools] });
 
 		try {
-			harness.session.setActiveToolsByName(["switch_tools"]);
+			harness.session.execution.setActiveToolsByName(["switch_tools"]);
 
 			const providerToolNames: string[][] = [];
 			harness.setResponses([
@@ -59,11 +59,11 @@ describe("extension active tools next-turn refresh", () => {
 				},
 			]);
 
-			expect(harness.session.getActiveToolNames()).toEqual(["switch_tools"]);
+			expect(harness.session.execution.getActiveToolNames()).toEqual(["switch_tools"]);
 
-			await harness.session.prompt("start");
+			await harness.session.execution.prompt("start");
 
-			expect(harness.session.getActiveToolNames()).toEqual(["after_switch"]);
+			expect(harness.session.execution.getActiveToolNames()).toEqual(["after_switch"]);
 			expect(providerToolNames).toEqual([["switch_tools"], ["after_switch"]]);
 		} finally {
 			await harness.cleanup();
@@ -73,23 +73,23 @@ describe("extension active tools next-turn refresh", () => {
 	it("reports the refreshed system prompt during the run", async () => {
 		const harness = await createHarness({ extensionFactories: [registerSwitchTools] });
 		try {
-			harness.session.setActiveToolsByName(["switch_tools"]);
+			harness.session.execution.setActiveToolsByName(["switch_tools"]);
 			const providerPrompts: string[] = [];
 			const sessionPrompts: string[] = [];
 			harness.setResponses([
 				(context) => {
 					providerPrompts.push(getCurrentSystemPrompt(context.messages));
-					sessionPrompts.push(harness.session.systemPrompt);
+					sessionPrompts.push(harness.session.execution.systemPrompt);
 					return fauxAssistantMessage(fauxToolCall("switch_tools", {}), { stopReason: "toolUse" });
 				},
 				(context) => {
 					providerPrompts.push(getCurrentSystemPrompt(context.messages));
-					sessionPrompts.push(harness.session.systemPrompt);
+					sessionPrompts.push(harness.session.execution.systemPrompt);
 					return fauxAssistantMessage("done");
 				},
 			]);
 
-			await harness.session.prompt("start");
+			await harness.session.execution.prompt("start");
 
 			expect(providerPrompts).toHaveLength(2);
 			expect(providerPrompts[0]).not.toBe(providerPrompts[1]);
@@ -114,7 +114,7 @@ describe("extension active tools next-turn refresh", () => {
 		});
 
 		try {
-			harness.session.setActiveToolsByName(["switch_tools"]);
+			harness.session.execution.setActiveToolsByName(["switch_tools"]);
 
 			const providerSystemPrompts: string[] = [];
 			const providerToolNames: string[][] = [];
@@ -134,7 +134,7 @@ describe("extension active tools next-turn refresh", () => {
 				},
 			]);
 
-			await harness.session.prompt("start");
+			await harness.session.execution.prompt("start");
 
 			expect(providerToolNames).toEqual([["switch_tools"], ["after_switch"]]);
 			expect(providerSystemPrompts).toHaveLength(2);

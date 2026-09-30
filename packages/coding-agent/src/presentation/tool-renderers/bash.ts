@@ -2,15 +2,14 @@
  * Presentation for the shell tools.
  *
  * Renderers live apart from the implementation so a process that only displays tool output does not
- * load the execution path or its typebox parameter schema. `bash.ts` spreads these into the shell
- * tool definition, so the tool's public shape is unchanged.
+ * load the execution path or its typebox parameter schema.
  */
 
 import { Container, Text } from "@candy/tui";
-import type { ToolDefinition } from "../../core/extensions/types.ts";
 import type { BashToolDetails } from "../../core/tools/bash.ts";
 import { DEFAULT_MAX_BYTES, formatSize } from "../../core/tools/truncate.ts";
 import { theme } from "../../modes/interactive/theme/theme.ts";
+import type { ToolRenderers } from "../tool-render-types.ts";
 import { getTextOutput, invalidArgText, str } from "../tool-render-utils.ts";
 
 function formatDuration(ms: number): string {
@@ -93,10 +92,7 @@ function rebuildBashResultRenderComponent(
 }
 
 /** Shell renderers are shared by bash and powershell, which differ only in the prompt they display. */
-export function createShellRenderers(
-	prompt: string,
-	toolName: string,
-): Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> {
+export function createShellRenderers(prompt: string, toolName: string): ToolRenderers<any, BashToolDetails> {
 	return {
 		renderCall(args, _theme, context) {
 			const state = context.state;

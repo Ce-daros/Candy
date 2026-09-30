@@ -20,7 +20,7 @@ describe("InteractiveMode.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 		const fakeThis: any = {
 			anthropicSubscriptionWarningShown: false,
 			settingsManager: createSettingsManager(),
-			session: { modelRuntime },
+			runtimeHost: { models: modelRuntime },
 			showWarning: vi.fn(),
 		};
 
@@ -40,7 +40,7 @@ describe("InteractiveMode.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 		const fakeThis: any = {
 			anthropicSubscriptionWarningShown: false,
 			settingsManager: createSettingsManager(),
-			session: { modelRuntime },
+			runtimeHost: { models: modelRuntime },
 			showWarning: vi.fn(),
 		};
 
@@ -57,7 +57,7 @@ describe("InteractiveMode.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 		const fakeThis: any = {
 			anthropicSubscriptionWarningShown: false,
 			settingsManager: createSettingsManager(),
-			session: { modelRuntime },
+			runtimeHost: { models: modelRuntime },
 			showWarning: vi.fn(),
 		};
 
@@ -74,7 +74,7 @@ describe("InteractiveMode.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 		const fakeThis: any = {
 			anthropicSubscriptionWarningShown: false,
 			settingsManager: createSettingsManager({ anthropicExtraUsage: false }),
-			session: { modelRuntime },
+			runtimeHost: { models: modelRuntime },
 			showWarning: vi.fn(),
 		};
 

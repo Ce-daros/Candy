@@ -1,13 +1,12 @@
 # Compaction Reference
 
-This reference describes automatic compaction, branch summarization, persisted entries, and extension hooks. For the user workflow, see [Sessions and Context](sessions.md#manage-conversation-context).
+This reference describes automatic compaction, branch summarization, and persisted entries. For the user workflow, see [Sessions and Context](sessions.md#manage-conversation-context).
 
 **Source files**:
 - [`packages/coding-agent/src/core/compaction/compaction.ts`](../src/core/compaction/compaction.ts) - Auto-compaction logic
 - [`packages/coding-agent/src/core/compaction/branch-summarization.ts`](../src/core/compaction/branch-summarization.ts) - Branch summarization
 - [`packages/coding-agent/src/core/compaction/utils.ts`](../src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
-- [`packages/coding-agent/src/core/session-manager.ts`](../src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
-- [`packages/coding-agent/src/core/extensions/types.ts`](../src/core/extensions/types.ts) - Extension event types
+- [`packages/coding-agent/src/core/session-history.ts`](../src/core/session-history.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
 
 For TypeScript definitions in your project, inspect `node_modules/@candy/coding-agent/dist/`.
 
@@ -88,14 +87,14 @@ Recovery preserves the existing lifecycle and queue order. The completed attempt
 
 ```text
 persist final assistant response
-→ extension/public turn_end
-→ extension/public agent_end
+→ extension turn_end
+→ extension agent_end
 → append context_edit omissions for the selected attempt
-→ for overflow/length: run session_before_compact and append compaction on success
+→ for overflow/length: core compaction and append on success
 → start the retry as a fresh run
 ```
 
-If recovery compaction fails or is cancelled, candy keeps the omission edits, appends no compaction, and schedules no internal retry. Existing queued work remains governed by ordinary steering and follow-up rules. `agent_before_settle` sees the repaired projection after recovery processing. Raw transcript history, exports, billing totals, and history-search extensions can still inspect the omitted attempt.
+If recovery compaction fails or is cancelled, candy keeps the omission edits, appends no compaction, and schedules no internal retry. Existing queued work remains governed by ordinary steering and follow-up rules. `agent_settled` is emitted after recovery processing. Raw transcript history, exports, billing totals, and history-search extensions can still inspect the omitted attempt.
 
 ### Split user-message spans
 
@@ -139,7 +138,7 @@ Preparation advances the kept boundary into a context-invisible suffix only when
 
 ### CompactionEntry Structure
 
-Defined in [`session-manager.ts`](../src/core/session-manager.ts):
+Defined in [`session-history.ts`](../src/core/session-history.ts):
 
 ```typescript
 interface CompactionEntry<T = unknown> {
@@ -151,7 +150,7 @@ interface CompactionEntry<T = unknown> {
   firstKeptEntryId: string;
   tokensBefore: number;
   usage?: Usage;       // LLM usage that generated the summary
-  fromHook?: boolean;  // true if provided by extension (legacy field name)
+  fromHook?: boolean;  // legacy marker for entries created by older extensions
   details?: T;         // implementation-specific data
 }
 
@@ -162,7 +161,7 @@ interface CompactionDetails {
 }
 ```
 
-Extensions can store any JSON-serializable data in `details`. The default compaction tracks file operations, but custom extension implementations can use their own structure. Generated and extension-provided summaries store their LLM `usage` when available so session totals include summarization work.
+The default compaction tracks file operations in `details`. Older extension-generated summaries may contain custom details and usage; current extension APIs cannot create compaction entries.
 
 See [`prepareCompaction()`](../src/core/compaction/compaction.ts) and [`compact()`](../src/core/compaction/compaction.ts) for the implementation. For direct programmatic summarization, `generateSummary()` returns the summary text and `generateSummaryWithUsage()` returns `{ text, usage }`.
 
@@ -201,11 +200,11 @@ After navigation with summary:
 
 Default compaction and branch summarization track files cumulatively. Both extract file operations from tool calls in the messages being summarized. Compaction also carries file lists from the previous candy-generated compaction. Branch summarization carries file lists from candy-generated branch summaries in the entries it summarizes.
 
-File tracking therefore accumulates across default compactions and nested default branch summaries. candy does not automatically carry file lists from extension-generated summaries whose `fromHook` field is `true`; extensions manage their own `details` format.
+File tracking therefore accumulates across default compactions and nested default branch summaries. Existing summaries marked with the legacy `fromHook` field are preserved but are not created by current extension APIs.
 
 ### BranchSummaryEntry Structure
 
-Defined in [`session-manager.ts`](../src/core/session-manager.ts):
+Defined in [`session-history.ts`](../src/core/session-history.ts):
 
 ```typescript
 interface BranchSummaryEntry<T = unknown> {
@@ -216,7 +215,7 @@ interface BranchSummaryEntry<T = unknown> {
   summary: string;
   fromId: string;      // Entry we navigated from
   usage?: Usage;       // LLM usage that generated the summary
-  fromHook?: boolean;  // true if provided by extension (legacy field name)
+  fromHook?: boolean;  // legacy marker for entries created by older extensions
   details?: T;         // implementation-specific data
 }
 
@@ -227,7 +226,7 @@ interface BranchSummaryDetails {
 }
 ```
 
-Same as compaction, extensions can store custom data in `details`.
+Existing extension-specific `details` are preserved when reading older sessions.
 
 See [`collectEntriesForBranchSummary()`](../src/core/compaction/branch-summarization.ts), [`prepareBranchEntries()`](../src/core/compaction/branch-summarization.ts), and [`generateBranchSummary()`](../src/core/compaction/branch-summarization.ts) for the implementation.
 
@@ -289,129 +288,9 @@ This prevents the model from treating it as a conversation to continue.
 
 Tool results are truncated to 2000 characters during serialization. Content beyond that limit is replaced with a marker indicating how many characters were truncated. This keeps summarization requests within reasonable token budgets, since tool results (especially from `read` and `bash`) are typically the largest contributors to context size.
 
-## Custom Summarization via Extensions
+## Extension boundaries
 
-Extensions can intercept and customize both compaction and branch summarization. See [`extensions/types.ts`](../src/core/extensions/types.ts) for event type definitions.
-
-### session_before_compact
-
-Fired before automatic or manual compaction. Can cancel or provide custom summary. See `SessionBeforeCompactEvent` and `CompactionPreparation` in the types file.
-
-```typescript
-candy.on("session_before_compact", async (event, ctx) => {
-  const { preparation, branchEntries, customInstructions, reason, willRetry, signal } = event;
-
-  // preparation.messagesToSummarize - messages to summarize
-  // preparation.turnPrefixMessages - user-message-span prefix (if isSplitTurn)
-  // preparation.previousSummary - previous compaction summary
-  // preparation.fileOps - extracted file operations
-  // preparation.tokensBefore - context tokens before compaction
-  // preparation.firstKeptEntryId - where kept messages start
-  // preparation.settings - effective settings after applying model overrides
-
-  // branchEntries - all entries on current branch (for custom state)
-  // reason - "manual", "threshold", or "overflow"
-  // willRetry - whether the aborted turn is retried after compaction (overflow recovery)
-  // signal - AbortSignal (pass to LLM calls)
-
-  // Cancel:
-  return { cancel: true };
-
-  // Custom summary:
-  return {
-    compaction: {
-      summary: "Your summary...",
-      firstKeptEntryId: preparation.firstKeptEntryId,
-      tokensBefore: preparation.tokensBefore,
-      // usage: summaryResponse.usage, // Optional; included in session totals
-      details: { /* custom data */ },
-    }
-  };
-});
-```
-
-#### Converting Messages to Text
-
-To generate a summary with your own model, convert messages to text using `serializeConversation`:
-
-```typescript
-import { convertToLlm, serializeConversation } from "@candy/coding-agent";
-
-candy.on("session_before_compact", async (event, ctx) => {
-  const { preparation } = event;
-  
-  // Convert AgentMessage[] to Message[], then serialize to text
-  const conversationText = serializeConversation(
-    convertToLlm(preparation.messagesToSummarize)
-  );
-  // Returns:
-  // [User]: message text
-  // [Assistant thinking]: thinking content
-  // [Assistant]: response text
-  // [Assistant tool calls]: read(path="..."); bash(command="...")
-  // [Tool result]: output text
-
-  // Now send to your model for summarization
-  const { summary, usage } = await myModel.summarize(conversationText);
-  
-  return {
-    compaction: {
-      summary,
-      firstKeptEntryId: preparation.firstKeptEntryId,
-      tokensBefore: preparation.tokensBefore,
-      usage,
-    }
-  };
-});
-```
-
-
-### session_compact_failed
-
-Fired when manual or automatic compaction fails or is aborted. This is useful for telemetry extensions that need to pair `session_before_compact` attempts with terminal outcomes.
-
-```typescript
-candy.on("session_compact_failed", async (event, ctx) => {
-  const { reason, errorMessage, aborted, willRetry, fromExtension } = event;
-  // reason - "manual", "threshold", or "overflow"
-  // errorMessage - present for non-abort failures
-  // aborted - true for canceled/aborted compactions
-  // willRetry - whether the aborted turn would have retried after compaction
-  // fromExtension - whether extension-provided compaction content was being used
-});
-```
-
-### session_before_tree
-
-Fired before History → Tree navigation. Always fires regardless of whether the user chose to summarize. Can cancel navigation or provide custom summary.
-
-```typescript
-candy.on("session_before_tree", async (event, ctx) => {
-  const { preparation, signal } = event;
-
-  // preparation.targetId - where we're navigating to
-  // preparation.oldLeafId - current position (being abandoned)
-  // preparation.commonAncestorId - shared ancestor
-  // preparation.entriesToSummarize - entries that would be summarized
-  // preparation.userWantsSummary - whether user chose to summarize
-
-  // Cancel navigation entirely:
-  return { cancel: true };
-
-  // Provide custom summary (only used if userWantsSummary is true):
-  if (preparation.userWantsSummary) {
-    return {
-      summary: {
-        summary: "Your summary...",
-        // usage: summaryResponse.usage, // Optional; included in session totals
-        details: { /* custom data */ },
-      }
-    };
-  }
-});
-```
-
-See `SessionBeforeTreeEvent` and `TreePreparation` in the types file.
+Extensions can observe committed work at `turn_end` and receive the final `agent_settled` notification. Compaction, overflow recovery, retries, and branch navigation are scheduled by Candy. The extension API does not replace summaries or cancel these operations.
 
 ## Settings
 
@@ -457,6 +336,6 @@ For a model with a 1M context window, this override triggers compaction above 60
 
 Keys are exact, case-sensitive `provider/modelId` values, including any slashes within the model ID. Each `reserveTokens` and `keepRecentTokens` value falls back independently from the model override to the ordinary setting to the built-in default. Values must be non-negative safe integers. Invalid values in the matching model override produce an error when read; only omitted fields fall back to the ordinary setting. Model override entries must be objects. Invalid ordinary token settings produce an error when read, even if the active model has a valid override. Only omitted ordinary values use built-in defaults. `enabled` remains global, not model-specific.
 
-These resolved values are used for manual compaction, all automatic threshold checks, overflow recovery, and extension-visible `preparation.settings`. Model switches affect subsequent checks and compactions without changing ordinary settings. Compaction already in progress uses the model and settings captured for that operation. Branch summarization settings are unaffected.
+These resolved values are used for manual compaction, all automatic threshold checks, and overflow recovery. Model switches affect subsequent checks and compactions without changing ordinary settings. Compaction already in progress uses the model and settings captured for that operation. Branch summarization settings are unaffected.
 
 Overrides work in both global and project settings. The files merge recursively before lookup, so a global model-specific value beats a project-wide fallback; a project must override that model entry to change it. See [Settings](settings.md#per-model-compaction-overrides) for details.

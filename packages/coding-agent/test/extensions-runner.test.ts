@@ -22,10 +22,10 @@ import type {
 	ExtensionContextActions,
 	ExtensionFactory,
 	ExtensionUIContext,
-	ProviderConfig,
+	SessionBoundaryDraft,
 } from "../src/core/extensions/types.ts";
 import type { ModelRuntime } from "../src/core/model-runtime.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import type { SessionEntry } from "../src/core/session-history.ts";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { KeybindingsManager, type KeyId } from "../src/presentation/keybindings.ts";
@@ -51,7 +51,6 @@ function loadExtensions(
 describe("ExtensionRunner", () => {
 	let tempDir: string;
 	let extensionsDir: string;
-	let sessionManager: SessionManager;
 	let modelRuntime: ModelRuntime;
 	const defaultKeybindings = new KeybindingsManager().getEffectiveConfig();
 
@@ -59,44 +58,12 @@ describe("ExtensionRunner", () => {
 		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-runner-test-"));
 		extensionsDir = path.join(tempDir, "extensions");
 		fs.mkdirSync(extensionsDir);
-		sessionManager = SessionManager.inMemory();
 		modelRuntime = await createInMemoryModelRuntime(AuthStorage.inMemory());
 	});
 
 	afterEach(() => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
-
-	const providerModelConfig: ProviderConfig = {
-		baseUrl: "https://provider.test/v1",
-		apiKey: "provider-test-key",
-		api: "openai-completions",
-		models: [
-			{
-				id: "instant-model",
-				name: "Instant Model",
-				reasoning: false,
-				input: ["text"],
-				cost: {
-					input: 1,
-					output: 2,
-					cacheRead: 0.1,
-					cacheWrite: 1.25,
-					tiers: [
-						{
-							inputTokensAbove: 272000,
-							input: 2,
-							output: 3,
-							cacheRead: 0.2,
-							cacheWrite: 2.5,
-						},
-					],
-				},
-				contextWindow: 128000,
-				maxTokens: 4096,
-			},
-		],
-	};
 
 	const extensionActions: ExtensionActions = {
 		sendMessage: () => {},
@@ -117,6 +84,7 @@ describe("ExtensionRunner", () => {
 
 	const extensionContextActions: ExtensionContextActions = {
 		getModel: () => undefined,
+		getHistory: () => ({}) as ExtensionContext["history"],
 		getResources: () => ({}) as ExtensionContext["resources"],
 		isIdle: () => true,
 		isProjectTrusted: () => true,
@@ -183,7 +151,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -206,7 +174,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(shortcuts.has("ctrl+p")).toBe(true);
@@ -232,7 +200,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(
@@ -257,7 +225,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const keybindings = { ...defaultKeybindings, "app.interrupt": "ctrl+x" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -281,7 +249,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("built-in shortcut for app.session.togglePath"));
@@ -304,7 +272,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const keybindings = { ...defaultKeybindings, "app.clear": ["ctrl+x", "ctrl+y"] as KeyId[] };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -328,7 +296,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const keybindings = { ...defaultKeybindings, "app.clipboard.pasteImage": ["ctrl+x", "ctrl+y"] as KeyId[] };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -364,7 +332,7 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("shortcut conflict"));
@@ -393,7 +361,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-b.ts"), toolCode("tool_b"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const tools = runner.getAllRegisteredTools();
 
 			expect(tools.length).toBe(2);
@@ -455,7 +423,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "b-second.ts"), second);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const tools = runner.getAllRegisteredTools();
 
 			expect(tools).toHaveLength(1);
@@ -477,7 +445,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd-b.ts"), cmdCode("cmd-b"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const commands = runner.getRegisteredCommands();
 
 			expect(commands.length).toBe(2);
@@ -497,7 +465,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd.ts"), cmdCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 
 			const cmd = runner.getCommand("my-cmd");
 			expect(cmd).toBeDefined();
@@ -522,7 +490,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd-b.ts"), cmdCode("Second command"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const commands = runner.getRegisteredCommands();
 			const diagnostics = runner.getCommandDiagnostics();
 
@@ -539,7 +507,7 @@ describe("ExtensionRunner", () => {
 	describe("context creation", () => {
 		it("exposes the current abort signal on ExtensionContext", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const controller = new AbortController();
 
 			runner.bindCore(extensionActions, {
@@ -557,7 +525,7 @@ describe("ExtensionRunner", () => {
 
 		it("exposes print mode and hasUI false by default", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			runner.bindCore(extensionActions, extensionContextActions);
 
 			const ctx = runner.createContext();
@@ -567,7 +535,7 @@ describe("ExtensionRunner", () => {
 
 		it("exposes project trust state on ExtensionContext", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			runner.bindCore(extensionActions, {
 				...extensionContextActions,
 				isProjectTrusted: () => false,
@@ -579,7 +547,7 @@ describe("ExtensionRunner", () => {
 
 		it("exposes rpc mode with hasUI true when an RPC UI context is provided", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			runner.bindCore(extensionActions, extensionContextActions);
 			runner.setUIContext({} as ExtensionUIContext, "rpc");
 
@@ -590,7 +558,7 @@ describe("ExtensionRunner", () => {
 
 		it("exposes tui mode with hasUI true when a TUI UI context is provided", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			runner.bindCore(extensionActions, extensionContextActions);
 			runner.setUIContext({} as ExtensionUIContext, "tui");
 
@@ -612,7 +580,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "throws.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 
 			const errors: Array<{ extensionPath: string; event: string; error: string }> = [];
 			runner.onError((err) => {
@@ -639,7 +607,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "throws.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const errors: Array<{ event: string; error: string }> = [];
 			runner.onError((error) => errors.push(error));
 
@@ -669,7 +637,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "invalid-result.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const errors: Array<{ event: string; error: string }> = [];
 			runner.onError((error) => errors.push(error));
 
@@ -695,7 +663,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "valid-results.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const event = { type: "user_bash" as const, excludeFromContext: false, cwd: tempDir };
 
 			const operations = await runner.emitUserBash({ ...event, command: "operations" });
@@ -703,56 +671,6 @@ describe("ExtensionRunner", () => {
 			await expect(runner.emitUserBash({ ...event, command: "result" })).resolves.toEqual({
 				result: { output: "handled", exitCode: 0, cancelled: false, truncated: false },
 			});
-		});
-	});
-
-	describe("message and entry renderers", () => {
-		it("gets Markdown transformers in extension load order", async () => {
-			const extCode = `
-				export default function(candy) {
-					candy.registerMarkdownTransformer((markdown) => markdown);
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "markdown-renderer-a.ts"), extCode);
-			fs.writeFileSync(path.join(extensionsDir, "markdown-renderer-b.ts"), extCode);
-
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
-
-			expect(runner.getMarkdownTransformers()).toHaveLength(2);
-		});
-
-		it("gets message renderer by type", async () => {
-			const extCode = `
-				export default function(candy) {
-					candy.registerMessageRenderer("my-type", (message, options, theme) => null);
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "renderer.ts"), extCode);
-
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
-
-			const renderer = runner.getMessageRenderer("my-type");
-			expect(renderer).toBeDefined();
-
-			const missing = runner.getMessageRenderer("not-exists");
-			expect(missing).toBeUndefined();
-		});
-
-		it("gets entry renderer by type", async () => {
-			const extCode = `
-				export default function(candy) {
-					candy.registerEntryRenderer("my-entry", (entry, options, theme) => null);
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "entry-renderer.ts"), extCode);
-
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
-
-			expect(runner.getEntryRenderer("my-entry")).toBeDefined();
-			expect(runner.getEntryRenderer("not-exists")).toBeUndefined();
 		});
 	});
 
@@ -769,7 +687,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "with-flag.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const flags = runner.getFlags();
 
 			expect(flags.has("my-flag")).toBe(true);
@@ -798,7 +716,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "b-second.ts"), second);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const flags = runner.getFlags();
 
 			expect(flags.get("shared-flag")?.description).toBe("first");
@@ -837,7 +755,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "flag.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 
 			// Setting a flag value should not throw
 			runner.setFlagValue("--test-flag", true);
@@ -873,7 +791,7 @@ describe("ExtensionRunner", () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			expect(result.errors).toEqual([]);
 			expect(result.extensions).toHaveLength(2);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 			const errors: string[] = [];
 			runner.onError((error) => errors.push(error.error));
 			runner.bindCore(extensionActions, extensionContextActions);
@@ -889,149 +807,108 @@ describe("ExtensionRunner", () => {
 		});
 	});
 
-	describe("boundary chaining", () => {
-		it("chains shared draft proposals and preserves omitted result fields", async () => {
+	describe("turn_end chaining", () => {
+		it("chains appended entries and continuation requests in registration order", async () => {
 			const runtime = createExtensionRuntime();
-			const eventBus = createEventBus();
-			const observations: Array<{ entries: number; continuation: boolean; preview: number }> = [];
+			const observations: Array<{ entries: number; committed: number; continuation: boolean }> = [];
+			const committed: SessionBoundaryDraft[] = [];
 			const first = await loadExtensionFromFactory(
 				(candy) => {
-					candy.on("agent_before_settle", (event) => {
+					candy.on("turn_end", (event) => {
 						observations.push({
 							entries: event.entries.length,
+							committed: event.context.contextEntries.length,
 							continuation: event.continue,
-							preview: event.context.contextEntries.length,
 						});
-						event.entries.push({ type: "custom", customType: "first", data: 1 });
-						return { continue: true };
+						return { entries: [{ type: "custom", customType: "first", data: 1 }], continue: true };
 					});
 				},
 				tempDir,
-				eventBus,
+				createEventBus(),
 				runtime,
 				"<inline:first>",
 			);
 			const second = await loadExtensionFromFactory(
 				(candy) => {
-					candy.on("agent_before_settle", (event) => {
+					candy.on("turn_end", (event) => {
 						observations.push({
 							entries: event.entries.length,
+							committed: event.context.contextEntries.length,
 							continuation: event.continue,
-							preview: event.context.contextEntries.length,
 						});
-						return { entries: [] };
+						return { entries: [{ type: "custom", customType: "second" }] };
 					});
 				},
 				tempDir,
-				eventBus,
+				createEventBus(),
 				runtime,
 				"<inline:second>",
 			);
-			const runner = new ExtensionRunner([first, second], runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner([first, second], runtime, tempDir, modelRuntime);
 
-			const result = await runner.emitBoundary({ type: "agent_before_settle", outcome: "completed" }, (entries) => ({
-				contextEntries: entries.map((entry, index) => ({
-					sourceEntry: {
-						type: "custom",
-						id: `draft-${index}`,
-						parentId: null,
-						timestamp: "",
-						customType: entry.type,
+			const result = await runner.emitBoundary(
+				{
+					type: "turn_end",
+					turnIndex: 0,
+					message: {
+						role: "assistant",
+						content: [],
+						api: "test",
+						provider: "test",
+						model: "test",
+						responseId: "",
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "stop",
+						errorMessage: undefined,
+						timestamp: 0,
 					},
-					messages: [],
-				})),
-				contextMessages: [],
-				llmMessages: [],
-				pendingMessages: [],
-				canContinue: false,
-			}));
+					toolResults: [],
+					messageEntryId: "message",
+					toolResultEntryIds: [],
+					outcome: "completed",
+				},
+				(entries) => {
+					committed.push(...entries);
+					return {
+						contextEntries: committed.map((entry, index) => {
+							if (entry.type !== "custom") throw new Error("Expected custom boundary entry");
+							return {
+								sourceEntry: {
+									type: "custom",
+									customType: entry.customType,
+									id: `entry-${index}`,
+									parentId: null,
+									timestamp: "2026-01-01T00:00:00.000Z",
+								} as SessionEntry,
+								messages: [],
+							};
+						}),
+						contextMessages: [],
+						llmMessages: [],
+						pendingMessages: [],
+						canContinue: true,
+					};
+				},
+			);
 
 			expect(observations).toEqual([
-				{ entries: 0, continuation: false, preview: 0 },
-				{ entries: 1, continuation: true, preview: 1 },
+				{ entries: 0, committed: 0, continuation: false },
+				{ entries: 1, committed: 1, continuation: true },
 			]);
-			expect(result.entries).toEqual([]);
+			expect(result.entries.filter((entry) => entry.type === "custom").map((entry) => entry.customType)).toEqual([
+				"first",
+				"second",
+			]);
 			expect(result.continue).toBe(true);
 		});
-
-		it("reports invalid boundary previews and lets later handlers repair the proposal", async () => {
-			const runtime = createExtensionRuntime();
-			let secondRan = false;
-			const first = await loadExtensionFromFactory(
-				(candy) => {
-					candy.on("agent_before_settle", () => ({
-						entries: [{ type: "context_edit", targetId: "missing", replacement: null }],
-					}));
-				},
-				tempDir,
-				createEventBus(),
-				runtime,
-				"<inline:invalid>",
-			);
-			const second = await loadExtensionFromFactory(
-				(candy) => {
-					candy.on("agent_before_settle", (event) => {
-						secondRan = true;
-						expect(event.entries).toHaveLength(1);
-						return { entries: [] };
-					});
-				},
-				tempDir,
-				createEventBus(),
-				runtime,
-				"<inline:repair>",
-			);
-			const runner = new ExtensionRunner([first, second], runtime, tempDir, sessionManager, modelRuntime);
-			const errors: string[] = [];
-			runner.onError((error) => errors.push(error.error));
-
-			const result = await runner.emitBoundary({ type: "agent_before_settle", outcome: "completed" }, (entries) => {
-				if (entries.some((entry) => entry.type === "context_edit")) throw new Error("Entry missing not found");
-				return {
-					contextEntries: [],
-					contextMessages: [],
-					llmMessages: [],
-					pendingMessages: [],
-					canContinue: false,
-				};
-			});
-
-			expect(secondRan).toBe(true);
-			expect(errors).toContain("Invalid boundary entries: Entry missing not found");
-			expect(result.entries).toEqual([]);
-			expect(result.valid).toBe(true);
-		});
-
-		it("keeps shared mutations made before a handler throws", async () => {
-			const runtime = createExtensionRuntime();
-			const extension = await loadExtensionFromFactory(
-				(candy) => {
-					candy.on("agent_before_settle", (event) => {
-						event.entries.push({ type: "custom", customType: "kept" });
-						throw new Error("boundary failed");
-					});
-				},
-				tempDir,
-				createEventBus(),
-				runtime,
-			);
-			const runner = new ExtensionRunner([extension], runtime, tempDir, sessionManager, modelRuntime);
-			const errors: string[] = [];
-			runner.onError((error) => errors.push(error.error));
-
-			const result = await runner.emitBoundary({ type: "agent_before_settle", outcome: "completed" }, () => ({
-				contextEntries: [],
-				contextMessages: [],
-				llmMessages: [],
-				pendingMessages: [],
-				canContinue: false,
-			}));
-
-			expect(result.entries).toMatchObject([{ type: "custom", customType: "kept" }]);
-			expect(errors).toEqual(["boundary failed"]);
-		});
 	});
-
 	describe("tool_result chaining", () => {
 		it("chains content modifications across handlers", async () => {
 			const extCode1 = `
@@ -1056,7 +933,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-result-2.ts"), extCode2);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 
 			const chained = await runner.emitToolResult({
 				type: "tool_result",
@@ -1104,7 +981,7 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-result-partial-2.ts"), extCode2);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 
 			const chained = await runner.emitToolResult({
 				type: "tool_result",
@@ -1125,90 +1002,51 @@ describe("ExtensionRunner", () => {
 	});
 
 	describe("provider registration", () => {
-		it("reports queued provider registrations flushed during bindCore", () => {
+		it("flushes native provider registrations during bindCore", () => {
 			const runtime = createExtensionRuntime();
-			runtime.registerProvider("queued-provider", providerModelConfig);
-			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
+			const provider = modelRuntime.getProvider("anthropic");
+			if (!provider) throw new Error("missing built-in Anthropic provider");
+			runtime.registerProvider(provider, "<inline:provider>");
+			const runner = new ExtensionRunner([], runtime, tempDir, modelRuntime);
 
 			expect(runner.bindCore(extensionActions, extensionContextActions)).toBe(true);
-			expect(modelRuntime.getModel("queued-provider", "instant-model")).toBeDefined();
-		});
-
-		it("bindCore ignores invalid queued registrations and reports extension error", async () => {
-			const runtime = createExtensionRuntime();
-			runtime.registerProvider(
-				"broken-provider",
-				{
-					streamSimple: (() => {
-						throw new Error("should not run");
-					}) as any,
-				},
-				"/tmp/broken-extension.ts",
-			);
-
-			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
-			const errors: string[] = [];
-			runner.onError((error) => errors.push(`${error.extensionPath}: ${error.error}`));
-
-			expect(runner.bindCore(extensionActions, extensionContextActions)).toBe(false);
-			expect(errors).toEqual([
-				'/tmp/broken-extension.ts: Provider broken-provider: "api" is required when registering streamSimple.',
-			]);
-			await expect(modelRuntime.refresh()).resolves.toMatchObject({ aborted: false });
+			expect(modelRuntime.getRegisteredNativeProvider("anthropic")).toBe(provider);
 		});
 
 		it("pre-bind unregister removes all queued registrations for a provider", () => {
 			const runtime = createExtensionRuntime();
+			const provider = modelRuntime.getProvider("anthropic");
+			if (!provider) throw new Error("missing built-in Anthropic provider");
 
-			runtime.registerProvider("queued-provider", providerModelConfig);
-			runtime.registerProvider("queued-provider", {
-				...providerModelConfig,
-				models: [
-					{
-						id: "instant-model-2",
-						name: "Instant Model 2",
-						reasoning: false,
-						input: ["text"],
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-						contextWindow: 128000,
-						maxTokens: 4096,
-					},
-				],
-			});
-			expect(runtime.pendingProviderRegistrations).toHaveLength(2);
+			runtime.registerProvider(provider, "<inline:provider>");
+			expect(runtime.pendingProviderRegistrations).toHaveLength(1);
 
-			runtime.unregisterProvider("queued-provider");
+			runtime.unregisterProvider(provider.id);
 			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
 		});
 
 		it("post-bind register and unregister take effect immediately", () => {
 			const runtime = createExtensionRuntime();
-			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner([], runtime, tempDir, modelRuntime);
+			const provider = modelRuntime.getProvider("anthropic");
+			if (!provider) throw new Error("missing built-in Anthropic provider");
 
 			expect(runner.bindCore(extensionActions, extensionContextActions)).toBe(false);
 			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
 
-			runtime.registerProvider("instant-provider", providerModelConfig);
+			runtime.registerProvider(provider);
 			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
-			expect(modelRuntime.getModel("instant-provider", "instant-model")?.cost.tiers).toEqual([
-				{
-					inputTokensAbove: 272000,
-					input: 2,
-					output: 3,
-					cacheRead: 0.2,
-					cacheWrite: 2.5,
-				},
-			]);
+			expect(modelRuntime.getRegisteredNativeProvider("anthropic")).toBe(provider);
 
-			runtime.unregisterProvider("instant-provider");
-			expect(modelRuntime.getModel("instant-provider", "instant-model")).toBeUndefined();
+			runtime.unregisterProvider(provider.id);
+			expect(modelRuntime.getRegisteredNativeProvider("anthropic")).toBeUndefined();
 		});
 	});
 
 	describe("command context", () => {
 		it("passes clone options through to the bound handler", async () => {
 			const runtime = createExtensionRuntime();
-			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner([], runtime, tempDir, modelRuntime);
 			const clone = vi.fn(async () => ({ cancelled: false }));
 
 			runner.bindCommandContext({
@@ -1228,7 +1066,7 @@ describe("ExtensionRunner", () => {
 
 		it("passes fork options through to the bound handler", async () => {
 			const runtime = createExtensionRuntime();
-			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner([], runtime, tempDir, modelRuntime);
 			const fork = vi.fn(async () => ({ cancelled: false }));
 
 			runner.bindCommandContext({
@@ -1255,7 +1093,7 @@ describe("ExtensionRunner", () => {
 		async function loadSubscriptionExtension(factory: ExtensionFactory) {
 			const runtime = createExtensionRuntime();
 			const extension = await loadExtensionFromFactory(factory, tempDir, createEventBus(), runtime);
-			const runner = new ExtensionRunner([extension], runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner([extension], runtime, tempDir, modelRuntime);
 			return { extension, runner };
 		}
 
@@ -1381,64 +1219,10 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "handler.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, modelRuntime);
 
 			expect(runner.hasHandlers("tool_call")).toBe(true);
 			expect(runner.hasHandlers("agent_end")).toBe(false);
-		});
-	});
-
-	describe("before_provider_headers", () => {
-		it("lets a handler mutate headers in place and preserves existing headers", async () => {
-			const extCode = `
-				export default function(candy) {
-					candy.on("before_provider_headers", (event) => {
-						event.headers["X-Turn-Index"] = "3";
-					});
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "headers.ts"), extCode);
-
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
-
-			expect(runner.hasHandlers("before_provider_headers")).toBe(true);
-
-			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "kimchi/1.0" });
-			expect(headers["X-Turn-Index"]).toBe("3");
-			expect(headers["User-Agent"]).toBe("kimchi/1.0");
-		});
-
-		it("isolates a throwing handler and still applies the others", async () => {
-			const throwing = `
-				export default function(candy) {
-					candy.on("before_provider_headers", () => {
-						throw new Error("header handler boom");
-					});
-				}
-			`;
-			const good = `
-				export default function(candy) {
-					candy.on("before_provider_headers", (event) => {
-						event.headers["X-Good"] = "yes";
-					});
-				}
-			`;
-			fs.writeFileSync(path.join(extensionsDir, "a-throwing.ts"), throwing);
-			fs.writeFileSync(path.join(extensionsDir, "b-good.ts"), good);
-
-			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRuntime);
-			const errors: Array<{ event: string; error: string }> = [];
-			runner.onError((err) => errors.push(err));
-
-			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "x" });
-
-			expect(headers["X-Good"]).toBe("yes");
-			expect(headers["User-Agent"]).toBe("x");
-			expect(errors).toHaveLength(1);
-			expect(errors[0].event).toBe("before_provider_headers");
-			expect(errors[0].error).toContain("header handler boom");
 		});
 	});
 });

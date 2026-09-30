@@ -1,29 +1,27 @@
 import { isDeepStrictEqual } from "node:util";
 import type { ThinkingLevel } from "@candy/agent-core";
 import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model } from "@candy/ai";
-import type { ScrollViewScrollbar, TerminalCapabilities } from "@candy/tui";
+import type { TerminalCapabilities } from "@candy/tui";
 import { join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
-import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import {
+	INTERACTIVE_SETTINGS,
+	type InteractiveSettingId,
+	type InteractiveSettingReadValue,
+} from "./interactive-setting-values.ts";
 import { FileSettingsStorage, InMemorySettingsStorage, type SettingsStorage } from "./settings-storage.ts";
 import {
-	type AnimationIntensity,
-	CACHE_WARMING_MODES,
-	type CacheWarmingMode,
 	type CompactionModelOverride,
 	DEFAULT_COMPACTION_TOKEN_SETTINGS,
-	type DefaultProjectTrust,
-	type FullscreenExitOutput,
-	type MermaidRenderingMode,
 	type PackageSource,
 	type ScopedModelRef,
 	type Settings,
 	type SettingsScope,
 	type SettingValueSource,
 	type ThinkingBudgetsSettings,
-	type TransportSetting,
 	type WarningSettings,
 } from "./settings-types.ts";
 
@@ -291,6 +289,10 @@ export class SettingsManager {
 
 	getSetting<K extends keyof Settings>(field: K): Settings[K] | undefined {
 		return structuredClone(this.settings[field]);
+	}
+
+	read<Id extends InteractiveSettingId>(id: Id): InteractiveSettingReadValue<Id> {
+		return INTERACTIVE_SETTINGS[id].read(this) as InteractiveSettingReadValue<Id>;
 	}
 
 	getSettingSource(field: keyof Settings, nestedPath?: string): SettingValueSource {
@@ -624,22 +626,6 @@ export class SettingsManager {
 		return this.commitSetting("global", "scopedModels", models);
 	}
 
-	getSteeringMode(): "all" | "one-at-a-time" {
-		return this.settings.steeringMode || "one-at-a-time";
-	}
-
-	setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		return this.commitSetting("global", "steeringMode", mode);
-	}
-
-	getFollowUpMode(): "all" | "one-at-a-time" {
-		return this.settings.followUpMode || "one-at-a-time";
-	}
-
-	setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		return this.commitSetting("global", "followUpMode", mode);
-	}
-
 	getThemeSetting(): string | undefined {
 		const value = this.settings.theme;
 		if (typeof value === "string") return value;
@@ -698,22 +684,6 @@ export class SettingsManager {
 
 	removeModelThinkingLevel(provider: string, modelId: string): Promise<void> {
 		return this.commitModelThinkingLevel(provider, modelId, undefined);
-	}
-
-	getTransport(): TransportSetting {
-		return this.settings.transport ?? "auto";
-	}
-
-	setTransport(transport: TransportSetting): Promise<void> {
-		return this.commitSetting("global", "transport", transport);
-	}
-
-	getCompactionEnabled(): boolean {
-		return this.settings.compaction?.enabled ?? true;
-	}
-
-	setCompactionEnabled(enabled: boolean): Promise<void> {
-		return this.commitNestedSetting("global", "compaction", "enabled", enabled);
 	}
 
 	private getCompactionTokenSetting(
@@ -798,7 +768,7 @@ export class SettingsManager {
 		keepRecentTokens: number;
 	} {
 		return {
-			enabled: this.getCompactionEnabled(),
+			enabled: this.read("autocompact"),
 			reserveTokens: this.getCompactionReserveTokens(model),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(model),
 		};
@@ -832,24 +802,10 @@ export class SettingsManager {
 		};
 	}
 
-	getHttpIdleTimeoutMs(): number {
-		return parseTimeoutSetting(this.settings.httpIdleTimeoutMs, "httpIdleTimeoutMs") ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS;
-	}
-
 	setHttpIdleTimeoutMs(timeoutMs: number): Promise<void> {
 		if (!Number.isFinite(timeoutMs) || timeoutMs < 0)
 			throw new Error(`Invalid httpIdleTimeoutMs setting: ${String(timeoutMs)}`);
 		return this.commitSetting("global", "httpIdleTimeoutMs", Math.floor(timeoutMs));
-	}
-
-	/** Read from global settings only because warming costs money. */
-	getCacheWarmingMode(): CacheWarmingMode {
-		const mode = this.globalSettings.cacheWarming;
-		return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : "streaming";
-	}
-
-	setCacheWarmingMode(mode: CacheWarmingMode): Promise<void> {
-		return this.commitSetting("global", "cacheWarming", mode);
 	}
 
 	getProviderRetrySettings(): { timeoutMs?: number; maxRetries?: number; maxRetryDelayMs: number } {
@@ -864,30 +820,6 @@ export class SettingsManager {
 		return parseTimeoutSetting(this.settings.websocketConnectTimeoutMs, "websocketConnectTimeoutMs");
 	}
 
-	getHideThinkingBlock(): boolean {
-		return this.settings.hideThinkingBlock ?? true;
-	}
-
-	getShowCacheMissNotices(): boolean {
-		return this.settings.showCacheMissNotices ?? false;
-	}
-
-	getUiAnimations(): boolean {
-		return this.settings.uiAnimations ?? true;
-	}
-
-	setUiAnimations(enabled: boolean): Promise<void> {
-		return this.commitSetting("global", "uiAnimations", enabled);
-	}
-
-	getAnimationIntensity(): AnimationIntensity {
-		return this.settings.animationIntensity ?? "moderate";
-	}
-
-	setAnimationIntensity(intensity: AnimationIntensity): Promise<void> {
-		return this.commitSetting("global", "animationIntensity", intensity);
-	}
-
 	getExternalEditorCommand(): string {
 		const configuredEditor = this.settings.externalEditor;
 		if (typeof configuredEditor === "string" && configuredEditor.trim() !== "") {
@@ -900,14 +832,6 @@ export class SettingsManager {
 		return process.platform === "win32" ? "notepad" : "nano";
 	}
 
-	setHideThinkingBlock(hide: boolean): Promise<void> {
-		return this.commitSetting("global", "hideThinkingBlock", hide);
-	}
-
-	setShowCacheMissNotices(show: boolean): Promise<void> {
-		return this.commitSetting("global", "showCacheMissNotices", show);
-	}
-
 	getShellPath(): string | undefined {
 		const shellPath = this.settings.shellPath;
 		return shellPath ? normalizePath(shellPath) : shellPath;
@@ -915,23 +839,6 @@ export class SettingsManager {
 
 	setShellPath(path: string | undefined): Promise<void> {
 		return this.commitSetting("global", "shellPath", path);
-	}
-
-	getQuietStartup(): boolean {
-		return this.settings.quietStartup ?? false;
-	}
-
-	setQuietStartup(quiet: boolean): Promise<void> {
-		return this.commitSetting("global", "quietStartup", quiet);
-	}
-
-	getDefaultProjectTrust(): DefaultProjectTrust {
-		const value = this.globalSettings.defaultProjectTrust;
-		return value === "always" || value === "never" ? value : "ask";
-	}
-
-	setDefaultProjectTrust(defaultProjectTrust: DefaultProjectTrust): Promise<void> {
-		return this.commitSetting("global", "defaultProjectTrust", defaultProjectTrust);
 	}
 
 	getShellCommandPrefix(): string | undefined {
@@ -948,22 +855,6 @@ export class SettingsManager {
 
 	setNpmCommand(command: string[] | undefined): Promise<void> {
 		return this.commitSetting("global", "npmCommand", command);
-	}
-
-	getCollapseChangelog(): boolean {
-		return this.settings.collapseChangelog ?? true;
-	}
-
-	setCollapseChangelog(collapse: boolean): Promise<void> {
-		return this.commitSetting("global", "collapseChangelog", collapse);
-	}
-
-	getEnableInstallTelemetry(): boolean {
-		return this.settings.enableInstallTelemetry ?? true;
-	}
-
-	setEnableInstallTelemetry(enabled: boolean): Promise<void> {
-		return this.commitSetting("global", "enableInstallTelemetry", enabled);
 	}
 
 	getPackages(): PackageSource[] {
@@ -1026,14 +917,6 @@ export class SettingsManager {
 		return this.commitSetting("project", "themes", paths);
 	}
 
-	getEnableSkillCommands(): boolean {
-		return this.settings.enableSkillCommands ?? true;
-	}
-
-	setEnableSkillCommands(enabled: boolean): Promise<void> {
-		return this.commitSetting("global", "enableSkillCommands", enabled);
-	}
-
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
 		return this.settings.thinkingBudgets;
 	}
@@ -1048,85 +931,8 @@ export class SettingsManager {
 		};
 	}
 
-	getShowImages(): boolean {
-		return this.settings.terminal?.showImages ?? true;
-	}
-
-	setShowImages(show: boolean): Promise<void> {
-		return this.commitTerminalSetting("showImages", show);
-	}
-
-	getImageWidthCells(): number {
-		const width = this.settings.terminal?.imageWidthCells;
-		if (typeof width !== "number" || !Number.isFinite(width)) {
-			return 60;
-		}
-		return Math.max(1, Math.floor(width));
-	}
-
 	setImageWidthCells(width: number): Promise<void> {
 		return this.commitTerminalSetting("imageWidthCells", Math.max(1, Math.floor(width)));
-	}
-
-	getClearOnShrink(): boolean {
-		// Settings takes precedence, then env var, then default false
-		if (this.settings.terminal?.clearOnShrink !== undefined) {
-			return this.settings.terminal.clearOnShrink;
-		}
-		return process.env.CANDY_CLEAR_ON_SHRINK === "1";
-	}
-
-	setClearOnShrink(enabled: boolean): Promise<void> {
-		return this.commitTerminalSetting("clearOnShrink", enabled);
-	}
-
-	getShowTerminalProgress(): boolean {
-		return this.settings.terminal?.showTerminalProgress ?? false;
-	}
-
-	setShowTerminalProgress(enabled: boolean): Promise<void> {
-		return this.commitTerminalSetting("showTerminalProgress", enabled);
-	}
-
-	getFullscreenExitOutput(): FullscreenExitOutput {
-		return this.settings.fullscreenExitOutput === "resume-hint" ? "resume-hint" : "transcript";
-	}
-
-	setFullscreenExitOutput(output: FullscreenExitOutput): Promise<void> {
-		return this.commitSetting("global", "fullscreenExitOutput", output);
-	}
-
-	getFullscreenScrollbar(): ScrollViewScrollbar {
-		const mode = this.settings.fullscreenScrollbar;
-		return mode === "always" || mode === "hidden" ? mode : "auto";
-	}
-
-	setFullscreenScrollbar(mode: ScrollViewScrollbar): Promise<void> {
-		return this.commitSetting("global", "fullscreenScrollbar", mode);
-	}
-
-	getFullscreenCopyOnSelect(): boolean {
-		return this.settings.fullscreenCopyOnSelect ?? true;
-	}
-
-	setFullscreenCopyOnSelect(enabled: boolean): Promise<void> {
-		return this.commitSetting("global", "fullscreenCopyOnSelect", enabled);
-	}
-
-	getImageAutoResize(): boolean {
-		return this.settings.images?.autoResize ?? true;
-	}
-
-	setImageAutoResize(enabled: boolean): Promise<void> {
-		return this.commitImageSetting("autoResize", enabled);
-	}
-
-	getBlockImages(): boolean {
-		return this.settings.images?.blockImages ?? false;
-	}
-
-	setBlockImages(blocked: boolean): Promise<void> {
-		return this.commitImageSetting("blockImages", blocked);
 	}
 
 	getDefaultTools(): string[] | undefined {
@@ -1138,55 +944,12 @@ export class SettingsManager {
 		return this.commitSetting("global", "defaultTools", tools);
 	}
 
-	getToolPreviewLines(): 5 | 10 | 20 {
-		const lines = this.settings.toolPreviewLines;
-		return lines === 10 || lines === 20 ? lines : 5;
-	}
-
-	setToolPreviewLines(lines: 5 | 10 | 20): Promise<void> {
-		return this.commitSetting("global", "toolPreviewLines", lines);
-	}
-
-	getDoubleEscapeAction(): "fork" | "tree" | "none" {
-		return this.settings.doubleEscapeAction ?? "tree";
-	}
-
-	setDoubleEscapeAction(action: "fork" | "tree" | "none"): Promise<void> {
-		return this.commitSetting("global", "doubleEscapeAction", action);
-	}
-
-	getTreeFilterMode(): "default" | "no-tools" | "user-only" | "labeled-only" | "all" {
-		const mode = this.settings.treeFilterMode;
-		const valid = ["default", "no-tools", "user-only", "labeled-only", "all"];
-		return mode && valid.includes(mode) ? mode : "default";
-	}
-
-	setTreeFilterMode(mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all"): Promise<void> {
-		return this.commitSetting("global", "treeFilterMode", mode);
-	}
-
-	getShowHardwareCursor(): boolean {
-		return this.settings.showHardwareCursor ?? process.env.CANDY_HARDWARE_CURSOR === "1";
-	}
-
-	setShowHardwareCursor(enabled: boolean): Promise<void> {
-		return this.commitSetting("global", "showHardwareCursor", enabled);
-	}
-
 	getEditorPaddingX(): number {
 		return this.settings.editorPaddingX ?? 0;
 	}
 
 	setEditorPaddingX(padding: number): Promise<void> {
 		return this.commitSetting("global", "editorPaddingX", Math.max(0, Math.min(3, Math.floor(padding))));
-	}
-
-	getOutputPad(): 0 | 1 {
-		return this.settings.outputPad === 0 ? 0 : 1;
-	}
-
-	setOutputPad(padding: 0 | 1): Promise<void> {
-		return this.commitSetting("global", "outputPad", padding);
 	}
 
 	getAutocompleteMaxVisible(): number {
@@ -1199,15 +962,6 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
-	}
-
-	getMermaidRenderingMode(): MermaidRenderingMode {
-		const mode = this.settings.markdown?.mermaid;
-		return mode === "off" || mode === "streaming" ? mode : "final";
-	}
-
-	setMermaidRenderingMode(mode: MermaidRenderingMode): Promise<void> {
-		return this.commitNestedSetting("global", "markdown", "mermaid", mode);
 	}
 
 	getWarnings(): WarningSettings {

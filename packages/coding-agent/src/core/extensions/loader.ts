@@ -19,15 +19,11 @@ import { execCommand } from "../exec.ts";
 import { createSyntheticSourceInfo } from "../source-info.ts";
 import { time } from "../timings.ts";
 import type {
-	EntryRenderer,
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
 	ExtensionRuntime,
 	LoadExtensionsResult,
-	MarkdownTransformer,
-	MessageRenderer,
-	ProviderConfig,
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types.ts";
@@ -118,14 +114,8 @@ export class ExtensionModuleCache {
 	}
 }
 
-/**
- * Create a runtime with throwing stubs for action methods.
- * Runner.bindCore() replaces these with real implementations.
- */
+/** Create registration state that the active host binds to session actions. */
 export function createExtensionRuntime(): ExtensionRuntime {
-	const notInitialized = () => {
-		throw new Error("Extension runtime not initialized. Action methods cannot be called during extension loading.");
-	};
 	const state: { staleMessage?: string } = {};
 	const eventBusUnsubscribers = new Set<() => void>();
 	const assertActive = () => {
@@ -133,26 +123,9 @@ export function createExtensionRuntime(): ExtensionRuntime {
 			throw new Error(state.staleMessage);
 		}
 	};
-
 	const runtime: ExtensionRuntime = {
-		sendMessage: notInitialized,
-		sendUserMessage: notInitialized,
-		appendEntry: notInitialized,
-		setSessionName: notInitialized,
-		getSessionName: notInitialized,
-		setLabel: notInitialized,
-		getActiveTools: notInitialized,
-		getAllTools: notInitialized,
-		setActiveTools: notInitialized,
-		// registerTool() is valid during extension load; refresh is only needed post-bind.
-		refreshTools: () => {},
-		getCommands: notInitialized,
-		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
-		getThinkingLevel: notInitialized,
-		setThinkingLevel: notInitialized,
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
-		pendingNativeProviderRegistrations: [],
 		assertActive,
 		invalidate: (message) => {
 			if (state.staleMessage) return;
@@ -173,18 +146,13 @@ export function createExtensionRuntime(): ExtensionRuntime {
 			eventBusUnsubscribers.add(trackedUnsubscribe);
 			return trackedUnsubscribe;
 		},
-		// Pre-bind: queue registrations so bindCore() can flush them once the
-		// model registry is available. bindCore() replaces both with direct calls.
-		registerProvider: (name, config, extensionPath = "<unknown>") => {
-			runtime.pendingProviderRegistrations.push({ name, config, extensionPath });
-		},
-		registerNativeProvider: (provider, extensionPath = "<unknown>") => {
-			runtime.pendingNativeProviderRegistrations.push({ provider, extensionPath });
+		// Providers register during setup and are installed after the model registry binds.
+		registerProvider: (provider, extensionPath = "<unknown>") => {
+			runtime.pendingProviderRegistrations.push({ provider, extensionPath });
 		},
 		unregisterProvider: (name) => {
-			runtime.pendingProviderRegistrations = runtime.pendingProviderRegistrations.filter((r) => r.name !== name);
-			runtime.pendingNativeProviderRegistrations = runtime.pendingNativeProviderRegistrations.filter(
-				(r) => r.provider.id !== name,
+			runtime.pendingProviderRegistrations = runtime.pendingProviderRegistrations.filter(
+				(registration) => registration.provider.id !== name,
 			);
 		},
 	};
@@ -212,6 +180,11 @@ function createExtensionAPI(
 			throw new Error(`Extension "${extension.path}" failed to load and its API is no longer active.`);
 		}
 		runtime.assertActive();
+	};
+	const getActions = () => {
+		assertActive();
+		if (!runtime.actions) throw new Error("Extension actions are unavailable until the host binds the session.");
+		return runtime.actions;
 	};
 	const applyRuntimeChange = (change: () => void) => {
 		if (state === "loading") pendingRuntimeChanges.push(change);
@@ -253,7 +226,7 @@ function createExtensionAPI(
 				definition: tool,
 				sourceInfo: extension.sourceInfo,
 			});
-			runtime.refreshTools();
+			runtime.actions?.refreshTools();
 		},
 
 		registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void {
@@ -296,22 +269,6 @@ function createExtensionAPI(
 			}
 		},
 
-		registerMessageRenderer<T>(customType: string, renderer: MessageRenderer<T>): void {
-			assertActive();
-			extension.messageRenderers.set(customType, renderer as MessageRenderer);
-		},
-
-		registerMarkdownTransformer(transformer: MarkdownTransformer): void {
-			assertActive();
-			extension.markdownTransformer = transformer;
-		},
-
-		registerEntryRenderer<T>(customType: string, renderer: EntryRenderer<T>): void {
-			assertActive();
-			extension.entryRenderers ??= new Map();
-			extension.entryRenderers.set(customType, renderer as EntryRenderer);
-		},
-
 		// Flag access - checks extension registered it, reads from runtime
 		getFlag(name: string): boolean | string | undefined {
 			assertActive();
@@ -322,32 +279,32 @@ function createExtensionAPI(
 		// Action methods - delegate to shared runtime
 		sendMessage(message, options): void {
 			assertActive();
-			runtime.sendMessage(message, options);
+			getActions().sendMessage(message, options);
 		},
 
 		sendUserMessage(content, options): void {
 			assertActive();
-			runtime.sendUserMessage(content, options);
+			getActions().sendUserMessage(content, options);
 		},
 
 		appendEntry(customType: string, data?: unknown): void {
 			assertActive();
-			runtime.appendEntry(customType, data);
+			getActions().appendEntry(customType, data);
 		},
 
 		setSessionName(name: string): void {
 			assertActive();
-			runtime.setSessionName(name);
+			getActions().setSessionName(name);
 		},
 
 		getSessionName(): string | undefined {
 			assertActive();
-			return runtime.getSessionName();
+			return getActions().getSessionName();
 		},
 
 		setLabel(entryId: string, label: string | undefined): void {
 			assertActive();
-			runtime.setLabel(entryId, label);
+			getActions().setLabel(entryId, label);
 		},
 
 		exec(command: string, args: string[], options?: ExecOptions) {
@@ -357,47 +314,42 @@ function createExtensionAPI(
 
 		getActiveTools(): string[] {
 			assertActive();
-			return runtime.getActiveTools();
+			return getActions().getActiveTools();
 		},
 
 		getAllTools() {
 			assertActive();
-			return runtime.getAllTools();
+			return getActions().getAllTools();
 		},
 
 		setActiveTools(toolNames: string[]): void {
 			assertActive();
-			runtime.setActiveTools(toolNames);
+			getActions().setActiveTools(toolNames);
 		},
 
 		getCommands() {
 			assertActive();
-			return runtime.getCommands();
+			return getActions().getCommands();
 		},
 
 		setModel(model) {
 			assertActive();
-			return runtime.setModel(model);
+			return getActions().setModel(model);
 		},
 
 		getThinkingLevel() {
 			assertActive();
-			return runtime.getThinkingLevel();
+			return getActions().getThinkingLevel();
 		},
 
 		setThinkingLevel(level) {
 			assertActive();
-			runtime.setThinkingLevel(level);
+			getActions().setThinkingLevel(level);
 		},
 
-		registerProvider(providerOrName: Provider | string, config?: ProviderConfig) {
+		registerProvider(provider: Provider) {
 			assertActive();
-			if (typeof providerOrName === "string") {
-				if (!config) throw new Error("Provider config is required when registering by name");
-				applyRuntimeChange(() => runtime.registerProvider(providerOrName, config, extension.path));
-				return;
-			}
-			applyRuntimeChange(() => runtime.registerNativeProvider(providerOrName, extension.path));
+			applyRuntimeChange(() => runtime.registerProvider(provider, extension.path));
 		},
 
 		unregisterProvider(name: string) {
@@ -504,8 +456,6 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		sourceInfo: createSyntheticSourceInfo(extensionPath, { source, baseDir }),
 		handlers: new Map(),
 		tools: new Map(),
-		messageRenderers: new Map(),
-		entryRenderers: new Map(),
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),

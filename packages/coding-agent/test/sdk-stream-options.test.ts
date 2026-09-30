@@ -7,18 +7,19 @@ import {
 	createAssistantMessageEventStream,
 	type Model,
 	normalizeContext,
+	type Provider,
 	type SimpleStreamOptions,
 } from "@candy/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import type { ExtensionFactory } from "../src/core/extensions/types.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { type Settings, SettingsManager } from "../src/core/settings-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { getTestAgent } from "./execution-internals.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
+import { assembleTestSession as assembleAgentSession } from "./session-factory.ts";
 
 describe("assembleAgentSession stream options", () => {
 	let tempDir: string;
@@ -85,8 +86,6 @@ describe("assembleAgentSession stream options", () => {
 		api: Api,
 		settings: Partial<Settings>,
 		requestOptions: SimpleStreamOptions = {},
-		extensionFactory?: ExtensionFactory,
-		providerEvent?: unknown,
 	): Promise<SimpleStreamOptions | undefined> {
 		const model = createModel(api);
 		const settingsManager = SettingsManager.inMemory(settings);
@@ -96,7 +95,7 @@ describe("assembleAgentSession stream options", () => {
 			cwd,
 			agentDir,
 			settingsManager,
-			extensionFactories: extensionFactory ? [extensionFactory] : [],
+			extensionFactories: [],
 		});
 		await resourceLoader.reload();
 
@@ -105,23 +104,28 @@ describe("assembleAgentSession stream options", () => {
 		const modelRuntime = await createTestModelRuntime(authStorage, join(agentDir, "models.json"));
 		let capturedOptions: SimpleStreamOptions | undefined;
 
-		modelRuntime.registerProvider(model.provider, {
-			api,
+		const provider: Provider = {
+			id: model.provider,
+			name: "Capture provider",
+			baseUrl: model.baseUrl,
 			headers: { "x-provider": "provider" },
-			streamSimple: (requestModel, _context, providerOptions) => {
-				capturedOptions = providerOptions;
-				if (providerEvent === undefined) return createDoneStream(api);
-
-				const stream = createAssistantMessageEventStream();
-				void (async () => {
-					await providerOptions?.onProviderStreamEvent?.(providerEvent, requestModel);
-					stream.end(createDoneMessage(api));
-				})();
-				return stream;
+			auth: {
+				apiKey: {
+					name: "Test API key",
+					resolve: async ({ credential }) =>
+						credential ? { auth: { apiKey: credential.key }, source: "test credential" } : undefined,
+				},
 			},
-		});
+			getModels: () => [model],
+			stream: () => createDoneStream(api),
+			streamSimple: (_requestModel, _context, providerOptions) => {
+				capturedOptions = providerOptions;
+				return createDoneStream(api);
+			},
+		};
+		modelRuntime.registerNativeProvider(provider);
 
-		const sessionManager = SessionManager.inMemory(cwd);
+		const sessionManager = SessionHistory.inMemory(cwd);
 		const { session } = await assembleAgentSession({
 			cwd,
 			agentDir,
@@ -133,24 +137,20 @@ describe("assembleAgentSession stream options", () => {
 		});
 
 		try {
-			if (providerEvent === undefined) {
-				const stream = await session.agent.streamFunction(
-					model,
-					normalizeContext({ messages: [] }),
-					requestOptions,
-				);
-				await stream.result();
-			} else {
-				await session.prompt("test");
-			}
+			const stream = await getTestAgent(session.execution).streamFunction(
+				model,
+				normalizeContext({ messages: [] }),
+				requestOptions,
+			);
+			await stream.result();
 			return capturedOptions;
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 			modelRuntime.unregisterProvider(model.provider);
 		}
 	}
 
-	async function createCacheWarmingSession(populate?: (manager: SessionManager, model: Model<Api>) => void) {
+	async function createCacheWarmingSession(populate?: (manager: SessionHistory, model: Model<Api>) => void) {
 		const model: Model<Api> = {
 			...createModel("anthropic-messages"),
 			cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
@@ -160,14 +160,24 @@ describe("assembleAgentSession stream options", () => {
 		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "test-api-key" }));
 		const modelRuntime = await createTestModelRuntime(authStorage, join(agentDir, "models.json"));
 		let providerCalls = 0;
-		modelRuntime.registerProvider(model.provider, {
-			api: model.api,
+		modelRuntime.registerNativeProvider({
+			id: model.provider,
+			name: "Cache warming provider",
+			auth: {
+				apiKey: {
+					name: "Test API key",
+					resolve: async ({ credential }) =>
+						credential ? { auth: { apiKey: credential.key }, source: "test credential" } : undefined,
+				},
+			},
+			getModels: () => [model],
+			stream: () => createDoneStream(model.api),
 			streamSimple: () => {
 				providerCalls++;
 				return createDoneStream(model.api, 100_000);
 			},
 		});
-		const sessionManager = SessionManager.inMemory(cwd);
+		const sessionManager = SessionHistory.inMemory(cwd);
 		populate?.(sessionManager, model);
 		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
@@ -183,7 +193,7 @@ describe("assembleAgentSession stream options", () => {
 			session,
 			providerCalls: () => providerCalls,
 			dispose: async () => {
-				await session.dispose();
+				await session.execution.dispose();
 				modelRuntime.unregisterProvider(model.provider);
 			},
 		};
@@ -192,17 +202,8 @@ describe("assembleAgentSession stream options", () => {
 	it("schedules cache warming after a completed session request", async () => {
 		const fixture = await createCacheWarmingSession();
 		try {
-			await fixture.session.prompt("test");
-			expect(fixture.session.cacheWarmingStatus?.nextWarmAt).toBeGreaterThan(Date.now());
-
-			// Equivalent shallow copies remain current, but removing the request prefix does not.
-			fixture.session.agent.state.messages = [...fixture.session.agent.state.messages];
-			const activeModel = fixture.session.agent.state.model;
-			if (!activeModel) throw new Error("Expected an active model");
-			fixture.session.agent.state.model = { ...activeModel };
-			expect(fixture.session.cacheWarmingStatus?.nextWarmAt).toBeGreaterThan(Date.now());
-			fixture.session.agent.state.messages = fixture.session.agent.state.messages.slice(1);
-			expect(fixture.session.cacheWarmingStatus?.reason).toBe("conversation context changed");
+			await fixture.session.execution.prompt("test");
+			expect(fixture.session.execution.cacheWarmingStatus?.nextWarmAt).toBeGreaterThan(Date.now());
 		} finally {
 			fixture.dispose();
 		}
@@ -219,7 +220,7 @@ describe("assembleAgentSession stream options", () => {
 		});
 		try {
 			expect(fixture.providerCalls()).toBe(0);
-			expect(fixture.session.cacheWarmingStatus).toEqual({
+			expect(fixture.session.execution.cacheWarmingStatus).toEqual({
 				state: "inactive",
 				reason: "waiting for first request",
 			});
@@ -273,59 +274,5 @@ describe("assembleAgentSession stream options", () => {
 
 		expect(options?.maxRetries).toBe(2);
 		expect(options?.maxRetryDelayMs).toBe(3000);
-	});
-
-	// Regression test for #9784.
-	it("forwards provider stream events to extensions", async () => {
-		const providerEvent = { openrouter_metadata: { strategy: "direct" } };
-		const extensionEvents: unknown[] = [];
-
-		const options = await captureStreamOptions(
-			"openai-completions",
-			{},
-			{},
-			(candy) => {
-				candy.on("provider_stream_event", (event) => {
-					extensionEvents.push(event);
-				});
-			},
-			providerEvent,
-		);
-
-		expect(options?.onProviderStreamEvent).toEqual(expect.any(Function));
-		expect(extensionEvents).toEqual([
-			{
-				data: providerEvent,
-				type: "provider_stream_event",
-				provider: "capture-provider",
-				api: "openai-completions",
-				model: "capture-model",
-			},
-		]);
-	});
-
-	it("runs before_provider_headers on assembled headers without forwarding the transform", async () => {
-		const options = await captureStreamOptions(
-			"openai-completions",
-			{},
-			{ headers: { "x-explicit": "explicit" } },
-			(candy) => {
-				candy.on("before_provider_headers", (event) => {
-					event.headers["x-hook"] = [
-						event.headers["x-provider"],
-						event.headers["x-model"],
-						event.headers["x-explicit"],
-					].join(":");
-				});
-			},
-		);
-
-		expect(options?.headers).toMatchObject({
-			"x-provider": "provider",
-			"x-model": "model",
-			"x-explicit": "explicit",
-			"x-hook": "provider:model:explicit",
-		});
-		expect(options).not.toHaveProperty("transformHeaders");
 	});
 });

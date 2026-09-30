@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAgentSessionRuntime, SessionManager, SettingsManager } from "../../src/index.ts";
+import { createAgentSessionRuntime, SessionHistory, SettingsManager } from "../../src/index.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 describe("tool allowlists and built-in suppression", () => {
@@ -29,45 +29,45 @@ describe("tool allowlists and built-in suppression", () => {
 			],
 		});
 		harnesses.push(harness);
-		await harness.session.bindExtensions({});
+		await harness.session.execution.bindExtensions({});
 		return harness;
 	}
 
 	it("#2835 enables only explicitly allowed built-in and extension tools", async () => {
 		const { session } = await createSession({ tools: ["read", "dynamic_tool"] });
 		expect(
-			session
+			session.execution
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
 		).toEqual(["dynamic_tool", "read"]);
-		expect(session.getActiveToolNames().sort()).toEqual(["dynamic_tool", "read"]);
-		expect(session.systemPrompt).toContain("- read: Read file contents");
-		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
-		expect(session.systemPrompt).not.toContain("- bash:");
-		expect(session.systemPrompt).not.toContain("- edit:");
+		expect(session.execution.getActiveToolNames().sort()).toEqual(["dynamic_tool", "read"]);
+		expect(session.execution.systemPrompt).toContain("- read: Read file contents");
+		expect(session.execution.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		expect(session.execution.systemPrompt).not.toContain("- bash:");
+		expect(session.execution.systemPrompt).not.toContain("- edit:");
 	});
 
 	it.each([{ tools: [] }, { noTools: "all" as const }])("disables every tool with %j", async (options) => {
 		const { session } = await createSession(options);
-		expect(session.getAllTools()).toEqual([]);
-		expect(session.getActiveToolNames()).toEqual([]);
-		expect(session.systemPrompt).toContain("<tools>\n(none)\n");
-		expect(session.systemPrompt).not.toContain("dynamic_tool");
+		expect(session.execution.getAllTools()).toEqual([]);
+		expect(session.execution.getActiveToolNames()).toEqual([]);
+		expect(session.execution.systemPrompt).toContain("<tools>\n(none)\n");
+		expect(session.execution.systemPrompt).not.toContain("dynamic_tool");
 	});
 
 	it("#3592 retains extension tools when built-in defaults are disabled", async () => {
 		const { session } = await createSession({ noTools: "builtin" });
-		expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);
+		expect(session.execution.getActiveToolNames()).toEqual(["dynamic_tool"]);
 		expect(
-			session
+			session.execution
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
 		).toEqual(["bash", "dynamic_tool", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
-		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
-		expect(session.systemPrompt).not.toContain("- read:");
-		expect(session.systemPrompt).not.toContain("- bash:");
+		expect(session.execution.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		expect(session.execution.systemPrompt).not.toContain("- read:");
+		expect(session.execution.systemPrompt).not.toContain("- bash:");
 	});
 
 	it("applies suppression through the public SDK runtime constructor", async () => {
@@ -76,15 +76,15 @@ describe("tool allowlists and built-in suppression", () => {
 		const runtime = await createAgentSessionRuntime({
 			cwd: harness.tempDir,
 			agentDir: harness.tempDir,
-			modelRuntime: harness.session.modelRuntime,
+			modelRuntime: harness.session.execution.modelRuntime,
 			model: harness.getModel(),
 			settingsManager: SettingsManager.inMemory(),
-			sessionManager: SessionManager.inMemory(harness.tempDir),
+			sessionManager: SessionHistory.inMemory(harness.tempDir),
 			noTools: "builtin",
 		});
 		try {
-			expect(runtime.session.getActiveToolNames()).toEqual([]);
-			expect(runtime.session.systemPrompt).toContain("<tools>\n(none)\n");
+			expect(runtime.session.resources.getActiveTools()).toEqual([]);
+			expect(runtime.session.execution.systemPrompt).toContain("<tools>\n(none)\n");
 		} finally {
 			await runtime.dispose();
 		}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type FileEntry, migrateSessionEntries, SessionManager } from "../../src/core/session-manager.ts";
+import { type FileEntry, migrateSessionEntries, SessionHistory } from "../../src/core/session-history.ts";
 
 describe("migrateSessionEntries", () => {
 	it("should add id/parentId to v1 entries", () => {
@@ -125,7 +125,7 @@ describe("migrateSessionEntries", () => {
 			},
 		] as unknown as FileEntry[];
 
-		const session = SessionManager.inMemory("/tmp", undefined, entries);
+		const session = SessionHistory.inMemory("/tmp", undefined, entries);
 
 		expect((session.getEntry("legacy01") as any).message.content).toEqual([]);
 		expect((session.getEntry("legacy02") as any).message.content).toEqual([]);
@@ -144,7 +144,7 @@ describe("migrateSessionEntries", () => {
 			},
 		] as unknown as FileEntry[];
 
-		expect(() => SessionManager.inMemory("/tmp", undefined, entries)).toThrow(
+		expect(() => SessionHistory.inMemory("/tmp", undefined, entries)).toThrow(
 			'Session message badmsg01 has unsupported message role "alien"',
 		);
 		entries[1] = {
@@ -154,7 +154,7 @@ describe("migrateSessionEntries", () => {
 			timestamp: "2025-01-01T00:00:01Z",
 			message: { role: "user", content: [{ type: "unknown" }], timestamp: 1 },
 		} as unknown as FileEntry;
-		expect(() => SessionManager.inMemory("/tmp", undefined, entries)).toThrow(
+		expect(() => SessionHistory.inMemory("/tmp", undefined, entries)).toThrow(
 			"Session message badmsg02 (user) has an invalid unknown content block at index 0",
 		);
 	});
@@ -172,7 +172,7 @@ describe("migrateSessionEntries", () => {
 			},
 		] as unknown as FileEntry[];
 
-		expect(() => SessionManager.inMemory("/tmp", undefined, entries)).toThrow(
+		expect(() => SessionHistory.inMemory("/tmp", undefined, entries)).toThrow(
 			"Context edit edit0001 refers to missing target missing1",
 		);
 	});
@@ -189,7 +189,7 @@ describe("migrateSessionEntries", () => {
 			},
 		] as unknown as FileEntry[];
 
-		expect(() => SessionManager.inMemory("/tmp", undefined, entries)).toThrow(
+		expect(() => SessionHistory.inMemory("/tmp", undefined, entries)).toThrow(
 			"Session entry orphan01 refers to missing parent missing01",
 		);
 	});

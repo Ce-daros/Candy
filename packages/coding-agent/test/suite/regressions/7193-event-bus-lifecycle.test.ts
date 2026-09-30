@@ -47,7 +47,7 @@ describe("issue #7193 extension event-bus lifecycle", () => {
 		};
 		const harness = await createHarness({ resourceLoader });
 		harnesses.push(harness);
-		await harness.session.bindExtensions({ shutdownHandler: () => {} });
+		await harness.session.execution.bindExtensions({ shutdownHandler: () => {} });
 
 		const emit = async () => {
 			const extensionBefore = extensionCalls;
@@ -58,13 +58,13 @@ describe("issue #7193 extension event-bus lifecycle", () => {
 		};
 
 		expect(await emit()).toEqual({ extension: 1, host: 1 });
-		await harness.session.reload();
+		await harness.session.execution.reload();
 		expect(() => firstApi?.getCommands()).toThrow("stale after session replacement or reload");
 		expect(await emit()).toEqual({ extension: 1, host: 1 });
-		await harness.session.reload();
+		await harness.session.execution.reload();
 		expect(await emit()).toEqual({ extension: 1, host: 1 });
 
-		await harness.session.dispose();
+		await harness.session.execution.dispose();
 		expect(await emit()).toEqual({ extension: 0, host: 1 });
 	});
 });

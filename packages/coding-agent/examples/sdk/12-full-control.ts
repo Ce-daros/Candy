@@ -9,7 +9,7 @@ import {
 	createExtensionRuntime,
 	ModelRuntime,
 	type ResourceLoader,
-	SessionManager,
+	SessionHistory,
 	SettingsManager,
 } from "@candy/coding-agent";
 
@@ -57,19 +57,19 @@ const sessionRuntime = await createAgentSessionRuntime({
 	modelRuntime,
 	resourceLoaderFactory: () => createResourceLoader(),
 	tools: ["read", "bash"],
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	settingsManager,
 });
 const session = sessionRuntime.session;
 
 try {
-	session.subscribe((event) => {
+	session.execution.subscribe((event) => {
 		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 			process.stdout.write(event.assistantMessageEvent.delta);
 		}
 	});
 
-	await session.prompt("List files in the current directory.");
+	await session.execution.prompt("List files in the current directory.");
 	console.log();
 } finally {
 	await sessionRuntime.dispose();

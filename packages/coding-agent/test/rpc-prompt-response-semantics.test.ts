@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@candy/agent-core";
 import type { AssistantMessage, AssistantMessageEvent, Model } from "@candy/ai";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { EventStream } from "@candy/ai/utils/event-stream";
@@ -11,7 +10,8 @@ import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { LoadExtensionsResult } from "../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../src/core/prompt-templates.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import type { SessionExecutionConfig } from "../src/core/session-execution.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
@@ -31,8 +31,6 @@ vi.mock("../src/core/output-guard.js", () => ({
 		rpcIo.outputLines.push(line);
 	},
 }));
-
-vi.mock("../src/modes/interactive/theme/theme.js", () => ({ theme: {} }));
 
 vi.mock("../src/modes/rpc/jsonl.js", () => ({
 	attachJsonlLineReader: vi.fn((_stream: NodeJS.ReadableStream, onLine: (line: string) => void) => {
@@ -112,11 +110,11 @@ async function createRuntimeHost(options: {
 		throw new Error("Test model not found");
 	}
 
-	const agent = new Agent({
+	const agentOptions: SessionExecutionConfig["agentOptions"] = {
 		getApiKey: () => "test-key",
 		initialState: {
 			model,
-			systemPrompt: "Test",
+
 			tools: [],
 		},
 		streamFn: (_model, _context, _options) => {
@@ -129,9 +127,9 @@ async function createRuntimeHost(options: {
 			});
 			return stream;
 		},
-	});
+	};
 
-	const sessionManager = SessionManager.inMemory();
+	const sessionManager = SessionHistory.inMemory();
 	const settingsManager = SettingsManager.create(tempDir, tempDir);
 	const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 	const modelRuntime = await createInMemoryModelRuntime(authStorage);
@@ -140,7 +138,7 @@ async function createRuntimeHost(options: {
 	}
 
 	const session = new AgentSession({
-		agent,
+		agentOptions,
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
@@ -153,6 +151,9 @@ async function createRuntimeHost(options: {
 
 	const runtimeHost = {
 		session,
+		settings: settingsManager,
+		models: modelRuntime,
+		resources: session.resources,
 		newSession: vi.fn(async () => ({ cancelled: true })),
 		switchSession: vi.fn(async () => ({ cancelled: true })),
 		fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),
@@ -165,11 +166,11 @@ async function createRuntimeHost(options: {
 		runtimeHost,
 		cleanup: async () => {
 			try {
-				await session.abort();
+				await session.execution.abort();
 			} catch {
 				// ignore test cleanup failures
 			}
-			await session.dispose();
+			await session.execution.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true });
 			}
@@ -574,7 +575,7 @@ describe("RPC prompt response semantics", () => {
 
 	it("commits only catalog settings, emits the commit event, and clears one nested value", async () => {
 		const { lineHandler, cleanup, runtimeHost } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
-		const settings = runtimeHost.session.settingsManager;
+		const settings = runtimeHost.settings;
 
 		try {
 			await settings.commitSetting("global", "terminal", { images: "kitty" });
@@ -703,7 +704,7 @@ describe("RPC prompt response semantics", () => {
 			await vi.waitFor(() =>
 				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "active-get")).toMatchObject({
 					success: true,
-					data: { names: runtimeHost.session.getActiveToolNames() },
+					data: { names: runtimeHost.session.execution.getActiveToolNames() },
 				}),
 			);
 			lineHandler(JSON.stringify({ id: "active-set", type: "active_tools", action: "set", names: [] }));

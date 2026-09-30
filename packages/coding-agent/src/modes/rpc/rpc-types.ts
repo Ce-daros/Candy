@@ -15,7 +15,7 @@ import type { InteractiveSettingId } from "../../core/interactive-setting-values
 import type { ResolvedPaths } from "../../core/package-manager.ts";
 import type { ResourceConfigurationItem, ResourceType } from "../../core/resource-configuration.ts";
 import type { ResourceOperations } from "../../core/resource-operations.ts";
-import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { SessionEntry, SessionTreeNode } from "../../core/session-history.ts";
 import type { Settings, SettingsScope } from "../../core/settings-manager.ts";
 
 // ============================================================================
@@ -343,10 +343,7 @@ export type RpcExtensionUIRequest =
 			method: "setWidget";
 			widgetKey: string;
 			widgetLines: string[] | undefined;
-			widgetPlacement?: "aboveEditor" | "belowEditor";
-	  }
-	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
-	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
+	  };
 
 // ============================================================================
 // Extension UI Commands (stdin)

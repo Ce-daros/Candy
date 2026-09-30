@@ -277,7 +277,7 @@ describe("SettingsManager", () => {
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getDefaultProjectTrust()).toBe("always");
+			expect(manager.read("default-project-trust")).toBe("always");
 		});
 
 		it("should default invalid project trust settings to ask", () => {
@@ -285,7 +285,7 @@ describe("SettingsManager", () => {
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getDefaultProjectTrust()).toBe("ask");
+			expect(manager.read("default-project-trust")).toBe("ask");
 		});
 	});
 
@@ -371,7 +371,7 @@ describe("SettingsManager", () => {
 	describe("httpIdleTimeoutMs", () => {
 		it("should default to 5 minutes", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getHttpIdleTimeoutMs()).toBe(DEFAULT_HTTP_IDLE_TIMEOUT_MS);
+			expect(manager.read("http-idle-timeout")).toBe(DEFAULT_HTTP_IDLE_TIMEOUT_MS);
 		});
 
 		it("should use merged global and project settings", () => {
@@ -380,37 +380,37 @@ describe("SettingsManager", () => {
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getHttpIdleTimeoutMs()).toBe(0);
+			expect(manager.read("http-idle-timeout")).toBe(0);
 		});
 
 		it("should reject invalid timeout values", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ httpIdleTimeoutMs: -1 }));
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(() => manager.getHttpIdleTimeoutMs()).toThrow("Invalid httpIdleTimeoutMs setting");
+			expect(() => manager.read("http-idle-timeout")).toThrow("Invalid httpIdleTimeoutMs setting");
 		});
 	});
 
 	describe("cacheWarming", () => {
 		it("defaults to streaming and ignores project settings", () => {
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("streaming");
+			expect(SettingsManager.create(projectDir, agentDir).read("cache-warming-mode")).toBe("streaming");
 
 			writeFileSync(join(projectDir, ".candy", "settings.json"), JSON.stringify({ cacheWarming: "idle" }));
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("streaming");
+			expect(SettingsManager.create(projectDir, agentDir).read("cache-warming-mode")).toBe("streaming");
 
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "idle" }));
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("idle");
+			expect(SettingsManager.create(projectDir, agentDir).read("cache-warming-mode")).toBe("idle");
 
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ cacheWarming: "bogus" }));
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("streaming");
+			expect(SettingsManager.create(projectDir, agentDir).read("cache-warming-mode")).toBe("streaming");
 		});
 
 		it("persists the mode globally", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			await manager.setCacheWarmingMode("off");
+			await manager.commitSetting("global", "cacheWarming", "off");
 			await manager.flush();
 
-			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("off");
+			expect(SettingsManager.create(projectDir, agentDir).read("cache-warming-mode")).toBe("off");
 			expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"))).toEqual({ cacheWarming: "off" });
 		});
 	});
@@ -460,13 +460,13 @@ describe("SettingsManager", () => {
 
 	it("validates and persists fullscreen settings", async () => {
 		const manager = SettingsManager.create(projectDir, agentDir);
-		expect(manager.getFullscreenExitOutput()).toBe("transcript");
-		expect(manager.getFullscreenScrollbar()).toBe("auto");
-		expect(manager.getFullscreenCopyOnSelect()).toBe(true);
+		expect(manager.read("fullscreen-exit-output")).toBe("transcript");
+		expect(manager.read("fullscreen-scrollbar")).toBe("auto");
+		expect(manager.read("fullscreen-copy-on-select")).toBe(true);
 
-		manager.setFullscreenExitOutput("resume-hint");
-		await manager.setFullscreenScrollbar("hidden");
-		manager.setFullscreenCopyOnSelect(false);
+		manager.commitSetting("global", "fullscreenExitOutput", "resume-hint");
+		await manager.commitSetting("global", "fullscreenScrollbar", "hidden");
+		manager.commitSetting("global", "fullscreenCopyOnSelect", false);
 		await manager.flush();
 		const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
 		expect(savedSettings.fullscreenExitOutput).toBe("resume-hint");
@@ -478,21 +478,21 @@ describe("SettingsManager", () => {
 			JSON.stringify({ fullscreenExitOutput: "nothing", fullscreenScrollbar: "sometimes" }),
 		);
 		const reloadedManager = SettingsManager.create(projectDir, agentDir);
-		expect(reloadedManager.getFullscreenExitOutput()).toBe("transcript");
-		expect(reloadedManager.getFullscreenScrollbar()).toBe("auto");
-		expect(reloadedManager.getFullscreenCopyOnSelect()).toBe(true);
+		expect(reloadedManager.read("fullscreen-exit-output")).toBe("transcript");
+		expect(reloadedManager.read("fullscreen-scrollbar")).toBe("auto");
+		expect(reloadedManager.read("fullscreen-copy-on-select")).toBe(true);
 	});
 
 	describe("outputPad", () => {
 		it("should default to 1 and persist binary values", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getOutputPad()).toBe(1);
+			expect(manager.read("output-padding")).toBe(1);
 
-			manager.setOutputPad(0);
+			manager.commitSetting("global", "outputPad", 0);
 			await manager.flush();
 
-			expect(manager.getOutputPad()).toBe(0);
+			expect(manager.read("output-padding")).toBe(0);
 			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
 			expect(savedSettings.outputPad).toBe(0);
 		});
@@ -502,7 +502,7 @@ describe("SettingsManager", () => {
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getOutputPad()).toBe(1);
+			expect(manager.read("output-padding")).toBe(1);
 		});
 	});
 
@@ -510,12 +510,12 @@ describe("SettingsManager", () => {
 		it("defaults to final rendering and persists rendering modes", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getMermaidRenderingMode()).toBe("final");
+			expect(manager.read("mermaid-rendering")).toBe("final");
 
-			manager.setMermaidRenderingMode("streaming");
+			manager.commitNestedSetting("global", "markdown", "mermaid", "streaming");
 			await manager.flush();
 
-			expect(manager.getMermaidRenderingMode()).toBe("streaming");
+			expect(manager.read("mermaid-rendering")).toBe("streaming");
 			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
 			expect(savedSettings.markdown.mermaid).toBe("streaming");
 		});
@@ -523,30 +523,30 @@ describe("SettingsManager", () => {
 		it("uses final rendering for unsupported values", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ markdown: { mermaid: "sometimes" } }));
 
-			expect(SettingsManager.create(projectDir, agentDir).getMermaidRenderingMode()).toBe("final");
+			expect(SettingsManager.create(projectDir, agentDir).read("mermaid-rendering")).toBe("final");
 		});
 	});
 
 	describe("redesign defaults", () => {
 		it("collapses thinking and changelog by default while preserving saved choices", () => {
-			expect(SettingsManager.inMemory().getHideThinkingBlock()).toBe(true);
-			expect(SettingsManager.inMemory().getCollapseChangelog()).toBe(true);
+			expect(SettingsManager.inMemory().read("hide-thinking")).toBe(true);
+			expect(SettingsManager.inMemory().read("collapse-changelog")).toBe(true);
 			expect(
-				SettingsManager.inMemory({ hideThinkingBlock: false, collapseChangelog: false }).getHideThinkingBlock(),
+				SettingsManager.inMemory({ hideThinkingBlock: false, collapseChangelog: false }).read("hide-thinking"),
 			).toBe(false);
 			expect(
-				SettingsManager.inMemory({ hideThinkingBlock: false, collapseChangelog: false }).getCollapseChangelog(),
+				SettingsManager.inMemory({ hideThinkingBlock: false, collapseChangelog: false }).read("collapse-changelog"),
 			).toBe(false);
 		});
 
 		it("defaults tool previews to five rows and persists the selected limit", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getToolPreviewLines()).toBe(5);
+			expect(manager.read("tool-preview-lines")).toBe(5);
 
-			await manager.setToolPreviewLines(20);
+			await manager.commitSetting("global", "toolPreviewLines", 20);
 			await manager.flush();
 
-			expect(SettingsManager.create(projectDir, agentDir).getToolPreviewLines()).toBe(20);
+			expect(SettingsManager.create(projectDir, agentDir).read("tool-preview-lines")).toBe(20);
 			expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8")).toolPreviewLines).toBe(20);
 		});
 	});

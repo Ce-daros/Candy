@@ -6,7 +6,7 @@ export function createSessionCommandActions(
 	presentation: Partial<ExtensionCommandContextActions> = {},
 ): ExtensionCommandContextActions {
 	return {
-		waitForIdle: () => runtime.session.waitForIdle(),
+		waitForIdle: () => runtime.session.execution.waitForIdle(),
 		newSession: (options) => runtime.newSession(options),
 		fork: async (entryId, options) => {
 			const result = await runtime.fork(entryId, options);
@@ -14,7 +14,7 @@ export function createSessionCommandActions(
 		},
 		clone: (options) => runtime.clone(options),
 		navigateTree: async (targetId, options) => {
-			const result = await runtime.session.navigateTree(targetId, options);
+			const result = await runtime.session.execution.navigateTree(targetId, options);
 			return { cancelled: result.cancelled, editorText: result.editorText };
 		},
 		switchSession: (path, options) => runtime.switchSession(path, options),

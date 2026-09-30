@@ -41,13 +41,13 @@ describe("#5998 blocked tool termination", () => {
 			fauxAssistantMessage("should not run"),
 		]);
 
-		await harness.session.prompt("hi");
+		await harness.session.execution.prompt("hi");
 
 		expect(harness.getPendingResponseCount()).toBe(1);
 		expect(getAssistantTexts(harness)).not.toContain("should not run");
 		expect(harness.eventsOfType("tool_execution_end")[0]?.result).toHaveProperty("terminate", true);
 		expect(
-			harness.session.messages.find((message) => message.role === "toolResult" && message.isError),
+			harness.session.execution.messages.find((message) => message.role === "toolResult" && message.isError),
 		).toBeDefined();
 	});
 });

@@ -1,6 +1,4 @@
 import {
-	createInitialSystemMessage,
-	getCurrentSystemMessage,
 	getCurrentSystemPrompt,
 	type ImageContent,
 	type Message,
@@ -9,8 +7,8 @@ import {
 	type TextContent,
 	type ThinkingBudgets,
 	type Transport,
-	toToolDeclaration,
 } from "@candy/ai";
+import type { AgentInputs } from "./agent-inputs.ts";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import type {
 	AfterToolCallContext,
@@ -28,7 +26,6 @@ import type {
 	FinishTurn,
 	PrepareNextTurnContext,
 	PrepareRequest,
-	QueueMode,
 	StreamFn,
 	ToolExecutionMode,
 } from "./types.ts";
@@ -43,29 +40,6 @@ function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
 			message.role === "assistant" ||
 			message.role === "toolResult",
 	);
-}
-
-export interface QueuedAgentInput {
-	readonly text: string;
-	readonly images?: readonly ImageContent[];
-}
-
-function queuedInputFromMessage(message: AgentMessage): QueuedAgentInput {
-	if (message.role !== "user") return { text: "" };
-	if (typeof message.content === "string") return { text: message.content };
-	const text = message.content
-		.filter((part) => part.type === "text")
-		.map((part) => part.text)
-		.join("\n");
-	const images = message.content.filter((part): part is ImageContent => part.type === "image");
-	return { text, ...(images.length > 0 && { images }) };
-}
-
-function cloneQueuedInput(input: QueuedAgentInput): QueuedAgentInput {
-	return {
-		text: input.text,
-		...(input.images !== undefined && { images: input.images.map((image) => ({ ...image })) }),
-	};
 }
 
 const EMPTY_USAGE = {
@@ -84,20 +58,14 @@ type MutableAgentState = Omit<AgentState, "isStreaming" | "streamingMessage" | "
 	errorMessage?: string;
 };
 
-/** Initial state for {@link Agent}. `systemPrompt` and `tools` become the leading system message unless `messages` already starts with one. */
-export type AgentInitialState = Partial<
-	Omit<AgentState, "pendingToolCalls" | "isStreaming" | "streamingMessage" | "errorMessage">
->;
+/** Model selection and executable tool loadout for a new loop. */
+export type AgentInitialState = Partial<Pick<AgentState, "model" | "thinkingLevel" | "tools">>;
 
-function createMutableAgentState(initialState?: AgentInitialState): MutableAgentState {
+function createMutableAgentState(history: AgentHistory, initialState?: AgentInitialState): MutableAgentState {
 	let tools = initialState?.tools?.slice() ?? [];
-	let messages = initialState?.messages?.slice() ?? [];
-	const initialMessage = createInitialSystemMessage(initialState?.systemPrompt, tools.map(toToolDeclaration));
-	if (messages[0]?.role !== "system" && initialMessage) messages.unshift(initialMessage);
-
 	return {
 		get systemPrompt() {
-			return getCurrentSystemPrompt(messages);
+			return getCurrentSystemPrompt(history.messages());
 		},
 		model: initialState?.model,
 		thinkingLevel: initialState?.thinkingLevel ?? "off",
@@ -108,16 +76,28 @@ function createMutableAgentState(initialState?: AgentInitialState): MutableAgent
 			tools = nextTools.slice();
 		},
 		get messages() {
-			return messages;
-		},
-		set messages(nextMessages: AgentMessage[]) {
-			messages = nextMessages.slice();
+			return history.messages();
 		},
 		isStreaming: false,
 		streamingMessage: undefined,
 		pendingToolCalls: new Set<string>(),
 		errorMessage: undefined,
 	};
+}
+
+export interface AgentHistory {
+	messages(): AgentMessage[];
+	commit(message: AgentMessage): AgentMessageCommit | Promise<AgentMessageCommit>;
+	reset(): void;
+}
+
+export interface AgentLoopHost extends AgentHistory {
+	prepareRequest?: PrepareRequest;
+	prepareNextTurn?: (
+		context: PrepareNextTurnContext,
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+	finishTurn?: FinishTurn;
 }
 
 /** Options for constructing an {@link Agent}. */
@@ -132,17 +112,8 @@ export interface AgentOptions {
 	onProviderStreamEvent?: SimpleStreamOptions["onProviderStreamEvent"];
 	beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
-	finishTurn?: FinishTurn;
-	prepareRequest?: PrepareRequest;
-	prepareNextTurn?: (
-		signal?: AbortSignal,
-	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
-	prepareNextTurnWithContext?: (
-		context: PrepareNextTurnContext,
-		signal?: AbortSignal,
-	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
-	steeringMode?: QueueMode;
-	followUpMode?: QueueMode;
+	host: AgentLoopHost;
+	inputs: AgentInputs;
 	sessionId?: string;
 	thinkingBudgets?: ThinkingBudgets;
 	transport?: Transport;
@@ -150,46 +121,9 @@ export interface AgentOptions {
 	toolExecution?: ToolExecutionMode;
 }
 
-class PendingMessageQueue {
-	private messages: Array<QueuedAgentInput & { message: AgentMessage }> = [];
-	public mode: QueueMode;
-
-	constructor(mode: QueueMode) {
-		this.mode = mode;
-	}
-
-	enqueue(message: AgentMessage, input: QueuedAgentInput): void {
-		this.messages.push({ ...cloneQueuedInput(input), message });
-	}
-
-	hasItems(): boolean {
-		return this.messages.length > 0;
-	}
-
-	peek(): AgentMessage[] {
-		if (this.mode === "all") return this.messages.map((item) => item.message);
-		const first = this.messages[0];
-		return first ? [first.message] : [];
-	}
-
-	drain(): AgentMessage[] {
-		const drained = this.peek();
-		this.messages = this.messages.slice(drained.length);
-		return drained;
-	}
-
-	clear(): void {
-		this.messages = [];
-	}
-
-	snapshot(): readonly QueuedAgentInput[] {
-		return this.messages.map(({ text, images }) => cloneQueuedInput({ text, images }));
-	}
-
-	withdraw(): QueuedAgentInput[] {
-		const items = this.messages;
-		this.messages = [];
-		return items.map(({ message: _message, ...item }) => cloneQueuedInput(item));
+class HostOperationError extends Error {
+	constructor(cause: unknown) {
+		super("Agent host operation failed", { cause });
 	}
 }
 
@@ -202,15 +136,13 @@ type ActiveRun = {
 /**
  * Stateful wrapper around the low-level agent loop.
  *
- * `Agent` owns the current transcript, emits lifecycle events, executes tools,
- * and exposes queueing APIs for steering and follow-up messages.
+ * The host owns committed history; execution supplies input queues.
+ * Agent owns only the model loop, transient streaming state and tool scheduling.
  */
 export class Agent {
 	private _state: MutableAgentState;
 	private readonly listeners = new Set<(event: AgentEvent, signal: AbortSignal) => Promise<void> | void>();
-	private readonly queueListeners = new Set<() => void>();
-	private readonly steeringQueue: PendingMessageQueue;
-	private readonly followUpQueue: PendingMessageQueue;
+	readonly inputs: AgentInputs;
 
 	public convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 	public transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
@@ -227,19 +159,7 @@ export class Agent {
 		context: AfterToolCallContext,
 		signal?: AbortSignal,
 	) => Promise<AfterToolCallResult | undefined>;
-	public finishTurn?: FinishTurn;
-	public finalizeMessage?: (
-		message: AgentMessage,
-		signal: AbortSignal,
-	) => Promise<AgentMessageCommit> | AgentMessageCommit;
-	public prepareRequest?: PrepareRequest;
-	public prepareNextTurn?: (
-		signal?: AbortSignal,
-	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
-	public prepareNextTurnWithContext?: (
-		context: PrepareNextTurnContext,
-		signal?: AbortSignal,
-	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+	private readonly host: AgentLoopHost;
 	private activeRun?: ActiveRun;
 	/** Session identifier forwarded to providers for cache-aware backends. */
 	public sessionId?: string;
@@ -253,7 +173,8 @@ export class Agent {
 	public toolExecution: ToolExecutionMode;
 
 	constructor(options: AgentOptions) {
-		this._state = createMutableAgentState(options.initialState);
+		this.host = options.host;
+		this._state = createMutableAgentState(this.host, options.initialState);
 		this.convertToLlm = options.convertToLlm ?? defaultConvertToLlm;
 		this.transformContext = options.transformContext;
 		this.streamFunction = options.streamFn;
@@ -263,12 +184,7 @@ export class Agent {
 		this.onProviderStreamEvent = options.onProviderStreamEvent;
 		this.beforeToolCall = options.beforeToolCall;
 		this.afterToolCall = options.afterToolCall;
-		this.finishTurn = options.finishTurn;
-		this.prepareRequest = options.prepareRequest;
-		this.prepareNextTurn = options.prepareNextTurn;
-		this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
-		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
-		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
+		this.inputs = options.inputs;
 		this.sessionId = options.sessionId;
 		this.thinkingBudgets = options.thinkingBudgets;
 		this.transport = options.transport ?? "auto";
@@ -291,91 +207,13 @@ export class Agent {
 		return () => this.listeners.delete(listener);
 	}
 
-	subscribeQueue(listener: () => void): () => void {
-		this.queueListeners.add(listener);
-		return () => this.queueListeners.delete(listener);
-	}
-
-	private notifyQueueChanged(): void {
-		for (const listener of this.queueListeners) listener();
-	}
-
 	/**
 	 * Current agent state.
 	 *
-	 * Assigning `state.tools` or `state.messages` copies the provided top-level array.
+	 * `messages` projects committed history. Assigning `state.tools` copies the executable loadout.
 	 */
 	get state(): AgentState {
 		return this._state;
-	}
-
-	/** Controls how queued steering messages are drained. */
-	set steeringMode(mode: QueueMode) {
-		this.steeringQueue.mode = mode;
-	}
-
-	get steeringMode(): QueueMode {
-		return this.steeringQueue.mode;
-	}
-
-	/** Controls how queued follow-up messages are drained. */
-	set followUpMode(mode: QueueMode) {
-		this.followUpQueue.mode = mode;
-	}
-
-	get followUpMode(): QueueMode {
-		return this.followUpQueue.mode;
-	}
-
-	/** Queue a message to be injected after the current assistant turn finishes. */
-	steer(message: AgentMessage, input: QueuedAgentInput = queuedInputFromMessage(message)): void {
-		this.steeringQueue.enqueue(message, input);
-		this.notifyQueueChanged();
-	}
-
-	/** Queue a message to run only after the agent would otherwise stop. */
-	followUp(message: AgentMessage, input: QueuedAgentInput = queuedInputFromMessage(message)): void {
-		this.followUpQueue.enqueue(message, input);
-		this.notifyQueueChanged();
-	}
-
-	getQueuedInputs(): { steering: readonly QueuedAgentInput[]; followUp: readonly QueuedAgentInput[] } {
-		return { steering: this.steeringQueue.snapshot(), followUp: this.followUpQueue.snapshot() };
-	}
-
-	withdrawQueuedInputs(): { steering: QueuedAgentInput[]; followUp: QueuedAgentInput[] } {
-		const inputs = { steering: this.steeringQueue.withdraw(), followUp: this.followUpQueue.withdraw() };
-		this.notifyQueueChanged();
-		return inputs;
-	}
-
-	/** Remove all queued steering messages. */
-	clearSteeringQueue(): void {
-		this.steeringQueue.clear();
-		this.notifyQueueChanged();
-	}
-
-	/** Remove all queued follow-up messages. */
-	clearFollowUpQueue(): void {
-		this.followUpQueue.clear();
-		this.notifyQueueChanged();
-	}
-
-	/** Remove all queued steering and follow-up messages. */
-	clearAllQueues(): void {
-		this.clearSteeringQueue();
-		this.clearFollowUpQueue();
-	}
-
-	/** Returns true when either queue still contains pending messages. */
-	hasQueuedMessages(): boolean {
-		return this.steeringQueue.hasItems() || this.followUpQueue.hasItems();
-	}
-
-	/** Preview the messages selected for the next turn without consuming them. */
-	peekQueuedMessages(): AgentMessage[] {
-		const steering = this.steeringQueue.peek();
-		return steering.length > 0 ? steering : this.followUpQueue.peek();
 	}
 
 	/** Active abort signal for the current run, if any. */
@@ -403,14 +241,13 @@ export class Agent {
 			throw new Error("Agent is already processing. Wait for completion before resetting.");
 		}
 
-		const baseline = getCurrentSystemMessage(this._state.messages);
-		this._state.messages = baseline ? [baseline] : [];
+		this.host.reset();
 		this._state.isStreaming = false;
 		this._state.streamingMessage = undefined;
 		this._state.pendingToolCalls = new Set<string>();
 		this._state.errorMessage = undefined;
-		this.clearFollowUpQueue();
-		this.clearSteeringQueue();
+		this.inputs.clearFollowUpQueue();
+		this.inputs.clearSteeringQueue();
 	}
 
 	/** Start a new prompt from text, a single message, or a batch of messages. */
@@ -440,16 +277,16 @@ export class Agent {
 		}
 
 		if (lastMessage.role === "assistant") {
-			const queuedSteering = this.steeringQueue.drain();
+			const queuedSteering = this.inputs.steeringQueue.drain();
 			if (queuedSteering.length > 0) {
-				this.notifyQueueChanged();
+				this.inputs.notifyQueueChanged();
 				await this.runPromptMessages(queuedSteering, { skipInitialSteeringPoll: true });
 				return;
 			}
 
-			const queuedFollowUps = this.followUpQueue.drain();
+			const queuedFollowUps = this.inputs.followUpQueue.drain();
 			if (queuedFollowUps.length > 0) {
-				this.notifyQueueChanged();
+				this.inputs.notifyQueueChanged();
 				await this.runPromptMessages(queuedFollowUps);
 				return;
 			}
@@ -531,17 +368,15 @@ export class Agent {
 			toolExecution: this.toolExecution,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
-			finishTurn: this.finishTurn,
-			prepareRequest: this.prepareRequest,
-			prepareNextTurn:
-				this.prepareNextTurnWithContext || this.prepareNextTurn
-					? async (context) => {
-							if (this.prepareNextTurnWithContext) {
-								return await this.prepareNextTurnWithContext(context, this.signal);
-							}
-							return await this.prepareNextTurn?.(this.signal);
-						}
-					: undefined,
+			finishTurn: this.host.finishTurn
+				? (context, signal) => this.invokeHost(() => this.host.finishTurn!(context, signal))
+				: undefined,
+			prepareRequest: this.host.prepareRequest
+				? (context, signal) => this.invokeHost(() => this.host.prepareRequest!(context, signal))
+				: undefined,
+			prepareNextTurn: this.host.prepareNextTurn
+				? (context) => this.invokeHost(() => this.host.prepareNextTurn!(context, this.signal))
+				: undefined,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
@@ -550,13 +385,13 @@ export class Agent {
 					skipInitialSteeringPoll = false;
 					return [];
 				}
-				const messages = this.steeringQueue.drain();
-				if (messages.length > 0) this.notifyQueueChanged();
+				const messages = this.inputs.steeringQueue.drain();
+				if (messages.length > 0) this.inputs.notifyQueueChanged();
 				return messages;
 			},
 			getFollowUpMessages: async () => {
-				const messages = this.followUpQueue.drain();
-				if (messages.length > 0) this.notifyQueueChanged();
+				const messages = this.inputs.followUpQueue.drain();
+				if (messages.length > 0) this.inputs.notifyQueueChanged();
 				return messages;
 			},
 		};
@@ -572,6 +407,14 @@ export class Agent {
 	clearModel(): void {
 		if (this.activeRun) throw new Error("Cannot clear the model while the agent is processing.");
 		this._state.model = undefined;
+	}
+
+	private async invokeHost<T>(operation: () => T | Promise<T>): Promise<T> {
+		try {
+			return await operation();
+		} catch (error) {
+			throw new HostOperationError(error);
+		}
 	}
 
 	private async runWithLifecycle(executor: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -593,6 +436,7 @@ export class Agent {
 		try {
 			await executor(abortController.signal);
 		} catch (error) {
+			if (error instanceof HostOperationError) throw error.cause;
 			await this.handleRunFailure(error, abortController.signal.aborted, this.requireModel());
 		} finally {
 			this.finishRun();
@@ -616,6 +460,19 @@ export class Agent {
 			message: failureMessage,
 			entryId: undefined,
 		};
+		await this.invokeHost(() =>
+			this.host.finishTurn?.(
+				{
+					message: failureMessage,
+					messageEntry,
+					toolResults: [],
+					toolResultEntries: [],
+					context: { messages: this.host.messages(), tools: this._state.tools },
+					newMessages: [failureMessage],
+				},
+				this.signal,
+			),
+		);
 		await this.processEvents({
 			type: "turn_end",
 			message: failureMessage,
@@ -644,8 +501,9 @@ export class Agent {
 	private async processEvents(event: AgentEvent): Promise<AgentMessageCommit | undefined> {
 		const signal = this.activeRun?.abortController.signal;
 		if (!signal) throw new Error("Agent listener invoked outside active run");
-		if (event.type === "message_end" && this.finalizeMessage) {
-			const committed = await this.finalizeMessage(event.message, signal);
+		if (event.type === "message_end") {
+			const message = event.message;
+			const committed = await this.invokeHost(() => this.host.commit(message));
 			event = {
 				...event,
 				message: committed.message,
@@ -663,7 +521,6 @@ export class Agent {
 
 			case "message_end":
 				this._state.streamingMessage = undefined;
-				this._state.messages.push(event.message);
 				break;
 
 			case "tool_execution_start": {

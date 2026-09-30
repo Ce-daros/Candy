@@ -1,5 +1,5 @@
 import { fuzzyMatch } from "@candy/tui";
-import type { SessionInfo } from "../../../core/session-manager.ts";
+import type { SessionInfo } from "../../../core/session-history.ts";
 
 export type SortMode = "threaded" | "recent" | "relevance";
 

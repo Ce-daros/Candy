@@ -67,7 +67,7 @@ A successful `prompt` response means the prompt was accepted, queued, or handled
 
 RPC commands can change models, inspect state, manage sessions, run shell commands, and answer extension UI requests.
 
-Extension dialogs form a request-response subprotocol. Other extension UI updates are notifications that a client may display or ignore. TUI-only extension capabilities are unavailable or degraded outside interactive mode.
+Extension dialogs form a request-response subprotocol. Other extension UI updates are notifications that a client may display or ignore. Extensions use the same host-rendered dialogs in RPC; they cannot inject terminal components or change Candy's editor surfaces.
 
 For Node.js or TypeScript integrations, prefer `RpcClient` from `@candy/coding-agent/rpc`. It starts a candy RPC child process, correlates requests, exposes typed command methods, and delivers session events to listeners.
 

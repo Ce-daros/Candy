@@ -1,14 +1,14 @@
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 const runtime = await createAgentSessionRuntime({
-	sessionManager: SessionManager.inMemory(process.cwd()),
+	sessionManager: SessionHistory.inMemory(process.cwd()),
 });
 
 try {
-	console.log("Initial session:", runtime.session.sessionId);
+	console.log("Initial session:", runtime.session.history.getSessionId());
 	await runtime.newSession();
-	console.log("New session:", runtime.session.sessionId);
-	await runtime.session.prompt("List the files in this directory.");
+	console.log("New session:", runtime.session.history.getSessionId());
+	await runtime.session.execution.prompt("List the files in this directory.");
 } finally {
 	await runtime.dispose();
 }

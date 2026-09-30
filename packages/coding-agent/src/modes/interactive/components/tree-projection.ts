@@ -1,4 +1,4 @@
-import type { SessionTreeNode } from "../../../core/session-manager.ts";
+import type { SessionTreeNode } from "../../../core/session-history.ts";
 
 /** Gutter position and continuation state for an ancestor branch. */
 export interface GutterInfo {

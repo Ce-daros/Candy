@@ -3,6 +3,7 @@ import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness } from "../harness.ts";
+import { useSummaryResponses } from "../summarization.ts";
 
 function createNoopTool(): AgentTool {
 	return {
@@ -37,20 +38,9 @@ describe("issue #7253: manual compaction during an active response", () => {
 			models: [{ id: "faux-1", contextWindow: 1000, maxTokens: 1000 }],
 			settings: { compaction: { enabled: true, reserveTokens: 200, keepRecentTokens: 2 } },
 			tools: [createNoopTool()],
-			extensionFactories: [
-				(candy) => {
-					candy.on("session_before_compact", async (event) => ({
-						compaction: {
-							summary: `${event.reason} summary`,
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-							details: {},
-						},
-					}));
-				},
-			],
 		});
 		harnesses.push(harness);
+		useSummaryResponses(harness, [fauxAssistantMessage("manual summary"), fauxAssistantMessage("manual summary")]);
 		harness.setResponses([
 			fauxAssistantMessage(fauxToolCall("noop", {}), { stopReason: "toolUse" }),
 			async () => {
@@ -60,11 +50,13 @@ describe("issue #7253: manual compaction during an active response", () => {
 			},
 		]);
 
-		const promptPromise = harness.session.prompt("Run the tool, then continue responding.");
+		const promptPromise = harness.session.execution.prompt("Run the tool, then continue responding.");
 		await secondResponseStarted;
 
-		const compactPromise = harness.session.compact();
-		const compactExpectation = expect(compactPromise).resolves.toMatchObject({ summary: "manual summary" });
+		const compactPromise = harness.session.execution.compact();
+		const compactExpectation = expect(compactPromise).resolves.toMatchObject({
+			summary: expect.stringContaining("manual summary"),
+		});
 		releaseSecondResponse();
 		await Promise.all([promptPromise, compactExpectation]);
 

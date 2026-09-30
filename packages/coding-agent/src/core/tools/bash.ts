@@ -182,8 +182,8 @@ function resolveSpawnContext(
 	delete env.CANDY_REASONING_LEVEL;
 	if (exposeSessionEnvironment && ctx) {
 		const model = ctx.model;
-		env.CANDY_SESSION_ID = ctx.sessionManager.getSessionId();
-		const sessionFile = ctx.sessionManager.getSessionFile();
+		env.CANDY_SESSION_ID = ctx.history.getSessionId();
+		const sessionFile = ctx.history.getSessionFile();
 		if (sessionFile) env.CANDY_SESSION_FILE = sessionFile;
 		if (model) {
 			env.CANDY_PROVIDER = model.provider;

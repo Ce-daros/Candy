@@ -2,16 +2,15 @@
  * Presentation for the edit tool.
  *
  * Renderers live apart from the implementation so a process that only displays tool output does not
- * load the execution path or its typebox parameter schema. `edit.ts` spreads these into its
- * definition, so the tool's public shape is unchanged.
+ * load the execution path or its typebox parameter schema.
  */
 
 import { Box, Container, Text } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
-import type { ToolDefinition } from "../../core/extensions/types.ts";
 import type { EditToolDetails } from "../../core/tools/edit.ts";
 import { computeEditsDiff, type Edit, type EditDiffError, type EditDiffResult } from "../../core/tools/edit-diff.ts";
 import { renderDiff } from "../../modes/interactive/components/diff.ts";
+import type { ToolRenderers } from "../tool-render-types.ts";
 import { renderToolPath, str } from "../tool-render-utils.ts";
 
 type EditPreview = EditDiffResult | EditDiffError;
@@ -156,7 +155,7 @@ function setEditPreview(
 	return changed;
 }
 
-export const editRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> = {
+export const editRenderers: ToolRenderers<any, EditToolDetails, EditRenderState> = {
 	renderCall(args, theme, context) {
 		const component = getEditCallRenderComponent(context.state, context.lastComponent);
 		const previewInput = getRenderablePreviewInput(args as RenderableEditArgs | undefined);

@@ -1,10 +1,9 @@
-import { Agent } from "@candy/agent-core";
 import type { AssistantMessage, ToolResultMessage, Usage } from "@candy/ai";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { getUsageCostBreakdown } from "../src/core/usage-totals.ts";
 import { streamBuiltinSimple as streamSimple } from "./ai.ts";
@@ -65,20 +64,20 @@ function createToolResultMessage(usage: Usage): ToolResultMessage {
 
 async function createSession() {
 	const settingsManager = SettingsManager.inMemory();
-	const sessionManager = SessionManager.inMemory();
+	const sessionManager = SessionHistory.inMemory();
 	const authStorage = AuthStorage.inMemory();
 	await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 	const session = new AgentSession({
-		agent: new Agent({
+		agentOptions: {
 			getApiKey: () => "test-key",
 			streamFn: streamSimple,
 			initialState: {
 				model,
-				systemPrompt: "You are a helpful assistant.",
+
 				tools: [],
 				thinkingLevel: "high",
 			},
-		}),
+		},
 		sessionManager,
 		settingsManager,
 		cwd: process.cwd(),
@@ -89,10 +88,6 @@ async function createSession() {
 	return { session, sessionManager };
 }
 
-function syncAgentMessages(session: AgentSession, sessionManager: SessionManager): void {
-	session.agent.state.messages = sessionManager.buildSessionContext().messages;
-}
-
 describe("AgentSession.getSessionStats", () => {
 	it("exposes the current context usage alongside token totals", async () => {
 		const { session, sessionManager } = await createSession();
@@ -100,15 +95,14 @@ describe("AgentSession.getSessionStats", () => {
 		try {
 			sessionManager.appendMessage(createUserMessage("hello", 1));
 			sessionManager.appendMessage(createAssistantMessage("hi", 200, 2));
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
-			expect(stats.contextUsage).toEqual(session.getContextUsage());
+			const stats = session.history.getSessionStats(session.selection.model);
+			expect(stats.contextUsage).toEqual(session.execution.getContextUsage());
 			expect(stats.contextUsage?.tokens).toBe(200);
 			expect(stats.contextUsage?.contextWindow).toBe(model.contextWindow);
 			expect(stats.contextUsage?.percent).toBe((200 / model.contextWindow) * 100);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
@@ -122,16 +116,15 @@ describe("AgentSession.getSessionStats", () => {
 			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 4));
 			sessionManager.appendCompaction("summary", keptUserId, 195_000);
 			sessionManager.appendMessage(createUserMessage("third", 5));
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			// Totals cover ALL entries, including history compacted away (180k + 195k).
 			expect(stats.tokens.input).toBe(375_000);
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).toBeNull();
 			expect(stats.contextUsage?.percent).toBeNull();
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
@@ -151,16 +144,15 @@ describe("AgentSession.getSessionStats", () => {
 			const after = Date.now() + 1_000;
 			sessionManager.appendMessage(createUserMessage("third", after));
 			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, after + 1));
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			// Totals cover ALL entries, including history compacted away (180k + 195k + 25k).
 			expect(stats.tokens.input).toBe(400_000);
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).toBe(25_000);
 			expect(stats.contextUsage?.percent).toBe((25_000 / model.contextWindow) * 100);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
@@ -177,13 +169,12 @@ describe("AgentSession.getSessionStats", () => {
 				totalTokens: 100,
 				cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
 			});
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			expect(stats.tokens).toEqual({ input: 10, output: 20, cacheRead: 30, cacheWrite: 40, total: 100 });
 			expect(stats.cost).toBe(1);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
@@ -200,13 +191,12 @@ describe("AgentSession.getSessionStats", () => {
 				totalTokens: 100,
 				cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
 			});
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			expect(stats.tokens).toEqual({ input: 10, output: 20, cacheRead: 30, cacheWrite: 40, total: 100 });
 			expect(stats.cost).toBe(1);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
@@ -231,7 +221,7 @@ describe("AgentSession.getSessionStats", () => {
 
 			const [entry] = sessionManager.getEntries();
 			expect(entry).toMatchObject({ type: "usage", kind: "cache_warm", note: "extension override" });
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			expect(stats.tokens).toEqual({ input: 2, output: 1, cacheRead: 97, cacheWrite: 0, total: 100 });
 			expect(stats.totalMessages).toBe(0);
 			expect(sessionManager.buildSessionContext().messages).toEqual([]);
@@ -239,7 +229,7 @@ describe("AgentSession.getSessionStats", () => {
 				{ key: `anthropic/${model.id}`, cost: 0.01, tokens: 100 },
 			]);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
@@ -257,18 +247,17 @@ describe("AgentSession.getSessionStats", () => {
 					cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
 				}),
 			);
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			expect(stats.tokens).toEqual({ input: 10, output: 20, cacheRead: 30, cacheWrite: 40, total: 100 });
 			expect(stats.cost).toBe(1);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 
 	it("groups tool and summary usage separately from model-attributed usage", async () => {
-		const sessionManager = SessionManager.inMemory();
+		const sessionManager = SessionHistory.inMemory();
 		const rootId = sessionManager.appendMessage(createUserMessage("hello", 1));
 		sessionManager.appendMessage({
 			...createAssistantMessage("response", 100, 2),
@@ -307,14 +296,13 @@ describe("AgentSession.getSessionStats", () => {
 			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, after + 1));
 			sessionManager.appendMessage(createUserMessage("continue", after + 2));
 			sessionManager.appendMessage(createAssistantMessage("partial", 0, after + 3));
-			syncAgentMessages(session, sessionManager);
 
-			const stats = session.getSessionStats();
+			const stats = session.history.getSessionStats(session.selection.model);
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).not.toBeNull();
 			expect(stats.contextUsage?.tokens ?? 0).toBeGreaterThan(25_000);
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 		}
 	});
 });

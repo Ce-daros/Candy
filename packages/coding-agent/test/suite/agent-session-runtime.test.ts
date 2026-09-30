@@ -11,7 +11,7 @@ import {
 	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import { SessionManager } from "../../src/core/session-manager.ts";
+import { SessionHistory } from "../../src/core/session-history.ts";
 import type {
 	AgentToolResult,
 	ExtensionAPI,
@@ -101,9 +101,9 @@ describe("AgentSessionRuntime characterization", () => {
 		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(tempDir, join(tempDir, "sessions")),
+			sessionManager: SessionHistory.create(tempDir, join(tempDir, "sessions")),
 		});
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 
 		cleanups.push(async () => {
 			await runtime.dispose();
@@ -134,7 +134,7 @@ describe("AgentSessionRuntime characterization", () => {
 		await expect(runtime.newSession()).rejects.toThrow("runtime factory failed");
 
 		expect(runtime.session).toBe(originalSession);
-		expect(originalSession.isDisposed).toBe(false);
+		expect(originalSession.execution.isDisposed).toBe(false);
 		expect(rebound).toEqual([]);
 	});
 
@@ -144,33 +144,33 @@ describe("AgentSessionRuntime characterization", () => {
 
 		await runtime.newSession();
 
-		expect(runtime.session.isDisposed).toBe(false);
+		expect(runtime.session.execution.isDisposed).toBe(false);
 		expect(() => outgoingModelRuntime.refresh()).toThrow("Model runtime is disposed");
 		await expect(runtime.services.modelRuntime.refresh()).resolves.toMatchObject({ aborted: false });
 	});
 
 	it("preserves the current session when resume runtime creation fails", async () => {
 		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
-		await runtime.session.prompt("hello");
+		await runtime.session.execution.prompt("hello");
 		const originalSession = runtime.session;
-		const sessionFile = originalSession.sessionFile!;
+		const sessionFile = originalSession.history.getSessionFile()!;
 		failNextRuntimeCreation();
 
 		await expect(runtime.switchSession(sessionFile)).rejects.toThrow("runtime factory failed");
 		expect(runtime.session).toBe(originalSession);
-		expect(originalSession.isDisposed).toBe(false);
+		expect(originalSession.execution.isDisposed).toBe(false);
 	});
 
 	it("preserves the current session when fork runtime creation fails", async () => {
 		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
-		await runtime.session.prompt("hello");
+		await runtime.session.execution.prompt("hello");
 		const originalSession = runtime.session;
-		const userMessage = originalSession.getUserMessagesForForking()[0]!;
+		const userMessage = originalSession.history.getUserMessagesForForking()[0]!;
 		failNextRuntimeCreation();
 
 		await expect(runtime.fork(userMessage.entryId)).rejects.toThrow("runtime factory failed");
 		expect(runtime.session).toBe(originalSession);
-		expect(originalSession.isDisposed).toBe(false);
+		expect(originalSession.execution.isDisposed).toBe(false);
 	});
 
 	it("preserves the current session when replacement setup fails", async () => {
@@ -190,7 +190,7 @@ describe("AgentSessionRuntime characterization", () => {
 		).rejects.toThrow("new-session setup failed");
 
 		expect(runtime.session).toBe(originalSession);
-		expect(originalSession.isDisposed).toBe(false);
+		expect(originalSession.execution.isDisposed).toBe(false);
 		expect(rebound).toEqual([]);
 	});
 
@@ -210,30 +210,30 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(candidateFile).toBeDefined();
 		expect(existsSync(candidateFile!)).toBe(false);
 		expect(runtime.session).toBe(original);
-		expect(original.isDisposed).toBe(false);
+		expect(original.execution.isDisposed).toBe(false);
 	});
 
 	it("removes a prepared fork log when candidate construction fails", async () => {
 		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
-		await runtime.session.prompt("source");
+		await runtime.session.execution.prompt("source");
 		const original = runtime.session;
-		const directory = original.sessionManager.getSessionDir();
+		const directory = original.history.getSessionDir();
 		const files = readdirSync(directory);
-		const user = original.getUserMessagesForForking()[0]!;
+		const user = original.history.getUserMessagesForForking()[0]!;
 		failNextRuntimeCreation();
 		await expect(runtime.fork(user.entryId, { position: "at" })).rejects.toThrow("runtime factory failed");
 		expect(readdirSync(directory)).toEqual(files);
 		expect(runtime.session).toBe(original);
-		expect(original.isDisposed).toBe(false);
+		expect(original.execution.isDisposed).toBe(false);
 	});
 
 	it("removes only the imported copy when candidate construction fails", async () => {
 		const { runtime, tempDir, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
-		await runtime.session.prompt("current");
+		await runtime.session.execution.prompt("current");
 		const original = runtime.session;
-		const directory = original.sessionManager.getSessionDir();
+		const directory = original.history.getSessionDir();
 		const files = readdirSync(directory);
-		const source = SessionManager.create(tempDir, join(tempDir, "import-source"));
+		const source = SessionHistory.create(tempDir, join(tempDir, "import-source"));
 		source.appendMessage({ role: "user", content: "imported", timestamp: Date.now() });
 		const sourcePath = source.getSessionFile()!;
 		const contents = readFileSync(sourcePath, "utf8");
@@ -242,48 +242,7 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(readdirSync(directory)).toEqual(files);
 		expect(readFileSync(sourcePath, "utf8")).toBe(contents);
 		expect(runtime.session).toBe(original);
-		expect(original.isDisposed).toBe(false);
-	});
-
-	it("persists message_end assistant replacements to the session manager", async () => {
-		const { runtime } = await createRuntimeForTest((candy: ExtensionAPI) => {
-			candy.on("message_end", (event) => {
-				if (event.message.role !== "assistant") return;
-
-				return {
-					message: {
-						...event.message,
-						usage: {
-							...event.message.usage,
-							cost: {
-								...event.message.usage.cost,
-								total: 0.123,
-							},
-						},
-					},
-				};
-			});
-		});
-
-		await runtime.session.prompt("hello");
-
-		const sessionAssistant = runtime.session.messages.find((message) => message.role === "assistant");
-		expect(sessionAssistant?.role).toBe("assistant");
-		if (sessionAssistant?.role !== "assistant") {
-			throw new Error("missing assistant message");
-		}
-		expect(sessionAssistant.usage.cost.total).toBe(0.123);
-
-		const persistedAssistant = runtime.session.sessionManager
-			.getEntries()
-			.filter((entry) => entry.type === "message")
-			.map((entry) => entry.message)
-			.find((message) => message.role === "assistant");
-		expect(persistedAssistant?.role).toBe("assistant");
-		if (persistedAssistant?.role !== "assistant") {
-			throw new Error("missing persisted assistant message");
-		}
-		expect(persistedAssistant.usage.cost.total).toBe(0.123);
+		expect(original.execution.isDisposed).toBe(false);
 	});
 
 	it("settles the active response before session replacement", async () => {
@@ -307,24 +266,24 @@ describe("AgentSessionRuntime characterization", () => {
 			});
 		});
 
-		await runtime.session.prompt("hello");
-		const firstSessionFile = runtime.session.sessionFile!;
+		await runtime.session.execution.prompt("hello");
+		const firstSessionFile = runtime.session.execution.sessionFile!;
 		await runtime.newSession();
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 
 		faux.setResponses([fauxAssistantMessage(fauxToolCall("block", {}), { stopReason: "toolUse" })]);
 		const outgoingSession = runtime.session;
-		const promptPromise = outgoingSession.prompt("start blocking tool");
+		const promptPromise = outgoingSession.execution.prompt("start blocking tool");
 		await toolStartedPromise;
 
 		const switchResult = await runtime.switchSession(firstSessionFile);
 		await promptPromise;
 
 		expect(switchResult.cancelled).toBe(false);
-		expect(runtime.session.sessionFile).toBe(firstSessionFile);
+		expect(runtime.session.execution.sessionFile).toBe(firstSessionFile);
 		// The outgoing session settled before replacement: the interrupted tool
 		// call has a persisted tool result instead of dangling forever.
-		const outgoingEntries = SessionManager.open(outgoingSession.sessionFile!)
+		const outgoingEntries = SessionHistory.open(outgoingSession.history.getSessionFile()!)
 			.getEntries()
 			.filter((entry) => entry.type === "message");
 		expect(outgoingEntries.map((entry) => entry.message.role)).toEqual([
@@ -338,7 +297,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 	it("preserves an existing session when importing a file with the same name", async () => {
 		const { runtime, tempDir } = await createRuntimeForTest(() => {});
-		const sessionDir = runtime.session.sessionManager.getSessionDir();
+		const sessionDir = runtime.session.history.getSessionDir();
 		const importDir = join(tempDir, "import");
 		const filename = "collision.jsonl";
 		const storedPath = join(sessionDir, filename);
@@ -365,8 +324,8 @@ describe("AgentSessionRuntime characterization", () => {
 		await runtime.importFromJsonl(importPath);
 
 		expect(readFileSync(storedPath, "utf8")).toBe(storedSession);
-		expect(runtime.session.sessionFile).not.toBe(storedPath);
-		expect(readFileSync(runtime.session.sessionFile!, "utf8")).toContain('"id":"imported"');
+		expect(runtime.session.execution.sessionFile).not.toBe(storedPath);
+		expect(readFileSync(runtime.session.execution.sessionFile!, "utf8")).toContain('"id":"imported"');
 	});
 
 	it("emits session_before_switch and session_start for new and resume flows", async () => {
@@ -386,16 +345,16 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(events).toEqual([{ type: "session_start", reason: "startup" }]);
 		events.length = 0;
 
-		await runtime.session.prompt("hello");
-		const originalSessionFile = runtime.session.sessionFile;
+		await runtime.session.execution.prompt("hello");
+		const originalSessionFile = runtime.session.execution.sessionFile;
 		const originalSession = runtime.session;
 
 		const newSessionResult = await runtime.newSession();
 		expect(newSessionResult.cancelled).toBe(false);
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 		expect(runtime.session).not.toBe(originalSession);
-		expect(runtime.session.messages).toEqual([]);
-		const secondSessionFile = runtime.session.sessionFile;
+		expect(runtime.session.execution.messages).toEqual([]);
+		const secondSessionFile = runtime.session.execution.sessionFile;
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "new", targetSessionFile: undefined },
 			{ type: "session_shutdown", reason: "new", targetSessionFile: secondSessionFile },
@@ -406,7 +365,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 		const switchResult = await runtime.switchSession(originalSessionFile!);
 		expect(switchResult.cancelled).toBe(false);
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
@@ -429,9 +388,9 @@ describe("AgentSessionRuntime characterization", () => {
 			});
 		});
 
-		await runtime.session.prompt("hello");
+		await runtime.session.execution.prompt("hello");
 		const originalSession = runtime.session;
-		const originalSessionFile = runtime.session.sessionFile;
+		const originalSessionFile = runtime.session.execution.sessionFile;
 		const rebound: unknown[] = [];
 		runtime.setRebindSession(async (session) => {
 			rebound.push(session);
@@ -441,20 +400,20 @@ describe("AgentSessionRuntime characterization", () => {
 		const newResult = await runtime.newSession();
 		expect(newResult.cancelled).toBe(true);
 		expect(runtime.session).toBe(originalSession);
-		expect(originalSession.isDisposed).toBe(false);
+		expect(originalSession.execution.isDisposed).toBe(false);
 		expect(rebound).toEqual([]);
-		expect(runtime.session.sessionFile).toBe(originalSessionFile);
+		expect(runtime.session.execution.sessionFile).toBe(originalSessionFile);
 
 		events.length = 0;
 		const otherDir = join(tempDir, "other-project");
 		mkdirSync(otherDir, { recursive: true });
-		const otherSession = SessionManager.create(otherDir, join(tempDir, "other-sessions"));
+		const otherSession = SessionHistory.create(otherDir, join(tempDir, "other-sessions"));
 		otherSession.appendMessage({ role: "user", content: [{ type: "text", text: "other" }], timestamp: Date.now() });
 		const otherSessionFile = otherSession.getSessionFile();
 		cancelReason = "resume";
 		const resumeResult = await runtime.switchSession(otherSessionFile!);
 		expect(resumeResult.cancelled).toBe(true);
-		expect(runtime.session.sessionFile).toBe(originalSessionFile);
+		expect(runtime.session.execution.sessionFile).toBe(originalSessionFile);
 	});
 
 	it("emits session_before_fork and session_start and honors cancellation", async () => {
@@ -477,21 +436,21 @@ describe("AgentSessionRuntime characterization", () => {
 		});
 
 		events.length = 0;
-		await runtime.session.prompt("hello");
-		const userMessage = runtime.session.getUserMessagesForForking()[0]!;
-		const previousSessionFile = runtime.session.sessionFile;
+		await runtime.session.execution.prompt("hello");
+		const userMessage = runtime.session.history.getUserMessagesForForking()[0]!;
+		const previousSessionFile = runtime.session.execution.sessionFile;
 
 		const successResult = await runtime.fork(userMessage.entryId);
 		expect(successResult.cancelled).toBe(false);
 		expect(successResult.selectedText).toBe("hello");
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 		expect(events).toEqual([
 			{ type: "session_before_fork", entryId: userMessage.entryId, position: "before" },
-			{ type: "session_shutdown", reason: "fork", targetSessionFile: runtime.session.sessionFile },
+			{ type: "session_shutdown", reason: "fork", targetSessionFile: runtime.session.execution.sessionFile },
 			{ type: "session_start", reason: "fork", previousSessionFile },
 		]);
-		const sessionFileName = parse(runtime.session.sessionFile!).name;
-		expect(sessionFileName.endsWith(`_${runtime.session.sessionId}`)).toBe(true);
+		const sessionFileName = parse(runtime.session.execution.sessionFile!).name;
+		expect(sessionFileName.endsWith(`_${runtime.session.execution.sessionId}`)).toBe(true);
 
 		events.length = 0;
 		cancelNextFork = true;
@@ -508,8 +467,8 @@ describe("AgentSessionRuntime characterization", () => {
 
 	it("reports why an unflushed session cannot be forked", async () => {
 		const { runtime } = await createRuntimeForTest(() => {});
-		const sessionFile = runtime.session.sessionFile;
-		const leafId = runtime.session.sessionManager.getLeafId();
+		const sessionFile = runtime.session.execution.sessionFile;
+		const leafId = runtime.session.history.getLeafId();
 		expect(sessionFile).toBeDefined();
 		expect(existsSync(sessionFile!)).toBe(false);
 		expect(leafId).toBeTruthy();
@@ -521,10 +480,10 @@ describe("AgentSessionRuntime characterization", () => {
 
 	it("clones the current active branch into a persisted session", async () => {
 		const { runtime } = await createRuntimeForTest(() => {});
-		await runtime.session.prompt("hello");
-		await runtime.session.prompt("again");
+		await runtime.session.execution.prompt("hello");
+		await runtime.session.execution.prompt("again");
 
-		const beforeMessages = runtime.session.messages.map((message) => ({
+		const beforeMessages = runtime.session.execution.messages.map((message) => ({
 			role: message.role,
 			text:
 				message.role === "user"
@@ -536,12 +495,12 @@ describe("AgentSessionRuntime characterization", () => {
 								.join("")
 					: undefined,
 		}));
-		const previousSessionFile = runtime.session.sessionFile;
+		const previousSessionFile = runtime.session.execution.sessionFile;
 		const result = await runtime.clone();
 		expect(result).toEqual({ cancelled: false });
-		expect(runtime.session.sessionFile).not.toBe(previousSessionFile);
+		expect(runtime.session.execution.sessionFile).not.toBe(previousSessionFile);
 		expect(
-			runtime.session.messages.map((message) => ({
+			runtime.session.execution.messages.map((message) => ({
 				role: message.role,
 				text:
 					message.role === "user"
@@ -607,9 +566,9 @@ describe("AgentSessionRuntime characterization", () => {
 		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(tempDir),
+			sessionManager: SessionHistory.inMemory(tempDir),
 		});
-		await runtime.session.bindExtensions({});
+		await runtime.session.execution.bindExtensions({});
 		cleanups.push(async () => {
 			await runtime.dispose();
 			if (existsSync(tempDir)) {
@@ -617,10 +576,10 @@ describe("AgentSessionRuntime characterization", () => {
 			}
 		});
 
-		await runtime.session.prompt("hello");
-		await runtime.session.prompt("again");
+		await runtime.session.execution.prompt("hello");
+		await runtime.session.execution.prompt("again");
 
-		const beforeMessages = runtime.session.messages.map((message) => ({
+		const beforeMessages = runtime.session.execution.messages.map((message) => ({
 			role: message.role,
 			text:
 				message.role === "user"
@@ -632,13 +591,13 @@ describe("AgentSessionRuntime characterization", () => {
 								.join("")
 					: undefined,
 		}));
-		expect(runtime.session.sessionFile).toBeUndefined();
+		expect(runtime.session.execution.sessionFile).toBeUndefined();
 
 		const result = await runtime.clone();
 		expect(result).toEqual({ cancelled: false });
-		expect(runtime.session.sessionFile).toBeUndefined();
+		expect(runtime.session.execution.sessionFile).toBeUndefined();
 		expect(
-			runtime.session.messages.map((message) => ({
+			runtime.session.execution.messages.map((message) => ({
 				role: message.role,
 				text:
 					message.role === "user"
@@ -666,14 +625,14 @@ describe("AgentSessionRuntime characterization", () => {
 				return { cancel: true };
 			});
 		});
-		await runtime.session.prompt("hello");
+		await runtime.session.execution.prompt("hello");
 		const original = runtime.session;
-		const leafId = original.sessionManager.getLeafId();
+		const leafId = original.history.getLeafId();
 
 		expect(await runtime.clone()).toEqual({ cancelled: true });
 		expect(events).toEqual([{ type: "session_before_fork", entryId: leafId, position: "at" }]);
 		expect(runtime.session).toBe(original);
-		expect(original.isDisposed).toBe(false);
+		expect(original.execution.isDisposed).toBe(false);
 	});
 
 	it("updates the runtime session cwd on cross-cwd session replacement", async () => {
@@ -722,17 +681,17 @@ describe("AgentSessionRuntime characterization", () => {
 		const otherRuntime = await createRuntimeFromFactory(createOtherRuntime, {
 			cwd: secondDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(secondDir, join(tempDir, "second-sessions")),
+			sessionManager: SessionHistory.create(secondDir, join(tempDir, "second-sessions")),
 		});
 		cleanups.push(async () => {
 			await otherRuntime.dispose();
 		});
-		await otherRuntime.session.prompt("other");
-		const otherSessionFile = otherRuntime.session.sessionFile!;
+		await otherRuntime.session.execution.prompt("other");
+		const otherSessionFile = otherRuntime.session.execution.sessionFile!;
 
 		await runtime.switchSession(otherSessionFile);
 
-		expect(realpathSync(runtime.session.sessionManager.getCwd())).toBe(realpathSync(secondDir));
+		expect(realpathSync(runtime.session.history.getCwd())).toBe(realpathSync(secondDir));
 		expect(realpathSync(runtime.cwd)).toBe(realpathSync(secondDir));
 	});
 
@@ -782,19 +741,19 @@ describe("AgentSessionRuntime characterization", () => {
 		const otherRuntime = await createRuntimeFromFactory(createOtherRuntime, {
 			cwd: otherDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(otherDir, join(tempDir, "other-sessions")),
+			sessionManager: SessionHistory.create(otherDir, join(tempDir, "other-sessions")),
 		});
 		cleanups.push(async () => {
 			await otherRuntime.dispose();
 		});
-		await otherRuntime.session.setModel(faux.getModel("faux-2")!);
-		otherRuntime.session.setThinkingLevel("off");
-		await otherRuntime.session.prompt("hello");
-		const targetSessionFile = otherRuntime.session.sessionFile!;
+		await otherRuntime.session.selection.setModel(faux.getModel("faux-2")!);
+		otherRuntime.session.selection.setThinkingLevel("off");
+		await otherRuntime.session.execution.prompt("hello");
+		const targetSessionFile = otherRuntime.session.execution.sessionFile!;
 
 		await runtime.switchSession(targetSessionFile);
 
-		expect(runtime.session.model?.id).toBe("faux-2");
-		expect(runtime.session.thinkingLevel).toBe("off");
+		expect(runtime.session.selection.model?.id).toBe("faux-2");
+		expect(runtime.session.selection.thinkingLevel).toBe("off");
 	});
 });

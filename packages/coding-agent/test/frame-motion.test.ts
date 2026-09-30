@@ -254,7 +254,7 @@ describe("editor frame motion", () => {
 	it("keeps narrow editor rows aligned throughout the entrance and Shell transition", () => {
 		const tui = { requestRender: () => {}, terminal: { rows: 20 } } as TUI;
 		const session = {
-			state: { model: { id: "kimi", name: "Kimi K2.6", reasoning: true }, thinkingLevel: "medium" },
+			selection: { model: { id: "kimi", name: "Kimi K2.6", reasoning: true }, thinkingLevel: "medium" },
 		} as AgentSession;
 		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create());
 		editor.setBottomStatus(new FooterComponent(session));

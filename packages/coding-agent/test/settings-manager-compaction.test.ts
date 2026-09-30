@@ -106,7 +106,7 @@ describe("compaction model overrides", () => {
 		);
 		const manager = SettingsManager.fromStorage(storage);
 		expect(manager.getCompactionSettings(model).enabled).toBe(true);
-		await manager.setCompactionEnabled(false);
+		await manager.commitNestedSetting("global", "compaction", "enabled", false);
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getCompactionSettings(model)).toEqual({ ...defaults, enabled: false, reserveTokens: 400000 });

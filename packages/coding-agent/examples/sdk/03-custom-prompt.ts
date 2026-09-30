@@ -1,12 +1,12 @@
 /** Replace or extend the generated system prompt without a UI adapter. */
 
-import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionHistory } from "@candy/coding-agent";
 
 const cwd = process.cwd();
 
 const replacementRuntime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		systemPromptOverride: () => `You are a helpful assistant that speaks like a pirate.
 Always end responses with "Arrr!"`,
@@ -15,15 +15,15 @@ Always end responses with "Arrr!"`,
 });
 
 try {
-	await replacementRuntime.session.prompt("What is 2 + 2?");
-	console.log(replacementRuntime.session.getLastAssistantText());
+	await replacementRuntime.session.execution.prompt("What is 2 + 2?");
+	console.log(replacementRuntime.session.history.getLastAssistantText());
 } finally {
 	await replacementRuntime.dispose();
 }
 
 const appendedRuntime = await createAgentSessionRuntime({
 	cwd,
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionHistory.inMemory(cwd),
 	resourceLoaderOptions: {
 		appendSystemPromptOverride: (base) => [
 			...base,
@@ -33,8 +33,8 @@ const appendedRuntime = await createAgentSessionRuntime({
 });
 
 try {
-	await appendedRuntime.session.prompt("List 3 benefits of TypeScript.");
-	console.log(appendedRuntime.session.getLastAssistantText());
+	await appendedRuntime.session.execution.prompt("List 3 benefits of TypeScript.");
+	console.log(appendedRuntime.session.history.getLastAssistantText());
 } finally {
 	await appendedRuntime.dispose();
 }

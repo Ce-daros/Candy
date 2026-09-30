@@ -491,7 +491,7 @@ describe("FooterComponent powerbar integration", () => {
 
 	function createFooterSession(): AgentSession {
 		const session = {
-			state: {
+			selection: {
 				model: {
 					id: "kimi-k2.6",
 					name: "Kimi K2.6",
@@ -563,7 +563,7 @@ describe("FooterComponent powerbar integration", () => {
 
 	it("cycles model and thinking with Tab semantics even for a non-reasoning model", () => {
 		const session = createFooterSession();
-		session.state.model!.reasoning = false;
+		session.selection.model!.reasoning = false;
 		const footer = new FooterComponent(session, createPowerbarHost());
 		footer.setAnimationOptions(false, "moderate");
 		footer.openPowerbarModelBrowse();

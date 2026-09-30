@@ -1,3 +1,4 @@
+import { buildRuntimeFactory } from "./core/runtime-builder.ts";
 /**
  * Main entry point for the coding agent CLI.
  *
@@ -33,16 +34,8 @@ import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { APP_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, VERSION } from "./config.ts";
 import type { CreateAgentSessionOptions } from "./core/agent-session-factory.ts";
-import {
-	type AgentSessionRuntime,
-	type CreateAgentSessionRuntimeFactory,
-	createRuntimeFromFactory,
-} from "./core/agent-session-runtime.ts";
-import {
-	type AgentSessionRuntimeDiagnostic,
-	assembleAgentSessionFromServices,
-	assembleAgentSessionServices,
-} from "./core/agent-session-services.ts";
+import { type AgentSessionRuntime, createRuntimeFromFactory } from "./core/agent-session-runtime.ts";
+import type { AgentSessionRuntimeDiagnostic } from "./core/agent-session-services.ts";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage, ReadOnlyAuthStorage } from "./core/auth-storage.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
@@ -57,7 +50,7 @@ import {
 	MissingSessionCwdError,
 	type SessionCwdIssue,
 } from "./core/session-cwd.ts";
-import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
+import { assertValidSessionId, SessionDiscovery, SessionHistory } from "./core/session-history.ts";
 import { collectSettingsDiagnostics, deduplicateDiagnostics } from "./core/settings-diagnostics.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
@@ -254,7 +247,7 @@ function findLocalSessionByExactId(
 	cwd: string,
 	sessionDir?: string,
 ): { type: "local"; path: string } | undefined {
-	const path = SessionManager.findById(cwd, sessionId, sessionDir);
+	const path = SessionDiscovery.findById(cwd, sessionId, sessionDir);
 	return path ? { type: "local", path } : undefined;
 }
 
@@ -271,7 +264,7 @@ async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: 
 		return exactLocalMatch;
 	}
 
-	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localSessions = await SessionDiscovery.list(cwd, sessionDir);
 	const localMatch = localSessions.find((s) => s.id.startsWith(sessionArg));
 
 	if (localMatch) {
@@ -279,7 +272,7 @@ async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: 
 	}
 
 	// Try global search across all projects
-	const allSessions = await SessionManager.listAll(sessionDir);
+	const allSessions = await SessionDiscovery.listAll(sessionDir);
 	const globalMatch =
 		allSessions.find((s) => s.id === sessionArg) ?? allSessions.find((s) => s.id.startsWith(sessionArg));
 
@@ -346,9 +339,9 @@ function validateSessionIdFlags(parsed: Args): void {
 	}
 }
 
-function openSessionOrExit(path: string, sessionDir?: string): SessionManager {
+function openSessionOrExit(path: string, sessionDir?: string): SessionHistory {
 	try {
-		return SessionManager.open(path, sessionDir);
+		return SessionHistory.open(path, sessionDir);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(cliThemeColor("error", `Error: ${message}`));
@@ -356,9 +349,9 @@ function openSessionOrExit(path: string, sessionDir?: string): SessionManager {
 	}
 }
 
-function forkSessionOrExit(sourcePath: string, cwd: string, sessionDir?: string, sessionId?: string): SessionManager {
+function forkSessionOrExit(sourcePath: string, cwd: string, sessionDir?: string, sessionId?: string): SessionHistory {
 	try {
-		return SessionManager.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
+		return SessionHistory.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(cliThemeColor("error", `Error: ${message}`));
@@ -366,14 +359,14 @@ function forkSessionOrExit(sourcePath: string, cwd: string, sessionDir?: string,
 	}
 }
 
-export async function createSessionManager(
+export async function createSessionHistory(
 	parsed: Args,
 	cwd: string,
 	sessionDir: string | undefined,
 	settingsManager: SettingsManager,
-): Promise<SessionManager> {
+): Promise<SessionHistory> {
 	if (parsed.noSession || parsed.help || parsed.listModels !== undefined) {
-		return SessionManager.inMemory(cwd, parsed.sessionId !== undefined ? { id: parsed.sessionId } : undefined);
+		return SessionHistory.inMemory(cwd, parsed.sessionId !== undefined ? { id: parsed.sessionId } : undefined);
 	}
 
 	if (parsed.fork) {
@@ -426,28 +419,28 @@ export async function createSessionManager(
 	if (parsed.resume) {
 		try {
 			const selectedPath = await selectSession(
-				(onProgress, signal) => SessionManager.list(cwd, sessionDir, onProgress, signal),
-				(onProgress, signal) => SessionManager.listAll(sessionDir, onProgress, signal),
+				(onProgress, signal) => SessionDiscovery.list(cwd, sessionDir, onProgress, signal),
+				(onProgress, signal) => SessionDiscovery.listAll(sessionDir, onProgress, signal),
 				settingsManager,
 			);
 			if (!selectedPath) {
 				console.log(cliThemeColor("dim", "No session selected"));
 				process.exit(0);
 			}
-			return SessionManager.open(selectedPath, sessionDir);
+			return SessionHistory.open(selectedPath, sessionDir);
 		} finally {
 			stopThemeWatcher();
 		}
 	}
 
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd, sessionDir);
+		return SessionHistory.continueRecent(cwd, sessionDir);
 	}
 
 	if (parsed.sessionId) {
 		const existingSession = findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
 		if (existingSession) {
-			return SessionManager.open(existingSession.path, sessionDir);
+			return SessionHistory.open(existingSession.path, sessionDir);
 		}
 		console.error(
 			cliThemeColor(
@@ -457,7 +450,7 @@ export async function createSessionManager(
 		);
 	}
 
-	return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+	return SessionHistory.create(cwd, sessionDir, { id: parsed.sessionId });
 }
 
 function buildSessionOptions(
@@ -684,7 +677,7 @@ async function runMain(
 		(parsed.sessionDir ? normalizePath(parsed.sessionDir) : undefined) ??
 		(envSessionDir ? expandTildePath(envSessionDir) : undefined) ??
 		startupSettingsManager.getSessionDir();
-	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
+	let sessionManager = await createSessionHistory(parsed, cwd, sessionDir, startupSettingsManager);
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
 	if (missingSessionCwdIssue) {
 		if (appMode === "interactive") {
@@ -693,7 +686,7 @@ async function runMain(
 				process.exitCode = 0;
 				return;
 			}
-			sessionManager = SessionManager.open(missingSessionCwdIssue.sessionFile!, sessionDir, selectedCwd);
+			sessionManager = SessionHistory.open(missingSessionCwdIssue.sessionFile!, sessionDir, selectedCwd);
 		} else {
 			console.error(cliThemeColor("error", new MissingSessionCwdError(missingSessionCwdIssue).message));
 			process.exitCode = 1;
@@ -709,7 +702,7 @@ async function runMain(
 		}
 		sessionManager.appendSessionInfo(name);
 	}
-	time("createSessionManager");
+	time("createSessionHistory");
 
 	const trustStore = new ProjectTrustStore(agentDir);
 	const sessionCwd = sessionManager.getCwd();
@@ -724,79 +717,76 @@ async function runMain(
 	const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
 	const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
 	const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
-	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
-		cwd,
-		agentDir,
-		sessionManager,
-		sessionStartEvent,
-		projectTrustContext,
-	}) => {
-		const isInitialRuntime = sessionStartEvent === undefined;
-		const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
-		const cachedProjectTrust = projectTrustByCwd.get(cwd);
-		const hasTrustRequiringResources = hasTrustRequiringProjectResources(cwd);
-		const shouldResolveProjectTrust =
-			parsed.projectTrustOverride === undefined && cachedProjectTrust === undefined && hasTrustRequiringResources;
-		const projectTrusted = shouldResolveProjectTrust
-			? false
-			: (cachedProjectTrust ??
-				parsed.projectTrustOverride ??
-				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
-		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
-		const services = await assembleAgentSessionServices({
-			cwd,
-			agentDir,
-			themeAdapter: resourceThemeAdapter,
-			extensionModules: extensionHostModules,
-			settingsManager: runtimeSettingsManager,
-			modelRuntimeSignal: AbortSignal.timeout(15_000),
-			extensionFlagValues: parsed.unknownFlags,
-			resourceLoaderReloadOptions: shouldResolveProjectTrust
-				? {
-						resolveProjectTrust: async ({ extensionsResult }) => {
-							const trusted = await resolveProjectTrusted({
-								cwd,
-								trustStore,
-								trustOverride: parsed.projectTrustOverride,
-								defaultProjectTrust: startupSettingsManager.getDefaultProjectTrust(),
-								extensionsResult,
-								projectTrustContext:
-									projectTrustContext ??
-									createProjectTrustContext({
+	const createRuntime = buildRuntimeFactory({
+		services: async ({ cwd, agentDir, sessionStartEvent, projectTrustContext }) => {
+			const isInitialRuntime = sessionStartEvent === undefined;
+			const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
+			const cachedProjectTrust = projectTrustByCwd.get(cwd);
+			const hasTrustRequiringResources = hasTrustRequiringProjectResources(cwd);
+			const shouldResolveProjectTrust =
+				parsed.projectTrustOverride === undefined && cachedProjectTrust === undefined && hasTrustRequiringResources;
+			const projectTrusted = shouldResolveProjectTrust
+				? false
+				: (cachedProjectTrust ??
+					parsed.projectTrustOverride ??
+					(!hasTrustRequiringResources || trustStore.get(cwd) === true));
+			const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+			return {
+				options: {
+					cwd,
+					agentDir,
+					themeAdapter: resourceThemeAdapter,
+					extensionModules: extensionHostModules,
+					settingsManager: runtimeSettingsManager,
+					modelRuntimeSignal: AbortSignal.timeout(15_000),
+					extensionFlagValues: parsed.unknownFlags,
+					resourceLoaderReloadOptions: shouldResolveProjectTrust
+						? {
+								resolveProjectTrust: async ({ extensionsResult }) => {
+									const trusted = await resolveProjectTrusted({
 										cwd,
-										mode: isInitialRuntime ? trustPromptMode : appMode,
-										settingsManager: startupSettingsManager,
-										hasUI: isInitialRuntime && trustPromptMode === "interactive",
 										trustStore,
-									}),
-								onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
-							});
-							projectTrustByCwd.set(cwd, trusted);
-							return trusted;
-						},
-					}
-				: undefined,
-			resourceLoaderOptions: {
-				additionalExtensionPaths: resolvedExtensionPaths,
-				additionalSkillPaths: resolvedSkillPaths,
-				additionalPromptTemplatePaths: resolvedPromptTemplatePaths,
-				additionalThemePaths: resolvedThemePaths,
-				noExtensions: parsed.noExtensions,
-				noSkills: parsed.noSkills,
-				noPromptTemplates: parsed.noPromptTemplates,
-				noThemes: parsed.noThemes,
-				noContextFiles: parsed.noContextFiles,
-				systemPrompt: parsed.systemPrompt,
-				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories,
-			},
-		});
-		try {
+										trustOverride: parsed.projectTrustOverride,
+										defaultProjectTrust: startupSettingsManager.read("default-project-trust"),
+										extensionsResult,
+										projectTrustContext:
+											projectTrustContext ??
+											createProjectTrustContext({
+												cwd,
+												mode: isInitialRuntime ? trustPromptMode : appMode,
+												settingsManager: startupSettingsManager,
+												hasUI: isInitialRuntime && trustPromptMode === "interactive",
+												trustStore,
+											}),
+										onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
+									});
+									projectTrustByCwd.set(cwd, trusted);
+									return trusted;
+								},
+							}
+						: undefined,
+					resourceLoaderOptions: {
+						additionalExtensionPaths: resolvedExtensionPaths,
+						additionalSkillPaths: resolvedSkillPaths,
+						additionalPromptTemplatePaths: resolvedPromptTemplatePaths,
+						additionalThemePaths: resolvedThemePaths,
+						noExtensions: parsed.noExtensions,
+						noSkills: parsed.noSkills,
+						noPromptTemplates: parsed.noPromptTemplates,
+						noThemes: parsed.noThemes,
+						noContextFiles: parsed.noContextFiles,
+						systemPrompt: parsed.systemPrompt,
+						appendSystemPrompt: parsed.appendSystemPrompt,
+						extensionFactories,
+					},
+				},
+				diagnostics: projectTrustDiagnostics,
+			};
+		},
+		select: async (services) => {
 			const { settingsManager, modelRuntime, resourceLoader } = services;
 
 			const diagnostics: AgentSessionRuntimeDiagnostic[] = [
-				...projectTrustDiagnostics,
-				...services.diagnostics,
 				...collectSettingsDiagnostics(settingsManager),
 				...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
 					type: "error" as const,
@@ -808,11 +798,10 @@ async function runMain(
 				})),
 			];
 
-			const {
-				options: sessionOptions,
-				cliThinkingFromModel,
-				diagnostics: sessionOptionDiagnostics,
-			} = buildSessionOptions(parsed, modelRuntime);
+			const { options: sessionOptions, diagnostics: sessionOptionDiagnostics } = buildSessionOptions(
+				parsed,
+				modelRuntime,
+			);
 			diagnostics.push(...sessionOptionDiagnostics);
 
 			if (parsed.apiKey) {
@@ -826,36 +815,9 @@ async function runMain(
 				}
 			}
 
-			const created = await assembleAgentSessionFromServices({
-				services,
-				sessionManager,
-				sessionStartEvent,
-				model: sessionOptions.model,
-				thinkingLevel: sessionOptions.thinkingLevel,
-				tools: sessionOptions.tools,
-				excludeTools: sessionOptions.excludeTools,
-				noTools: sessionOptions.noTools,
-				customTools: sessionOptions.customTools,
-			});
-			const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
-			if (created.session.model && cliThinkingOverride) {
-				created.session.setThinkingLevel(created.session.thinkingLevel);
-			}
-
-			return {
-				...created,
-				services,
-				diagnostics,
-			};
-		} catch (error) {
-			try {
-				await services.dispose();
-			} catch (disposeError) {
-				throw new AggregateError([error, disposeError], "CLI runtime creation and services cleanup failed");
-			}
-			throw error;
-		}
-	};
+			return { options: sessionOptions, diagnostics };
+		},
+	});
 	time("createRuntime");
 	const runtime = await createRuntimeFromFactory(createRuntime, {
 		cwd: sessionManager.getCwd(),
@@ -871,16 +833,16 @@ async function runMain(
 	const bindNetwork = async (nextSession: AgentSessionRuntime["session"]): Promise<void> => {
 		unsubscribeSettings?.();
 		await networkWork;
-		const settings = nextSession.settingsManager;
+		const settings = nextSession.execution.settingsManager;
 		await network.configure({
-			timeoutMs: settings.getHttpIdleTimeoutMs(),
+			timeoutMs: settings.read("http-idle-timeout"),
 			httpProxy: settings.getSetting("httpProxy"),
 		});
 		unsubscribeSettings = settings.subscribe((event) => {
 			if (!event.fields.some((field) => field === "httpIdleTimeoutMs" || field === "httpProxy")) return;
 			networkWork = networkWork.then(() =>
 				network.configure({
-					timeoutMs: settings.getHttpIdleTimeoutMs(),
+					timeoutMs: settings.read("http-idle-timeout"),
 					httpProxy: settings.getSetting("httpProxy"),
 				}),
 			);
@@ -948,7 +910,7 @@ async function runMain(
 	}
 	time("assembleAgentSession");
 
-	if (appMode !== "interactive" && !session.model) {
+	if (appMode !== "interactive" && !session.selection.model) {
 		console.error(cliThemeColor("error", formatNoModelsAvailableMessage()));
 		process.exitCode = 1;
 		return;

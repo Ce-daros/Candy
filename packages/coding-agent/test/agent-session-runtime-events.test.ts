@@ -11,7 +11,7 @@ import {
 } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import type {
 	ExtensionFactory,
 	SessionBeforeForkEvent,
@@ -85,9 +85,9 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		const runtimeHost = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(tempDir),
+			sessionManager: SessionHistory.create(tempDir),
 		});
-		await runtimeHost.session.bindExtensions({});
+		await runtimeHost.session.execution.bindExtensions({});
 
 		cleanups.push(async () => {
 			await runtimeHost.dispose();
@@ -117,14 +117,14 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(events).toEqual([{ type: "session_start", reason: "startup" }]);
 		events.length = 0;
 
-		await runtimeHost.session.prompt("hello");
-		const originalSessionFile = runtimeHost.session.sessionFile;
+		await runtimeHost.session.execution.prompt("hello");
+		const originalSessionFile = runtimeHost.session.execution.sessionFile;
 		expect(originalSessionFile).toBeTruthy();
 
 		const newSessionResult = await runtimeHost.newSession();
 		expect(newSessionResult.cancelled).toBe(false);
-		await runtimeHost.session.bindExtensions({});
-		const secondSessionFile = runtimeHost.session.sessionFile;
+		await runtimeHost.session.execution.bindExtensions({});
+		const secondSessionFile = runtimeHost.session.execution.sessionFile;
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "new", targetSessionFile: undefined },
 			{ type: "session_shutdown", reason: "new", targetSessionFile: secondSessionFile },
@@ -136,7 +136,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		const switchResult = await runtimeHost.switchSession(originalSessionFile!);
 		expect(switchResult.cancelled).toBe(false);
-		await runtimeHost.session.bindExtensions({});
+		await runtimeHost.session.execution.bindExtensions({});
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
@@ -166,12 +166,12 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(events).toEqual([{ type: "session_start", reason: "startup" }]);
 		events.length = 0;
 
-		await runtimeHost.session.prompt("hello");
-		const originalSessionFile = runtimeHost.session.sessionFile;
+		await runtimeHost.session.execution.prompt("hello");
+		const originalSessionFile = runtimeHost.session.execution.sessionFile;
 
 		const result = await runtimeHost.newSession();
 		expect(result.cancelled).toBe(true);
-		expect(runtimeHost.session.sessionFile).toBe(originalSessionFile);
+		expect(runtimeHost.session.execution.sessionFile).toBe(originalSessionFile);
 		expect(events).toEqual([{ type: "session_before_switch", reason: "new", targetSessionFile: undefined }]);
 	});
 
@@ -185,7 +185,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		const oldSession = runtimeHost.session;
 		runtimeHost.setBeforeSessionInvalidate(() => {
 			phases.push("beforeSessionInvalidate");
-			expect(oldSession.extensionRunner.createContext().cwd).toBe(oldSession.sessionManager.getCwd());
+			expect(oldSession.execution.extensionRunner.createContext().cwd).toBe(oldSession.history.getCwd());
 		});
 		runtimeHost.setRebindSession(async () => {
 			phases.push("rebindSession");
@@ -194,7 +194,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		await runtimeHost.newSession();
 
 		expect(phases).toEqual(["session_shutdown", "beforeSessionInvalidate", "rebindSession"]);
-		expect(() => oldSession.extensionRunner.createContext().cwd).toThrow(
+		expect(() => oldSession.execution.extensionRunner.createContext().cwd).toThrow(
 			"This extension ctx is stale after session replacement or reload.",
 		);
 		runtimeHost.setBeforeSessionInvalidate(undefined);
@@ -223,17 +223,17 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(events).toEqual([{ type: "session_start", reason: "startup" }]);
 		events.length = 0;
 
-		await runtimeHost.session.prompt("hello");
-		const userMessage = runtimeHost.session.getUserMessagesForForking()[0];
-		const previousSessionFile = runtimeHost.session.sessionFile;
+		await runtimeHost.session.execution.prompt("hello");
+		const userMessage = runtimeHost.session.history.getUserMessagesForForking()[0];
+		const previousSessionFile = runtimeHost.session.execution.sessionFile;
 
 		const successResult = await runtimeHost.fork(userMessage.entryId);
 		expect(successResult.cancelled).toBe(false);
 		expect(successResult.selectedText).toBe("hello");
-		await runtimeHost.session.bindExtensions({});
+		await runtimeHost.session.execution.bindExtensions({});
 		expect(events).toEqual([
 			{ type: "session_before_fork", entryId: userMessage.entryId, position: "before" },
-			{ type: "session_shutdown", reason: "fork", targetSessionFile: runtimeHost.session.sessionFile },
+			{ type: "session_shutdown", reason: "fork", targetSessionFile: runtimeHost.session.execution.sessionFile },
 			{ type: "session_start", reason: "fork", previousSessionFile },
 		]);
 

@@ -26,6 +26,14 @@ export class ResourceOperations {
 		this.context = context;
 	}
 
+	getActiveTools(): string[] {
+		return this.host.getActiveToolNames();
+	}
+
+	getTools(): Array<{ name: string }> {
+		return this.host.getAllTools();
+	}
+
 	getInventory() {
 		const loader = this.host.resourceLoader;
 		const source = loader.getSystemPromptSource();

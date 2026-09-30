@@ -1,14 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AnthropicMessagesCompat, Api, OpenAICompletionsCompat } from "@candy/ai";
-import { getSupportedThinkingLevels } from "@candy/ai";
-import { getBuiltinModels as getModels } from "@candy/ai/providers/all";
+import type { AnthropicMessagesCompat, OpenAICompletionsCompat } from "@candy/ai";
+import { builtinProviders, getBuiltinModels as getModels } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { ModelsJsonProvider } from "../src/core/model-config.ts";
 import type { ModelRuntime } from "../src/core/model-runtime.ts";
-import type { ProviderConfigInput } from "../src/core/provider-composer.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
 describe("ModelRuntime", () => {
@@ -30,16 +28,16 @@ describe("ModelRuntime", () => {
 		vi.restoreAllMocks();
 	});
 
-	/** Create minimal provider config  */
+	/** Create a models.json provider entry. */
 	function providerConfig(
 		baseUrl: string,
 		models: Array<{ id: string; name?: string }>,
 		api: string = "anthropic-messages",
-	): ProviderConfigInput {
+	): ModelsJsonProvider {
 		return {
 			baseUrl,
 			apiKey: "test-key",
-			api: api as Api,
+			api,
 			models: models.map((m) => ({
 				id: m.id,
 				name: m.name ?? m.id,
@@ -1070,373 +1068,13 @@ describe("ModelRuntime", () => {
 		});
 	});
 
-	describe("dynamic provider lifecycle", () => {
-		test("provider metadata reflects registered, OAuth, and built-in providers", async () => {
+	describe("provider metadata", () => {
+		test("lists built-in providers only", async () => {
 			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
 			expect(runtime.getProvider("openai")?.name).toBe("OpenAI");
 			expect(runtime.getProvider("github-copilot")?.name).toBe("GitHub Copilot");
 			expect(runtime.getProvider("zai")?.name).toBe("Z.AI");
 			expect(runtime.getProvider("unknown-provider")).toBeUndefined();
-
-			runtime.registerProvider("named-provider", {
-				name: "Named Provider",
-				baseUrl: "https://provider.test/v1",
-				apiKey: "test-key",
-				api: "openai-completions",
-				models: [
-					{
-						id: "demo-model",
-						name: "Demo Model",
-						reasoning: false,
-						input: ["text"],
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-						contextWindow: 128000,
-						maxTokens: 4096,
-					},
-				],
-			});
-			expect(runtime.getProvider("named-provider")?.name).toBe("Named Provider");
-
-			runtime.registerProvider("oauth-provider", {
-				baseUrl: "https://provider.test/v1",
-				api: "openai-completions",
-				oauth: {
-					name: "OAuth Provider",
-					login: async () => ({ access: "access", refresh: "refresh", expires: Date.now() + 60_000 }),
-					refreshToken: async (credentials) => credentials,
-					getApiKey: (credentials) => credentials.access,
-				},
-				models: [
-					{
-						id: "demo-model",
-						name: "Demo Model",
-						reasoning: false,
-						input: ["text"],
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-						contextWindow: 128000,
-						maxTokens: 4096,
-					},
-				],
-			});
-			expect(runtime.getProvider("oauth-provider")?.name).toBe("OAuth Provider");
-		});
-
-		test("modelOverrides apply to dynamically registered provider models", async () => {
-			writeRawModelsJson({
-				"extension-provider": {
-					modelOverrides: {
-						"extension-model": {
-							name: "Overridden Extension Model",
-							thinkingLevelMap: {
-								off: null,
-								minimal: null,
-								low: null,
-								medium: null,
-								xhigh: "max",
-							},
-							headers: { "x-model-override": "enabled" },
-						},
-					},
-				},
-			});
-
-			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-			runtime.registerProvider("extension-provider", {
-				baseUrl: "https://provider.test/v1",
-				apiKey: "test-key",
-				api: "openai-completions",
-				models: [
-					{
-						id: "extension-model",
-						name: "Extension Model",
-						reasoning: true,
-						input: ["text"],
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-						contextWindow: 128000,
-						maxTokens: 4096,
-					},
-				],
-			});
-
-			const model = runtime.getModel("extension-provider", "extension-model");
-			expect(model).toBeDefined();
-			if (!model) {
-				throw new Error("extension model was not registered");
-			}
-			expect(model.name).toBe("Overridden Extension Model");
-			expect(model.thinkingLevelMap).toEqual({
-				off: null,
-				minimal: null,
-				low: null,
-				medium: null,
-				xhigh: "max",
-			});
-			expect(getSupportedThinkingLevels(model)).toEqual(["high", "xhigh"]);
-			expect(await runtime.getAuth(model)).toMatchObject({
-				auth: { headers: { "x-model-override": "enabled" } },
-			});
-		});
-
-		test("stored API key env propagates to request auth and resolves headers", async () => {
-			await authStorage.modify("cloudflare-ai-gateway", async () => ({
-				type: "api_key",
-				key: "$CLOUDFLARE_API_KEY",
-				env: {
-					CLOUDFLARE_API_KEY: "stored-cf-token",
-					CLOUDFLARE_ACCOUNT_ID: "stored-account",
-					CLOUDFLARE_GATEWAY_ID: "stored-gateway",
-				},
-			}));
-			writeRawModelsJson({
-				"cloudflare-ai-gateway": {
-					headers: { "x-account": "$CLOUDFLARE_ACCOUNT_ID" },
-				},
-			});
-
-			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-			const model = runtime.getModels().find((m) => m.provider === "cloudflare-ai-gateway");
-			expect(model).toBeDefined();
-
-			const auth = await runtime.getAuth(model!);
-
-			expect(auth).toEqual({
-				auth: {
-					headers: {
-						"cf-aig-authorization": "Bearer stored-cf-token",
-						Authorization: null,
-						"x-api-key": null,
-						"x-account": "stored-account",
-					},
-				},
-				env: {
-					CLOUDFLARE_ACCOUNT_ID: "stored-account",
-					CLOUDFLARE_GATEWAY_ID: "stored-gateway",
-				},
-				source: "stored credential",
-			});
-		});
-
-		test("registerProvider treats uppercase apiKey and headers as literals", async () => {
-			const envKeys = ["CUSTOM_NAME", "BEARER", "MODEL_TOKEN"];
-			const savedEnv: Record<string, string | undefined> = {};
-			for (const key of envKeys) {
-				savedEnv[key] = process.env[key];
-				process.env[key] = `env-${key}`;
-			}
-			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-			try {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider("literal-provider", {
-					...providerConfig("https://provider.test/v1", [{ id: "demo-model" }], "openai-completions"),
-					apiKey: "CUSTOM_NAME",
-					headers: { Authorization: "BEARER" },
-					models: [
-						{
-							id: "demo-model",
-							name: "demo-model",
-							reasoning: false,
-							input: ["text"],
-							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-							contextWindow: 100000,
-							maxTokens: 8000,
-							headers: { "x-model-token": "MODEL_TOKEN" },
-						},
-					],
-				});
-
-				expect((await runtime.getAuth("literal-provider"))?.auth.apiKey).toBe("CUSTOM_NAME");
-				const model = runtime.getModel("literal-provider", "demo-model");
-				expect(model).toBeDefined();
-				expect(await runtime.getAuth(model!)).toMatchObject({
-					auth: {
-						apiKey: "CUSTOM_NAME",
-						headers: {
-							Authorization: "BEARER",
-							"x-model-token": "MODEL_TOKEN",
-						},
-					},
-				});
-				expect(warnSpy).not.toHaveBeenCalled();
-			} finally {
-				for (const key of envKeys) {
-					if (savedEnv[key] === undefined) {
-						delete process.env[key];
-					} else {
-						process.env[key] = savedEnv[key];
-					}
-				}
-			}
-		});
-
-		test("failed registerProvider does not persist invalid streamSimple config", async () => {
-			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-			expect(() =>
-				runtime.registerProvider("broken-provider", {
-					streamSimple: (() => {
-						throw new Error("should not run");
-					}) as any,
-				}),
-			).toThrow('Provider broken-provider: "api" is required when registering streamSimple.');
-
-			await expect(runtime.refresh()).resolves.toMatchObject({ aborted: false });
-		});
-
-		test("failed registerProvider does not remove existing provider models", async () => {
-			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-			runtime.registerProvider("demo-provider", {
-				baseUrl: "https://provider.test/v1",
-				apiKey: "test-key",
-				api: "openai-completions",
-				models: [
-					{
-						id: "demo-model",
-						name: "Demo Model",
-						reasoning: false,
-						input: ["text"],
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-						contextWindow: 128000,
-						maxTokens: 4096,
-					},
-				],
-			});
-
-			expect(runtime.getModel("demo-provider", "demo-model")).toBeDefined();
-
-			expect(() =>
-				runtime.registerProvider("demo-provider", {
-					baseUrl: "https://provider.test/v2",
-					apiKey: "test-key",
-					models: [
-						{
-							id: "broken-model",
-							name: "Broken Model",
-							reasoning: false,
-							input: ["text"],
-							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-							contextWindow: 128000,
-							maxTokens: 4096,
-						},
-					],
-				}),
-			).toThrow('Provider demo-provider, model broken-model: no "api" specified.');
-
-			expect(runtime.getModel("demo-provider", "demo-model")).toBeDefined();
-			await expect(runtime.refresh()).resolves.toMatchObject({ aborted: false });
-			expect(runtime.getModel("demo-provider", "demo-model")).toBeDefined();
-		});
-
-		test("unregisterProvider removes the runtime OAuth overlay without mutating global state", async () => {
-			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-			runtime.registerProvider("anthropic", {
-				oauth: {
-					name: "Custom Anthropic OAuth",
-					login: async () => ({
-						access: "custom-access-token",
-						refresh: "custom-refresh-token",
-						expires: Date.now() + 60_000,
-					}),
-					refreshToken: async (credentials) => credentials,
-					getApiKey: (credentials) => credentials.access,
-				},
-			});
-
-			expect(runtime.getRegisteredProviderConfig("anthropic")?.oauth?.name).toBe("Custom Anthropic OAuth");
-
-			runtime.unregisterProvider("anthropic");
-
-			expect(runtime.getRegisteredProviderConfig("anthropic")).toBeUndefined();
-		});
-
-		describe("dynamic provider override persistence", () => {
-			test("baseUrl-only override keeps built-in provider models after refresh", async () => {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider("anthropic", { baseUrl: "https://proxy.test/anthropic" });
-				await runtime.refresh();
-
-				const anthropicModels = getModelsForProvider(runtime, "anthropic");
-				expect(anthropicModels.length).toBeGreaterThan(1);
-				expect(anthropicModels.every((m) => m.baseUrl === "https://proxy.test/anthropic")).toBe(true);
-			});
-
-			test("models-only override replaces built-in provider models after refresh", async () => {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider("anthropic", {
-					...providerConfig("https://custom.test/anthropic", [{ id: "custom-claude" }], "anthropic-messages"),
-					baseUrl: "https://custom.test/anthropic",
-				});
-				await runtime.refresh();
-
-				expect(getModelsForProvider(runtime, "anthropic").map((m) => m.id)).toEqual(["custom-claude"]);
-				expect(runtime.getModel("anthropic", "custom-claude")?.baseUrl).toBe("https://custom.test/anthropic");
-			});
-
-			test("models plus baseUrl override replaces built-in provider models after refresh", async () => {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider("anthropic", {
-					...providerConfig("https://custom.test/anthropic", [{ id: "custom-claude" }], "anthropic-messages"),
-					baseUrl: "https://custom.test/anthropic",
-				});
-				runtime.registerProvider("anthropic", { baseUrl: "https://proxy.test/anthropic" });
-				await runtime.refresh();
-
-				expect(getModelsForProvider(runtime, "anthropic").map((m) => m.id)).toEqual(["custom-claude"]);
-				expect(runtime.getModel("anthropic", "custom-claude")?.baseUrl).toBe("https://proxy.test/anthropic");
-			});
-
-			test("models-only custom provider registration survives refresh", async () => {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider(
-					"custom-provider",
-					providerConfig("https://custom.test/v1", [{ id: "custom-a" }, { id: "custom-b" }], "openai-completions"),
-				);
-				await runtime.refresh();
-
-				expect(getModelsForProvider(runtime, "custom-provider").map((m) => m.id)).toEqual(["custom-a", "custom-b"]);
-			});
-
-			test("baseUrl-only override keeps custom provider models after refresh", async () => {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider(
-					"custom-provider",
-					providerConfig("https://custom.test/v1", [{ id: "custom-a" }, { id: "custom-b" }], "openai-completions"),
-				);
-				runtime.registerProvider("custom-provider", { baseUrl: "https://proxy.test/custom" });
-				await runtime.refresh();
-
-				expect(getModelsForProvider(runtime, "custom-provider").map((m) => m.id)).toEqual(["custom-a", "custom-b"]);
-				expect(
-					getModelsForProvider(runtime, "custom-provider").every((m) => m.baseUrl === "https://proxy.test/custom"),
-				).toBe(true);
-			});
-
-			test("headers-only override keeps custom provider models after refresh", async () => {
-				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-
-				runtime.registerProvider(
-					"custom-provider",
-					providerConfig("https://custom.test/v1", [{ id: "custom-a" }, { id: "custom-b" }], "openai-completions"),
-				);
-				runtime.registerProvider("custom-provider", { headers: { "x-proxy": "enabled" } });
-				await runtime.refresh();
-
-				const models = getModelsForProvider(runtime, "custom-provider");
-				expect(models.map((m) => m.id)).toEqual(["custom-a", "custom-b"]);
-				expect(models.every((m) => m.baseUrl === "https://custom.test/v1")).toBe(true);
-				expect(await runtime.getAuth(models[0])).toMatchObject({
-					auth: { headers: { "x-proxy": "enabled" } },
-				});
-			});
 		});
 	});
 
@@ -2058,14 +1696,15 @@ describe("ModelRuntime", () => {
 
 	test("shares catalog refresh work while callers cancel independently", async () => {
 		const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-		const provider = providerConfig("https://provider.test/v1", [{ id: "model" }]);
+		const provider = builtinProviders().find((candidate) => candidate.id === "anthropic");
+		if (!provider) throw new Error("Anthropic provider is missing");
 		let refreshCount = 0;
 		let markStarted!: () => void;
 		const started = new Promise<void>((resolve) => {
 			markStarted = resolve;
 		});
 		let finishRefresh!: () => void;
-		runtime.registerProvider("shared-refresh", {
+		runtime.registerNativeProvider({
 			...provider,
 			refreshModels: async () => {
 				refreshCount++;
@@ -2073,14 +1712,13 @@ describe("ModelRuntime", () => {
 				await new Promise<void>((resolve) => {
 					finishRefresh = resolve;
 				});
-				return provider.models ?? [];
 			},
 		});
 		const firstController = new AbortController();
 		const secondController = new AbortController();
-		const first = runtime.refresh({ providers: ["shared-refresh"], signal: firstController.signal });
+		const first = runtime.refresh({ providers: ["anthropic"], signal: firstController.signal });
 		await started;
-		const second = runtime.refresh({ providers: ["shared-refresh"], signal: secondController.signal });
+		const second = runtime.refresh({ providers: ["anthropic"], signal: secondController.signal });
 		firstController.abort();
 		await expect(first).resolves.toMatchObject({ aborted: true });
 		finishRefresh();
@@ -2090,22 +1728,22 @@ describe("ModelRuntime", () => {
 
 	test("disposal aborts and settles owned catalog refreshes", async () => {
 		const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
-		const config = providerConfig("https://provider.test/v1", [{ id: "model" }]);
+		const provider = builtinProviders().find((candidate) => candidate.id === "anthropic");
+		if (!provider) throw new Error("Anthropic provider is missing");
 		let markStarted!: () => void;
 		const started = new Promise<void>((resolve) => {
 			markStarted = resolve;
 		});
-		runtime.registerProvider("dispose-refresh", {
-			...config,
+		runtime.registerNativeProvider({
+			...provider,
 			refreshModels: async ({ signal }) => {
 				markStarted();
 				await new Promise<void>((_resolve, reject) => {
 					signal.addEventListener("abort", () => reject(signal.reason), { once: true });
 				});
-				return config.models ?? [];
 			},
 		});
-		const refresh = runtime.refresh({ providers: ["dispose-refresh"] });
+		const refresh = runtime.refresh({ providers: ["anthropic"] });
 		await started;
 		await runtime.dispose();
 		await expect(refresh).resolves.toMatchObject({ aborted: true });

@@ -43,7 +43,7 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 			],
 		});
 		harnesses.push(harness);
-		harness.session.subscribe((event) => {
+		harness.session.execution.subscribe((event) => {
 			if (event.type === "agent_settled") {
 				publicEvents.push("agent_settled");
 			}
@@ -53,7 +53,7 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 			fauxAssistantMessage("recovered"),
 		]);
 
-		await harness.session.prompt("test");
+		await harness.session.execution.prompt("test");
 
 		expect(harness.eventsOfType("agent_end").map((event) => event.willRetry)).toEqual([true, false]);
 		expect(harness.eventsOfType("agent_settled")).toHaveLength(1);
@@ -81,7 +81,7 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
 
-		await harness.session.prompt("hello");
+		await harness.session.execution.prompt("hello");
 
 		expect(getUserTexts(harness)).toEqual(["hello", "status follow-up"]);
 		expect(harness.eventsOfType("agent_end")).toHaveLength(2);
@@ -115,9 +115,9 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 			],
 		});
 		harnesses.push(harness);
-		await harness.session.bindExtensions({
+		await harness.session.execution.bindExtensions({
 			commandContextActions: {
-				waitForIdle: () => harness.session.waitForIdle(),
+				waitForIdle: () => harness.session.execution.waitForIdle(),
 				newSession: async () => ({ cancelled: false }),
 				fork: async () => ({ cancelled: false }),
 				clone: async () => ({ cancelled: false }),
@@ -127,7 +127,7 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 			},
 		});
 		const toolStarted = new Promise<void>((resolve) => {
-			const unsubscribe = harness.session.subscribe((event) => {
+			const unsubscribe = harness.session.execution.subscribe((event) => {
 				if (event.type === "tool_execution_start" && event.toolName === "wait") {
 					unsubscribe();
 					resolve();
@@ -139,9 +139,13 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 			fauxAssistantMessage("done"),
 		]);
 
-		const promptPromise = harness.session.prompt("start");
+		const promptPromise = harness.session.execution.prompt("start");
 		await toolStarted;
-		const commandPromise = harness.session.executeCommand({ source: "extension", name: "after-idle", args: "" });
+		const commandPromise = harness.session.execution.executeCommand({
+			source: "extension",
+			name: "after-idle",
+			args: "",
+		});
 		await commandStarted;
 		let commandFinished = false;
 		void commandPromise.then(() => {

@@ -1,5 +1,5 @@
 import type { Usage } from "@candy/ai";
-import type { SessionEntry } from "./session-manager.ts";
+import type { SessionEntry } from "./session-history.ts";
 
 export interface UsageTotals {
 	input: number;

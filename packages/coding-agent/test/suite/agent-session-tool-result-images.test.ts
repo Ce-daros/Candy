@@ -41,14 +41,14 @@ describe("AgentSession tool result images", () => {
 			settings: { images: { autoResize: false } },
 		});
 		harnesses.push(harness);
-		if (!harness.session.model) throw new Error("Expected a model");
-		harness.session.model.inputLimits = { images: { resize: resizeOptions } };
+		if (!harness.session.selection.model) throw new Error("Expected a model");
+		harness.session.selection.model.inputLimits = { images: { resize: resizeOptions } };
 		harness.setResponses([
 			fauxAssistantMessage([fauxToolCall("screenshot", {})], { stopReason: "toolUse" }),
 			fauxAssistantMessage("done"),
 		]);
 
-		await harness.session.prompt("take a screenshot");
+		await harness.session.execution.prompt("take a screenshot");
 
 		expect(normalizeToolResultImages).toHaveBeenCalledWith(expect.any(Array), {
 			autoResizeImages: false,

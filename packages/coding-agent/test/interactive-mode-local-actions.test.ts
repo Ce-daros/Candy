@@ -22,8 +22,7 @@ describe("InteractiveMode local Command and History actions", () => {
 		initTheme("dark");
 		const context = {
 			session: {
-				exportToJsonl: vi.fn((path: string) => path),
-				exportToHtml: vi.fn(async (path?: string) => path ?? "default.html"),
+				history: { exportToJsonl: vi.fn((path: string) => path) },
 			},
 			showStatus: vi.fn(),
 			showError: vi.fn(),
@@ -36,7 +35,7 @@ describe("InteractiveMode local Command and History actions", () => {
 		await exportCommand.call(context, "session.jsonl");
 		await exportCommand.call(context, "report.html");
 
-		expect(context.session.exportToJsonl).toHaveBeenCalledWith("session.jsonl");
+		expect(context.session.history.exportToJsonl).toHaveBeenCalledWith("session.jsonl");
 		expect(exportSessionHtml).toHaveBeenCalledWith(context.session, "report.html", { themeName: "dark" });
 		expect(context.showStatus).toHaveBeenCalledWith("Session exported to: report.html");
 		expect(context.showError).not.toHaveBeenCalled();
@@ -47,9 +46,11 @@ describe("InteractiveMode local Command and History actions", () => {
 		let name: string | undefined;
 		const context = {
 			session: {
-				setSessionName: vi.fn((value: string) => {
-					name = value;
-				}),
+				execution: {
+					setSessionName: vi.fn((value: string) => {
+						name = value;
+					}),
+				},
 			},
 			sessionManager: { getSessionName: () => name },
 			chatContainer: new Container(),
@@ -63,7 +64,7 @@ describe("InteractiveMode local Command and History actions", () => {
 
 		rename.call(context, "  Research session  ");
 
-		expect(context.session.setSessionName).toHaveBeenCalledWith("Research session");
+		expect(context.session.execution.setSessionName).toHaveBeenCalledWith("Research session");
 		expect(context.sessionManager.getSessionName()).toBe("Research session");
 		expect(context.renderer.requestRender).toHaveBeenCalledOnce();
 		expect(context.showWarning).not.toHaveBeenCalled();
@@ -72,9 +73,11 @@ describe("InteractiveMode local Command and History actions", () => {
 	it("returns action failures to the Command argument input", async () => {
 		const context = {
 			session: {
-				exportToJsonl: vi.fn(() => {
-					throw new Error("Disk full");
-				}),
+				history: {
+					exportToJsonl: vi.fn(() => {
+						throw new Error("Disk full");
+					}),
+				},
 			},
 			showStatus: vi.fn(),
 		};

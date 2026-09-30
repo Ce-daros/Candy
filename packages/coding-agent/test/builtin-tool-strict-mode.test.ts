@@ -3,14 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
-import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createAllToolDefinitions, createAllTools } from "../src/core/tools/index.ts";
 import { wrapToolDefinition } from "../src/core/tools/tool-definition-wrapper.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { getTestAgent } from "./execution-internals.ts";
+import { assembleTestSession as assembleAgentSession } from "./session-factory.ts";
 
 const strictToolNames = ["read", "bash", "powershell", "edit", "write"] as const;
 
@@ -38,8 +39,6 @@ describe("strict built-in tools", () => {
 			expect(wrapToolDefinition(override).constrainedSampling).toBe(false);
 			expect(override.execute).toBe(definition.execute);
 			expect(override.prepareArguments).toBe(definition.prepareArguments);
-			expect(override.renderCall).toBe(definition.renderCall);
-			expect(override.renderResult).toBe(definition.renderResult);
 			expect(override.promptGuidelines).toBe(definition.promptGuidelines);
 			expect(definition.constrainedSampling).toEqual({ type: "json_schema", strict: "prefer" });
 		}
@@ -80,28 +79,28 @@ describe("strict built-in tools", () => {
 					agentDir,
 					model: getModel("anthropic", "claude-sonnet-4-5"),
 					settingsManager,
-					sessionManager: SessionManager.inMemory(cwd),
+					sessionManager: SessionHistory.inMemory(cwd),
 					resourceLoader,
 				});
 				try {
-					const originalPrompt = session.systemPrompt;
-					await session.bindExtensions({});
-					expect(session.getActiveToolNames()).toEqual(activeTools);
-					expect(session.systemPrompt).toBe(originalPrompt);
+					const originalPrompt = session.execution.systemPrompt;
+					await session.execution.bindExtensions({});
+					expect(session.execution.getActiveToolNames()).toEqual(activeTools);
+					expect(session.execution.systemPrompt).toBe(originalPrompt);
 					for (const name of strictToolNames) {
-						expect(session.getToolDefinition(name)?.constrainedSampling).toBe(false);
+						expect(session.execution.getToolDefinition(name)?.constrainedSampling).toBe(false);
 					}
-					for (const tool of session.agent.state.tools) {
+					for (const tool of getTestAgent(session.execution).state.tools) {
 						expect(tool.constrainedSampling).toBe(false);
 					}
 					if (activeTools.includes("read")) {
 						writeFileSync(join(cwd, "sample.txt"), "still works");
-						const read = session.agent.state.tools.find((tool) => tool.name === "read")!;
+						const read = getTestAgent(session.execution).state.tools.find((tool) => tool.name === "read")!;
 						const result = await read.execute("read-test", { path: "sample.txt" });
 						expect(result.content).toEqual([{ type: "text", text: "still works" }]);
 					}
 				} finally {
-					await session.dispose();
+					await session.execution.dispose();
 				}
 			} finally {
 				rmSync(cwd, { recursive: true, force: true });

@@ -5,6 +5,7 @@ import { chmod, chown, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile }
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
+import type { AgentMessage } from "@candy/agent-core";
 import { contentText, InMemoryCredentialStore } from "@candy/ai";
 import { getCurrentSystemPrompt } from "@candy/ai/utils/transcript";
 import {
@@ -15,7 +16,7 @@ import {
 	type InlineExtension,
 	ModelRuntime,
 	ReadOnlyAuthStorage,
-	SessionManager,
+	SessionHistory,
 } from "@candy/coding-agent";
 
 import {
@@ -187,7 +188,9 @@ async function enterToolSandbox(root: string, identity: SandboxIdentity | undefi
 	}
 }
 
-function toTranscriptEvents(messages: AgentSession["messages"]): TranscriptEvent[] {
+function toTranscriptEvents(
+	messages: ReturnType<AgentSession["history"]["buildSessionContext"]>["messages"],
+): TranscriptEvent[] {
 	const events: TranscriptEvent[] = [];
 	for (const message of messages) {
 		if (message.role === "user") {
@@ -235,11 +238,15 @@ async function seedWorkspace(workspace: string, files: Readonly<Record<string, s
 	}
 }
 
+function getCommittedMessages(session: AgentSession): AgentMessage[] {
+	return session.history.getBranch().flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
+}
+
 async function promptAgent(session: AgentSession, input: string, signal: AbortSignal | undefined): Promise<string> {
 	signal?.throwIfAborted();
-	const previousMessageCount = session.messages.length;
-	await session.prompt(input);
-	const assistant = session.messages
+	const previousMessageCount = getCommittedMessages(session).length;
+	await session.execution.prompt(input);
+	const assistant = getCommittedMessages(session)
 		.slice(previousMessageCount)
 		.reverse()
 		.find((message) => message.role === "assistant");
@@ -249,7 +256,7 @@ async function promptAgent(session: AgentSession, input: string, signal: AbortSi
 			assistant.errorMessage ?? `Agent run ended with unexpected stop reason: ${assistant.stopReason}.`,
 		);
 	}
-	const output = session.getLastAssistantText();
+	const output = session.history.getLastAssistantText();
 	if (!output && assistant.stopReason === "stop") throw new Error("Agent run produced no assistant text.");
 	return output ?? "";
 }
@@ -300,7 +307,7 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		});
 	}
 
-	let sessionManager: SessionManager | undefined;
+	let sessionManager: SessionHistory | undefined;
 	let session: AgentSession | undefined;
 	let runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>> | undefined;
 	let result: SimpleHarnessResult<string | TOutput> | undefined;
@@ -336,7 +343,7 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		}
 
 		signal?.throwIfAborted();
-		sessionManager = SessionManager.create(workspace, join(root, "sessions"));
+		sessionManager = SessionHistory.create(workspace, join(root, "sessions"));
 		setArtifact("runId", sessionManager.getSessionId());
 		runtime = await createAgentSessionRuntime({
 			cwd: workspace,
@@ -367,13 +374,13 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		const steps = typeof input === "string" ? [{ type: "prompt" as const, content: input }] : input;
 		let abortPromise: Promise<void> | undefined;
 		const abort = () => {
-			abortPromise ??= session!.abort();
+			abortPromise ??= session!.execution.abort();
 		};
 		signal?.addEventListener("abort", abort, { once: true });
 		try {
 			for (const step of steps) {
 				if (step.type === "reload") {
-					await session.reload();
+					await session.resources.reload();
 					continue;
 				}
 				response = await promptAgent(session, step.content, signal);
@@ -387,14 +394,15 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		}
 		// A forced prompt is not recorded in the transcript, so use the one the transform
 		// extension sent; otherwise the replayed transcript prompt is what the provider received.
-		const systemPrompt = forcedSystemPrompt ?? getCurrentSystemPrompt(session.messages);
-		const stats = session.getSessionStats();
+		const committedMessages = getCommittedMessages(session);
+		const systemPrompt = forcedSystemPrompt ?? getCurrentSystemPrompt(committedMessages);
+		const stats = session.history.getSessionStats();
 		const hasPricing = [model.cost, ...(model.cost.tiers ?? [])].some(
 			({ input: inputCost, output: outputCost, cacheRead, cacheWrite }) =>
 				inputCost > 0 || outputCost > 0 || cacheRead > 0 || cacheWrite > 0,
 		);
 		runDiagnostics = {
-			events: toTranscriptEvents(session.messages),
+			events: toTranscriptEvents(committedMessages),
 			metadata: { systemPromptSha256: createHash("sha256").update(systemPrompt).digest("hex") },
 			usage: {
 				provider: model.provider,

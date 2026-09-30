@@ -8,12 +8,12 @@
 import type { ImageContent, TextContent } from "@candy/ai";
 import type { Component } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
-import type { ToolDefinition, ToolRenderContext } from "../../core/extensions/types.ts";
+import type { ToolRenderContext, ToolRenderers } from "../tool-render-types.ts";
 import { ansiLinesToHtml } from "./ansi-to-html.ts";
 
 export interface ToolHtmlRendererDeps {
 	/** Function to look up tool definition by name */
-	getToolDefinition: (name: string) => ToolDefinition | undefined;
+	getToolDefinition: (name: string) => ToolRenderers | undefined;
 	/** Theme for styling */
 	theme: Theme;
 	/** Working directory for render context */

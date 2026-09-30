@@ -2,13 +2,13 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { createExtensionRuntime } from "../src/core/extensions/loader.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { assembleTestSession as assembleAgentSession } from "./session-factory.ts";
 
 describe("assembleAgentSession skills option", () => {
 	let tempDir: string;
@@ -46,12 +46,12 @@ This is a test skill.
 			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: SessionHistory.inMemory(),
 		});
 
 		// Skills should be discovered and exposed on the session
-		expect(session.resourceLoader.getSkills().skills.length).toBeGreaterThan(0);
-		expect(session.resourceLoader.getSkills().skills.some((s) => s.name === "test-skill")).toBe(true);
+		expect(session.execution.resourceLoader.getSkills().skills.length).toBeGreaterThan(0);
+		expect(session.execution.resourceLoader.getSkills().skills.some((s) => s.name === "test-skill")).toBe(true);
 	});
 
 	it("should have empty skills when resource loader returns none (--no-skills)", async () => {
@@ -72,12 +72,12 @@ This is a test skill.
 		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: SessionHistory.inMemory(),
 			resourceLoader,
 		});
 
-		expect(session.resourceLoader.getSkills().skills).toEqual([]);
-		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
+		expect(session.execution.resourceLoader.getSkills().skills).toEqual([]);
+		expect(session.execution.resourceLoader.getSkills().diagnostics).toEqual([]);
 	});
 
 	it("should use provided skills when resource loader supplies them", async () => {
@@ -107,11 +107,11 @@ This is a test skill.
 		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: SessionHistory.inMemory(),
 			resourceLoader,
 		});
 
-		expect(session.resourceLoader.getSkills().skills).toEqual([customSkill]);
-		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
+		expect(session.execution.resourceLoader.getSkills().skills).toEqual([customSkill]);
+		expect(session.execution.resourceLoader.getSkills().diagnostics).toEqual([]);
 	});
 });

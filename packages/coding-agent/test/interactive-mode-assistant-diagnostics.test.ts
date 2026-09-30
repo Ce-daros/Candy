@@ -1,6 +1,7 @@
 import type { AssistantMessage } from "@candy/ai";
 import { Container } from "@candy/tui";
 import { describe, expect, test } from "vitest";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -50,7 +51,7 @@ const message: AssistantMessage = {
 
 type NoticeContext = {
 	chatContainer: Container;
-	settingsManager: { getShowCacheMissNotices(): boolean };
+	settingsManager: SettingsManager;
 	sessionManager: { getBranch(): Array<{ type: "message"; message: AssistantMessage }> };
 };
 
@@ -64,7 +65,7 @@ describe("InteractiveMode assistant diagnostics", () => {
 		initTheme("dark");
 		const enabled = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => true },
+			settingsManager: SettingsManager.inMemory({ showCacheMissNotices: true }),
 			sessionManager: { getBranch: () => [] },
 		};
 		maybeShowThinkingDropNotice.call(enabled, message);
@@ -73,7 +74,7 @@ describe("InteractiveMode assistant diagnostics", () => {
 
 		const disabled = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => false },
+			settingsManager: SettingsManager.inMemory({ showCacheMissNotices: false }),
 			sessionManager: { getBranch: () => [] },
 		};
 		maybeShowThinkingDropNotice.call(disabled, message);
@@ -84,7 +85,7 @@ describe("InteractiveMode assistant diagnostics", () => {
 		initTheme("dark");
 		const context = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => true },
+			settingsManager: SettingsManager.inMemory({ showCacheMissNotices: true }),
 			sessionManager: { getBranch: () => [{ type: "message" as const, message }] },
 		};
 

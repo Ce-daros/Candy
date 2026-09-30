@@ -1,21 +1,18 @@
 # Terminal UI
 
-`@candy/tui` provides the terminal component system used by candy. Extensions use it when built-in dialogs, notifications, status text, and widgets are not enough for the interaction they need.
+`@candy/tui` provides terminal components and rendering utilities. Candy extensions use the host-owned dialogs and text updates described in [Extensions](extensions.md#interact-with-the-user); they do not install components into Candy's interface.
 
-Start with `ctx.ui` methods from an [extension](extensions.md#interact-with-the-user). Build a custom component only when the UI needs its own rendering, keyboard or mouse input, focus, layout, or lifecycle.
+Use this package when building a terminal interface that owns its rendering, input, focus, layout, and lifecycle.
 
 ## Choose an integration point
 
 | Need | Use |
 |---|---|
-| Select, confirm, input, or multi-line editor | `ctx.ui.select()`, `confirm()`, `input()`, or `editor()` |
-| Non-blocking feedback | `ctx.ui.notify()` or `setStatus()` |
-| Persistent content near the editor | `ctx.ui.setWidget()` |
-| Replace the header, footer, or editor | The corresponding `ctx.ui` component factory |
-| Temporary interactive screen or overlay | `ctx.ui.custom()` |
-| Custom rendering for a tool or session entry | An extension renderer |
+| Compose a terminal view | Components such as `VStack`, `Box`, and `ScrollView` |
+| Read text or a selection | `Input`, `Editor`, or `SelectList` |
+| Render Markdown or images | `Markdown` or `Image` |
 
-These APIs receive candy’s active theme and keybindings where needed. Do not create a second terminal renderer inside an extension.
+Import public components from `@candy/coding-agent/ui` or `@candy/tui` where the package contract allows them.
 
 ## Understand the component model
 
@@ -39,21 +36,17 @@ The package includes components for common layouts and controls:
 - `Loader` and `CancellableLoader` report ongoing work.
 - `MouseRegion` adds pointer behavior around another component.
 
-Prefer these components over rebuilding selection, scrolling, text editing, or width handling. The extension examples show how to combine them with candy’s borders and themes.
+Prefer these components over rebuilding selection, scrolling, text editing, or width handling.
 
 ## Handle keyboard input and focus
 
-Use `matchesKey()` and `Key` for terminal keyboard input. The parser accounts for supported terminal protocols and key modifiers. Extension components should use the injected `KeybindingsManager` for configurable application actions.
+Use `matchesKey()` and `Key` for terminal keyboard input. The parser accounts for supported terminal protocols and key modifiers.
 
 A component that displays a text cursor should implement `Focusable` and place `CURSOR_MARKER` immediately before its visual cursor. The TUI uses that marker to position the hardware cursor for input method editors.
 
 Containers that wrap an `Input` or `Editor` must propagate their `focused` state to that child. Without propagation, Chinese, Japanese, Korean, and other IME candidate windows can appear at the wrong screen position.
 
-Extend candy’s `CustomEditor` when replacing the main editor. It preserves application shortcuts and agent controls.
-
-Forward keys your editor does not own to the base implementation, and restore the default by clearing the custom editor factory.
-
-The default editor draws the startup frame and the border for the active thinking level. Its color, six-step meter, idle motion, and working trails change with that level. Shell command titles use yellow; retry, compaction, and branch-summary state appears on the upper border. Built-in selectors and dialogs expand above the editor and restore its draft and focus when closed. With `uiAnimations` disabled, they appear in their final position and the editor retains level colors and a short status word. A replacement editor owns its own frame and status presentation. Extensions can use `ctx.ui.setWorkingVisible()` to hide the built-in working state.
+Candy owns the interactive application editor and its surrounding interface. This package does not provide an extension hook for replacing those surfaces.
 
 ## Handle mouse input
 
@@ -63,22 +56,9 @@ Unhandled wheel events scroll the nearest `ScrollView`. Unhandled primary-button
 
 Candy always runs fullscreen and owns the viewport, so design every interaction with a keyboard path alongside mouse handling.
 
-## Use custom screens and overlays
-
-`ctx.ui.custom()` temporarily gives one component control of the interactive area and resolves when that component calls the supplied completion callback.
-
-Pass `overlay: true` to draw above existing content. Overlay options control size, anchors, offsets, margins, and responsive visibility. An overlay handle can change focus or temporarily hide and show the overlay with `setHidden()` while the interaction remains active.
-
-Focused overlays retain input ownership across ordinary renders. If another component should receive input while an overlay remains visible, explicitly release or redirect focus through the handle.
-
-Treat each custom component instance as belonging to one interaction. Create a new instance when starting that interaction again.
-
-Finish the interaction with the completion callback supplied to the component factory. It resolves the `ctx.ui.custom()` promise and disposes the component. Do not call `OverlayHandle.hide()` on an overlay created by `ctx.ui.custom()`.
-
-
 ## Apply themes correctly
 
-Use the theme passed to the extension or component callback. Theme helpers produce ANSI-styled strings for semantic colors such as accent, muted text, success, warnings, errors, tool output, and Markdown.
+Use the theme supplied by the application embedding a component. Theme helpers produce ANSI-styled strings for semantic colors such as accent, muted text, success, warnings, errors, tool output, and Markdown.
 
 Use `theme.style()` to combine foreground and background colors with text attributes:
 
@@ -108,11 +88,11 @@ Use [Themes](themes.md) to create terminal palettes. Use candy’s `getMarkdownT
 
 Rendering runs on the interactive path. Cache expensive layout and highlighting work by width and content, then clear that cache from `invalidate()`.
 
-Keep the default view compact and reveal detail through expansion or a dedicated screen. For custom tool rendering, handle partial results and reuse the previous component when it can be updated safely.
+Keep the default view compact and reveal detail through expansion or a dedicated screen.
 
 Use `CANDY_TUI_WRITE_LOG` to capture the raw ANSI stream when diagnosing rendering problems. Test narrow widths, wide characters, resize events, theme changes, and focus transitions.
 
 ## Source
 
 
-The public exports are defined in [`packages/tui/src/index.ts`](../../tui/src/index.ts). See [Extensions](extensions.md) for extension lifecycle, state, tools, events, and mode behavior.
+The public exports are defined in [`packages/tui/src/index.ts`](../../tui/src/index.ts). See [Extensions](extensions.md) for extension lifecycle, state, tools, events, and host-owned interaction methods.

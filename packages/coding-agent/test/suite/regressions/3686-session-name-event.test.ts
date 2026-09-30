@@ -15,7 +15,7 @@ describe("regression #3686: session name changes emit an event", () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 
-		harness.session.setSessionName("hello world");
+		harness.session.execution.setSessionName("hello world");
 
 		expect(harness.sessionManager.getSessionName()).toBe("hello world");
 		expect(harness.eventsOfType("session_info_changed").map((event) => event.name)).toEqual(["hello world"]);
@@ -54,7 +54,7 @@ describe("regression #3686: session name changes emit an event", () => {
 		harnesses.push(harness);
 
 		api?.setSessionName("first");
-		harness.session.setSessionName("second");
+		harness.session.execution.setSessionName("second");
 
 		expect(events).toEqual([{ name: "first" }, { name: "second" }]);
 	});

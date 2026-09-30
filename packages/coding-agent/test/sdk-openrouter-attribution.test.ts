@@ -7,17 +7,19 @@ import {
 	createAssistantMessageEventStream,
 	type Model,
 	normalizeContext,
+	type Provider,
 	type ProviderHeaders,
 	type SimpleStreamOptions,
 } from "@candy/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { SessionHistory } from "../src/core/session-history.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
+import { getTestAgent } from "./execution-internals.ts";
 import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
+import { assembleTestSession as assembleAgentSession } from "./session-factory.ts";
 
 describe("assembleAgentSession provider attribution headers", () => {
 	let tempDir: string;
@@ -95,7 +97,7 @@ describe("assembleAgentSession provider attribution headers", () => {
 	): Promise<ProviderHeaders | undefined> {
 		const settingsManager = SettingsManager.create(cwd, agentDir);
 		if (options.telemetryEnabled === false) {
-			await settingsManager.setEnableInstallTelemetry(false);
+			await settingsManager.commitSetting("global", "enableInstallTelemetry", false);
 		}
 
 		const authStorage = AuthStorage.inMemory({
@@ -104,16 +106,28 @@ describe("assembleAgentSession provider attribution headers", () => {
 		const modelRuntime = await createInMemoryModelRuntime(authStorage);
 		let capturedOptions: SimpleStreamOptions | undefined;
 
-		modelRuntime.registerProvider(model.provider, {
-			api: model.api,
-			headers: options.providerHeaders,
+		const provider: Provider = {
+			id: model.provider,
+			name: "Attribution test provider",
+			auth: {
+				apiKey: {
+					name: "Test API key",
+					resolve: async () => ({
+						auth: { apiKey: "test-api-key", headers: options.providerHeaders },
+						source: "test",
+					}),
+				},
+			},
+			getModels: () => [model],
+			stream: () => createDoneStream(),
 			streamSimple: (_model, _context, providerOptions) => {
 				capturedOptions = providerOptions;
 				return createDoneStream();
 			},
-		});
+		};
+		modelRuntime.registerNativeProvider(provider);
 
-		const sessionManager = SessionManager.inMemory(cwd);
+		const sessionManager = SessionHistory.inMemory(cwd);
 		if (options.sessionId) {
 			sessionManager.newSession({ id: options.sessionId });
 		}
@@ -130,14 +144,18 @@ describe("assembleAgentSession provider attribution headers", () => {
 		});
 
 		try {
-			const stream = await session.agent.streamFunction(model, normalizeContext({ messages: [] }), {
-				sessionId: session.sessionId,
-				...(options.requestHeaders ? { headers: options.requestHeaders } : {}),
-			});
+			const stream = await getTestAgent(session.execution).streamFunction(
+				model,
+				normalizeContext({ messages: [] }),
+				{
+					sessionId: session.execution.sessionId,
+					...(options.requestHeaders ? { headers: options.requestHeaders } : {}),
+				},
+			);
 			await stream.result();
 			return capturedOptions?.headers;
 		} finally {
-			await session.dispose();
+			await session.execution.dispose();
 			modelRuntime.unregisterProvider(model.provider);
 		}
 	}
@@ -183,7 +201,9 @@ describe("assembleAgentSession provider attribution headers", () => {
 				"X-OpenRouter-Categories": "provider-category",
 			},
 			requestHeaders: {
+				"HTTP-Referer": "https://provider.example",
 				"X-OpenRouter-Title": "request-title",
+				"X-OpenRouter-Categories": "provider-category",
 			},
 		});
 
@@ -251,10 +271,10 @@ describe("assembleAgentSession provider attribution headers", () => {
 		expect(headers?.["x-opencode-client"]).toBe("candy");
 	});
 
-	it("lets configured OpenCode headers override the defaults", async () => {
+	it("lets request OpenCode headers override the defaults", async () => {
 		const headers = await captureHeaders(createModel("opencode", "https://opencode.ai/zen/v1"), {
 			sessionId: "opencode-session",
-			providerHeaders: {
+			requestHeaders: {
 				"x-opencode-session": "configured-session",
 				"x-opencode-client": "configured-client",
 			},

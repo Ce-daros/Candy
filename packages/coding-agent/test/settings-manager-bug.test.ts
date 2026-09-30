@@ -28,12 +28,12 @@ describe("SettingsManager - External Edit Preservation", () => {
 		const manager = SettingsManager.create(projectDir, agentDir);
 		writeFileSync(settingsPath, "{broken");
 
-		await expect(manager.setShowImages(false)).rejects.toThrow();
+		await expect(manager.commitNestedSetting("global", "terminal", "showImages", false)).rejects.toThrow();
 		expect(readFileSync(settingsPath, "utf8")).toBe("{broken");
-		expect(manager.getShowImages()).toBe(true);
+		expect(manager.read("show-images")).toBe(true);
 
 		writeFileSync(settingsPath, "{}");
-		await manager.setShowImages(false);
+		await manager.commitNestedSetting("global", "terminal", "showImages", false);
 		expect(JSON.parse(readFileSync(settingsPath, "utf8")).terminal.showImages).toBe(false);
 	});
 
@@ -57,7 +57,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 
 		failNextWrite = true;
 		const failedCommit = manager.setTheme("dark");
-		const successfulCommit = manager.setShowImages(false);
+		const successfulCommit = manager.commitNestedSetting("global", "terminal", "showImages", false);
 		await expect(failedCommit).rejects.toThrow("first write failed");
 		await successfulCommit;
 		expect(JSON.parse(global)).toEqual({ terminal: { showImages: false } });

@@ -52,7 +52,7 @@ describe("#8935 parallel preflight abort", () => {
 			),
 		]);
 
-		await harness.session.prompt("run both writes");
+		await harness.session.execution.prompt("run both writes");
 
 		expect(preflights).toEqual(["first", "second"]);
 		expect(executions).toEqual([]);
@@ -65,7 +65,7 @@ describe("#8935 parallel preflight abort", () => {
 		expect(new Set(ends.map((event) => event.toolCallId))).toEqual(new Set(starts.map((event) => event.toolCallId)));
 		expect(ends.every((event) => event.isError)).toBe(true);
 
-		const toolResults = harness.session.messages.filter((message) => message.role === "toolResult");
+		const toolResults = harness.session.execution.messages.filter((message) => message.role === "toolResult");
 		expect(toolResults.map((message) => message.toolCallId)).toEqual(starts.map((event) => event.toolCallId));
 		expect(toolResults.map(getMessageText)).toEqual(["Operation aborted", "Operation aborted"]);
 	});

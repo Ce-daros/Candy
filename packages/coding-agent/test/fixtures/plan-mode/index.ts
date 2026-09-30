@@ -57,25 +57,18 @@ export default function planModeExtension(candy: ExtensionAPI): void {
 	});
 
 	function updateStatus(ctx: ExtensionContext): void {
-		// Footer status
 		if (executionMode && todoItems.length > 0) {
 			const completed = todoItems.filter((t) => t.completed).length;
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`));
+			ctx.ui.setStatus("plan-mode", `📋 ${completed}/${todoItems.length}`);
 		} else if (planModeEnabled) {
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
+			ctx.ui.setStatus("plan-mode", "⏸ plan");
 		} else {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		// Widget showing todo list
 		if (executionMode && todoItems.length > 0) {
 			const lines = todoItems.map((item) => {
-				if (item.completed) {
-					return (
-						ctx.ui.theme.fg("success", "☑ ") + ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
-					);
-				}
-				return `${ctx.ui.theme.fg("muted", "☐ ")}${item.text}`;
+				return `${item.completed ? "☑" : "☐"} ${item.text}`;
 			});
 			ctx.ui.setWidget("plan-todos", lines);
 		} else {
@@ -342,7 +335,7 @@ After completing a step, include a [DONE:n] tag in your response.`;
 			planModeEnabled = true;
 		}
 
-		const entries = ctx.sessionManager.getEntries();
+		const entries = ctx.history.getEntries();
 
 		// Restore persisted state
 		const planModeEntry = entries
