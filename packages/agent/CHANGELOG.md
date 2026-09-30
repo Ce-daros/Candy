@@ -11,6 +11,8 @@
 
 ### Added
 
+- Added `Agent.finalizeMessage()` returning `{ message, entryId }` before messages enter the running context or reach listeners. `message_end` and `turn_end` expose those committed entry IDs.
+- Added read-only snapshots of queued steering and follow-up messages so hosts can inspect pending input without owning or mutating the Agent queues.
 - Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.
 
 ### Breaking Changes

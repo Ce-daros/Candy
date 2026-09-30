@@ -20,6 +20,7 @@ import type {
 	AgentEvent,
 	AgentLoopConfig,
 	AgentMessage,
+	AgentMessageCommit,
 	AgentTool,
 	AgentToolCall,
 	AgentToolResult,
@@ -27,7 +28,9 @@ import type {
 	StreamFn,
 } from "./types.ts";
 
-export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
+export type AgentEventSink = (
+	event: AgentEvent,
+) => Promise<AgentMessageCommit | undefined> | AgentMessageCommit | undefined;
 
 /**
  * Start an agent loop with a new prompt message.
@@ -114,9 +117,15 @@ export async function runAgentLoop(
 
 	await emit({ type: "agent_start" });
 	await emit({ type: "turn_start" });
-	for (const message of initialMessages) {
+	for (let index = 0; index < initialMessages.length; index++) {
+		const message = initialMessages[index];
 		await emit({ type: "message_start", message });
-		await emit({ type: "message_end", message });
+		const finalized = await emit({ type: "message_end", message });
+		if (finalized) {
+			initialMessages[index] = finalized.message;
+			newMessages[index] = finalized.message;
+			currentContext.messages[context.messages.length + index] = finalized.message;
+		}
 	}
 
 	await runLoop(currentContext, newMessages, config, signal, emit, streamFn);
@@ -208,9 +217,10 @@ async function runLoop(
 			// Process prepared and queued messages before the next assistant response.
 			for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
 				await emit({ type: "message_start", message });
-				await emit({ type: "message_end", message });
-				currentContext.messages.push(message);
-				newMessages.push(message);
+				const committed = await emit({ type: "message_end", message });
+				const finalized = committed?.message ?? message;
+				currentContext.messages.push(finalized);
+				newMessages.push(finalized);
 			}
 			pendingMessages = [];
 
@@ -237,18 +247,21 @@ async function runLoop(
 			}
 
 			// Stream assistant response
-			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
+			const messageEntry = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
+			const message = messageEntry.message as AssistantMessage;
 			newMessages.push(message);
 
 			if (message.stopReason === "error" || message.stopReason === "aborted") {
 				lastCompletedTurn = {
 					message,
+					messageEntry,
 					toolResults: [],
+					toolResultEntries: [],
 					context: currentContext,
 					newMessages,
 				};
 				await config.finishTurn?.(lastCompletedTurn, signal);
-				await emit({ type: "turn_end", message, toolResults: [] });
+				await emit({ type: "turn_end", message, toolResults: [], messageEntry, toolResultEntries: [] });
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
 			}
@@ -257,6 +270,7 @@ async function runLoop(
 			const toolCalls = message.content.filter((c) => c.type === "toolCall");
 
 			const toolResults: ToolResultMessage[] = [];
+			let toolResultEntries: AgentMessageCommit[] = [];
 			hasMoreToolCalls = false;
 			if (toolCalls.length > 0) {
 				// A "length" stop means the output was cut off by the token limit, so
@@ -267,6 +281,7 @@ async function runLoop(
 						? await failToolCallsFromTruncatedMessage(toolCalls, emit)
 						: await executeToolCalls(currentContext, message, config, signal, emit);
 				toolResults.push(...executedToolBatch.messages);
+				toolResultEntries = executedToolBatch.entries;
 				hasMoreToolCalls = !executedToolBatch.terminate;
 
 				for (const result of toolResults) {
@@ -277,12 +292,14 @@ async function runLoop(
 
 			lastCompletedTurn = {
 				message,
+				messageEntry,
 				toolResults,
+				toolResultEntries,
 				context: currentContext,
 				newMessages,
 			};
 			const decision = await config.finishTurn?.(lastCompletedTurn, signal);
-			await emit({ type: "turn_end", message, toolResults });
+			await emit({ type: "turn_end", message, toolResults, messageEntry, toolResultEntries });
 
 			if (decision?.action === "end") {
 				await emit({ type: "agent_end", messages: newMessages });
@@ -382,7 +399,7 @@ async function streamAssistantResponse(
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 	streamFunction: StreamFn,
-): Promise<AssistantMessage> {
+): Promise<AgentMessageCommit> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
 	if (config.transformContext) {
@@ -447,8 +464,10 @@ async function streamAssistantResponse(
 				if (!addedPartial) {
 					await emit({ type: "message_start", message: { ...finalMessage } });
 				}
-				await emit({ type: "message_end", message: finalMessage });
-				return finalMessage;
+				const finalized = await emit({ type: "message_end", message: finalMessage });
+				const committed = finalized ?? { message: finalMessage, entryId: undefined };
+				context.messages[context.messages.length - 1] = committed.message;
+				return committed;
 			}
 		}
 	}
@@ -460,8 +479,10 @@ async function streamAssistantResponse(
 		context.messages.push(finalMessage);
 		await emit({ type: "message_start", message: { ...finalMessage } });
 	}
-	await emit({ type: "message_end", message: finalMessage });
-	return finalMessage;
+	const finalized = await emit({ type: "message_end", message: finalMessage });
+	const committed = finalized ?? { message: finalMessage, entryId: undefined };
+	context.messages[context.messages.length - 1] = committed.message;
+	return committed;
 }
 
 /**
@@ -476,6 +497,7 @@ async function failToolCallsFromTruncatedMessage(
 	emit: AgentEventSink,
 ): Promise<ExecutedToolCallBatch> {
 	const messages: ToolResultMessage[] = [];
+	const entries: AgentMessageCommit[] = [];
 	for (const toolCall of toolCalls) {
 		await emit({
 			type: "tool_execution_start",
@@ -492,10 +514,11 @@ async function failToolCallsFromTruncatedMessage(
 		};
 		await emitToolExecutionEnd(finalized, emit);
 		const toolResultMessage = createToolResultMessage(finalized);
-		await emitToolResultMessage(toolResultMessage, emit);
-		messages.push(toolResultMessage);
+		const committed = await emitToolResultMessage(toolResultMessage, emit);
+		messages.push(committed.message as ToolResultMessage);
+		entries.push(committed);
 	}
-	return { messages, terminate: false };
+	return { messages, entries, terminate: false };
 }
 
 /**
@@ -520,6 +543,7 @@ async function executeToolCalls(
 
 type ExecutedToolCallBatch = {
 	messages: ToolResultMessage[];
+	entries: AgentMessageCommit[];
 	terminate: boolean;
 };
 
@@ -533,6 +557,7 @@ async function executeToolCallsSequential(
 ): Promise<ExecutedToolCallBatch> {
 	const finalizedCalls: FinalizedToolCallOutcome[] = [];
 	const messages: ToolResultMessage[] = [];
+	const entries: AgentMessageCommit[] = [];
 
 	for (const toolCall of toolCalls) {
 		await emit({
@@ -565,9 +590,10 @@ async function executeToolCallsSequential(
 
 		await emitToolExecutionEnd(finalized, emit);
 		const toolResultMessage = createToolResultMessage(finalized);
-		await emitToolResultMessage(toolResultMessage, emit);
+		const finalizedMessage = await emitToolResultMessage(toolResultMessage, emit);
 		finalizedCalls.push(finalized);
-		messages.push(toolResultMessage);
+		messages.push(finalizedMessage.message as ToolResultMessage);
+		entries.push(finalizedMessage);
 
 		if (signal?.aborted) {
 			break;
@@ -576,6 +602,7 @@ async function executeToolCallsSequential(
 
 	return {
 		messages,
+		entries,
 		terminate: shouldTerminateToolBatch(finalizedCalls),
 	};
 }
@@ -646,14 +673,17 @@ async function executeToolCallsParallel(
 		finalizedCalls.map((entry) => (typeof entry === "function" ? entry() : Promise.resolve(entry))),
 	);
 	const messages: ToolResultMessage[] = [];
+	const entries: AgentMessageCommit[] = [];
 	for (const finalized of orderedFinalizedCalls) {
 		const toolResultMessage = createToolResultMessage(finalized);
-		await emitToolResultMessage(toolResultMessage, emit);
-		messages.push(toolResultMessage);
+		const committed = await emitToolResultMessage(toolResultMessage, emit);
+		messages.push(committed.message as ToolResultMessage);
+		entries.push(committed);
 	}
 
 	return {
 		messages,
+		entries,
 		terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
 	};
 }
@@ -802,7 +832,7 @@ async function executePreparedToolCall(
 							args: prepared.toolCall.arguments,
 							partialResult,
 						}),
-					),
+					).then(() => undefined),
 				);
 			},
 		);
@@ -838,6 +868,7 @@ async function finalizeExecutedToolCall(
 		try {
 			const afterResult = await config.afterToolCall(
 				{
+					model: config.model,
 					assistantMessage,
 					toolCall: prepared.toolCall,
 					args: prepared.args,
@@ -906,7 +937,15 @@ function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResul
 	};
 }
 
-async function emitToolResultMessage(toolResultMessage: ToolResultMessage, emit: AgentEventSink): Promise<void> {
+async function emitToolResultMessage(
+	toolResultMessage: ToolResultMessage,
+	emit: AgentEventSink,
+): Promise<AgentMessageCommit> {
 	await emit({ type: "message_start", message: toolResultMessage });
-	await emit({ type: "message_end", message: toolResultMessage });
+	return (
+		(await emit({ type: "message_end", message: toolResultMessage })) ?? {
+			message: toolResultMessage,
+			entryId: undefined,
+		}
+	);
 }

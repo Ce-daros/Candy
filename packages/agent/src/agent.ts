@@ -20,6 +20,7 @@ import type {
 	AgentLoopConfig,
 	AgentLoopTurnUpdate,
 	AgentMessage,
+	AgentMessageCommit,
 	AgentState,
 	AgentTool,
 	BeforeToolCallContext,
@@ -42,6 +43,29 @@ function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
 			message.role === "assistant" ||
 			message.role === "toolResult",
 	);
+}
+
+export interface QueuedAgentInput {
+	readonly text: string;
+	readonly images?: readonly ImageContent[];
+}
+
+function queuedInputFromMessage(message: AgentMessage): QueuedAgentInput {
+	if (message.role !== "user") return { text: "" };
+	if (typeof message.content === "string") return { text: message.content };
+	const text = message.content
+		.filter((part) => part.type === "text")
+		.map((part) => part.text)
+		.join("\n");
+	const images = message.content.filter((part): part is ImageContent => part.type === "image");
+	return { text, ...(images.length > 0 && { images }) };
+}
+
+function cloneQueuedInput(input: QueuedAgentInput): QueuedAgentInput {
+	return {
+		text: input.text,
+		...(input.images !== undefined && { images: input.images.map((image) => ({ ...image })) }),
+	};
 }
 
 const EMPTY_USAGE = {
@@ -127,15 +151,15 @@ export interface AgentOptions {
 }
 
 class PendingMessageQueue {
-	private messages: AgentMessage[] = [];
+	private messages: Array<QueuedAgentInput & { message: AgentMessage }> = [];
 	public mode: QueueMode;
 
 	constructor(mode: QueueMode) {
 		this.mode = mode;
 	}
 
-	enqueue(message: AgentMessage): void {
-		this.messages.push(message);
+	enqueue(message: AgentMessage, input: QueuedAgentInput): void {
+		this.messages.push({ ...cloneQueuedInput(input), message });
 	}
 
 	hasItems(): boolean {
@@ -143,9 +167,9 @@ class PendingMessageQueue {
 	}
 
 	peek(): AgentMessage[] {
-		if (this.mode === "all") return this.messages.slice();
+		if (this.mode === "all") return this.messages.map((item) => item.message);
 		const first = this.messages[0];
-		return first ? [first] : [];
+		return first ? [first.message] : [];
 	}
 
 	drain(): AgentMessage[] {
@@ -156,6 +180,16 @@ class PendingMessageQueue {
 
 	clear(): void {
 		this.messages = [];
+	}
+
+	snapshot(): readonly QueuedAgentInput[] {
+		return this.messages.map(({ text, images }) => cloneQueuedInput({ text, images }));
+	}
+
+	withdraw(): QueuedAgentInput[] {
+		const items = this.messages;
+		this.messages = [];
+		return items.map(({ message: _message, ...item }) => cloneQueuedInput(item));
 	}
 }
 
@@ -174,6 +208,7 @@ type ActiveRun = {
 export class Agent {
 	private _state: MutableAgentState;
 	private readonly listeners = new Set<(event: AgentEvent, signal: AbortSignal) => Promise<void> | void>();
+	private readonly queueListeners = new Set<() => void>();
 	private readonly steeringQueue: PendingMessageQueue;
 	private readonly followUpQueue: PendingMessageQueue;
 
@@ -193,6 +228,10 @@ export class Agent {
 		signal?: AbortSignal,
 	) => Promise<AfterToolCallResult | undefined>;
 	public finishTurn?: FinishTurn;
+	public finalizeMessage?: (
+		message: AgentMessage,
+		signal: AbortSignal,
+	) => Promise<AgentMessageCommit> | AgentMessageCommit;
 	public prepareRequest?: PrepareRequest;
 	public prepareNextTurn?: (
 		signal?: AbortSignal,
@@ -252,6 +291,15 @@ export class Agent {
 		return () => this.listeners.delete(listener);
 	}
 
+	subscribeQueue(listener: () => void): () => void {
+		this.queueListeners.add(listener);
+		return () => this.queueListeners.delete(listener);
+	}
+
+	private notifyQueueChanged(): void {
+		for (const listener of this.queueListeners) listener();
+	}
+
 	/**
 	 * Current agent state.
 	 *
@@ -280,23 +328,37 @@ export class Agent {
 	}
 
 	/** Queue a message to be injected after the current assistant turn finishes. */
-	steer(message: AgentMessage): void {
-		this.steeringQueue.enqueue(message);
+	steer(message: AgentMessage, input: QueuedAgentInput = queuedInputFromMessage(message)): void {
+		this.steeringQueue.enqueue(message, input);
+		this.notifyQueueChanged();
 	}
 
 	/** Queue a message to run only after the agent would otherwise stop. */
-	followUp(message: AgentMessage): void {
-		this.followUpQueue.enqueue(message);
+	followUp(message: AgentMessage, input: QueuedAgentInput = queuedInputFromMessage(message)): void {
+		this.followUpQueue.enqueue(message, input);
+		this.notifyQueueChanged();
+	}
+
+	getQueuedInputs(): { steering: readonly QueuedAgentInput[]; followUp: readonly QueuedAgentInput[] } {
+		return { steering: this.steeringQueue.snapshot(), followUp: this.followUpQueue.snapshot() };
+	}
+
+	withdrawQueuedInputs(): { steering: QueuedAgentInput[]; followUp: QueuedAgentInput[] } {
+		const inputs = { steering: this.steeringQueue.withdraw(), followUp: this.followUpQueue.withdraw() };
+		this.notifyQueueChanged();
+		return inputs;
 	}
 
 	/** Remove all queued steering messages. */
 	clearSteeringQueue(): void {
 		this.steeringQueue.clear();
+		this.notifyQueueChanged();
 	}
 
 	/** Remove all queued follow-up messages. */
 	clearFollowUpQueue(): void {
 		this.followUpQueue.clear();
+		this.notifyQueueChanged();
 	}
 
 	/** Remove all queued steering and follow-up messages. */
@@ -380,12 +442,14 @@ export class Agent {
 		if (lastMessage.role === "assistant") {
 			const queuedSteering = this.steeringQueue.drain();
 			if (queuedSteering.length > 0) {
+				this.notifyQueueChanged();
 				await this.runPromptMessages(queuedSteering, { skipInitialSteeringPoll: true });
 				return;
 			}
 
 			const queuedFollowUps = this.followUpQueue.drain();
 			if (queuedFollowUps.length > 0) {
+				this.notifyQueueChanged();
 				await this.runPromptMessages(queuedFollowUps);
 				return;
 			}
@@ -486,9 +550,15 @@ export class Agent {
 					skipInitialSteeringPoll = false;
 					return [];
 				}
-				return this.steeringQueue.drain();
+				const messages = this.steeringQueue.drain();
+				if (messages.length > 0) this.notifyQueueChanged();
+				return messages;
 			},
-			getFollowUpMessages: async () => this.followUpQueue.drain(),
+			getFollowUpMessages: async () => {
+				const messages = this.followUpQueue.drain();
+				if (messages.length > 0) this.notifyQueueChanged();
+				return messages;
+			},
 		};
 	}
 
@@ -542,8 +612,17 @@ export class Agent {
 			timestamp: Date.now(),
 		} satisfies AgentMessage;
 		await this.processEvents({ type: "message_start", message: failureMessage });
-		await this.processEvents({ type: "message_end", message: failureMessage });
-		await this.processEvents({ type: "turn_end", message: failureMessage, toolResults: [] });
+		const messageEntry = (await this.processEvents({ type: "message_end", message: failureMessage })) ?? {
+			message: failureMessage,
+			entryId: undefined,
+		};
+		await this.processEvents({
+			type: "turn_end",
+			message: failureMessage,
+			toolResults: [],
+			messageEntry,
+			toolResultEntries: [],
+		});
 		await this.processEvents({ type: "agent_end", messages: [failureMessage] });
 	}
 
@@ -562,7 +641,17 @@ export class Agent {
 	 * considered idle later, after all awaited listeners for `agent_end` finish
 	 * and `finishRun()` clears runtime-owned state.
 	 */
-	private async processEvents(event: AgentEvent): Promise<void> {
+	private async processEvents(event: AgentEvent): Promise<AgentMessageCommit | undefined> {
+		const signal = this.activeRun?.abortController.signal;
+		if (!signal) throw new Error("Agent listener invoked outside active run");
+		if (event.type === "message_end" && this.finalizeMessage) {
+			const committed = await this.finalizeMessage(event.message, signal);
+			event = {
+				...event,
+				message: committed.message,
+				...(committed.entryId === undefined ? {} : { entryId: committed.entryId }),
+			};
+		}
 		switch (event.type) {
 			case "message_start":
 				this._state.streamingMessage = event.message;
@@ -602,12 +691,9 @@ export class Agent {
 				break;
 		}
 
-		const signal = this.activeRun?.abortController.signal;
-		if (!signal) {
-			throw new Error("Agent listener invoked outside active run");
-		}
 		for (const listener of this.listeners) {
 			await listener(event, signal);
 		}
+		return event.type === "message_end" ? { message: event.message, entryId: event.entryId } : undefined;
 	}
 }

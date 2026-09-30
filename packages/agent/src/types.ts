@@ -113,6 +113,8 @@ export interface BeforeToolCallContext {
 
 /** Context passed to `afterToolCall`. */
 export interface AfterToolCallContext {
+	/** Model snapshot used for the assistant request that produced this tool call. */
+	model: Model<any>;
 	/** The assistant message that requested the tool call. */
 	assistantMessage: AssistantMessage;
 	/** The raw tool call block from `assistantMessage.content`. */
@@ -131,8 +133,12 @@ export interface AfterToolCallContext {
 export interface AgentTurnContext {
 	/** The assistant message that completed the turn. */
 	message: AssistantMessage;
+	/** Journal entry committed for the assistant message. */
+	messageEntry: AgentMessageCommit;
 	/** Tool result messages emitted for the completed turn. */
 	toolResults: ToolResultMessage[];
+	/** Journal entries committed for tool results. */
+	toolResultEntries: AgentMessageCommit[];
 	/** Current agent context after the turn's assistant message and tool results have been appended. */
 	context: AgentContext;
 	/** Messages that this loop invocation will return if it exits at this point. Prompt runs include the initial prompt messages; continuation runs do not include pre-existing context messages. */
@@ -369,6 +375,11 @@ export interface CustomAgentMessages {
  */
 export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
 
+export interface AgentMessageCommit {
+	message: AgentMessage;
+	entryId: string | undefined;
+}
+
 /**
  * Public agent state.
  *
@@ -488,12 +499,18 @@ export type AgentEvent =
 	| { type: "agent_end"; messages: AgentMessage[] }
 	// Turn lifecycle - a turn is one assistant response + any tool calls/results
 	| { type: "turn_start" }
-	| { type: "turn_end"; message: AgentMessage; toolResults: ToolResultMessage[] }
+	| {
+			type: "turn_end";
+			message: AgentMessage;
+			toolResults: ToolResultMessage[];
+			messageEntry: AgentMessageCommit;
+			toolResultEntries: AgentMessageCommit[];
+	  }
 	// Message lifecycle - emitted for system, user, assistant, and toolResult messages
 	| { type: "message_start"; message: AgentMessage }
 	// Only emitted for assistant messages during streaming
 	| { type: "message_update"; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
-	| { type: "message_end"; message: AgentMessage }
+	| { type: "message_end"; message: AgentMessage; entryId?: string }
 	// Tool execution lifecycle
 	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
 	| { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }

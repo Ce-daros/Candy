@@ -360,6 +360,38 @@ describe("Agent", () => {
 		expect(agent.state.errorMessage).toBe("provider exploded");
 	});
 
+	it("publishes finalized message commits with stable entry IDs", async () => {
+		const agent = createAgent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("original") });
+				});
+				return stream;
+			},
+		});
+		const messageEndEvents: Extract<AgentEvent, { type: "message_end" }>[] = [];
+		const turnEndEvents: Extract<AgentEvent, { type: "turn_end" }>[] = [];
+		agent.finalizeMessage = (message) => ({
+			message:
+				message.role === "assistant" ? { ...message, content: [{ type: "text", text: "finalized" }] } : message,
+			entryId: `entry-${message.role}`,
+		});
+		agent.subscribe((event) => {
+			if (event.type === "message_end") messageEndEvents.push(event);
+			if (event.type === "turn_end") turnEndEvents.push(event);
+		});
+
+		await agent.prompt("hello");
+
+		const assistantEvent = messageEndEvents.find((event) => event.message.role === "assistant");
+		expect(assistantEvent?.entryId).toBe("entry-assistant");
+		expect(assistantEvent?.message).toMatchObject({ content: [{ type: "text", text: "finalized" }] });
+		expect(turnEndEvents).toHaveLength(1);
+		expect(turnEndEvents[0]?.messageEntry).toEqual({ message: assistantEvent?.message, entryId: "entry-assistant" });
+		expect(agent.state.messages.at(-1)).toEqual(assistantEvent?.message);
+	});
+
 	it("should await async subscribers before prompt resolves", async () => {
 		const barrier = createDeferred();
 		const agent = createAgent({
@@ -957,6 +989,29 @@ describe("Agent", () => {
 		expect(agent.peekQueuedMessages()).toEqual([steering]);
 		agent.clearSteeringQueue();
 		expect(agent.peekQueuedMessages()).toEqual([followUp]);
+	});
+
+	it("keeps queue input metadata with the agent-owned entries", () => {
+		const agent = createAgent({ streamFn: unusedStreamFunction });
+		const steering = createUserMessage("steering");
+		const followUp = createUserMessage("follow-up");
+		const sourceImage = { type: "image" as const, data: "source", mimeType: "image/png" };
+		agent.steer(steering, { text: "original steering", images: [sourceImage] });
+		agent.followUp(followUp, { text: "original follow-up" });
+		sourceImage.data = "mutated source";
+
+		const snapshot = agent.getQueuedInputs();
+		expect(snapshot.steering.map(({ text }) => text)).toEqual(["original steering"]);
+		expect(snapshot.followUp.map(({ text }) => text)).toEqual(["original follow-up"]);
+		expect(snapshot.steering[0]?.images?.[0]?.data).toBe("source");
+		const snapshotImage = snapshot.steering[0]?.images?.[0];
+		if (!snapshotImage) throw new Error("expected queued image snapshot");
+		snapshotImage.data = "mutated snapshot";
+		expect(agent.withdrawQueuedInputs()).toEqual({
+			steering: [{ text: "original steering", images: [{ type: "image", data: "source", mimeType: "image/png" }] }],
+			followUp: [{ text: "original follow-up" }],
+		});
+		expect(agent.hasQueuedMessages()).toBe(false);
 	});
 
 	it.each([
