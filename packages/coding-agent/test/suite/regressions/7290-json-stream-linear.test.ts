@@ -6,9 +6,9 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("regression #7290: JSON event streams stay linear", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

@@ -40,7 +40,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 
 	afterEach(async () => {
 		if (session) {
-			session.dispose();
+			await session.dispose();
 		}
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });

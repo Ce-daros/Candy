@@ -40,7 +40,8 @@ export async function checkProviderAuth(
 		return { status: "not_ready", provider, reason: "provider_not_found" };
 	}
 	try {
-		const auth = await modelRuntime.checkAuth(provider);
+		const availability = await modelRuntime.getAvailability(provider);
+		const auth = availability.providers.find((entry) => entry.providerId === provider)?.auth;
 		if (!auth) return { status: "not_ready", provider, reason: "credentials_not_configured" };
 		if (options.refresh && !(await modelRuntime.getAuth(provider))) {
 			return { status: "not_ready", provider, reason: "credentials_not_configured" };

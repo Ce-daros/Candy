@@ -9,13 +9,13 @@ import { createHarness, type Harness } from "./suite/harness.ts";
 describe("Sources catalog lifecycle", () => {
 	let harness: Harness | undefined;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		initTheme("dark");
 		setKeybindings(KeybindingsManager.create());
 	});
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 		harness = undefined;
 		vi.restoreAllMocks();
 	});
@@ -39,10 +39,10 @@ describe("Sources catalog lifecycle", () => {
 			exit() {},
 			render() {},
 			read() {},
+			reportError() {},
 			applyQuickSelection: async () => {},
 			edit: async () => undefined,
 			login: async () => {},
-			reload: async () => {},
 			skills: async () => {},
 			settingsActions: () => [],
 			localCommands: () => [],
@@ -83,10 +83,10 @@ describe("Sources catalog lifecycle", () => {
 			exit() {},
 			render() {},
 			read() {},
+			reportError() {},
 			applyQuickSelection: async () => {},
 			edit: async () => undefined,
 			login: async () => {},
-			reload: async () => {},
 			skills: async () => {},
 			settingsActions: () => [],
 			localCommands: () => [],

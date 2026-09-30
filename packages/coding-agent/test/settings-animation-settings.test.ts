@@ -12,8 +12,8 @@ describe("animation settings", () => {
 	it("persists animation choices", async () => {
 		const settings = SettingsManager.inMemory();
 
-		settings.setUiAnimations(false);
-		settings.setAnimationIntensity("aggressive");
+		await settings.setUiAnimations(false);
+		await settings.setAnimationIntensity("aggressive");
 		await settings.flush();
 
 		expect(settings.getUiAnimations()).toBe(false);

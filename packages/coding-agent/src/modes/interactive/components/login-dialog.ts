@@ -157,7 +157,6 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.secretInput = false;
 		this.input.setMasked(false);
 		this.input.setValue("");
-		this.stageContainer.clear();
 		this.waitingText = undefined;
 		this.progressText = undefined;
 		this.stageContainer.addChild(new Spacer(1));
@@ -180,7 +179,6 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.setPhase(secret ? "API key" : "Continue");
 		this.secretInput = secret;
 		this.input.setMasked(secret);
-		this.stageContainer.clear();
 		this.waitingText = undefined;
 		this.progressText = undefined;
 		this.stageContainer.addChild(new Spacer(1));

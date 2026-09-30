@@ -11,10 +11,14 @@ import type { PromptDisposition, QueuedInput, QueuedInputDisposition, SessionSta
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { InteractiveSettingId, InteractiveSettingValue } from "../../core/interactive-setting-values.ts";
+import type { ResourceType } from "../../core/resource-configuration.ts";
+import type { ResourceOperations } from "../../core/resource-operations.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { Settings, SettingsScope } from "../../core/settings-manager.ts";
 import type { JsonAgentSessionEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.ts";
+import type { RpcCommand, RpcResponse, RpcSessionState, RpcSettingsCommitEvent } from "./rpc-types.ts";
 
 // ============================================================================
 // Types
@@ -48,7 +52,8 @@ export interface ModelInfo {
 	reasoning: boolean;
 }
 
-export type RpcEventListener = (event: JsonAgentSessionEvent) => void;
+export type RpcEvent = JsonAgentSessionEvent | RpcSettingsCommitEvent;
+export type RpcEventListener = (event: RpcEvent) => void;
 
 // ============================================================================
 // RPC Client
@@ -262,6 +267,83 @@ export class RpcClient {
 		return this.getData(response);
 	}
 
+	async getSettings(): Promise<{ global: Settings; project: Settings; projectTrusted: boolean }> {
+		const response = await this.send({ type: "get_settings" });
+		return this.getData(response);
+	}
+
+	async commitSetting<Id extends InteractiveSettingId>(
+		scope: SettingsScope,
+		settingId: Id,
+		value: InteractiveSettingValue<Id>,
+	): Promise<void> {
+		await this.send({ type: "commit_setting", scope, settingId, value });
+	}
+
+	async clearSetting(scope: SettingsScope, settingId: InteractiveSettingId): Promise<void> {
+		await this.send({ type: "commit_setting", scope, settingId, clear: true });
+	}
+
+	async saveDefaultModel(provider: string, modelId: string): Promise<void> {
+		await this.send({ type: "save_default_model", provider, modelId });
+	}
+
+	async getResources(): Promise<ReturnType<ResourceOperations["getInventory"]>> {
+		const response = await this.send({ type: "get_resources" });
+		return this.getData(response);
+	}
+
+	async getResourceConfiguration(
+		scope: SettingsScope,
+	): Promise<Extract<RpcResponse, { command: "get_resource_configuration"; success: true }>["data"]> {
+		const response = await this.send({ type: "get_resource_configuration", scope });
+		return this.getData(response);
+	}
+
+	async toggleResource(scope: SettingsScope, resourceType: ResourceType, path: string): Promise<boolean | null> {
+		const response = await this.send({ type: "toggle_resource", scope, resourceType, path });
+		return this.getData<{ enabled: boolean | null }>(response).enabled;
+	}
+
+	async getActiveTools(): Promise<string[]> {
+		const response = await this.send({ type: "active_tools", action: "get" });
+		return this.getData<{ names: string[] }>(response).names;
+	}
+
+	async setActiveTools(names: string[]): Promise<string[]> {
+		const response = await this.send({ type: "active_tools", action: "set", names });
+		return this.getData<{ names: string[] }>(response).names;
+	}
+
+	async getDefaultTools(): Promise<string[] | null> {
+		const response = await this.send({ type: "default_tools", action: "get" });
+		return this.getData<{ names: string[] | null }>(response).names;
+	}
+
+	async saveDefaultTools(names: string[]): Promise<string[] | null> {
+		const response = await this.send({ type: "default_tools", action: "save", names });
+		return this.getData<{ names: string[] | null }>(response).names;
+	}
+
+	async clearDefaultTools(): Promise<string[] | null> {
+		const response = await this.send({ type: "default_tools", action: "save", clear: true });
+		return this.getData<{ names: string[] | null }>(response).names;
+	}
+
+	async readInstruction(path: string): Promise<string> {
+		const response = await this.send({ type: "read_instruction", path });
+		return this.getData<{ content: string }>(response).content;
+	}
+
+	async saveInstruction(path: string, content: string): Promise<{ saved: true; reloaded: boolean; error?: string }> {
+		const response = await this.send({ type: "save_instruction", path, content });
+		return this.getData(response);
+	}
+
+	async reloadResources(): Promise<void> {
+		await this.send({ type: "reload_resources" });
+	}
+
 	/**
 	 * Set model by provider and ID.
 	 */
@@ -384,6 +466,11 @@ export class RpcClient {
 		return this.getData(response);
 	}
 
+	async importSession(inputPath: string, cwdOverride?: string): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "import_session", inputPath, cwdOverride });
+		return this.getData(response);
+	}
+
 	/**
 	 * Fork from a specific message.
 	 * @returns Object with `text` (the message text) and `cancelled` (if extension cancelled)
@@ -494,6 +581,7 @@ export class RpcClient {
 			}, timeout);
 
 			const unsubscribe = this.onEvent((event) => {
+				if (event.type === "settings_commit") return;
 				events.push(event);
 				if (event.type === "agent_settled") {
 					clearTimeout(timer);
@@ -532,7 +620,7 @@ export class RpcClient {
 			// Otherwise it's an event. Iterate a snapshot so listeners that unsubscribe during dispatch
 			// do not cause later listeners to miss this event.
 			for (const listener of [...this.eventListeners]) {
-				listener(data as JsonAgentSessionEvent);
+				listener(data as RpcEvent);
 			}
 		} catch {
 			// Ignore non-JSON lines

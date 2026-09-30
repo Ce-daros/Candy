@@ -1,7 +1,7 @@
 import * as os from "node:os";
 import { pathToFileURL } from "node:url";
 import { getCapabilities, getImageDimensions, hyperlink, imageFallback } from "@candy/tui";
-import type { Theme } from "../modes/interactive/theme/theme.ts";
+import type { Theme } from "../contracts/theme.ts";
 import { stripAnsi } from "../utils/ansi.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sanitizeBinaryOutput } from "../utils/shell.ts";

@@ -29,7 +29,7 @@ describe("issue #7829 invalid settings warning", () => {
 				options: { startupDiagnostics },
 				chatContainer,
 				outputPad: 1,
-				ui: { requestRender: vi.fn() },
+				renderer: { requestRender: vi.fn() },
 				version: "test",
 				showWarning: (InteractiveMode.prototype as unknown as { showWarning(message: string): void }).showWarning,
 				session: harness.session,
@@ -43,14 +43,14 @@ describe("issue #7829 invalid settings warning", () => {
 			void run.call(context);
 
 			await vi.waitFor(() => {
-				expect(render(chatContainer)).toContain(
-					"Warning: Invalid settings file /tmp/settings.json: malformed JSON",
-				);
+				const output = render(chatContainer).replace(/\u001b\[[0-9;]*m/g, "");
+				expect(output).toContain("Warning");
+				expect(output).toContain("Invalid settings file /tmp/settings.json: malformed JSON");
 			});
 		} finally {
 			if (previousOffline === undefined) delete process.env.CANDY_OFFLINE;
 			else process.env.CANDY_OFFLINE = previousOffline;
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

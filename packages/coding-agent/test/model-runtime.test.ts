@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { ModelsJsonProvider } from "../src/core/model-config.ts";
 import type { ModelRuntime } from "../src/core/model-runtime.ts";
-import { clearApiKeyCache, type ProviderConfigInput } from "../src/core/provider-composer.ts";
+import type { ProviderConfigInput } from "../src/core/provider-composer.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
 describe("ModelRuntime", () => {
@@ -27,7 +27,6 @@ describe("ModelRuntime", () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
 		}
-		clearApiKeyCache();
 		vi.restoreAllMocks();
 	});
 
@@ -76,6 +75,15 @@ describe("ModelRuntime", () => {
 	}
 
 	describe("baseUrl override (no custom models)", () => {
+		test("surfaces provider configuration errors without restoring built-in models", async () => {
+			writeRawModelsJson({ anthropic: {} });
+			const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
+
+			expect(runtime.getProvider("anthropic")).toBeUndefined();
+			expect(runtime.getError()).toContain('Provider "anthropic"');
+			expect(runtime.getError()).toContain('must specify "baseUrl"');
+		});
+
 		test("overriding baseUrl keeps all built-in models", async () => {
 			writeRawModelsJson({
 				anthropic: overrideConfig("https://my-proxy.example.com/v1"),
@@ -981,6 +989,7 @@ describe("ModelRuntime", () => {
 		});
 
 		test("model override can add headers at request time", async () => {
+			await authStorage.modify("openrouter", async () => ({ type: "api_key", key: "test-key" }));
 			writeRawModelsJson({
 				openrouter: {
 					modelOverrides: {
@@ -1670,7 +1679,7 @@ describe("ModelRuntime", () => {
 		});
 
 		describe("request-time resolution", () => {
-			test("command is executed on every provider lookup", async () => {
+			test("successful command output is cached for the runtime", async () => {
 				const counterFile = join(tempDir, "counter");
 				writeFileSync(counterFile, "0");
 
@@ -1686,7 +1695,7 @@ describe("ModelRuntime", () => {
 				await runtime.getAuth("custom-provider");
 
 				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
-				expect(count).toBe(3);
+				expect(count).toBe(1);
 			});
 
 			test("commands are re-executed across runtime instances", async () => {
@@ -1927,7 +1936,7 @@ describe("ModelRuntime", () => {
 				).toEqual([copilotModel.id]);
 			});
 
-			test("getAuth resolves command-backed auth on every request", async () => {
+			test("getAuth caches command-backed auth for the runtime", async () => {
 				const tokenFile = join(tempDir, "token");
 				writeFileSync(tokenFile, "token-1");
 				const tokenPath = toShPath(tokenFile);
@@ -1953,8 +1962,8 @@ describe("ModelRuntime", () => {
 
 				const auth2 = await runtime.getAuth(model!);
 				expect(auth2?.auth).toEqual({
-					apiKey: "token-2",
-					headers: { Authorization: "Bearer token-2" },
+					apiKey: "token-1",
+					headers: { Authorization: "Bearer token-1" },
 				});
 			});
 
@@ -2025,10 +2034,81 @@ describe("ModelRuntime", () => {
 				const model = runtime.getModel("custom-provider", "test-model");
 				expect(model).toBeDefined();
 
-				await expect(runtime.getAuth(model!)).rejects.toThrow(
-					'Failed to resolve API key for provider "custom-provider"',
-				);
+				await expect(runtime.getAuth(model!)).rejects.toThrow("Shell command failed (1): exit 1");
+			});
+
+			test("runtime disposal cancels and settles command-backed credential resolution", async () => {
+				writeRawModelsJson({
+					"custom-provider": {
+						...providerWithApiKey("!sleep 5"),
+						authHeader: true,
+					},
+				});
+				const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
+				const model = runtime.getModel("custom-provider", "test-model");
+				expect(model).toBeDefined();
+
+				const resolution = runtime.getAuth(model!);
+				await new Promise((resolve) => setTimeout(resolve, 30));
+				await runtime.dispose();
+				await expect(resolution).rejects.toMatchObject({ name: "AbortError" });
 			});
 		});
+	});
+
+	test("shares catalog refresh work while callers cancel independently", async () => {
+		const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
+		const provider = providerConfig("https://provider.test/v1", [{ id: "model" }]);
+		let refreshCount = 0;
+		let markStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		let finishRefresh!: () => void;
+		runtime.registerProvider("shared-refresh", {
+			...provider,
+			refreshModels: async () => {
+				refreshCount++;
+				markStarted();
+				await new Promise<void>((resolve) => {
+					finishRefresh = resolve;
+				});
+				return provider.models ?? [];
+			},
+		});
+		const firstController = new AbortController();
+		const secondController = new AbortController();
+		const first = runtime.refresh({ providers: ["shared-refresh"], signal: firstController.signal });
+		await started;
+		const second = runtime.refresh({ providers: ["shared-refresh"], signal: secondController.signal });
+		firstController.abort();
+		await expect(first).resolves.toMatchObject({ aborted: true });
+		finishRefresh();
+		await expect(second).resolves.toMatchObject({ aborted: false });
+		expect(refreshCount).toBe(1);
+	});
+
+	test("disposal aborts and settles owned catalog refreshes", async () => {
+		const runtime = await createTestModelRuntime(authStorage, modelsJsonPath);
+		const config = providerConfig("https://provider.test/v1", [{ id: "model" }]);
+		let markStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		runtime.registerProvider("dispose-refresh", {
+			...config,
+			refreshModels: async ({ signal }) => {
+				markStarted();
+				await new Promise<void>((_resolve, reject) => {
+					signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+				});
+				return config.models ?? [];
+			},
+		});
+		const refresh = runtime.refresh({ providers: ["dispose-refresh"] });
+		await started;
+		await runtime.dispose();
+		await expect(refresh).resolves.toMatchObject({ aborted: true });
+		expect(() => runtime.refresh()).toThrow("Model runtime is disposed");
 	});
 });

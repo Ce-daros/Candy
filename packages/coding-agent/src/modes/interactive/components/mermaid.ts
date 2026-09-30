@@ -1,6 +1,6 @@
 import { type MermaidArt, render, type Span } from "grok-mermaid";
+import type { Theme } from "../../../contracts/theme.ts";
 import type { MermaidRenderingMode } from "../../../core/settings-manager.ts";
-import type { Theme } from "../theme/theme.ts";
 
 interface MermaidCodeBlockViewOptions {
 	getMode: () => MermaidRenderingMode;

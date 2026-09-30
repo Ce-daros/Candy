@@ -60,10 +60,10 @@ describe("issue #7301 stalled availability refresh", () => {
 	let harness: Harness | undefined;
 	let stalledList: StalledCredentialList | undefined;
 
-	afterEach(() => {
+	afterEach(async () => {
 		stalledList?.release();
 		stalledList = undefined;
-		harness?.cleanup();
+		await harness?.cleanup();
 		harness = undefined;
 	});
 
@@ -109,12 +109,12 @@ describe("issue #7301 stalled availability refresh", () => {
 		harness = await createHarness();
 		const runtime = harness.session.modelRuntime;
 		const models = Reflect.get(runtime, "models") as Models;
-		const originalGetAvailable = models.getAvailable.bind(models);
+		const originalGetAvailability = models.getAvailability.bind(models);
 		const started = createDeferred();
 		const gate = createDeferred();
 		let stall = true;
-		models.getAvailable = async (providerId, options) => {
-			if (!providerId || !stall) return originalGetAvailable(providerId, options);
+		models.getAvailability = async (providerId, options) => {
+			if (!providerId || !stall) return originalGetAvailability(providerId, options);
 			stall = false;
 			started.resolve();
 			await gate.promise;

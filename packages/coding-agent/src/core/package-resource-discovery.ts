@@ -58,16 +58,14 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 	for (const filename of IGNORE_FILE_NAMES) {
 		const ignorePath = join(dir, filename);
 		if (!existsSync(ignorePath)) continue;
-		try {
-			const content = readFileSync(ignorePath, "utf-8");
-			const patterns = content
-				.split(/\r?\n/)
-				.map((line) => prefixIgnorePattern(line, prefix))
-				.filter((line): line is string => Boolean(line));
-			if (patterns.length > 0) {
-				ig.add(patterns);
-			}
-		} catch {}
+		const content = readFileSync(ignorePath, "utf-8");
+		const patterns = content
+			.split(/\r?\n/)
+			.map((line) => prefixIgnorePattern(line, prefix))
+			.filter((line): line is string => Boolean(line));
+		if (patterns.length > 0) {
+			ig.add(patterns);
+		}
 	}
 }
 
@@ -108,54 +106,47 @@ export function splitPatterns(entries: string[]): { plain: string[]; patterns: s
 	return { plain, patterns };
 }
 
-function collectFiles(
-	dir: string,
-	filePattern: RegExp,
-	skipNodeModules = true,
-	ignoreMatcher?: IgnoreMatcher,
-	rootDir?: string,
-): string[] {
-	const files: string[] = [];
-	if (!existsSync(dir)) return files;
+interface ResourceDirectoryEntry {
+	name: string;
+	path: string;
+	isDirectory: boolean;
+	isFile: boolean;
+}
 
-	const root = rootDir ?? dir;
-	const ig = ignoreMatcher ?? ignore();
+function readResourceDirectory(dir: string, root: string, ig: IgnoreMatcher): ResourceDirectoryEntry[] {
+	if (!existsSync(dir)) return [];
 	addIgnoreRules(ig, dir, root);
-
-	try {
-		const entries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of entries) {
-			if (entry.name.startsWith(".")) continue;
-			if (skipNodeModules && entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			const ignorePath = isDir ? `${relPath}/` : relPath;
-			if (ig.ignores(ignorePath)) continue;
-
-			if (isDir) {
-				files.push(...collectFiles(fullPath, filePattern, skipNodeModules, ig, root));
-			} else if (isFile && filePattern.test(entry.name)) {
-				files.push(fullPath);
+	const result: ResourceDirectoryEntry[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+		const path = join(dir, entry.name);
+		let isDirectory = entry.isDirectory();
+		let isFile = entry.isFile();
+		if (entry.isSymbolicLink()) {
+			try {
+				const stats = statSync(path);
+				isDirectory = stats.isDirectory();
+				isFile = stats.isFile();
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
 			}
 		}
-	} catch {
-		// Ignore errors
+		const relativePath = toPosixPath(relative(root, path));
+		if (ig.ignores(isDirectory ? `${relativePath}/` : relativePath)) continue;
+		result.push({ name: entry.name, path, isDirectory, isFile });
 	}
+	return result;
+}
 
+function collectFiles(dir: string, filePattern: RegExp, ignoreMatcher?: IgnoreMatcher, rootDir?: string): string[] {
+	const root = rootDir ?? dir;
+	const ig = ignoreMatcher ?? ignore();
+	const files: string[] = [];
+	for (const entry of readResourceDirectory(dir, root, ig)) {
+		if (entry.isDirectory) files.push(...collectFiles(entry.path, filePattern, ig, root));
+		else if (entry.isFile && filePattern.test(entry.name)) files.push(entry.path);
+	}
 	return files;
 }
 
@@ -167,76 +158,21 @@ function collectSkillEntries(
 	ignoreMatcher?: IgnoreMatcher,
 	rootDir?: string,
 ): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
 	const root = rootDir ?? dir;
 	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-
-		for (const entry of dirEntries) {
-			if (entry.name !== "SKILL.md") {
-				continue;
-			}
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			if (isFile && !ig.ignores(relPath)) {
-				entries.push(fullPath);
-				return entries;
-			}
-		}
-
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			const shouldIncludeMarkdownFile =
-				isFile &&
-				entry.name.endsWith(".md") &&
-				!ig.ignores(relPath) &&
-				((mode === "candy" && dir === root) || (mode === "agents" && dir !== root));
-			if (shouldIncludeMarkdownFile) {
-				entries.push(fullPath);
-				continue;
-			}
-
-			if (!isDir) continue;
-			if (ig.ignores(`${relPath}/`)) continue;
-
-			entries.push(...collectSkillEntries(fullPath, mode, ig, root));
-		}
-	} catch {
-		// Ignore errors
+	const children = readResourceDirectory(dir, root, ig);
+	const manifest = children.find((entry) => entry.name === "SKILL.md" && entry.isFile);
+	if (manifest) return [manifest.path];
+	const entries: string[] = [];
+	for (const entry of children) {
+		if (
+			entry.isFile &&
+			entry.name.endsWith(".md") &&
+			((mode === "candy" && dir === root) || (mode === "agents" && dir !== root))
+		)
+			entries.push(entry.path);
+		else if (entry.isDirectory) entries.push(...collectSkillEntries(entry.path, mode, ig, root));
 	}
-
 	return entries;
 }
 
@@ -280,77 +216,15 @@ export function collectAncestorAgentsSkillDirs(startDir: string): string[] {
 }
 
 export function collectAutoPromptEntries(dir: string): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(dir, fullPath));
-			if (ig.ignores(relPath)) continue;
-
-			if (isFile && entry.name.endsWith(".md")) {
-				entries.push(fullPath);
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
+	return readResourceDirectory(dir, dir, ignore())
+		.filter((entry) => entry.isFile && entry.name.endsWith(".md"))
+		.map((entry) => entry.path);
 }
 
 export function collectAutoThemeEntries(dir: string): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(dir, fullPath));
-			if (ig.ignores(relPath)) continue;
-
-			if (isFile && entry.name.endsWith(".json")) {
-				entries.push(fullPath);
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
+	return readResourceDirectory(dir, dir, ignore())
+		.filter((entry) => entry.isFile && entry.name.endsWith(".json"))
+		.map((entry) => entry.path);
 }
 
 function resolveExtensionEntries(dir: string): string[] | null {
@@ -384,56 +258,17 @@ function resolveExtensionEntries(dir: string): string[] | null {
 }
 
 export function collectAutoExtensionEntries(dir: string): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	// First check if this directory itself has explicit extension entries (package.json or index)
+	if (!existsSync(dir)) return [];
 	const rootEntries = resolveExtensionEntries(dir);
-	if (rootEntries) {
-		return rootEntries;
-	}
-
-	// Otherwise, discover extensions from directory contents
-	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(dir, fullPath));
-			const ignorePath = isDir ? `${relPath}/` : relPath;
-			if (ig.ignores(ignorePath)) continue;
-
-			if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
-				entries.push(fullPath);
-			} else if (isDir) {
-				const resolvedEntries = resolveExtensionEntries(fullPath);
-				if (resolvedEntries) {
-					entries.push(...resolvedEntries);
-				}
-			}
+	if (rootEntries) return rootEntries;
+	const entries: string[] = [];
+	for (const entry of readResourceDirectory(dir, dir, ignore())) {
+		if (entry.isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) entries.push(entry.path);
+		else if (entry.isDirectory) {
+			const resolved = resolveExtensionEntries(entry.path);
+			if (resolved) entries.push(...resolved);
 		}
-	} catch {
-		// Ignore errors
 	}
-
 	return entries;
 }
 

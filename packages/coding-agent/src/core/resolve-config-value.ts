@@ -3,11 +3,9 @@
  * Used by auth storage and provider composition.
  */
 
-import { execSync, spawnSync } from "child_process";
 import { getShellConfig } from "../utils/shell.ts";
+import { execCommand } from "./exec.ts";
 
-// Cache for shell command results (persists for process lifetime)
-const commandResultCache = new Map<string, string | undefined>();
 const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ENV_VAR_NAME_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
@@ -136,92 +134,71 @@ export function isConfigValueConfigured(config: string, env?: Record<string, str
  * - In non-command values, "$$" escapes a literal "$" and "$!" escapes a literal "!"
  * - Otherwise treats the value as a literal
  */
-export function resolveConfigValue(config: string, env?: Record<string, string>): string | undefined {
+export interface ConfigValueResolveOptions {
+	signal?: AbortSignal;
+	cache?: Map<string, string>;
+}
+
+export async function resolveConfigValue(
+	config: string,
+	env?: Record<string, string>,
+	options: ConfigValueResolveOptions = {},
+): Promise<string | undefined> {
 	const reference = parseConfigValueReference(config);
 	if (reference.type === "command") {
-		return executeCommand(reference.config);
+		return executeCommand(reference.config, options);
 	}
 	return resolveTemplate(reference.parts, env);
 }
 
-function executeWithConfiguredShell(command: string): { executed: boolean; value: string | undefined } {
-	try {
-		const { shell, args, commandTransport } = getShellConfig();
-		const commandFromStdin = commandTransport === "stdin";
-		const result = spawnSync(shell, commandFromStdin ? args : [...args, command], {
-			encoding: "utf-8",
-			input: commandFromStdin ? command : undefined,
-			timeout: 10000,
-			stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "ignore"],
-			shell: false,
-			windowsHide: true,
-		});
-
-		if (result.error) {
-			const error = result.error as NodeJS.ErrnoException;
-			if (error.code === "ENOENT") {
-				return { executed: false, value: undefined };
-			}
-			return { executed: true, value: undefined };
-		}
-
-		if (result.status !== 0) {
-			return { executed: true, value: undefined };
-		}
-
-		const value = (result.stdout ?? "").trim();
-		return { executed: true, value: value || undefined };
-	} catch {
-		return { executed: false, value: undefined };
-	}
-}
-
-function executeWithDefaultShell(command: string): string | undefined {
-	try {
-		const output = execSync(command, {
-			encoding: "utf-8",
-			timeout: 10000,
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return output.trim() || undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-function executeCommandUncached(commandConfig: string): string | undefined {
+async function executeCommandUncached(
+	commandConfig: string,
+	options: ConfigValueResolveOptions,
+): Promise<string | undefined> {
 	const command = commandConfig.slice(1);
-	return process.platform === "win32"
-		? (() => {
-				const configuredResult = executeWithConfiguredShell(command);
-				return configuredResult.executed ? configuredResult.value : executeWithDefaultShell(command);
-			})()
-		: executeWithDefaultShell(command);
+	options.signal?.throwIfAborted();
+	const { shell, args, commandTransport } = getShellConfig();
+	const result = await execCommand(shell, commandTransport === "stdin" ? args : [...args, command], process.cwd(), {
+		signal: options.signal,
+		timeout: 10000,
+		input: commandTransport === "stdin" ? command : undefined,
+	});
+	options.signal?.throwIfAborted();
+	if (result.killed) throw new Error(`Shell command was cancelled or timed out: ${command}`);
+	if (result.code !== 0) throw new Error(`Shell command failed (${result.code}): ${result.stderr.trim() || command}`);
+	return result.stdout.trim() || undefined;
 }
 
-function executeCommand(commandConfig: string): string | undefined {
-	if (commandResultCache.has(commandConfig)) {
-		return commandResultCache.get(commandConfig);
-	}
-
-	const result = executeCommandUncached(commandConfig);
-	commandResultCache.set(commandConfig, result);
+async function executeCommand(commandConfig: string, options: ConfigValueResolveOptions): Promise<string | undefined> {
+	const cached = options.cache?.get(commandConfig);
+	if (cached !== undefined) return cached;
+	const result = await executeCommandUncached(commandConfig, options);
+	if (result !== undefined) options.cache?.set(commandConfig, result);
 	return result;
 }
 
 /**
  * Resolve all header values using the same resolution logic as API keys.
  */
-export function resolveConfigValueUncached(config: string, env?: Record<string, string>): string | undefined {
+export function resolveConfigValueUncached(
+	config: string,
+	env?: Record<string, string>,
+	options: Omit<ConfigValueResolveOptions, "cache"> = {},
+): Promise<string | undefined> {
 	const reference = parseConfigValueReference(config);
 	if (reference.type === "command") {
-		return executeCommandUncached(reference.config);
+		return executeCommandUncached(reference.config, options);
 	}
-	return resolveTemplate(reference.parts, env);
+	return Promise.resolve(resolveTemplate(reference.parts, env));
 }
 
-export function resolveConfigValueOrThrow(config: string, description: string, env?: Record<string, string>): string {
-	const resolvedValue = resolveConfigValueUncached(config, env);
+export async function resolveConfigValueOrThrow(
+	config: string,
+	description: string,
+	env?: Record<string, string>,
+	options: ConfigValueResolveOptions = {},
+): Promise<string> {
+	const resolvedValue = await resolveConfigValue(config, env, options);
 	if (resolvedValue !== undefined) {
 		return resolvedValue;
 	}
@@ -244,20 +221,21 @@ export function resolveConfigValueOrThrow(config: string, description: string, e
 	throw new Error(`Failed to resolve ${description}`);
 }
 
-export function resolveHeadersOrThrow(
+export async function resolveHeadersOrThrow(
 	headers: Record<string, string> | undefined,
 	description: string,
 	env?: Record<string, string>,
-): Record<string, string> | undefined {
+	options: ConfigValueResolveOptions = {},
+): Promise<Record<string, string> | undefined> {
 	if (!headers) return undefined;
 	const resolved: Record<string, string> = {};
 	for (const [key, value] of Object.entries(headers)) {
-		resolved[key] = resolveConfigValueOrThrow(value, `${description} header "${key}"`, env);
+		resolved[key] = await resolveConfigValueOrThrow(value, `${description} header "${key}"`, env, options);
 	}
 	return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
 
 /** Clear the config value command cache. Exported for testing. */
-export function clearConfigValueCache(): void {
-	commandResultCache.clear();
+export function clearConfigValueCache(cache: Map<string, string>): void {
+	cache.clear();
 }

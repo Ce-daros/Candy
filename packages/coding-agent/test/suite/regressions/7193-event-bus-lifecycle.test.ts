@@ -7,9 +7,9 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("issue #7193 extension event-bus lifecycle", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -64,7 +64,7 @@ describe("issue #7193 extension event-bus lifecycle", () => {
 		await harness.session.reload();
 		expect(await emit()).toEqual({ extension: 1, host: 1 });
 
-		harness.session.dispose();
+		await harness.session.dispose();
 		expect(await emit()).toEqual({ extension: 0, host: 1 });
 	});
 });

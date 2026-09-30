@@ -13,7 +13,7 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void } {
 describe("issue #9178: tree navigation during manual compaction", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => harness?.cleanup());
+	afterEach(async () => await harness?.cleanup());
 
 	it("rejects navigation before the active leaf can change", async () => {
 		const compactionStarted = createDeferred();

@@ -7,11 +7,11 @@
  */
 
 import { Box, Container, Text } from "@candy/tui";
+import type { Theme } from "../../contracts/theme.ts";
 import type { ToolDefinition } from "../../core/extensions/types.ts";
 import type { EditToolDetails } from "../../core/tools/edit.ts";
 import { computeEditsDiff, type Edit, type EditDiffError, type EditDiffResult } from "../../core/tools/edit-diff.ts";
 import { renderDiff } from "../../modes/interactive/components/diff.ts";
-import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { renderToolPath, str } from "../tool-render-utils.ts";
 
 type EditPreview = EditDiffResult | EditDiffError;

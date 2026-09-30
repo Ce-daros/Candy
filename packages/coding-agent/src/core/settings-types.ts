@@ -142,8 +142,6 @@ export interface Settings {
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
 	collapseChangelog?: boolean; // default: true; show condensed changelog after update
 	enableInstallTelemetry?: boolean; // default: true - attach candy attribution headers for OpenRouter, NVIDIA NIM, and Cloudflare requests
-	enableAnalytics?: boolean; // default: false - opt-in analytics data sharing
-	trackingId?: string; // analytics tracking identifier, generated when analytics is enabled
 	packages?: PackageSource[]; // Array of npm/git package sources (string or object with filtering)
 	extensions?: string[]; // Array of local extension file paths or directories
 	skills?: string[]; // Array of local skill file paths or directories

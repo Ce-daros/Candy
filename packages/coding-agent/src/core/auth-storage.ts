@@ -39,7 +39,6 @@ export interface AuthStorageBackend {
 		options?: AuthOperationOptions,
 	): Promise<T>;
 }
-
 export class ReadOnlyAuthStorage implements CredentialStore {
 	private readonly authPath: string;
 	private data: AuthStorageData | undefined;
@@ -103,7 +102,10 @@ export class ReadOnlyAuthStorage implements CredentialStore {
 		if (credential.type !== "api_key" || !credential.key || isCommandConfigValue(credential.key)) {
 			return structuredClone(credential);
 		}
-		return { ...credential, key: resolveConfigValue(credential.key, credential.env) };
+		return {
+			...credential,
+			key: await resolveConfigValue(credential.key, credential.env, { signal: options?.signal }),
+		};
 	}
 
 	async list(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
@@ -280,7 +282,10 @@ export class AuthStorage implements CredentialStore {
 		options?.signal?.throwIfAborted();
 		if (credential?.type !== "api_key") return credential;
 		if (credential.key === undefined) return credential;
-		return { ...credential, key: resolveConfigValue(credential.key, credential.env) };
+		return {
+			...credential,
+			key: await resolveConfigValue(credential.key, credential.env, { signal: options?.signal }),
+		};
 	}
 
 	async modify(
@@ -323,21 +328,5 @@ export class AuthStorage implements CredentialStore {
 		const entries = Object.entries(await this.readLatestData(options));
 		options?.signal?.throwIfAborted();
 		return entries.map(([providerId, credential]) => ({ providerId, type: credential.type }));
-	}
-}
-
-/**
- * One-off synchronous read of a stored credential from an auth.json file,
- * without instantiating a store or resolving configured key values.
- */
-export function readStoredCredential(
-	providerId: string,
-	authPath: string = join(getAgentDir(), "auth.json"),
-): Credential | undefined {
-	try {
-		const path = normalizePath(authPath);
-		return parseJsonFile(readFileSync(path, "utf-8"), path, () => ({}) as AuthStorageData)[providerId];
-	} catch {
-		return undefined;
 	}
 }

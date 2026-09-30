@@ -1,149 +1,143 @@
 # SDK
 
-`@candy/coding-agent` embeds candy in a Node.js or Bun process. It provides direct TypeScript access to the agent, sessions, tools, models, and resources used by the command-line application.
+`@candy/coding-agent` embeds Candy in a Node.js or Bun process. Its root entry exports the headless session runtime, model and settings operations, session storage, tools, resource contracts, and extension authoring types. Import terminal components from `@candy/coding-agent/ui` and RPC client/protocol types from `@candy/coding-agent/rpc`. The executable RPC launcher remains `@candy/coding-agent/rpc-entry`.
 
-Use the SDK for in-process TypeScript integration. For a language-independent or isolated subprocess, see [CLI Integration](cli-integration.md).
+Use the SDK for in-process TypeScript integration. For other languages or process isolation, use [RPC](rpc.md) or the [CLI integration](cli-integration.md).
+
+## Create and dispose a runtime
+
+`createAgentSessionRuntime()` is the SDK construction entry. The runtime owns the current session and session replacement lifecycle:
 
 ```typescript
-import { createAgentSession, resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
+import { createAgentSessionRuntime } from "@candy/coding-agent";
 
-const { session } = await createAgentSession({
-  themeAdapter: resourceThemeAdapter,
-  extensionModules: extensionHostModules,
-});
+const runtime = await createAgentSessionRuntime();
 
 try {
-  await session.prompt("What files are in the current directory?");
-  console.log(session.getLastAssistantText());
+	const session = runtime.session;
+	const unsubscribe = session.subscribe((event) => {
+		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+			process.stdout.write(event.assistantMessageEvent.delta);
+		}
+	});
+
+	try {
+		await session.prompt("What files are in the current directory?");
+	} finally {
+		unsubscribe();
+	}
 } finally {
-  session.dispose();
+	await runtime.dispose();
 }
 ```
 
-This uses the working directory, discovered resources, stored settings, and configured credentials. `prompt()` resolves when the run finishes.
+This uses the current working directory, standard resource discovery, stored settings, and configured credentials. `prompt()` resolves after the run and any automatic recovery finish. The runtime disposal promise settles active work and releases session resources.
 
-The [complete minimal example](../examples/sdk/01-minimal.ts) also streams text events. All [SDK examples](../examples/sdk/) are typechecked with the repository.
-
-<a id="session-management"></a>
+The [minimal example](../examples/sdk/01-minimal.ts) also reads messages after a run. All [SDK examples](../examples/sdk/) are included in the repository TypeScript project.
 
 ## Session lifecycle
 
-`createAgentSession()` creates an `AgentSession`. The session owns one conversation, its model and tools, queued messages, compaction state, and extension runtime.
+`runtime.session` is a read-only operations facade for the active conversation. Its `messages`, model, and prompt-template values are detached snapshots; read them again after an operation when you need current state. The facade exposes prompting, queueing, model and tool selection, context operations, subscriptions, and session metadata without exposing the underlying Agent or mutable message storage.
 
-Read current state through `session.messages`, `session.model`, `session.thinkingLevel`, `session.systemPrompt`, and `session.getActiveToolNames()`.
-
-`session.systemPrompt` is read-only and returns the current effective system prompt, including changes that have not yet been sent to the model. Tool changes are declared to the model before the next request.
-
-<a id="sessionmanager-api"></a>
-
-### Session storage
-
-Sessions are persistent by default. `SessionManager` owns the persisted or in-memory entry tree and tracks its active leaf. Branching changes that leaf without deleting abandoned branches. When candy reconstructs model context, the manager selects the active branch and applies compaction.
-
-`SessionManager` is authoritative for finalized model context. Restore external history by constructing the session with a manager containing those entries. Assigning `session.agent.state.messages` does not replace persisted context.
-
-Use an in-memory manager when the host does not want session files:
+The runtime owns session replacement:
 
 ```typescript
-import { createAgentSession, resourceThemeAdapter, SessionManager } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
+await runtime.newSession();
+await runtime.switchSession(sessionFile);
+await runtime.fork(entryId);
+await runtime.clone();
+await runtime.importFromJsonl(jsonlPath);
+```
 
-const { session } = await createAgentSession({
-  themeAdapter: resourceThemeAdapter,
-  extensionModules: extensionHostModules,
-  sessionManager: SessionManager.inMemory(),
+After replacement, read `runtime.session` again and bind session-specific listeners to the new facade. The runtime also provides `cwd`, `settings`, `models`, `resources`, and startup diagnostics for the active session.
+
+`runtime.newSession({ parentSession, withSession })` can record session lineage and run host setup against the replacement session. The `withSession` callback receives a context for the new session after replacement; use it for work that must follow the swap rather than keeping a reference to the old facade.
+
+Sessions persist to JSONL by default. Supply `SessionManager.inMemory(cwd)` when the host does not want a session file. `SessionManager.create()`, `continueRecent()`, `open()`, and `list()` support persistent session workflows; the [sessions example](../examples/sdk/11-sessions.ts) shows the available factories. Branching updates the active leaf without deleting abandoned branches. [Session File Format](session-format.md) describes the persisted representation.
+
+`cwd` selects the workspace for project resource discovery, context files, session grouping, and built-in tool paths. Pass it explicitly when the target differs from `process.cwd()` and create an in-memory `SessionManager` for that same cwd.
+
+Configure credentials and model storage through `modelRuntimeOptions` when the runtime should own model-runtime construction:
+
+```typescript
+const runtime = await createAgentSessionRuntime({
+	modelRuntimeOptions: {
+		authPath: "/srv/candy/auth.json",
+		modelsPath: "/srv/candy/models.json",
+	},
 });
 ```
 
-See the checked [sessions example](../examples/sdk/11-sessions.ts) for creating, opening, continuing, listing, and forking sessions. [Session File Format](session-format.md) defines the persisted JSONL contract, and [Message Types](message-types.md) defines transcript values. For exact methods and signatures, use the exported TypeScript declarations or [`session-manager.ts`](../src/core/session-manager.ts).
+The runtime registers its providers before its managed model-catalog refresh. It disposes the model runtime it creates. A supplied `modelRuntime` remains caller-owned and can be shared by multiple runtimes; await its `dispose()` after those runtimes have closed.
 
-`cwd` selects the workspace used for project resource discovery, context files, session grouping, and built-in tool paths. Pass it explicitly when the target differs from `process.cwd()`.
+## Prompting and events
 
-`session.dispose()` aborts active work, invalidates extension contexts, disconnects from the agent, and removes event listeners. Call it when the session is no longer needed.
+`prompt()` sends text or attachments. To run an extension command, prompt template, or skill, call `executeCommand({ source, name, args })` with `source` set to `"extension"`, `"prompt"`, or `"skill"`. Text beginning with `/` or `skill:` remains ordinary prompt text.
 
-`AgentSessionRuntime` adds `newSession()`, `switchSession()`, `fork()`, and `importFromJsonl()`. Each operation replaces the active `AgentSession` and recreates services for the target working directory.
+A prompt sent during an active run must specify whether it should steer the current run or follow it. `steer()` and `followUp()` express those choices directly. They resolve to `"queued"` when input waits behind the active operation or `"handled"` when an extension consumes it. `abort()` stops the current operation and waits for it to settle; `waitForIdle()` waits without aborting.
 
-After a runtime replacement, subscriptions belong to the old `AgentSession` and must be rebound. See the [session runtime example](../examples/sdk/13-session-runtime.ts).
+Subscribe before prompting when the host needs streamed output. `message_end` carries the completed message and its committed `entryId`; `turn_end` carries `messageEntry` and `toolResultEntries` for the same journal records. `agent_end` marks one low-level run; retries, overflow recovery, and queued inputs can continue. Use `agent_settled` when the host needs to know that no work will continue automatically.
 
-## Prompting
+## Configure resources and tools
 
-`prompt()` sends ordinary text and attachments. To run an extension command, prompt template, or skill, call `executeCommand({ source, name, args })` with `source` set to `"extension"`, `"prompt"`, or `"skill"`. Text beginning with `/` or `skill:` stays ordinary text. For an accepted agent run, `prompt()` resolves after the run finishes, including automatic retries.
-
-A prompt sent while the session is already streaming must specify whether it should steer the current run or follow it. Calling `prompt()` without that choice rejects rather than guessing.
-
-A steering message enters after the current assistant turn and its tool calls. A follow-up enters after the current run finishes its pending work. `steer()` and `followUp()` expose those behaviors directly and return `"queued"` if the input was queued (including after an extension transformed it), or `"handled"` if an extension consumed it.
-
-`abort()` stops the active operation and waits for the session to become idle. `waitForIdle()` waits without aborting it.
-
-## Subscribing to events
-
-Subscribe before prompting when the host needs streamed output:
+The runtime factory creates the model runtime, settings manager, session manager, default resource loader, and default tools when those dependencies are omitted. Use `resourceLoaderOptions` for discovery overrides such as extension paths, prompt templates, skills, and system-prompt content. The factory binds these options to each session's effective working directory:
 
 ```typescript
-const unsubscribe = session.subscribe((event) => {
-  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-    process.stdout.write(event.assistantMessageEvent.delta);
-  }
+import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+
+const cwd = process.cwd();
+const runtime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.inMemory(cwd),
+	resourceLoaderOptions: {
+		appendSystemPromptOverride: (current) => [...current, "Keep answers concise."],
+		additionalExtensionPaths: ["./extensions/review.ts"],
+	},
 });
 
 try {
-  await session.prompt("Explain this repository");
+	console.log(runtime.resources.getInventory());
 } finally {
-  unsubscribe();
+	await runtime.dispose();
 }
 ```
 
-Session events report message updates, tool execution, queues, compaction, retries, and run lifecycle changes.
+Without a theme adapter, the default resource loader disables theme discovery. A host that needs resource themes can provide `themeAdapter` from `@candy/coding-agent/ui`. A custom `resourceLoaderFactory({ cwd, agentDir })` is available when the host owns resource loading; return a loader prepared for the supplied working directory.
 
-`message_end` contains the authoritative completed message. `agent_end` marks the end of one low-level agent run, but automatic recovery or queued work can still follow.
+Resource settings use the same runtime operations exposed to other hosts. `await runtime.resources.getConfiguration("global")` or `getConfiguration("project")` returns resolved global/project paths and a `ResourceConfiguration` operation object. Use its `toggleResource(item)` and `setWriteScope(scope)` methods to change enabled state and choose where overrides are saved. Use `runtime.resources.getInventory()` to read the active discovered resources and diagnostics.
 
-Use `agent_settled` when the host needs to know that candy will not continue automatically.
+The built-in extension module map is headless and supports the SDK's extension API. If loaded extension files import UI components from `@candy/coding-agent/ui`, pass `extensionModules` from `@candy/coding-agent/extension-host-modules` to the runtime. This keeps UI implementation imports out of the SDK root while giving the extension loader the modules it needs.
 
-## Configuring a session
+Use `modelRuntime`, `model`, and `thinkingLevel` to choose model access and the initial selection. Use `tools`, `noTools`, `excludeTools`, and `customTools` to control available tools. See [models](../examples/sdk/02-custom-model.ts), [tools](../examples/sdk/05-tools.ts), [extensions](../examples/sdk/06-extensions.ts), and [full control](../examples/sdk/12-full-control.ts).
 
-With `themeAdapter` supplied, the factory creates a `ModelRuntime`, file-backed `SettingsManager`, persistent `SessionManager`, `DefaultResourceLoader`, and the configured default tools. The package exports `resourceThemeAdapter` for theme construction and `extensionHostModules` from the `extension-host-modules` subpath for extension imports. Hosts that provide their own `ResourceLoader` do not need these adapters.
+## Settings
 
-Each boundary can be supplied explicitly:
+`runtime.settings` exposes the active `SettingsManager`. Read settings through its getters or `getSetting(field)`. Setters return promises: await them to know the change has passed validation, reached storage, and become effective. A write failure rejects and leaves the previous effective value in place.
 
-- `modelRuntime`, `model`, and `thinkingLevel` control model access and selection.
-- `settingsManager` supplies merged settings or an in-memory configuration.
-- `sessionManager` supplies persistent or in-memory conversation history.
-- `resourceLoader` supplies extensions, skills, prompt templates, themes, and context files.
-- `tools`, `noTools`, `excludeTools`, and `customTools` control the active tool set.
+```typescript
+await runtime.settings.setDefaultThinkingLevel("low");
+await runtime.settings.commitSetting("global", "markdown", {
+	...runtime.settings.getSetting("markdown"),
+	mermaid: "off",
+});
+```
 
-Use `DefaultResourceLoader` when you want standard discovery with selected overrides. Supply a custom `ResourceLoader` when the host owns resource storage and discovery completely.
+`SettingsManager.inMemory(initialSettings)` is useful for tests and hosts that do not want a Candy settings file. `applyOverrides()` supplies process-local runtime overrides; it does not save defaults. Use a scope-aware commit when the host intends to change persisted global or project defaults.
 
-<a id="inlineextension"></a>
+## Public entrypoints and migration
 
-Inline extension factories can be supplied through `DefaultResourceLoader`. Give one an `InlineExtension` name only when it needs a stable name in diagnostics and startup output.
+The package exposes separate entrypoints for separate responsibilities:
 
-See the focused examples for [models](../examples/sdk/02-custom-model.ts), [tools](../examples/sdk/05-tools.ts), [extensions](../examples/sdk/06-extensions.ts), and [full control](../examples/sdk/12-full-control.ts).
-
-## Examples
-
-| Example | Purpose |
+| Import | Use |
 |---|---|
-| [Minimal](../examples/sdk/01-minimal.ts) | Create, prompt, observe, and dispose a session |
-| [Custom model](../examples/sdk/02-custom-model.ts) | Select a model and thinking level |
-| [System prompt](../examples/sdk/03-custom-prompt.ts) | Replace or append to the system prompt |
-| [Skills](../examples/sdk/04-skills.ts) | Discover, filter, and add skills |
-| [Tools](../examples/sdk/05-tools.ts) | Select built-in tools and their working directory |
-| [Extensions](../examples/sdk/06-extensions.ts) | Load file-based and inline extensions |
-| [Context files](../examples/sdk/07-context-files.ts) | Add or replace project instructions |
-| [Prompt templates](../examples/sdk/08-prompt-templates.ts) | Add file-style prompt templates |
-| [Credentials](../examples/sdk/09-api-keys-and-oauth.ts) | Configure credential and model storage |
-| [Settings](../examples/sdk/10-settings.ts) | Supply file-backed or in-memory settings |
-| [Sessions](../examples/sdk/11-sessions.ts) | Control session persistence and restoration |
-| [Full control](../examples/sdk/12-full-control.ts) | Replace default discovery and state services |
-| [Session runtime](../examples/sdk/13-session-runtime.ts) | Replace the active session safely |
+| `@candy/coding-agent` | Headless runtime, settings, model, session, resource, and extension APIs |
+| `@candy/coding-agent/ui` | Terminal components, themes, and UI adapters |
+| `@candy/coding-agent/rpc` | Typed `RpcClient` and protocol types |
+| `@candy/coding-agent/extension-host-modules` | Module map for dynamically loaded extensions |
+| `@candy/coding-agent/rpc-entry` | RPC process launcher |
 
-<a id="exports"></a>
+Migrate direct session construction to `createAgentSessionRuntime()`, use `runtime.session` for conversation operations, and await `runtime.dispose()` instead of disposing an individual session. Move UI imports to `./ui` and RPC imports to `./rpc`. Settings changes now return promises; await each persisted operation instead of calling `mutateAndPersist()` or using `flush()` as a substitute for awaiting the operation.
 
-## Resources
+Extension `ProviderConfig.refreshModels(context)` returns the extension provider's refreshed model list; use `context.publish()` when the catalog should persist. The AI package's native `Provider.refreshModels(context)` publishes through its provider context and returns no catalog. The former OAuth `modifyModels` compatibility hook is removed. `ctx.ui.setTheme()` is asynchronous; await its result before reporting whether the theme change succeeded.
 
-- [Choose a Model](models.md) covers model selection and compatible endpoints; [Provider Authentication](providers.md) covers credentials and cloud-provider setup.
-- [Configuration](configuration.md) explains normal discovery and settings; [Settings](settings.md) lists every setting.
-- [Sessions and Context](sessions.md) explains session behavior; [Session Format](session-format.md) defines persisted entries; [Message Types](message-types.md) defines shared transcript values.
-- [Extensions](extensions.md), [Skills](skills.md), and [Prompt Templates](prompt-templates.md) document resources supplied through a `ResourceLoader`.
-- [CLI Integration](cli-integration.md) covers print, JSON, and RPC alternatives to an in-process SDK integration.
+See [Extensions](extensions.md), [Choose a Model](models.md), [Provider Authentication](providers.md), [Settings](settings.md), [Sessions and Context](sessions.md), [RPC](rpc.md), and [CLI Integration](cli-integration.md) for the related APIs.

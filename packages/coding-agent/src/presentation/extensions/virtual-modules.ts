@@ -6,22 +6,21 @@ import * as bundledCandyTui from "@candy/tui";
 import * as bundledTypebox from "typebox";
 import * as bundledTypeboxCompile from "typebox/compile";
 import * as bundledTypeboxValue from "typebox/value";
-// This import is safe because loader.ts exports are not re-exported from index.ts.
-// Extensions can therefore import from @candy/coding-agent.
 import * as bundledCandyCodingAgent from "../../index.ts";
+import * as bundledCandyCodingAgentRpc from "../../rpc.ts";
+import * as bundledCandyCodingAgentUi from "../../ui.ts";
 
 /** Modules available to extensions in source and compiled binary runtimes. */
 export const extensionHostModules: Record<string, unknown> = {
 	typebox: bundledTypebox,
 	"typebox/compile": bundledTypeboxCompile,
 	"typebox/value": bundledTypeboxValue,
-	"@sinclair/typebox": bundledTypebox,
-	"@sinclair/typebox/compile": bundledTypeboxCompile,
-	"@sinclair/typebox/value": bundledTypeboxValue,
 	"@candy/agent-core": bundledCandyAgentCore,
 	"@candy/tui": bundledCandyTui,
 	"@candy/ai": bundledCandyAi,
 	"@candy/ai/oauth": bundledCandyAiOauth,
 	"@candy/ai/providers/all": bundledCandyAiProviders,
 	"@candy/coding-agent": bundledCandyCodingAgent,
+	"@candy/coding-agent/ui": bundledCandyCodingAgentUi,
+	"@candy/coding-agent/rpc": bundledCandyCodingAgentRpc,
 };

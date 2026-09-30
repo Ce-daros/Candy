@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createAllToolDefinitions, createAllTools } from "../src/core/tools/index.ts";
@@ -15,7 +15,7 @@ import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter
 const strictToolNames = ["read", "bash", "powershell", "edit", "write"] as const;
 
 describe("strict built-in tools", () => {
-	it("prefers strict sampling for built-in tools", () => {
+	it("prefers strict sampling for built-in tools", async () => {
 		const definitions = createAllToolDefinitions(process.cwd());
 		const tools = createAllTools(process.cwd());
 		for (const name of strictToolNames) {
@@ -30,7 +30,7 @@ describe("strict built-in tools", () => {
 		expect(definitions.bash.parameters.required).toEqual(["command"]);
 	});
 
-	it("preserves explicit opt-outs when wrapping definitions for execution", () => {
+	it("preserves explicit opt-outs when wrapping definitions for execution", async () => {
 		const definitions = createAllToolDefinitions(process.cwd());
 		for (const name of strictToolNames) {
 			const definition = definitions[name];
@@ -75,7 +75,7 @@ describe("strict built-in tools", () => {
 			});
 			try {
 				await resourceLoader.reload();
-				const { session } = await createAgentSession({
+				const { session } = await assembleAgentSession({
 					cwd,
 					agentDir,
 					model: getModel("anthropic", "claude-sonnet-4-5"),
@@ -101,7 +101,7 @@ describe("strict built-in tools", () => {
 						expect(result.content).toEqual([{ type: "text", text: "still works" }]);
 					}
 				} finally {
-					session.dispose();
+					await session.dispose();
 				}
 			} finally {
 				rmSync(cwd, { recursive: true, force: true });

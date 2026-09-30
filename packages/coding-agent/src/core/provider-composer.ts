@@ -27,7 +27,6 @@ import { createBuiltinApiStreams } from "@candy/ai/api/streams";
 import { imageErrorResult } from "@candy/ai/utils/model-operations";
 import type { ModelConfig, ModelsJsonModel, ModelsJsonModelOverride, ModelsJsonProvider } from "./model-config.ts";
 import {
-	clearConfigValueCache,
 	getConfigValueEnvVarNames,
 	isCommandConfigValue,
 	isConfigValueConfigured,
@@ -42,7 +41,6 @@ export interface ExtensionOAuthConfig {
 	login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
 	refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials>;
 	getApiKey(credentials: OAuthCredentials): string;
-	modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
 }
 
 interface ProviderModelConfigBase {
@@ -100,8 +98,6 @@ export type AuthStatus = {
 	source?: "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command";
 	label?: string;
 };
-
-export const clearApiKeyCache = clearConfigValueCache;
 
 function getAllProviderModels(provider: Provider | undefined): readonly AnyModel[] {
 	return provider ? (provider.getAllModels?.() ?? provider.getModels()) : [];
@@ -382,6 +378,7 @@ function composeApiKeyAuth(
 	base: Provider | undefined,
 	config: ModelsJsonProvider | undefined,
 	extension: ProviderConfigInput | undefined,
+	commandCache: Map<string, string>,
 ): ApiKeyAuth | undefined {
 	const inherited = base?.auth.apiKey;
 	const rawKey = configuredApiKey(config, extension);
@@ -427,7 +424,10 @@ function composeApiKeyAuth(
 						: undefined;
 			} else if (rawKey !== undefined) {
 				const env = await configContextEnv([rawKey], input.ctx);
-				const key = resolveConfigValueOrThrow(rawKey, `API key for provider "${providerId}"`, env);
+				const key = await resolveConfigValueOrThrow(rawKey, `API key for provider "${providerId}"`, env, {
+					signal: input.signal,
+					cache: commandCache,
+				});
 				result = inherited
 					? await inherited.resolve({ ...input, credential: { type: "api_key", key } })
 					: { auth: { apiKey: key }, source: "configured API key" };
@@ -437,7 +437,10 @@ function composeApiKeyAuth(
 			if (!result) return undefined;
 			const explicitEnv = { ...(input.credential?.env ?? {}), ...(result.env ?? {}) };
 			const headerEnv = await configContextEnv(Object.values(rawHeaders ?? {}), input.ctx, explicitEnv);
-			const headers = resolveHeadersOrThrow(rawHeaders, `provider "${providerId}"`, headerEnv);
+			const headers = await resolveHeadersOrThrow(rawHeaders, `provider "${providerId}"`, headerEnv, {
+				signal: input.signal,
+				cache: commandCache,
+			});
 			return { ...result, auth: withConfiguredAuth(result.auth, headers, authHeader) };
 		},
 	};
@@ -448,6 +451,7 @@ function composeOAuthAuth(
 	base: Provider | undefined,
 	config: ModelsJsonProvider | undefined,
 	extension: ProviderConfigInput | undefined,
+	commandCache: Map<string, string>,
 ): OAuthAuth | undefined {
 	const oauth = extension?.oauth ? adaptOAuth(extension.oauth) : base?.auth.oauth;
 	if (!oauth) return undefined;
@@ -455,13 +459,14 @@ function composeOAuthAuth(
 	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
 	return {
 		...oauth,
-		toAuth: async (credential) => {
-			const auth = await oauth.toAuth(credential);
+		toAuth: async (credential, signal) => {
+			const auth = await oauth.toAuth(credential, signal);
 			const env = credential.env;
-			const headers = resolveHeadersOrThrow(
+			const headers = await resolveHeadersOrThrow(
 				rawHeaders,
 				`provider "${providerId}"`,
 				typeof env === "object" && env !== null ? (env as Record<string, string>) : undefined,
+				{ signal, cache: commandCache },
 			);
 			return withConfiguredAuth(auth, headers, authHeader);
 		},
@@ -507,30 +512,20 @@ export function composeModelProvider(
 	base: Provider | undefined,
 	modelConfig: ModelConfig,
 	extension: ProviderConfigInput | undefined,
+	commandCache = new Map<string, string>(),
 ): Provider {
 	const config = modelConfig.getProvider(providerId);
-	let extensionOAuthCredential: OAuthCredentials | undefined;
 	let refreshedExtensionModels: ProviderConfigInput["models"];
 	const currentExtension = (): ProviderConfigInput | undefined =>
 		extension && refreshedExtensionModels ? { ...extension, models: refreshedExtensionModels } : extension;
 	// models.json modelOverrides are the topmost user-config layer: they apply once,
 	// after custom-model upserts, extension model replacement, and legacy OAuth projection.
 	const getAllModels = (): AnyModel[] => {
-		let models = applyExtension(
+		const models = applyExtension(
 			providerId,
 			applyModelsJson(providerId, getAllProviderModels(base), config),
 			currentExtension(),
 		);
-		if (extensionOAuthCredential && extension?.oauth?.modifyModels) {
-			// The extension hook is chat-only; other model types pass through untouched.
-			models = [
-				...extension.oauth.modifyModels(
-					models.filter((model) => isModelType(model, "chat")),
-					extensionOAuthCredential,
-				),
-				...models.filter((model) => !isModelType(model, "chat")),
-			];
-		}
 		return models.map((model) => {
 			const override = config?.modelOverrides?.[model.id];
 			return override && isModelType(model, "chat") ? applyModelOverride(model, override) : model;
@@ -538,8 +533,8 @@ export function composeModelProvider(
 	};
 	// Validate eagerly so registration/reload reports structural errors immediately.
 	getAllModels();
-	const apiKey = composeApiKeyAuth(providerId, base, config, extension);
-	const oauth = composeOAuthAuth(providerId, base, config, extension);
+	const apiKey = composeApiKeyAuth(providerId, base, config, extension, commandCache);
+	const oauth = composeOAuthAuth(providerId, base, config, extension, commandCache);
 	if (!apiKey && !oauth) throw new Error(`Provider ${providerId}: no authentication method configured.`);
 
 	const supportsBaseApi = (model: Model<Api>) => base?.getModels().some((entry) => entry.api === model.api) ?? false;
@@ -574,13 +569,12 @@ export function composeModelProvider(
 		getModels: () => getAllModels().filter((model) => isModelType(model, "chat")),
 		getAllModels,
 		refreshModels:
-			base?.refreshModels || extension?.refreshModels || extension?.oauth?.modifyModels
+			base?.refreshModels || extension?.refreshModels
 				? async (context) => {
 						await base?.refreshModels?.(context);
 						let refreshed: NonNullable<ProviderConfigInput["models"]> | undefined;
 						if (extension?.refreshModels) refreshed = await extension.refreshModels(context);
 						if (context.signal.aborted) return;
-						const oauthCredential = context.credential?.type === "oauth" ? context.credential : undefined;
 						await context.publish({
 							update: () => {
 								if (refreshed) {
@@ -591,7 +585,6 @@ export function composeModelProvider(
 									});
 									refreshedExtensionModels = refreshed;
 								}
-								extensionOAuthCredential = oauthCredential;
 							},
 						});
 					}
@@ -635,11 +628,13 @@ export function resolveConfiguredModelHeaders(
 	config: ModelsJsonProvider | undefined,
 	extension: ProviderConfigInput | undefined,
 	env?: Record<string, string>,
-): Record<string, string> | undefined {
+	options: { signal?: AbortSignal; cache?: Map<string, string> } = {},
+): Promise<Record<string, string> | undefined> {
 	return resolveHeadersOrThrow(
 		rawModelHeaders(model, config, extension),
 		`model "${model.provider}/${model.id}"`,
 		env,
+		options,
 	);
 }
 

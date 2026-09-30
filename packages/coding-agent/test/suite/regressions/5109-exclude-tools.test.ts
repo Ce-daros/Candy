@@ -55,7 +55,7 @@ describe("regression #5109: exclude tools", () => {
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
 			expect(harness.session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -75,7 +75,7 @@ describe("regression #5109: exclude tools", () => {
 			expect(harness.session.systemPrompt).not.toContain("- read:");
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

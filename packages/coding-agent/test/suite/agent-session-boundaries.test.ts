@@ -15,8 +15,8 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 describe("AgentSession actionable boundaries", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
-		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+	afterEach(async () => {
+		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
 	});
 
 	it("commits a retain-none turn_end compaction and explicitly continues once", async () => {
@@ -739,8 +739,8 @@ describe("AgentSession actionable boundaries", () => {
 describe("durable length recovery", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
-		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+	afterEach(async () => {
+		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
 	});
 
 	it("keeps truncated tool attempts in context for the natural next turn", async () => {

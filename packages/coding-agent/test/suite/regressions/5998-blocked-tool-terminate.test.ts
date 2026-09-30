@@ -7,9 +7,9 @@ import { createHarness, getAssistantTexts, type Harness } from "../harness.ts";
 describe("#5998 blocked tool termination", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

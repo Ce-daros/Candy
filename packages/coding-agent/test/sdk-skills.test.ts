@@ -2,15 +2,15 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { createExtensionRuntime } from "../src/core/extensions/loader.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
-describe("createAgentSession skills option", () => {
+describe("assembleAgentSession skills option", () => {
 	let tempDir: string;
 	let skillsDir: string;
 
@@ -41,7 +41,7 @@ This is a test skill.
 	});
 
 	it("should discover skills by default and expose them on session.skills", async () => {
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
@@ -69,7 +69,7 @@ This is a test skill.
 			reload: async () => {},
 		};
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.inMemory(),
@@ -104,7 +104,7 @@ This is a test skill.
 			reload: async () => {},
 		};
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.inMemory(),

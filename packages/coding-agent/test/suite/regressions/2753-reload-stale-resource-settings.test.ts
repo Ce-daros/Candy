@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
+	createRuntimeFromFactory,
 } from "../../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
@@ -17,11 +17,11 @@ import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-a
 import { configuredFauxProvider } from "../../ai.ts";
 
 describe("issue #2753 reload stale resource settings", () => {
-	const cleanups: Array<() => void> = [];
+	const cleanups: Array<() => Promise<void>> = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (cleanups.length > 0) {
-			cleanups.pop()?.();
+			await cleanups.pop()?.();
 		}
 	});
 
@@ -43,7 +43,7 @@ describe("issue #2753 reload stale resource settings", () => {
 		});
 
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				cwd,
@@ -60,7 +60,7 @@ describe("issue #2753 reload stale resource settings", () => {
 				},
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -70,14 +70,14 @@ describe("issue #2753 reload stale resource settings", () => {
 				diagnostics: services.diagnostics,
 			};
 		};
-		const runtime = await createAgentSessionRuntime(createRuntime, {
+		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir,
 			sessionManager: SessionManager.create(tempDir),
 		});
 
-		cleanups.push(() => {
-			runtime.session.dispose();
+		cleanups.push(async () => {
+			await runtime.session.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}

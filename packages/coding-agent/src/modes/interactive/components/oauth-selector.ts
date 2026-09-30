@@ -1,5 +1,15 @@
 import type { ApiKeyAuth, AuthCheck, OAuthAuth } from "@candy/ai";
-import { Container, type Focusable, fuzzyFilter, Input, Spacer, TruncatedText, visibleWindow } from "@candy/tui";
+import {
+	Container,
+	type Focusable,
+	fuzzyFilter,
+	Input,
+	moveSelection,
+	Spacer,
+	TruncatedText,
+	visibleWindow,
+} from "@candy/tui";
+import type { ModelRuntime } from "../../../core/model-runtime.ts";
 import { dialogTitle, selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
 import { emptyLine, readListAction, scrollCounter } from "./list-scaffold.ts";
 
@@ -10,6 +20,37 @@ export type AuthSelectorProvider = {
 	method?: ApiKeyAuth | OAuthAuth;
 	status?: AuthCheck;
 };
+
+export type AuthSelectorCatalog = Pick<ModelRuntime, "getProviders" | "getProviderAuthStatus" | "isUsingOAuth">;
+
+export function getAuthSelectorProviders(
+	runtime: AuthSelectorCatalog,
+	authType?: "oauth" | "api_key",
+): AuthSelectorProvider[] {
+	const options: AuthSelectorProvider[] = [];
+	for (const provider of runtime.getProviders()) {
+		const authStatus = runtime.getProviderAuthStatus(provider.id);
+		const status = authStatus.configured
+			? {
+					type: runtime.isUsingOAuth(provider.id) ? ("oauth" as const) : ("api_key" as const),
+					source: authStatus.label ?? authStatus.source,
+				}
+			: undefined;
+		if ((!authType || authType === "oauth") && provider.auth.oauth) {
+			options.push({ id: provider.id, name: provider.name, authType: "oauth", method: provider.auth.oauth, status });
+		}
+		if ((!authType || authType === "api_key") && provider.auth.apiKey) {
+			options.push({
+				id: provider.id,
+				name: provider.name,
+				authType: "api_key",
+				method: provider.auth.apiKey,
+				status,
+			});
+		}
+	}
+	return options.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export function formatAuthSelectorProviderType(authType: AuthSelectorProvider["authType"]): string {
 	return authType === "oauth" ? "subscription" : "API key";
@@ -170,12 +211,12 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		switch (readListAction(keyData)) {
 			case "up":
 				if (this.filteredProviders.length === 0) return;
-				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredProviders.length, -1);
 				this.updateList();
 				break;
 			case "down":
 				if (this.filteredProviders.length === 0) return;
-				this.selectedIndex = Math.min(this.filteredProviders.length - 1, this.selectedIndex + 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredProviders.length, 1);
 				this.updateList();
 				break;
 			case "confirm": {

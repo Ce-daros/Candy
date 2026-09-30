@@ -19,7 +19,6 @@ import {
 	type SettingsListTheme,
 	styleTextWithAnsi,
 	type TerminalColorMode,
-	type TextAttributes,
 } from "@candy/tui";
 import chalk from "chalk";
 import { getCustomThemesDir, getThemesDir } from "../../../config.ts";
@@ -51,77 +50,16 @@ export function setThemeJsonValidator(validator: ThemeJsonValidator): void {
 	themeJsonValidator = validator;
 }
 
-export type ThemeColor =
-	| "accent"
-	| "border"
-	| "borderAccent"
-	| "borderMuted"
-	| "success"
-	| "error"
-	| "warning"
-	| "muted"
-	| "dim"
-	| "text"
-	| "thinkingText"
-	| "scrollbarTrack"
-	| "scrollbarThumb"
-	| "searchMatchText"
-	| "userMessageText"
-	| "customMessageText"
-	| "customMessageLabel"
-	| "toolTitle"
-	| "toolOutput"
-	| "mdHeading"
-	| "mdLink"
-	| "mdLinkUrl"
-	| "mdCode"
-	| "mdCodeBlock"
-	| "mdCodeBlockBorder"
-	| "mdQuote"
-	| "mdQuoteBorder"
-	| "mdHr"
-	| "mdListBullet"
-	| "toolDiffAdded"
-	| "toolDiffRemoved"
-	| "toolDiffContext"
-	| "syntaxComment"
-	| "syntaxKeyword"
-	| "syntaxFunction"
-	| "syntaxVariable"
-	| "syntaxString"
-	| "syntaxNumber"
-	| "syntaxType"
-	| "syntaxOperator"
-	| "syntaxPunctuation"
-	| "thinkingOff"
-	| "thinkingMinimal"
-	| "thinkingLow"
-	| "thinkingMedium"
-	| "thinkingHigh"
-	| "thinkingXhigh"
-	| "thinkingMax"
-	| "bashMode"
-	| "editorPrompt";
+import type {
+	ThemeAppearance,
+	ThemeBg,
+	ThemeColor,
+	Theme as ThemeContract,
+	ThemeStyle,
+	ThemeToken,
+} from "../../../contracts/theme.ts";
 
-export type ThemeBg =
-	| "selectedBg"
-	| "searchMatchBg"
-	| "userMessageBg"
-	| "customMessageBg"
-	| "toolPendingBg"
-	| "toolSuccessBg"
-	| "toolErrorBg";
-
-export type ThemeToken = ThemeColor | ThemeBg;
-
-/**
- * Tokens are only accepted in their own slot, because "" (terminal default) means the default foreground
- * or background depending on the slot. Use `theme.colors[token]` to use a token's color in the other slot.
- */
-export interface ThemeStyle extends TextAttributes {
-	fg?: ThemeColor | Color;
-	bg?: ThemeBg | Color;
-}
+export type { ThemeAppearance, ThemeBg, ThemeColor, ThemeStyle, ThemeToken } from "../../../contracts/theme.ts";
 
 type OptionalThemeColor = "scrollbarTrack" | "scrollbarThumb" | "thinkingMax" | "searchMatchText" | "editorPrompt";
 type OptionalThemeBg = "searchMatchBg";
@@ -183,7 +121,6 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 // ============================================================================
 
 /** The background a theme is designed for. */
-export type ThemeAppearance = TerminalTheme;
 
 interface TerminalDefaultColors {
 	foreground?: Color;
@@ -226,7 +163,7 @@ function detectAppearance(foregrounds: Color[], backgrounds: Color[]): ThemeAppe
 // Theme Class
 // ============================================================================
 
-export class Theme {
+export class Theme implements ThemeContract {
 	readonly name?: string;
 	readonly sourcePath?: string;
 	sourceInfo?: SourceInfo;
@@ -567,7 +504,7 @@ export function loadThemeFromPath(themePath: string, mode?: TerminalColorMode): 
 	return createTheme(themeJson, mode, themePath);
 }
 
-function loadTheme(name: string, mode?: TerminalColorMode): Theme {
+function loadTheme(name: string, mode?: TerminalColorMode): ThemeContract {
 	const registeredTheme = registeredThemes.get(name);
 	if (registeredTheme) {
 		return registeredTheme;
@@ -576,7 +513,7 @@ function loadTheme(name: string, mode?: TerminalColorMode): Theme {
 	return createTheme(themeJson, mode);
 }
 
-export function getThemeByName(name: string): Theme | undefined {
+export function getThemeByName(name: string): ThemeContract | undefined {
 	try {
 		return loadTheme(name);
 	} catch {
@@ -751,31 +688,31 @@ const THEME_KEY_OLD = Symbol.for("@candy/coding-agent:theme");
 
 // Export theme as a getter that reads from globalThis
 // This ensures all module instances (node, jiti) see the same theme
-export const theme: Theme = new Proxy({} as Theme, {
+export const theme: ThemeContract = new Proxy({} as Theme, {
 	get(_target, prop) {
-		const t = (globalThis as Record<symbol, Theme>)[THEME_KEY];
+		const t = (globalThis as Record<symbol, ThemeContract>)[THEME_KEY];
 		if (!t) throw new Error("Theme not initialized. Call initTheme() first.");
 		return (t as unknown as Record<string | symbol, unknown>)[prop];
 	},
 });
 
 export function cliThemeColor(color: ThemeColor, text: string): string {
-	const activeTheme = (globalThis as Record<symbol, Theme>)[THEME_KEY] ?? loadTheme(getDefaultTheme());
+	const activeTheme = (globalThis as Record<symbol, ThemeContract>)[THEME_KEY] ?? loadTheme(getDefaultTheme());
 	return chalk.hex(colorToHex(activeTheme.colors[color]))(text);
 }
 
-function setGlobalTheme(t: Theme): void {
-	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
-	(globalThis as Record<symbol, Theme>)[THEME_KEY_OLD] = t;
+function setGlobalTheme(t: ThemeContract): void {
+	(globalThis as Record<symbol, ThemeContract>)[THEME_KEY] = t;
+	(globalThis as Record<symbol, ThemeContract>)[THEME_KEY_OLD] = t;
 }
 
 let currentThemeName: string | undefined;
 let themeWatcher: fs.FSWatcher | undefined;
 let themeReloadTimer: NodeJS.Timeout | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
-const registeredThemes = new Map<string, Theme>();
+const registeredThemes = new Map<string, ThemeContract>();
 
-export function setRegisteredThemes(themes: Theme[]): void {
+export function setRegisteredThemes(themes: ThemeContract[]): void {
 	registeredThemes.clear();
 	for (const theme of themes) {
 		if (theme.name) {
@@ -824,7 +761,7 @@ export function setTheme(name: string, enableWatcher: boolean = false): { succes
 	}
 }
 
-export function setThemeInstance(themeInstance: Theme): void {
+export function setThemeInstance(themeInstance: ThemeContract): void {
 	setGlobalTheme(themeInstance);
 	currentThemeName = "<in-memory>";
 	stopThemeWatcher(); // Can't watch a direct instance
@@ -973,10 +910,10 @@ export function getThemeExportColors(themeName?: string): {
 
 type CliHighlightTheme = Record<string, (s: string) => string>;
 
-let cachedHighlightThemeFor: Theme | undefined;
+let cachedHighlightThemeFor: ThemeContract | undefined;
 let cachedCliHighlightTheme: CliHighlightTheme | undefined;
 
-function buildCliHighlightTheme(t: Theme): CliHighlightTheme {
+function buildCliHighlightTheme(t: ThemeContract): CliHighlightTheme {
 	return {
 		keyword: (s: string) => t.fg("syntaxKeyword", s),
 		built_in: (s: string) => t.fg("syntaxType", s),
@@ -1006,7 +943,7 @@ function buildCliHighlightTheme(t: Theme): CliHighlightTheme {
 	};
 }
 
-function getCliHighlightTheme(t: Theme): CliHighlightTheme {
+function getCliHighlightTheme(t: ThemeContract): CliHighlightTheme {
 	if (cachedHighlightThemeFor !== t || !cachedCliHighlightTheme) {
 		cachedHighlightThemeFor = t;
 		cachedCliHighlightTheme = buildCliHighlightTheme(t);

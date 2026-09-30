@@ -1,61 +1,59 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Session Management
  *
  * Control session persistence: in-memory, new file, continue, or open specific.
  */
 
-import { createAgentSession, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
+
+const cwd = process.cwd();
 
 // In-memory (no persistence)
-const { session: inMemory } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	sessionManager: SessionManager.inMemory(),
+const inMemoryRuntime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.inMemory(cwd),
 });
+const inMemory = inMemoryRuntime.session;
 console.log("In-memory session:", inMemory.sessionFile ?? "(none)");
-inMemory.dispose();
+await inMemoryRuntime.dispose();
 
 // New persistent session
-const { session: newSession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	sessionManager: SessionManager.create(process.cwd()),
+const newSessionRuntime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.create(cwd),
 });
+const newSession = newSessionRuntime.session;
 console.log("New session file:", newSession.sessionFile);
-newSession.dispose();
+await newSessionRuntime.dispose();
 
 // Continue most recent session (or create new if none)
-const { session: continued, modelFallbackMessage } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	sessionManager: SessionManager.continueRecent(process.cwd()),
+const continuedRuntime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.continueRecent(cwd),
 });
+const { session: continued, modelFallbackMessage } = continuedRuntime;
 if (modelFallbackMessage) console.log("Note:", modelFallbackMessage);
 console.log("Continued session:", continued.sessionFile);
-continued.dispose();
+await continuedRuntime.dispose();
 
 // List and open specific session
-const sessions = await SessionManager.list(process.cwd());
+const sessions = await SessionManager.list(cwd);
 console.log(`\nFound ${sessions.length} sessions:`);
 for (const info of sessions.slice(0, 3)) {
 	console.log(`  ${info.id.slice(0, 8)}... - "${info.firstMessage.slice(0, 30)}..."`);
 }
 
 if (sessions.length > 0) {
-	const { session: opened } = await createAgentSession({
-		extensionModules: extensionHostModules,
-		themeAdapter: resourceThemeAdapter,
+	const openedRuntime = await createAgentSessionRuntime({
 		sessionManager: SessionManager.open(sessions[0].path),
 	});
-	console.log(`\nOpened: ${opened.sessionId}`);
-	opened.dispose();
+	console.log(`\nOpened: ${openedRuntime.session.sessionId}`);
+	await openedRuntime.dispose();
 }
 
 // Custom session directory (no cwd encoding)
 // const customDir = "/path/to/my-sessions";
-// const { session } = await createAgentSession({
+// const sessionRuntime = await createAgentSessionRuntime({
 //   sessionManager: SessionManager.create(process.cwd(), customDir),
 // });
 // SessionManager.list(process.cwd(), customDir);

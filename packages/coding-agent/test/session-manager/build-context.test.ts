@@ -286,20 +286,17 @@ describe("buildSessionContext", () => {
 	});
 
 	describe("edge cases", () => {
-		it("uses last entry when leafId not found", () => {
+		it("rejects a leaf id that is not in the session history", () => {
 			const entries: SessionEntry[] = [msg("1", null, "user", "hello"), msg("2", "1", "assistant", "hi")];
-			const ctx = buildSessionContext(entries, "nonexistent");
-			expect(ctx.messages).toHaveLength(2);
+			expect(() => buildSessionContext(entries, "nonexistent")).toThrow("Session leaf nonexistent does not exist");
 		});
 
-		it("handles orphaned entries gracefully", () => {
+		it("reports missing parents with the owning entry id", () => {
 			const entries: SessionEntry[] = [
 				msg("1", null, "user", "hello"),
 				msg("2", "missing", "assistant", "orphan"), // parent doesn't exist
 			];
-			const ctx = buildSessionContext(entries, "2");
-			// Should only get the orphan since parent chain is broken
-			expect(ctx.messages).toHaveLength(1);
+			expect(() => buildSessionContext(entries, "2")).toThrow("Session entry 2 refers to missing parent missing");
 		});
 	});
 });

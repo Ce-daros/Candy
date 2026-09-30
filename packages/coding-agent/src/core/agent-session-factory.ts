@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@candy/agent-core";
+import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@candy/agent-core";
 import type { ModelsSimpleStreamOptions } from "@candy/ai";
 import { clampThinkingLevel, type Message, type Model } from "@candy/ai";
 import { getAgentDir } from "../config.ts";
@@ -18,9 +18,10 @@ import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { time } from "./timings.ts";
-import type { ToolName } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
+	baseToolsOverride?: Record<string, AgentTool>;
+	initialActiveToolNames?: string[];
 	/** Working directory for project-local discovery. Default: process.cwd() */
 	cwd?: string;
 	/** Global config directory. Default: ~/.candy/agent */
@@ -73,7 +74,7 @@ export interface CreateAgentSessionOptions {
 	sessionStartEvent?: SessionStartEvent;
 }
 
-/** Result from createAgentSession */
+/** Result from assembleAgentSession */
 export interface CreateAgentSessionResult {
 	/** The created session */
 	session: AgentSession;
@@ -95,17 +96,17 @@ function getDefaultAgentDir(): string {
  * @example
  * ```typescript
  * // Minimal - uses defaults
- * const { session } = await createAgentSession();
+ * const { session } = await assembleAgentSession();
  *
  * // With explicit model
  * import { getModel } from '@candy/ai';
- * const { session } = await createAgentSession({
+ * const { session } = await assembleAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',
  * });
  *
  * // Continue previous session
- * const { session, modelFallbackMessage } = await createAgentSession({
+ * const { session, modelFallbackMessage } = await assembleAgentSession({
  *   continueSession: true,
  * });
  *
@@ -116,7 +117,7 @@ function getDefaultAgentDir(): string {
  *   settingsManager: SettingsManager.create(),
  * });
  * await loader.reload();
- * const { session } = await createAgentSession({
+ * const { session } = await assembleAgentSession({
  *   model: myModel,
  *   tools: ["read", "bash"],
  *   resourceLoader: loader,
@@ -124,7 +125,7 @@ function getDefaultAgentDir(): string {
  * });
  * ```
  */
-export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
+export async function assembleAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
 	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
 	let resourceLoader = options.resourceLoader;
@@ -137,9 +138,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
 
 	if (!resourceLoader) {
-		if (!options.themeAdapter) {
-			throw new Error("themeAdapter is required when createAgentSession creates its resource loader");
-		}
 		resourceLoader = new DefaultResourceLoader({
 			cwd,
 			agentDir,
@@ -162,7 +160,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// If session has data, try to restore model from it
 	if (!model && hasExistingSession && existingSession.model) {
 		const restoredModel = modelRuntime.getModel(existingSession.model.provider, existingSession.model.modelId);
-		if (restoredModel && (await modelRuntime.checkAuth(restoredModel.provider))) {
+		if (
+			restoredModel &&
+			(await modelRuntime.getAvailability(restoredModel.provider)).providers.find(
+				(provider) => provider.providerId === restoredModel.provider,
+			)?.auth
+		) {
 			model = restoredModel;
 		}
 		if (!model) {
@@ -214,13 +217,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
+	const defaultActiveToolNames = options.baseToolsOverride
+		? Object.keys(options.baseToolsOverride)
+		: ["read", "bash", "edit", "write"];
 	const configuredDefaultToolNames = settingsManager.getDefaultTools();
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
 	const initialActiveToolNames = (
-		options.tools ?? (options.noTools ? [] : (configuredDefaultToolNames ?? defaultActiveToolNames))
+		options.initialActiveToolNames ??
+		options.tools ??
+		(options.noTools ? [] : (configuredDefaultToolNames ?? defaultActiveToolNames))
 	).filter((name) => !excludedToolNameSet?.has(name));
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
@@ -261,6 +268,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	};
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
+	const resourceOwner = {};
 	const cacheWarmer = new CacheWarmer(
 		modelRuntime,
 		sessionManager,
@@ -277,6 +285,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const headerRunner = extensionRunnerRef.current;
 		return {
 			...options,
+			resourceOwner,
 			timeoutMs: options.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs,
 			websocketConnectTimeoutMs: options.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs(),
 			maxRetries: options.maxRetries ?? providerRetrySettings.maxRetries,
@@ -388,10 +397,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	const session = new AgentSession({
+		baseToolsOverride: options.baseToolsOverride,
 		agent,
 		sessionManager,
 		settingsManager,
 		cwd,
+		agentDir,
 		resourceLoader,
 		customTools: options.customTools,
 		modelRuntime,
@@ -401,6 +412,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		resourceOwner,
 	});
 
 	const extensionsResult = resourceLoader.getExtensions();

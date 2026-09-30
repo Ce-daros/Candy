@@ -1,5 +1,5 @@
 import type { Terminal } from "@candy/tui";
-import { ProcessTerminal, type TUI, TuiAltScreen } from "@candy/tui";
+import { ProcessTerminal, TuiAltScreen } from "@candy/tui";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { openBrowser } from "../../utils/open-browser.ts";
 import { keycap, keyDisplayText } from "./components/keybinding-hints.ts";
@@ -41,36 +41,5 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiAltScre
 				return error instanceof Error ? error.message : String(error);
 			}
 		},
-	});
-}
-
-/** Stable reference for components while InteractiveMode replaces the active renderer. */
-export function createInteractiveTuiReference(getTui: () => TUI): TUI {
-	return new Proxy({} as TUI, {
-		get: (_target, property) => {
-			const tui = getTui();
-			const value = Reflect.get(tui, property, tui);
-			if (typeof value !== "function") return value;
-			let methodTui = tui;
-			let method = value;
-			return (...args: unknown[]) => {
-				const currentTui = getTui();
-				if (currentTui !== methodTui) {
-					const currentMethod = Reflect.get(currentTui, property, currentTui);
-					if (typeof currentMethod !== "function") {
-						throw new TypeError(`TUI property ${String(property)} is not callable`);
-					}
-					methodTui = currentTui;
-					method = currentMethod;
-				}
-				return Reflect.apply(method, methodTui, args);
-			};
-		},
-		set: (_target, property, value) => {
-			const tui = getTui();
-			return Reflect.set(tui, property, value, tui);
-		},
-		has: (_target, property) => Reflect.has(getTui(), property),
-		getPrototypeOf: () => Reflect.getPrototypeOf(getTui()),
 	});
 }

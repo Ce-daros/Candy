@@ -26,7 +26,7 @@ describe("interactive tool cancellation", () => {
 				footer: { invalidate: vi.fn() },
 				refreshContextLine: vi.fn(),
 				pendingTools: new Map([["tool-1", component]]),
-				ui,
+				renderer: ui,
 			};
 			const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
 				this: typeof context,
@@ -65,7 +65,7 @@ describe("interactive tool cancellation", () => {
 			getRegisteredToolDefinition: () => undefined,
 			addMessageToChat: vi.fn(),
 			addToolToChat,
-			ui,
+			renderer: ui,
 		};
 		const renderSessionItems = Reflect.get(InteractiveMode.prototype, "renderSessionItems") as (
 			this: typeof context,

@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createAgentSessionFromServices, createAgentSessionServices } from "../src/core/agent-session-services.ts";
+import { assembleAgentSession, type CreateAgentSessionOptions } from "../src/core/agent-session-factory.ts";
+import { assembleAgentSessionFromServices, assembleAgentSessionServices } from "../src/core/agent-session-services.ts";
+import type { InlineExtension } from "../src/core/extensions/index.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { type CreateAgentSessionOptions, createAgentSession, type InlineExtension } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
@@ -18,13 +19,13 @@ describe("defaultTools setting", () => {
 	let tempDir: string;
 	let agentDir: string;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-default-tools-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -47,7 +48,7 @@ describe("defaultTools setting", () => {
 		await resourceLoader.reload();
 
 		return (
-			await createAgentSession({
+			await assembleAgentSession({
 				cwd: tempDir,
 				agentDir,
 				model: getModel("anthropic", "claude-sonnet-4-5")!,
@@ -71,7 +72,7 @@ describe("defaultTools setting", () => {
 		expect(session.getActiveToolNames()).toEqual(["grep", "find"]);
 		expect(session.systemPrompt).toContain("- grep:");
 		expect(session.systemPrompt).not.toContain("- read:");
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("can select powershell instead of bash", async () => {
@@ -80,7 +81,7 @@ describe("defaultTools setting", () => {
 		expect(session.getActiveToolNames()).toEqual(["read", "powershell", "edit", "write"]);
 		expect(session.systemPrompt).toContain("- powershell: Execute PowerShell commands");
 		expect(session.systemPrompt).not.toContain("- bash:");
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("keeps extension and SDK custom tools enabled", async () => {
@@ -124,7 +125,7 @@ describe("defaultTools setting", () => {
 		expect(session.getAllTools().map((tool) => tool.name)).toEqual(
 			expect.arrayContaining(["read", "dynamic_tool", "sdk_tool", "static_tool"]),
 		);
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("preserves explicit tool option precedence", async () => {
@@ -144,14 +145,14 @@ describe("defaultTools setting", () => {
 
 	it("applies through service-based session creation", async () => {
 		const settingsManager = SettingsManager.inMemory({ defaultTools: ["ls"] });
-		const services = await createAgentSessionServices({
+		const services = await assembleAgentSessionServices({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd: tempDir,
 			agentDir,
 			settingsManager,
 		});
-		const { session } = await createAgentSessionFromServices({
+		const { session } = await assembleAgentSessionFromServices({
 			services,
 			sessionManager: SessionManager.inMemory(tempDir),
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
@@ -164,6 +165,6 @@ describe("defaultTools setting", () => {
 				.sort(),
 		).toEqual(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
 		expect(session.getActiveToolNames()).toEqual(["ls"]);
-		session.dispose();
+		await session.dispose();
 	});
 });

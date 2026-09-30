@@ -36,7 +36,7 @@ export async function listModels(
 		console.error(cliThemeColor("warning", `Warning: errors loading models.json:\n${loadError}`));
 	}
 
-	const models = [...(await modelRuntime.getAvailable(undefined, { signal }))];
+	const models = [...(await modelRuntime.getAvailability(undefined, { signal })).available];
 
 	if (models.length === 0) {
 		console.log(formatNoModelsAvailableMessage());

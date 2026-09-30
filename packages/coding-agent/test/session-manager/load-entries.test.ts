@@ -16,6 +16,16 @@ function storedEntries(build: (source: SessionManager) => void): SessionEntry[] 
 }
 
 describe("SessionManager.inMemory with preloaded entries", () => {
+	it.each([
+		{ type: "model_change", provider: 7, modelId: "model" },
+		{ type: "custom", customType: true },
+		{ type: "custom_message", customType: {}, display: true, content: "text" },
+		{ type: "unsupported" },
+	])("rejects malformed metadata in $type records", (metadata) => {
+		const entry = { id: "invalid-entry", parentId: null, timestamp: "2026-01-01T00:00:00Z", ...metadata };
+		expect(() => SessionManager.inMemory("/project", undefined, [entry as never])).toThrow(/invalid-entry/);
+	});
+
 	it("adopts entries verbatim", () => {
 		const entries = storedEntries((source) => {
 			source.appendMessage(userMessage("hello"));
@@ -40,6 +50,16 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 
 		expect(session.getLeafId()).toBe(appendedId);
 		expect(session.getEntry(appendedId)?.parentId).toBe(lastId);
+	});
+
+	it("reuses a projection until the session leaf changes", () => {
+		const session = SessionManager.inMemory("/project");
+		session.appendMessage(userMessage("hello"));
+		const projection = session.buildSessionProjection();
+
+		expect(session.buildSessionProjection()).toBe(projection);
+		session.appendMessage(userMessage("again"));
+		expect(session.buildSessionProjection()).not.toBe(projection);
 	});
 
 	it("never mints an id that collides with a loaded entry", () => {
@@ -92,6 +112,44 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 		const context = session.buildContextEntries();
 
 		expect(context.some((entry) => entry.id === keptId)).toBe(true);
+	});
+
+	it("rejects compaction references outside the compaction parent chain", () => {
+		const session = SessionManager.inMemory("/project");
+		const rootId = session.appendMessage(userMessage("root"));
+		const unrelatedId = session.appendMessage(userMessage("unrelated branch"));
+		session.branch(rootId);
+		session.appendMessage(userMessage("active branch"));
+
+		expect(() => session.appendCompaction("summary", unrelatedId, 100)).toThrow(
+			new RegExp(`Compaction .* refers to first kept entry ${unrelatedId} outside its parent chain`),
+		);
+	});
+
+	it("rejects invalid message content before appending it", () => {
+		const session = SessionManager.inMemory("/project");
+		session.appendMessage(userMessage("valid"));
+		const before = session.getEntries();
+
+		expect(() =>
+			session.appendMessage({ role: "user", content: [{ type: "unknown" }], timestamp: Date.now() } as never),
+		).toThrow(/invalid unknown content block/);
+		expect(session.getEntries()).toEqual(before);
+	});
+
+	it("accepts stored bashExecution messages without content fields", () => {
+		const session = SessionManager.inMemory("/project");
+		session.appendMessage({
+			role: "bashExecution",
+			command: "echo ok",
+			output: "ok",
+			exitCode: 0,
+			cancelled: false,
+			truncated: false,
+			timestamp: Date.now(),
+		});
+
+		expect(session.getEntries()).toHaveLength(1);
 	});
 
 	it("creates a header from the options when the entries carry none", () => {
@@ -152,7 +210,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 				id: "abc12345",
 				parentId: null,
 				timestamp: "2026-01-01T00:00:01Z",
-				message: { role: "hookMessage", content: "from a hook", timestamp: 1 },
+				message: { role: "hookMessage", customType: "legacy", content: "from a hook", display: true, timestamp: 1 },
 			} as unknown as SessionMessageEntry,
 		];
 
@@ -164,7 +222,7 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 		expect(restored.id).toBe("abc12345");
 	});
 
-	it("adopts headerless entries as current-version without migrating them", () => {
+	it("rejects unsupported roles in current headerless entries", () => {
 		const entries: SessionEntry[] = [
 			{
 				type: "message",
@@ -175,9 +233,8 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 			} as unknown as SessionMessageEntry,
 		];
 
-		const session = SessionManager.inMemory("/project", undefined, entries);
-		const restored = session.getEntries()[0] as SessionMessageEntry;
-
-		expect(restored.message.role).toBe("hookMessage");
+		expect(() => SessionManager.inMemory("/project", undefined, entries)).toThrow(
+			'Session message abc12345 has unsupported message role "hookMessage"',
+		);
 	});
 });

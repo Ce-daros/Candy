@@ -1,8 +1,7 @@
 /**
  * Main entry point for the coding agent CLI.
  *
- * This file handles CLI argument parsing and translates them into
- * createAgentSession() options. The SDK does the heavy lifting.
+ * Resolves CLI arguments, trust, and resources before assembling the runtime.
  */
 
 import { createInterface } from "node:readline";
@@ -33,21 +32,25 @@ import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { APP_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, VERSION } from "./config.ts";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
+import type { CreateAgentSessionOptions } from "./core/agent-session-factory.ts";
+import {
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	createRuntimeFromFactory,
+} from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
-	createAgentSessionFromServices,
-	createAgentSessionServices,
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 } from "./core/agent-session-services.ts";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage, ReadOnlyAuthStorage } from "./core/auth-storage.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
-import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
+import { HttpDispatcherHost } from "./core/http-dispatcher.ts";
 import { resolveCliModel } from "./core/model-resolver.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
-import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {
 	formatMissingSessionCwdPrompt,
 	getMissingSessionCwdIssue,
@@ -512,9 +515,6 @@ function buildSessionOptions(
 		options.thinkingLevel = parsed.thinking;
 	}
 
-	// API key from CLI - set as a non-persistent runtime override
-	// (handled by caller before createAgentSession)
-
 	// Tools
 	if (parsed.noTools) {
 		options.noTools = "all";
@@ -550,6 +550,29 @@ export interface MainOptions {
 }
 
 export async function main(args: string[], options?: MainOptions) {
+	const network = new HttpDispatcherHost();
+	const cleanup: Array<() => Promise<void>> = [];
+	const errors: unknown[] = [];
+	try {
+		await runMain(args, options, network, cleanup);
+	} catch (error) {
+		errors.push(error);
+	}
+	const results = await Promise.allSettled(cleanup.reverse().map(async (release) => release()));
+	const networkResult = await Promise.allSettled([network.dispose()]);
+	for (const result of [...results, ...networkResult]) {
+		if (result.status === "rejected") errors.push(result.reason);
+	}
+	if (errors.length === 1) throw errors[0];
+	if (errors.length > 1) throw new AggregateError(errors, "Application execution and shutdown failed");
+}
+
+async function runMain(
+	args: string[],
+	options: MainOptions | undefined,
+	network: HttpDispatcherHost,
+	cleanup: Array<() => Promise<void>>,
+) {
 	resetTimings();
 	setThemeJsonValidator(validateThemeJson);
 	const cwd = process.cwd();
@@ -566,19 +589,10 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
-	applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
-	configureHttpDispatcher();
+	await network.configure({ httpProxy: bootstrapSettingsManager.getGlobalSettings().httpProxy });
 
 	if (await handlePackageCommand(args, { extensionFactories })) {
-		const exitCode = process.exitCode ?? 0;
-		if (process.platform === "win32" && exitCode === 0 && args[0] === "update") {
-			// We normally prefer process.exit(0) for package commands so bad extensions cannot keep
-			// one-shot commands alive. On Windows, Node can assert after fetch() if process.exit(0)
-			// runs during teardown; let successful `candy update` drain naturally instead.
-			// https://github.com/nodejs/node/issues/56645
-			return;
-		}
-		process.exit(exitCode);
+		process.exitCode ??= 0;
 		return;
 	}
 
@@ -594,14 +608,16 @@ export async function main(args: string[], options?: MainOptions) {
 			console.error(color(`${d.type === "error" ? "Error" : "Warning"}: ${d.message}`));
 		}
 		if (parsed.diagnostics.some((d) => d.type === "error")) {
-			process.exit(1);
+			process.exitCode = 1;
+			return;
 		}
 	}
 	time("parseArgs");
 
 	if (parsed.version) {
 		console.log(VERSION);
-		process.exit(0);
+		process.exitCode = 0;
+		return;
 	}
 
 	if (parsed.export) {
@@ -618,10 +634,12 @@ export async function main(args: string[], options?: MainOptions) {
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";
 			console.error(cliThemeColor("error", `Error: ${message}`));
-			process.exit(1);
+			process.exitCode = 1;
+			return;
 		}
 		console.log(`Exported to: ${result}`);
-		process.exit(0);
+		process.exitCode = 0;
+		return;
 	}
 
 	let appMode = resolveAppMode(parsed, process.stdin.isTTY, process.stdout.isTTY);
@@ -632,7 +650,8 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
 		console.error(cliThemeColor("error", "Error: @file arguments are not supported in RPC mode"));
-		process.exit(1);
+		process.exitCode = 1;
+		return;
 	}
 
 	validateForkFlags(parsed);
@@ -645,7 +664,6 @@ export async function main(args: string[], options?: MainOptions) {
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
 	const startupSettingsDiagnostics = collectSettingsDiagnostics(startupSettingsManager);
 
-	// Experimental first-time setup: theme choice and analytics opt-in.
 	// Runs before any runtime services are created so the chosen settings apply everywhere.
 	if (appMode === "interactive" && !parsed.help && parsed.listModels === undefined && shouldRunFirstTimeSetup()) {
 		await showFirstTimeSetup(startupSettingsManager);
@@ -672,19 +690,22 @@ export async function main(args: string[], options?: MainOptions) {
 		if (appMode === "interactive") {
 			const selectedCwd = await promptForMissingSessionCwd(missingSessionCwdIssue, startupSettingsManager);
 			if (!selectedCwd) {
-				process.exit(0);
+				process.exitCode = 0;
+				return;
 			}
 			sessionManager = SessionManager.open(missingSessionCwdIssue.sessionFile!, sessionDir, selectedCwd);
 		} else {
 			console.error(cliThemeColor("error", new MissingSessionCwdError(missingSessionCwdIssue).message));
-			process.exit(1);
+			process.exitCode = 1;
+			return;
 		}
 	}
 	if (parsed.name !== undefined) {
 		const name = normalizeSessionName(parsed.name);
 		if (name === undefined) {
 			console.error(cliThemeColor("error", "Error: --name requires a non-empty value"));
-			process.exit(1);
+			process.exitCode = 1;
+			return;
 		}
 		sessionManager.appendSessionInfo(name);
 	}
@@ -722,7 +743,7 @@ export async function main(args: string[], options?: MainOptions) {
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
 		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
-		const services = await createAgentSessionServices({
+		const services = await assembleAgentSessionServices({
 			cwd,
 			agentDir,
 			themeAdapter: resourceThemeAdapter,
@@ -770,73 +791,110 @@ export async function main(args: string[], options?: MainOptions) {
 				extensionFactories,
 			},
 		});
-		const { settingsManager, modelRuntime, resourceLoader } = services;
-		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
-			...projectTrustDiagnostics,
-			...services.diagnostics,
-			...collectSettingsDiagnostics(settingsManager),
-			...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
-				type: "error" as const,
-				message: `Failed to load extension "${path}": ${error}`,
-			})),
-			...(resourceLoader.getExtensions().warnings ?? []).map(({ path, warning }) => ({
-				type: "warning" as const,
-				message: `Extension package "${path}": ${warning}`,
-			})),
-		];
+		try {
+			const { settingsManager, modelRuntime, resourceLoader } = services;
 
-		const {
-			options: sessionOptions,
-			cliThinkingFromModel,
-			diagnostics: sessionOptionDiagnostics,
-		} = buildSessionOptions(parsed, modelRuntime);
-		diagnostics.push(...sessionOptionDiagnostics);
+			const diagnostics: AgentSessionRuntimeDiagnostic[] = [
+				...projectTrustDiagnostics,
+				...services.diagnostics,
+				...collectSettingsDiagnostics(settingsManager),
+				...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
+					type: "error" as const,
+					message: `Failed to load extension "${path}": ${error}`,
+				})),
+				...(resourceLoader.getExtensions().warnings ?? []).map(({ path, warning }) => ({
+					type: "warning" as const,
+					message: `Extension package "${path}": ${warning}`,
+				})),
+			];
 
-		if (parsed.apiKey) {
-			if (!sessionOptions.model) {
-				diagnostics.push({
-					type: "error",
-					message: "--api-key requires a model to be specified via --model or --provider/--model",
-				});
-			} else {
-				await modelRuntime.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
+			const {
+				options: sessionOptions,
+				cliThinkingFromModel,
+				diagnostics: sessionOptionDiagnostics,
+			} = buildSessionOptions(parsed, modelRuntime);
+			diagnostics.push(...sessionOptionDiagnostics);
+
+			if (parsed.apiKey) {
+				if (!sessionOptions.model) {
+					diagnostics.push({
+						type: "error",
+						message: "--api-key requires a model to be specified via --model or --provider/--model",
+					});
+				} else {
+					await modelRuntime.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
+				}
 			}
-		}
 
-		const created = await createAgentSessionFromServices({
-			services,
-			sessionManager,
-			sessionStartEvent,
-			model: sessionOptions.model,
-			thinkingLevel: sessionOptions.thinkingLevel,
-			tools: sessionOptions.tools,
-			excludeTools: sessionOptions.excludeTools,
-			noTools: sessionOptions.noTools,
-			customTools: sessionOptions.customTools,
-		});
-		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
-		if (created.session.model && cliThinkingOverride) {
-			created.session.setThinkingLevel(created.session.thinkingLevel);
-		}
+			const created = await assembleAgentSessionFromServices({
+				services,
+				sessionManager,
+				sessionStartEvent,
+				model: sessionOptions.model,
+				thinkingLevel: sessionOptions.thinkingLevel,
+				tools: sessionOptions.tools,
+				excludeTools: sessionOptions.excludeTools,
+				noTools: sessionOptions.noTools,
+				customTools: sessionOptions.customTools,
+			});
+			const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
+			if (created.session.model && cliThinkingOverride) {
+				created.session.setThinkingLevel(created.session.thinkingLevel);
+			}
 
-		return {
-			...created,
-			services,
-			diagnostics,
-		};
+			return {
+				...created,
+				services,
+				diagnostics,
+			};
+		} catch (error) {
+			try {
+				await services.dispose();
+			} catch (disposeError) {
+				throw new AggregateError([error, disposeError], "CLI runtime creation and services cleanup failed");
+			}
+			throw error;
+		}
 	};
 	time("createRuntime");
-	const runtime = await createAgentSessionRuntime(createRuntime, {
+	const runtime = await createRuntimeFromFactory(createRuntime, {
 		cwd: sessionManager.getCwd(),
 		agentDir,
 		sessionManager,
 	});
-	time("createAgentSessionRuntime");
+	time("createRuntimeFromFactory");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRuntime, resourceLoader } = services;
+	cleanup.push(() => runtime.dispose());
+	let unsubscribeSettings: (() => void) | undefined;
+	let networkWork: Promise<void> = Promise.resolve();
+	const bindNetwork = async (nextSession: AgentSessionRuntime["session"]): Promise<void> => {
+		unsubscribeSettings?.();
+		await networkWork;
+		const settings = nextSession.settingsManager;
+		await network.configure({
+			timeoutMs: settings.getHttpIdleTimeoutMs(),
+			httpProxy: settings.getSetting("httpProxy"),
+		});
+		unsubscribeSettings = settings.subscribe((event) => {
+			if (!event.fields.some((field) => field === "httpIdleTimeoutMs" || field === "httpProxy")) return;
+			networkWork = networkWork.then(() =>
+				network.configure({
+					timeoutMs: settings.getHttpIdleTimeoutMs(),
+					httpProxy: settings.getSetting("httpProxy"),
+				}),
+			);
+		});
+	};
+	const unsubscribeSession = runtime.subscribeSession(bindNetwork);
+	await bindNetwork(session);
+	cleanup.push(async () => {
+		unsubscribeSession();
+		unsubscribeSettings?.();
+		await networkWork;
+	});
+
 	setCapabilityOverrides(settingsManager.getTerminalCapabilityOverrides());
-	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
-	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
 
 	if (parsed.help) {
 		reportDiagnostics(startupSettingsDiagnostics);
@@ -844,14 +902,16 @@ export async function main(args: string[], options?: MainOptions) {
 			.getExtensions()
 			.extensions.flatMap((extension) => Array.from(extension.flags.values()));
 		printHelp(extensionFlags);
-		process.exit(0);
+		process.exitCode = 0;
+		return;
 	}
 
 	if (parsed.listModels !== undefined) {
 		reportDiagnostics(startupSettingsDiagnostics);
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRuntime, searchPattern, AbortSignal.timeout(15_000));
-		process.exit(0);
+		process.exitCode = 0;
+		return;
 	}
 
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
@@ -883,29 +943,45 @@ export async function main(args: string[], options?: MainOptions) {
 		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {
 			console.error(cliThemeColor("warning", EXTENSION_LOAD_FAILURE_HINT));
 		}
-		process.exit(1);
+		process.exitCode = 1;
+		return;
 	}
-	time("createAgentSession");
+	time("assembleAgentSession");
 
 	if (appMode !== "interactive" && !session.model) {
 		console.error(cliThemeColor("error", formatNoModelsAvailableMessage()));
-		process.exit(1);
+		process.exitCode = 1;
+		return;
 	}
 
 	const startupBenchmark = isTruthyEnvFlag(process.env.CANDY_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
 		console.error(cliThemeColor("error", "Error: CANDY_STARTUP_BENCHMARK only supports interactive mode"));
-		process.exit(1);
+		process.exitCode = 1;
+		return;
 	}
 
 	// RPC refreshes catalogs here in the background; interactive mode starts its refresh after TUI initialization.
 	if (!offlineMode && appMode === "rpc") {
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), 15_000);
-		void modelRuntime
+		const refresh = modelRuntime
 			.refresh({ signal: controller.signal })
-			.catch(() => {})
+			.then(
+				(result) => {
+					for (const [providerId, error] of result.errors)
+						console.error(`Model catalog (${providerId}): ${error.message}`);
+				},
+				(error: unknown) => {
+					if (!controller.signal.aborted)
+						console.error(`Model catalog: ${error instanceof Error ? error.message : String(error)}`);
+				},
+			)
 			.finally(() => clearTimeout(timeout));
+		cleanup.push(async () => {
+			controller.abort();
+			await refresh;
+		});
 	}
 
 	if (appMode === "rpc") {

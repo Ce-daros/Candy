@@ -1,4 +1,4 @@
-import { Container, getKeybindings, Spacer, Text } from "@candy/tui";
+import { Container, getKeybindings, moveSelection, Spacer, Text } from "@candy/tui";
 import {
 	infoLine,
 	selectedRowLabel,
@@ -12,7 +12,6 @@ import { SplashLogoComponent } from "./splash.ts";
 
 export interface FirstTimeSetupResult {
 	theme: TerminalTheme;
-	shareAnalytics: boolean;
 }
 
 export interface FirstTimeSetupOptions {
@@ -28,16 +27,9 @@ const THEME_OPTIONS: Array<{ value: TerminalTheme; label: string }> = [
 	{ value: "light", label: "Light" },
 ];
 
-const ANALYTICS_OPTIONS: Array<{ value: boolean; label: string }> = [
-	{ value: true, label: "Share anonymous usage data" },
-	{ value: false, label: "Don't share" },
-];
-
-/** First-time setup dialog: theme choice and analytics opt-in. */
+/** First-time setup dialog for choosing a theme. */
 export class FirstTimeSetupComponent extends Container {
-	private step: "theme" | "analytics" = "theme";
 	private themeIndex: number;
-	private analyticsIndex = 0;
 	private readonly options: FirstTimeSetupOptions;
 	private availableHeight: number;
 
@@ -68,37 +60,15 @@ export class FirstTimeSetupComponent extends Container {
 		if (!compact) this.addChild(new Spacer(1));
 		this.addChild(new SplashLogoComponent(this.availableHeight <= 18 ? 4 : compact ? 8 : undefined));
 		if (!compact) this.addChild(new Spacer(1));
-		this.addChild(
-			new Text(
-				theme.bold(theme.fg("accent", this.step === "theme" ? "Theme · 1 of 2" : "Data sharing · 2 of 2")),
-				1,
-				0,
-			),
-		);
+		this.addChild(new Text(theme.bold(theme.fg("accent", "Theme")), 1, 0));
 
-		if (this.step === "theme") {
-			this.addChild(new Text(theme.fg("text", "Choose a theme"), 1, 0));
-			this.addChild(new Text(infoLine("Detected system appearance", this.options.detectedTheme), 1, 0));
-			this.addChild(new Spacer(1));
-			this.addOptionList(
-				THEME_OPTIONS.map((option) => option.label),
-				this.themeIndex,
-			);
-		} else {
-			this.addChild(new Text(theme.fg("text", "Share anonymous usage data?"), 1, 0));
-			this.addChild(
-				new Text(
-					theme.fg("muted", "Your choice is saved in settings. You can change it later with /privacy."),
-					1,
-					0,
-				),
-			);
-			this.addChild(new Spacer(1));
-			this.addOptionList(
-				ANALYTICS_OPTIONS.map((option) => option.label),
-				this.analyticsIndex,
-			);
-		}
+		this.addChild(new Text(theme.fg("text", "Choose a theme"), 1, 0));
+		this.addChild(new Text(infoLine("Detected system appearance", this.options.detectedTheme), 1, 0));
+		this.addChild(new Spacer(1));
+		this.addOptionList(
+			THEME_OPTIONS.map((option) => option.label),
+			this.themeIndex,
+		);
 
 		this.addChild(new Spacer(1));
 		this.addChild(
@@ -107,7 +77,7 @@ export class FirstTimeSetupComponent extends Container {
 					{ raw: "↑↓", label: "navigate" },
 					{
 						key: "tui.select.confirm",
-						label: this.step === "theme" ? "continue" : "finish",
+						label: "save",
 					},
 					{ key: "tui.select.cancel", label: "skip setup" },
 				]),
@@ -128,14 +98,10 @@ export class FirstTimeSetupComponent extends Container {
 	}
 
 	private moveSelection(delta: number): void {
-		if (this.step === "theme") {
-			const next = Math.max(0, Math.min(THEME_OPTIONS.length - 1, this.themeIndex + delta));
-			if (next !== this.themeIndex) {
-				this.themeIndex = next;
-				this.options.onThemePreview(THEME_OPTIONS[this.themeIndex].value);
-			}
-		} else {
-			this.analyticsIndex = Math.max(0, Math.min(ANALYTICS_OPTIONS.length - 1, this.analyticsIndex + delta));
+		const next = moveSelection(this.themeIndex, THEME_OPTIONS.length, delta);
+		if (next !== this.themeIndex) {
+			this.themeIndex = next;
+			this.options.onThemePreview(THEME_OPTIONS[this.themeIndex].value);
 		}
 		this.update();
 	}
@@ -147,15 +113,7 @@ export class FirstTimeSetupComponent extends Container {
 		} else if (kb.matches(keyData, "tui.select.down") || keyData === "j") {
 			this.moveSelection(1);
 		} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n") {
-			if (this.step === "theme") {
-				this.step = "analytics";
-				this.update();
-			} else {
-				this.options.onSubmit({
-					theme: THEME_OPTIONS[this.themeIndex].value,
-					shareAnalytics: ANALYTICS_OPTIONS[this.analyticsIndex].value,
-				});
-			}
+			this.options.onSubmit({ theme: THEME_OPTIONS[this.themeIndex].value });
 		} else if (kb.matches(keyData, "tui.select.cancel")) {
 			this.options.onCancel();
 		}

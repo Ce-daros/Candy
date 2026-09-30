@@ -7,6 +7,7 @@ import type {
 	AgentContext,
 	AgentEvent,
 	AgentMessage,
+	AgentMessageCommit,
 	AgentState,
 	AgentTool,
 	PrepareNextTurnContext,
@@ -32,26 +33,25 @@ import {
 	type RetryCallbacks,
 	retryDelayMs,
 } from "@candy/ai";
-import { calculateContextTokens, estimateContextTokens, estimateMessageTokens } from "@candy/ai/utils/estimate";
+import { calculateContextTokens, estimateContextTokens } from "@candy/ai/utils/estimate";
 import { sleep } from "@candy/ai/utils/sleep";
+import { getAgentDir } from "../config.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { processImage } from "../utils/image-process.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
-import { AgentInputQueue } from "./agent-input-queue.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import type { CacheWarmer, CacheWarmingStatus } from "./cache-warmer.ts";
 import type { CommandInfo, CommandInvocation } from "./commands.ts";
 import {
-	type CompactionPreparation,
 	type CompactionResult,
 	collectEntriesForBranchSummary,
-	compact,
 	estimateProjectedContextTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
+import { CompactionCancelledError, CompactionOperation } from "./compaction-operation.ts";
 import {
 	type AgentActivityOutcome,
 	type BoundaryContextPreview,
@@ -62,11 +62,9 @@ import {
 	ExtensionRunner,
 	type ExtensionUIContext,
 	type InputSource,
-	type MessageEndEvent,
 	type MessageStartEvent,
 	type MessageUpdateEvent,
 	type ReplacedSessionContext,
-	type SessionBeforeCompactResult,
 	type SessionBeforeTreeResult,
 	type SessionBoundaryDraft,
 	type SessionCompactFailedEvent,
@@ -79,28 +77,28 @@ import {
 	type ToolInfo,
 	type TreePreparation,
 	type TurnStartEvent,
-	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import { type ModelMutationOptions, ModelSelection } from "./model-selection.ts";
+import { SessionInputExecution } from "./session-input-execution.ts";
 
 export type { ModelMutationOptions } from "./model-selection.ts";
 
 import { type PromptTemplate, parseCommandArgs, substituteArgs } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
+import { ResourceOperations } from "./resource-operations.ts";
 import { exportSessionToJsonl } from "./session-export.ts";
 import {
 	type BranchSummaryEntry,
-	type CompactionEntry,
 	type ContextEditEntry,
 	getLatestCompactionEntry,
 	type SessionEntry,
 	SessionManager,
 } from "./session-manager.ts";
+import { SessionTools } from "./session-tools.ts";
 import type { CacheWarmingMode, SettingsManager } from "./settings-manager.ts";
-import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import {
 	buildSystemPrompt,
 	buildSystemPromptSections,
@@ -186,6 +184,7 @@ export type AgentSessionEvent =
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
+export type AgentExecutionListener = (event: AgentEvent, signal: AbortSignal) => Promise<void> | void;
 
 // ============================================================================
 // Types
@@ -202,6 +201,7 @@ export interface AgentSessionConfig {
 	sessionManager: SessionManager;
 	settingsManager: SettingsManager;
 	cwd: string;
+	agentDir?: string;
 	/** Resource loader for extensions, skills, prompts, themes, context files, and system prompt */
 	resourceLoader: ResourceLoader;
 	/** SDK custom tools registered outside extensions */
@@ -227,6 +227,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Runtime-scoped owner for provider resources. */
+	resourceOwner?: object;
 }
 
 export interface ExtensionBindings {
@@ -279,19 +281,6 @@ export interface SessionStats {
 	contextUsage?: ContextUsage;
 }
 
-interface ToolDefinitionEntry {
-	definition: ToolDefinition;
-	sourceInfo: SourceInfo;
-}
-
-function estimateMessagesTokens(messages: AgentMessage[]): number {
-	let tokens = 0;
-	for (const message of messages) {
-		tokens += estimateMessageTokens(message);
-	}
-	return tokens;
-}
-
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -303,23 +292,28 @@ export class AgentSession {
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
+	private _unsubscribeAgentQueue?: () => void;
+	private _unsubscribeSettings?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _isAgentRunActive = false;
 	private _agentRunAbortRequested = false;
 	private _idleWaitPromise: Promise<void> | undefined;
 	private _resolveIdleWait: (() => void) | undefined;
 
-	private readonly _inputQueue: AgentInputQueue;
+	private readonly _inputExecution: SessionInputExecution;
+	private readonly _resourceOwner: object;
+	private _compactionOperation!: CompactionOperation;
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
 	/** Context-only custom messages queued during a run, flushed once the current turn's tool results are in. */
 	private _pendingCustomMessages: CustomMessage[] = [];
 
 	// Compaction state
-	private _compactionAbortController: AbortController | undefined = undefined;
-	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _drainingCompactionCommands = false;
 	private _disposed = false;
+	private _disposePromise?: Promise<void>;
+	private _activeOperations = 0;
+	private _operationWaiters: Array<() => void> = [];
 	private _overflowRecoveryAttempted = false;
 
 	// Branch summarization state
@@ -335,11 +329,12 @@ export class AgentSession {
 
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
+	private readonly _pendingProviderRefreshes = new Set<string>();
 	private _turnIndex = 0;
-	private readonly _entryIdsByMessage = new WeakMap<object, string>();
-	private readonly _boundaryDispatchedMessages = new WeakSet<object>();
 	private _lastAssistantMessage: AssistantMessage | undefined;
-	private _lastAssistantToolResults: AgentMessage[] = [];
+	private _lastAssistantEntryId: string | undefined;
+	private _lastAssistantToolResultEntryIds: string[] = [];
+	private _turnEndBoundaryDispatched = false;
 	private _lastActivityOutcome: AgentActivityOutcome = "completed";
 	private _isBeforeSettle = false;
 	private _abortDuringBeforeSettle = false;
@@ -347,13 +342,11 @@ export class AgentSession {
 	private readonly _deferredSettledActions: Array<() => Promise<void>> = [];
 
 	private _resourceLoader: ResourceLoader;
+	private _resources!: ResourceOperations;
 	private _customTools: ToolDefinition[];
-	private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
 	private _cwd: string;
 	private _extensionRunnerRef?: { current?: ExtensionRunner };
 	private _initialActiveToolNames?: string[];
-	private _allowedToolNames?: Set<string>;
-	private _excludedToolNames?: Set<string>;
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -368,11 +361,7 @@ export class AgentSession {
 	private readonly _modelSelection: ModelSelection;
 	private _cacheWarmer?: Pick<CacheWarmer, "cancel" | "status" | "onAgentSettled" | "onModeChanged" | "onWarmed">;
 
-	// Tool registry for extension getTools/setTools
-	private _toolRegistry: Map<string, AgentTool> = new Map();
-	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
-	private _toolPromptSnippets: Map<string, string> = new Map();
-	private _toolPromptGuidelines: Map<string, string[]> = new Map();
+	private readonly _tools: SessionTools;
 
 	private _baseSystemPromptOptions!: NormalizedBuildSystemPromptOptions;
 	/** Prompt options after before_agent_start mutations for the active run. */
@@ -380,10 +369,12 @@ export class AgentSession {
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
-		this._inputQueue = new AgentInputQueue(this.agent, () => this._emitQueueUpdate());
+		this._inputExecution = new SessionInputExecution(this.agent, () => this._emitQueueUpdate());
+		this._unsubscribeAgentQueue = this.agent.subscribeQueue(() => this._emitQueueUpdate());
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
 		this._resourceLoader = config.resourceLoader;
+		this._resourceOwner = config.resourceOwner ?? {};
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRuntime = config.modelRuntime;
@@ -410,14 +401,39 @@ export class AgentSession {
 		}
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
-		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
-		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
+		this._tools = new SessionTools(config.allowedToolNames, config.excludedToolNames);
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		const session = this;
+		this._compactionOperation = new CompactionOperation({
+			agent: this.agent,
+			get model() {
+				return session.model;
+			},
+			sessionManager: this.sessionManager,
+			settingsManager: this.settingsManager,
+			get extensionRunner() {
+				return session._extensionRunner;
+			},
+			get thinkingLevel() {
+				return session.thinkingLevel;
+			},
+			getSummarizationRequestAuth: (model, signal) => this._getSummarizationRequestAuth(model, signal),
+			refreshContext: () => this._refreshFinalizedContext(),
+			summarizationRetryCallbacks: (reason) => this._summarizationRetryCallbacks({ source: "compaction", reason }),
+		});
+		this.agent.finalizeMessage = async (message) => await this._finalizeAgentMessage(message);
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+		this.agent.transport = this.settingsManager.getTransport();
+		this.syncQueueModesFromSettings();
+		this._unsubscribeSettings = this.settingsManager.subscribe(({ fields }) => {
+			if (fields.includes("transport")) this.agent.transport = this.settingsManager.getTransport();
+			if (fields.includes("steeringMode") || fields.includes("followUpMode")) this.syncQueueModesFromSettings();
+			if (fields.includes("cacheWarming")) this._cacheWarmer?.onModeChanged();
+		});
 		this._installAgentToolHooks();
 		this._installAgentNextTurnRefresh();
 		this._installAgentRequestProjection();
@@ -429,6 +445,7 @@ export class AgentSession {
 			includeAllExtensionTools: true,
 		});
 		if (this._initialActiveToolNames === undefined) this._restoreToolsFromTranscript();
+		this._resources = new ResourceOperations(this, { cwd: config.cwd, agentDir: config.agentDir ?? getAgentDir() });
 	}
 
 	get modelRuntime(): ModelRuntime {
@@ -444,20 +461,15 @@ export class AgentSession {
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
 	}> {
-		try {
-			const result = await this._modelRuntime.getAuth(model, { signal });
-			if (!result) return { model };
-			const requestModel = result.auth.baseUrl ? { ...model, baseUrl: result.auth.baseUrl } : model;
-			return {
-				model: requestModel,
-				apiKey: result.auth.apiKey,
-				headers: withoutDeletedHeaders(result.auth.headers),
-				env: result.env,
-			};
-		} catch (error) {
-			if (signal?.aborted) throw error;
-			return { model };
-		}
+		const result = await this._modelRuntime.getAuth(model, { signal });
+		if (!result) throw new Error(formatNoApiKeyFoundMessage(model.provider));
+		const requestModel = result.auth.baseUrl ? { ...model, baseUrl: result.auth.baseUrl } : model;
+		return {
+			model: requestModel,
+			apiKey: result.auth.apiKey,
+			headers: withoutDeletedHeaders(result.auth.headers),
+			env: result.env,
+		};
 	}
 
 	/**
@@ -490,7 +502,7 @@ export class AgentSession {
 			}
 		};
 
-		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
+		this.agent.afterToolCall = async ({ model, toolCall, args, result, isError }) => {
 			const runner = this._extensionRunner;
 			const hookResult = runner.hasHandlers("tool_result")
 				? await runner.emitToolResult({
@@ -507,7 +519,7 @@ export class AgentSession {
 
 			const content = hookResult?.content ?? result.content ?? [];
 			// Runs after the extension hook so images injected or replaced by extensions are normalized too.
-			const resizeOptions = this.model?.inputLimits?.images?.resize;
+			const resizeOptions = model.inputLimits?.images?.resize;
 			const normalizedContent = await normalizeToolResultImages(content, {
 				autoResizeImages: this.settingsManager.getImageAutoResize(),
 				...(resizeOptions ? { resizeOptions } : {}),
@@ -550,8 +562,18 @@ export class AgentSession {
 	private _installAgentRequestProjection(): void {
 		const previousPrepareRequest = this.agent.prepareRequest;
 		this.agent.prepareRequest = async (request, signal) => {
+			if (this._pendingProviderRefreshes.size > 0) {
+				const providers = [...this._pendingProviderRefreshes];
+				const refresh = await this._modelRuntime.refresh({ allowNetwork: false, providers, signal });
+				if (refresh.aborted) signal?.throwIfAborted();
+				const errors = [...refresh.errors.values()];
+				if (errors.length > 0) throw new AggregateError(errors, "Failed to refresh registered extension providers");
+				this._pendingProviderRefreshes.clear();
+				this._modelSelection.refreshFromRegistry();
+			}
 			const model = this.model;
 			if (!model) throw new Error("No model selected. Select a model before sending a prompt.");
+			const thinkingLevel = this.agent.state.thinkingLevel;
 			const canonicalContext = {
 				...request.context,
 				messages: this.sessionManager.buildSessionProjection().messages,
@@ -563,7 +585,7 @@ export class AgentSession {
 					...request,
 					context: canonicalContext,
 					model,
-					thinkingLevel: this.agent.state.thinkingLevel,
+					thinkingLevel,
 				},
 				signal,
 			);
@@ -571,7 +593,7 @@ export class AgentSession {
 				...previous,
 				context: previous?.context ?? canonicalContext,
 				model: previous?.model ?? model,
-				thinkingLevel: previous?.thinkingLevel ?? this.agent.state.thinkingLevel,
+				thinkingLevel: previous?.thinkingLevel ?? thinkingLevel,
 			};
 		};
 	}
@@ -579,10 +601,11 @@ export class AgentSession {
 	private async _dispatchTurnEndBoundary(
 		message: AssistantMessage,
 		toolResults: ToolResultMessage[],
+		messageEntryId: string | undefined,
+		toolResultEntryIds: readonly (string | undefined)[],
 	): Promise<boolean> {
 		this._lastActivityOutcome =
 			message.stopReason === "aborted" ? "aborted" : message.stopReason === "error" ? "error" : "completed";
-		const messageEntryId = this._findPersistedMessageEntryId(message);
 		if (!this._extensionRunner.hasHandlers("turn_end")) return false;
 		if (!messageEntryId) {
 			this._extensionRunner.emitError({
@@ -592,10 +615,9 @@ export class AgentSession {
 			});
 			return false;
 		}
-		const toolResultEntryIds = toolResults.flatMap((result) => {
-			const entryId = this._findPersistedMessageEntryId(result);
-			return entryId ? [entryId] : [];
-		});
+		const committedToolResultEntryIds = toolResultEntryIds.filter(
+			(entryId): entryId is string => entryId !== undefined,
+		);
 		const boundary = await this._extensionRunner.emitBoundary(
 			{
 				type: "turn_end",
@@ -603,7 +625,7 @@ export class AgentSession {
 				message,
 				toolResults,
 				messageEntryId,
-				toolResultEntryIds,
+				toolResultEntryIds: committedToolResultEntryIds,
 				outcome: this._lastActivityOutcome,
 			},
 			(entries) => this._buildBoundaryContext(entries, "turn_end"),
@@ -619,8 +641,13 @@ export class AgentSession {
 	private _installAgentBoundaryHooks(): void {
 		const previousFinishTurn = this.agent.finishTurn;
 		this.agent.finishTurn = async (turn, signal) => {
-			this._boundaryDispatchedMessages.add(turn.message);
-			const extensionContinue = await this._dispatchTurnEndBoundary(turn.message, turn.toolResults);
+			this._turnEndBoundaryDispatched = true;
+			const extensionContinue = await this._dispatchTurnEndBoundary(
+				turn.message,
+				turn.toolResults,
+				turn.messageEntry.entryId,
+				turn.toolResultEntries.map((entry) => entry.entryId),
+			);
 			const previousDecision = await previousFinishTurn?.(turn, signal);
 			if (previousDecision?.action === "end") return previousDecision;
 			if (extensionContinue || previousDecision?.action === "continue") return { action: "continue" };
@@ -673,9 +700,6 @@ export class AgentSession {
 
 	private _refreshFinalizedContext(): void {
 		const projection = this.sessionManager.buildSessionProjection();
-		for (const entry of projection.entries) {
-			for (const message of entry.messages) this._entryIdsByMessage.set(message, entry.sourceEntry.id);
-		}
 		this.agent.state.messages = projection.messages;
 	}
 
@@ -811,6 +835,24 @@ export class AgentSession {
 		resolve();
 	}
 
+	private _trackOperation(): () => void {
+		this._activeOperations++;
+		let settled = false;
+		return () => {
+			if (settled) throw new Error("Operation settlement was recorded more than once");
+			settled = true;
+			this._activeOperations--;
+			if (this._activeOperations === 0) {
+				for (const resolve of this._operationWaiters.splice(0)) resolve();
+			}
+		};
+	}
+
+	private _waitForOperations(): Promise<void> {
+		if (this._activeOperations === 0) return Promise.resolve();
+		return new Promise((resolve) => this._operationWaiters.push(resolve));
+	}
+
 	private async _emitAgentSettled(): Promise<void> {
 		this._cacheWarmer?.onAgentSettled();
 		this._isAgentRunActive = false;
@@ -836,44 +878,30 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
-		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
-		// This ensures the UI sees the updated queue state
+		if (event.type === "turn_end") {
+			if (this._turnEndBoundaryDispatched) {
+				this._turnEndBoundaryDispatched = false;
+			} else if (event.message.role === "assistant") {
+				await this._dispatchTurnEndBoundary(
+					event.message as AssistantMessage,
+					event.toolResults,
+					event.messageEntry.entryId,
+					event.toolResultEntries.map((entry) => entry.entryId),
+				);
+			}
+		}
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false;
-			this._inputQueue.markStarted(event.message);
 		}
 
-		// Emit to extensions first, then notify public listeners.
+		// Message finalization runs in Agent before state publication; this handler publishes only committed events.
 		await this._emitExtensionEvent(event);
-		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
 
-		// Handle session persistence
 		if (event.type === "message_end") {
-			let entryId: string | undefined;
-			// Check if this is a custom message from extensions
-			if (event.message.role === "custom") {
-				// Persist as CustomMessageEntry
-				entryId = this.sessionManager.appendCustomMessageEntry(
-					event.message.customType,
-					event.message.content,
-					event.message.display,
-					event.message.details,
-				);
-			} else if (
-				event.message.role === "system" ||
-				event.message.role === "user" ||
-				event.message.role === "assistant" ||
-				event.message.role === "toolResult"
-			) {
-				// Regular LLM message - persist as SessionMessageEntry
-				entryId = this.sessionManager.appendMessage(event.message);
-			}
-			if (entryId) this._entryIdsByMessage.set(event.message, entryId);
-			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
-
 			if (event.message.role === "assistant") {
 				const assistantMsg = event.message as AssistantMessage;
 				this._lastAssistantMessage = assistantMsg;
+				this._lastAssistantEntryId = event.entryId;
 				if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "length") {
 					this._overflowRecoveryAttempted = false;
 				}
@@ -890,6 +918,7 @@ export class AgentSession {
 				}
 			}
 		}
+		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
 
 		// A turn ends after its assistant message and every tool result has been appended,
 		// so this is the first point in the run where a context-only custom message can be
@@ -897,7 +926,10 @@ export class AgentSession {
 		// extension and listener dispatch above also picks up messages that turn_end
 		// handlers queued.
 		if (event.type === "turn_end") {
-			this._lastAssistantToolResults = event.toolResults;
+			this._lastAssistantEntryId = event.messageEntry.entryId;
+			this._lastAssistantToolResultEntryIds = event.toolResultEntries.flatMap((entry) =>
+				entry.entryId === undefined ? [] : [entry.entryId],
+			);
 			this._flushPendingCustomMessages();
 		}
 	};
@@ -918,40 +950,8 @@ export class AgentSession {
 		return false;
 	}
 
-	private _findPersistedMessageEntryId(message: AgentMessage): string | undefined {
-		const mapped = this._entryIdsByMessage.get(message);
-		if (mapped) return mapped;
-		for (const entry of [...this.sessionManager.getBranch()].reverse()) {
-			if (entry.type === "message" && entry.message === message) return entry.id;
-		}
-
-		const messageIndex = this.agent.state.messages.indexOf(message);
-		if (messageIndex < 0) return undefined;
-		const projection = this.sessionManager.buildSessionProjection();
-		let projectedIndex = 0;
-		for (const entry of projection.entries) {
-			for (let i = 0; i < entry.messages.length; i++) {
-				if (projectedIndex === messageIndex) {
-					this._entryIdsByMessage.set(message, entry.sourceEntry.id);
-					return entry.sourceEntry.id;
-				}
-				projectedIndex++;
-			}
-		}
-		return undefined;
-	}
-
-	private _omitRecoveryAttempt(message: AssistantMessage, toolResults: AgentMessage[] = []): void {
-		const targets = [message, ...toolResults];
-		const targetIds = targets.map((target) => this._findPersistedMessageEntryId(target));
-		const unresolvedProjectedTarget = targets.some(
-			(target, index) => targetIds[index] === undefined && this.agent.state.messages.includes(target),
-		);
-		if (unresolvedProjectedTarget) {
-			throw new Error("Cannot persist recovery omission because a projected message has no source entry");
-		}
-		for (const targetId of targetIds) {
-			if (!targetId) continue;
+	private _omitRecoveryAttempt(entryIds: readonly string[]): void {
+		for (const targetId of entryIds) {
 			const editId = this.sessionManager.appendContextEdit(targetId, null);
 			const entry = this.sessionManager.getEntry(editId);
 			if (entry) this._emit({ type: "entry_appended", entry });
@@ -959,32 +959,53 @@ export class AgentSession {
 		this._refreshFinalizedContext();
 	}
 
-	/** Find the last assistant message in agent state (including aborted ones) */
-	private _findLastAssistantMessage(): AssistantMessage | undefined {
-		const messages = this.agent.state.messages;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "assistant") {
-				return msg as AssistantMessage;
+	private _findLastProjectedAssistant(): AgentMessageCommit | undefined {
+		const entries = this.sessionManager.buildSessionProjection().entries;
+		for (let entryIndex = entries.length - 1; entryIndex >= 0; entryIndex--) {
+			const entry = entries[entryIndex];
+			for (let messageIndex = entry.messages.length - 1; messageIndex >= 0; messageIndex--) {
+				const message = entry.messages[messageIndex];
+				if (message.role === "assistant") return { message, entryId: entry.sourceEntry.id };
 			}
 		}
 		return undefined;
 	}
 
-	private _replaceMessageInPlace(target: AgentMessage, replacement: AgentMessage): void {
-		// Agent-core stores the finalized message object in its state before emitting message_end.
-		// SessionManager persistence happens later in _handleAgentEvent() with event.message.
-		// Mutating this object in place keeps agent state, later turn/agent events, listeners,
-		// and the eventual SessionManager.appendMessage(event.message) persistence in sync.
-		if (target === replacement) {
-			return;
+	private async _finalizeAgentMessage(message: AgentMessage): Promise<AgentMessageCommit> {
+		const replacement = await this._extensionRunner.emitMessageEnd({ type: "message_end", message });
+		const finalized = replacement ?? message;
+		if (finalized.role !== message.role) {
+			throw new Error(`A message_end handler cannot change role ${message.role} to ${finalized.role}`);
+		}
+		if ((finalized.role === "assistant" || finalized.role === "toolResult") && !Array.isArray(finalized.content))
+			throw new Error(`A finalized ${finalized.role} message must contain a content array`);
+		if (
+			(finalized.role === "user" || finalized.role === "custom") &&
+			typeof finalized.content !== "string" &&
+			!Array.isArray(finalized.content)
+		)
+			throw new Error(`A finalized ${finalized.role} message must contain text or content parts`);
+		if (finalized.role === "system" && typeof finalized.content !== "string") {
+			throw new Error("A finalized system message must contain string content");
 		}
 
-		const targetRecord = target as unknown as Record<string, unknown>;
-		for (const key of Object.keys(targetRecord)) {
-			delete targetRecord[key];
+		let entryId: string | undefined;
+		if (finalized.role === "custom") {
+			entryId = this.sessionManager.appendCustomMessageEntry(
+				finalized.customType,
+				finalized.content,
+				finalized.display,
+				finalized.details,
+			);
+		} else if (
+			finalized.role === "system" ||
+			finalized.role === "user" ||
+			finalized.role === "assistant" ||
+			finalized.role === "toolResult"
+		) {
+			entryId = this.sessionManager.appendMessage(finalized);
 		}
-		Object.assign(targetRecord, replacement);
+		return { message: finalized, entryId };
 	}
 
 	/** Emit extension events based on agent events */
@@ -1002,9 +1023,6 @@ export class AgentSession {
 			};
 			await this._extensionRunner.emit(extensionEvent);
 		} else if (event.type === "turn_end") {
-			if (event.message.role === "assistant" && !this._boundaryDispatchedMessages.delete(event.message)) {
-				await this._dispatchTurnEndBoundary(event.message, event.toolResults);
-			}
 			this._turnIndex++;
 		} else if (event.type === "message_start") {
 			const extensionEvent: MessageStartEvent = {
@@ -1019,25 +1037,6 @@ export class AgentSession {
 				assistantMessageEvent: event.assistantMessageEvent,
 			};
 			await this._extensionRunner.emit(extensionEvent);
-		} else if (event.type === "message_end") {
-			const extensionEvent: MessageEndEvent = {
-				type: "message_end",
-				message: event.message,
-			};
-			const replacement = await this._extensionRunner.emitMessageEnd(extensionEvent);
-			if (replacement) {
-				// Untyped extension handlers can return messages with null/missing content;
-				// normalize so it never enters agent state or session history.
-				const normalized =
-					(replacement.role === "user" ||
-						replacement.role === "assistant" ||
-						replacement.role === "toolResult" ||
-						replacement.role === "custom") &&
-					replacement.content == null
-						? ({ ...replacement, content: [] } as AgentMessage)
-						: replacement;
-				this._replaceMessageInPlace(event.message, normalized);
-			}
 		} else if (event.type === "tool_execution_start") {
 			const extensionEvent: ToolExecutionStartEvent = {
 				type: "tool_execution_start",
@@ -1085,6 +1084,10 @@ export class AgentSession {
 		};
 	}
 
+	subscribeExecution(listener: AgentExecutionListener): () => void {
+		return this.agent.subscribe(listener);
+	}
+
 	/** Disconnect from agent events during disposal. */
 	private _disconnectFromAgent(): void {
 		if (this._unsubscribeAgent) {
@@ -1097,29 +1100,48 @@ export class AgentSession {
 	 * Remove all listeners and disconnect from agent.
 	 * Call this when completely done with the session.
 	 */
-	dispose(): void {
+	dispose(): Promise<void> {
+		if (this._disposePromise) return this._disposePromise;
 		this._disposed = true;
-		this._inputQueue.rejectDeferred(new Error("Session was disposed before the queued input could run"));
-		try {
-			this.abortRetry();
-			this.abortCompaction();
-			this.abortBranchSummary();
-			this.abortBash();
-			this.agent.abort();
-		} catch {
-			// Dispose must succeed even if an abort hook throws.
-		}
+		this._disposePromise = this._disposeResources();
+		return this._disposePromise;
+	}
 
-		this._extensionRunner.invalidate(
-			"This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+	private async _disposeResources(): Promise<void> {
+		this._inputExecution.rejectDeferred(new Error("Session was disposed before the queued input could run"));
+		const errors: unknown[] = [];
+		const release = async (operation: () => void | Promise<void>): Promise<void> => {
+			try {
+				await operation();
+			} catch (error) {
+				errors.push(error);
+			}
+		};
+		await Promise.all([
+			release(() => this.abortRetry()),
+			release(() => this.abortCompaction()),
+			release(() => this.abortBranchSummary()),
+			release(() => this.abortBash()),
+			release(() => this.agent.abort()),
+		]);
+		await Promise.all([release(() => this.agent.waitForIdle()), release(() => this._waitForOperations())]);
+		await release(() =>
+			this._extensionRunner.invalidate(
+				"This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.clone(), ctx.switchSession(), or ctx.reload(). For newSession, fork, clone, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+			),
 		);
-		this._disconnectFromAgent();
+		await release(() => this._disconnectFromAgent());
+		this._unsubscribeAgentQueue?.();
+		this._unsubscribeAgentQueue = undefined;
+		this._unsubscribeSettings?.();
+		this._unsubscribeSettings = undefined;
 		this._eventListeners = [];
 		if (this._cacheWarmer) {
 			this._cacheWarmer.onWarmed = undefined;
-			this._cacheWarmer.cancel();
+			await release(() => this._cacheWarmer?.cancel());
 		}
-		cleanupSessionResources(this.sessionId);
+		await release(() => cleanupSessionResources(this._resourceOwner));
+		if (errors.length > 0) throw new AggregateError(errors, "Failed to dispose agent session");
 	}
 
 	// =========================================================================
@@ -1143,8 +1165,7 @@ export class AgentSession {
 
 	/** Persist the cache-warming mode, then reconcile active warming. */
 	async setCacheWarmingMode(mode: CacheWarmingMode): Promise<void> {
-		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setCacheWarmingMode(mode));
-		this._cacheWarmer?.onModeChanged();
+		await this.settingsManager.setCacheWarmingMode(mode);
 	}
 
 	/** Current model (may be undefined if not yet selected) */
@@ -1193,17 +1214,16 @@ export class AgentSession {
 	 * Get all configured tools with name, description, parameter schema, prompt guidelines, and source metadata.
 	 */
 	getAllTools(): ToolInfo[] {
-		return Array.from(this._toolDefinitions.values()).map(({ definition, sourceInfo }) => ({
-			name: definition.name,
-			description: definition.description,
-			parameters: definition.parameters,
-			promptGuidelines: definition.promptGuidelines,
-			sourceInfo,
-		}));
+		return this._tools.getAllDefinitions();
+	}
+
+	private async _hasProviderAuth(providerId: string): Promise<boolean> {
+		const availability = await this._modelRuntime.getAvailability(providerId);
+		return availability.providers.find((provider) => provider.providerId === providerId)?.auth !== undefined;
 	}
 
 	getToolDefinition(name: string): ToolDefinition | undefined {
-		return this._toolDefinitions.get(name)?.definition;
+		return this._tools.getDefinition(name);
 	}
 
 	/**
@@ -1213,10 +1233,15 @@ export class AgentSession {
 	 * Changes take effect on the next agent turn.
 	 */
 	setActiveToolsByName(toolNames: string[]): void {
+		if (!this.isIdle) throw new Error("Wait for the current response or compaction to finish");
+		this._applyActiveToolsByName(toolNames);
+	}
+
+	private _applyActiveToolsByName(toolNames: string[]): void {
 		const tools: AgentTool[] = [];
 		const validToolNames: string[] = [];
 		for (const name of toolNames) {
-			const tool = this._toolRegistry.get(name);
+			const tool = this._tools.getTool(name);
 			if (tool) {
 				tools.push(tool);
 				validToolNames.push(name);
@@ -1228,11 +1253,7 @@ export class AgentSession {
 
 	/** Whether compaction or branch summarization is currently running */
 	get isCompacting(): boolean {
-		return (
-			this._autoCompactionAbortController !== undefined ||
-			this._compactionAbortController !== undefined ||
-			this._branchSummaryAbortController !== undefined
-		);
+		return this._compactionOperation.isRunning || this._branchSummaryAbortController !== undefined;
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
@@ -1270,35 +1291,11 @@ export class AgentSession {
 		return this._resourceLoader.getPrompts().prompts;
 	}
 
-	private _normalizePromptSnippet(text: string | undefined): string | undefined {
-		if (!text) return undefined;
-		const oneLine = text
-			.replace(/[\r\n]+/g, " ")
-			.replace(/\s+/g, " ")
-			.trim();
-		return oneLine.length > 0 ? oneLine : undefined;
-	}
-
-	private _normalizePromptGuidelines(guidelines: string[] | undefined): string[] {
-		if (!guidelines || guidelines.length === 0) {
-			return [];
-		}
-
-		const unique = new Set<string>();
-		for (const guideline of guidelines) {
-			const normalized = guideline.trim();
-			if (normalized.length > 0) {
-				unique.add(normalized);
-			}
-		}
-		return Array.from(unique);
-	}
-
 	private _rebuildSystemPrompt(toolNames: string[]): void {
-		const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
+		const validToolNames = toolNames.filter((name) => this._tools.getTool(name) !== undefined);
 		const toolSnippets: Record<string, string> = {};
-		for (const name of this._toolRegistry.keys()) {
-			const snippet = this._toolPromptSnippets.get(name);
+		for (const name of this._tools.getToolNames()) {
+			const snippet = this._tools.getPromptSnippets().get(name);
 			if (snippet) toolSnippets[name] = snippet;
 		}
 
@@ -1316,7 +1313,7 @@ export class AgentSession {
 			appendSystemPrompt,
 			selectedTools: validToolNames,
 			toolSnippets,
-			toolGuidelines: Object.fromEntries(this._toolPromptGuidelines),
+			toolGuidelines: Object.fromEntries(this._tools.getPromptGuidelines()),
 		});
 	}
 
@@ -1334,9 +1331,11 @@ export class AgentSession {
 		options: NormalizedBuildSystemPromptOptions,
 		messages: AgentMessage[] = this.agent.state.messages,
 	): SystemMessage | undefined {
-		options.selectedTools = [...new Set(options.selectedTools)].filter((name) => this._toolRegistry.has(name));
+		options.selectedTools = [...new Set(options.selectedTools)].filter(
+			(name) => this._tools.getTool(name) !== undefined,
+		);
 		this.agent.state.tools = options.selectedTools.flatMap((name) => {
-			const tool = this._toolRegistry.get(name);
+			const tool = this._tools.getTool(name);
 			return tool ? [tool] : [];
 		});
 		const sections = diffSystemPromptSections(
@@ -1379,9 +1378,9 @@ export class AgentSession {
 		if (!current) return;
 		const toolNames = (current.toolsAdded ?? [])
 			.map((tool) => tool.name)
-			.filter((name) => this._toolRegistry.has(name));
+			.filter((name) => this._tools.getTool(name) !== undefined);
 		this.agent.state.tools = toolNames.flatMap((name) => {
-			const registered = this._toolRegistry.get(name);
+			const registered = this._tools.getTool(name);
 			return registered ? [registered] : [];
 		});
 		this._rebuildSystemPrompt(toolNames);
@@ -1417,16 +1416,18 @@ export class AgentSession {
 
 	private async _handlePostAgentRun(): Promise<boolean> {
 		const message = this._lastAssistantMessage;
-		const toolResults = this._lastAssistantToolResults;
+		const assistantEntryId = this._lastAssistantEntryId;
+		const toolResultEntryIds = this._lastAssistantToolResultEntryIds;
 		this._lastAssistantMessage = undefined;
-		this._lastAssistantToolResults = [];
+		this._lastAssistantEntryId = undefined;
+		this._lastAssistantToolResultEntryIds = [];
 		if (this._agentRunAbortRequested) {
 			this._finishCancelledRetry();
 			return false;
 		}
 		if (!message) return this.agent.hasQueuedMessages();
 
-		if (this._isRetryableError(message) && (await this._prepareRetry(message))) {
+		if (this._isRetryableError(message) && (await this._prepareRetry(message, assistantEntryId))) {
 			if (this._agentRunAbortRequested) this._finishCancelledRetry();
 			return !this._agentRunAbortRequested;
 		}
@@ -1445,7 +1446,7 @@ export class AgentSession {
 			this._retryAttempt = 0;
 		}
 
-		if (await this._checkCompaction(message, true, toolResults)) {
+		if (await this._checkCompaction(message, true, assistantEntryId, toolResultEntryIds)) {
 			return !this._agentRunAbortRequested;
 		}
 
@@ -1535,9 +1536,10 @@ export class AgentSession {
 		}
 		const preflightResult = options?.preflightResult;
 
-		if (this._compactionAbortController || (this._branchSummaryAbortController && !this.isStreaming)) {
+		if (this._compactionOperation.isRunning || (this._branchSummaryAbortController && !this.isStreaming)) {
+			if (options?.source === "rpc") throw new Error("Cannot submit an RPC prompt while compaction is in progress");
 			preflightResult?.("queued");
-			return this._inputQueue.queueForCompaction(text, options?.streamingBehavior ?? "followUp", options);
+			return this._inputExecution.deferDuringCompaction(text, options?.streamingBehavior ?? "followUp", options);
 		}
 
 		// Emit input event for extension interception.
@@ -1562,9 +1564,9 @@ export class AgentSession {
 				);
 			}
 			if (options.streamingBehavior === "followUp") {
-				this._inputQueue.queue("followUp", currentText, currentImages);
+				this._inputExecution.queue("followUp", currentText, currentImages);
 			} else {
-				this._inputQueue.queue("steer", currentText, currentImages);
+				this._inputExecution.queue("steer", currentText, currentImages);
 			}
 			preflightResult?.("queued");
 			return;
@@ -1581,7 +1583,7 @@ export class AgentSession {
 
 		const hasConfiguredAuth =
 			this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
-			(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
+			(await this._hasProviderAuth(this.model.provider));
 		if (!hasConfiguredAuth) {
 			const isOAuth = this._modelRuntime.isUsingOAuth(this.model.provider);
 			if (isOAuth) {
@@ -1596,9 +1598,9 @@ export class AgentSession {
 
 		// Check if we need to compact before sending (catches aborted responses).
 		// The user's new prompt is sent below, so do not call agent.continue() here.
-		const lastAssistant = this._findLastAssistantMessage();
-		if (lastAssistant) {
-			await this._checkCompaction(lastAssistant, false);
+		const lastAssistant = this._findLastProjectedAssistant();
+		if (lastAssistant?.message.role === "assistant") {
+			await this._checkCompaction(lastAssistant.message as AssistantMessage, false, lastAssistant.entryId);
 		}
 
 		// Emit before_agent_start before normalizing images so extension-driven model
@@ -1637,11 +1639,13 @@ export class AgentSession {
 		this._pendingNextTurnMessages = [];
 
 		for (const msg of result.messages) {
+			if (typeof msg.content !== "string" && !Array.isArray(msg.content)) {
+				throw new Error(`Extension custom message "${msg.customType}" must contain text or content parts`);
+			}
 			messages.push({
 				role: "custom",
 				customType: msg.customType,
-				// Untyped extensions can pass null/missing content; normalize at ingestion.
-				content: msg.content ?? [],
+				content: msg.content,
 				display: msg.display,
 				details: msg.details,
 				timestamp: Date.now(),
@@ -1723,11 +1727,11 @@ export class AgentSession {
 		try {
 			while (
 				!this._disposed &&
-				!this._compactionAbortController &&
+				!this._compactionOperation.isRunning &&
 				!this._branchSummaryAbortController &&
-				this._inputQueue.hasDeferred
+				this._inputExecution.hasDeferred
 			) {
-				const item = this._inputQueue.takeDeferred()!;
+				const item = this._inputExecution.takeDeferred()!;
 				try {
 					await this.prompt(item.text, {
 						...item.options,
@@ -1758,7 +1762,7 @@ export class AgentSession {
 		);
 		if (!processedInput) return "handled";
 
-		this._inputQueue.queue(behavior, processedInput.text, processedInput.images);
+		this._inputExecution.queue(behavior, processedInput.text, processedInput.images);
 		return "queued";
 	}
 
@@ -1808,11 +1812,13 @@ export class AgentSession {
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
 		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): Promise<void> {
+		if (typeof message.content !== "string" && !Array.isArray(message.content)) {
+			throw new Error(`Custom message "${message.customType}" must contain text or content parts`);
+		}
 		const appMessage = {
 			role: "custom" as const,
 			customType: message.customType,
-			// Untyped extensions can pass null/missing content; normalize at ingestion.
-			content: message.content ?? [],
+			content: message.content,
 			display: message.display,
 			details: message.details,
 			timestamp: Date.now(),
@@ -1821,10 +1827,11 @@ export class AgentSession {
 			this._pendingNextTurnMessages.push(appMessage);
 		} else if (this.isStreaming && options?.triggerTurn !== false) {
 			if (options?.deliverAs === "followUp") {
-				this.agent.followUp(appMessage);
+				this.agent.followUp(appMessage, { text: contentText(appMessage.content) });
 			} else {
-				this.agent.steer(appMessage);
+				this.agent.steer(appMessage, { text: contentText(appMessage.content) });
 			}
+			this._emitQueueUpdate();
 		} else if (options?.triggerTurn) {
 			if (this._isEmittingAgentSettled) {
 				this._deferredSettledActions.push(async () => await this._runAgentPrompt(appMessage));
@@ -1910,26 +1917,30 @@ export class AgentSession {
 	 * Withdraw queued inputs with their attachments.
 	 */
 	clearQueue(): { steering: QueuedInput[]; followUp: QueuedInput[] } {
-		return this._inputQueue.withdraw();
+		return this._inputExecution.withdraw();
 	}
 
 	/** Number of pending messages (includes both steering and follow-up) */
 	get pendingMessageCount(): number {
-		return this._inputQueue.count;
+		return this._inputExecution.count;
 	}
 
 	/** Get pending steering messages (read-only) */
 	getSteeringMessages(): readonly string[] {
-		return this._inputQueue.getTexts("steer");
+		return this._inputExecution.getTexts("steer");
 	}
 
 	/** Get pending follow-up messages (read-only) */
 	getFollowUpMessages(): readonly string[] {
-		return this._inputQueue.getTexts("followUp");
+		return this._inputExecution.getTexts("followUp");
 	}
 
 	get resourceLoader(): ResourceLoader {
 		return this._resourceLoader;
+	}
+
+	get resources(): ResourceOperations {
+		return this._resources;
 	}
 
 	/**
@@ -2023,8 +2034,7 @@ export class AgentSession {
 	 * Saves to settings.
 	 */
 	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setSteeringMode(mode));
-		this.agent.steeringMode = mode;
+		await this.settingsManager.setSteeringMode(mode);
 	}
 
 	/**
@@ -2032,43 +2042,15 @@ export class AgentSession {
 	 * Saves to settings.
 	 */
 	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setFollowUpMode(mode));
-		this.agent.followUpMode = mode;
+		await this.settingsManager.setFollowUpMode(mode);
 	}
 
 	// =========================================================================
 	// Compaction
 	// =========================================================================
 
-	/** Generate candy's built-in compaction summary for manual and automatic compaction. */
-	private async _runDefaultCompaction(
-		preparation: CompactionPreparation,
-		requestModel: Model<any>,
-		apiKey: string | undefined,
-		headers: Record<string, string> | undefined,
-		customInstructions: string | undefined,
-		signal: AbortSignal,
-		env: Record<string, string> | undefined,
-		reason: "manual" | "threshold" | "overflow",
-	): Promise<CompactionResult> {
-		return compact(
-			preparation,
-			requestModel,
-			apiKey,
-			headers,
-			customInstructions,
-			signal,
-			this.thinkingLevel,
-			this.agent.streamFunction,
-			env,
-			this.settingsManager.getRetrySettings(),
-			this._summarizationRetryCallbacks({ source: "compaction", reason }),
-			undefined, // sessionId
-		);
-	}
-
 	private _clearManualCompactionState(): void {
-		this._compactionAbortController = undefined;
+		this._compactionOperation.finish("manual");
 		this._resolveIdleWaitIfIdle();
 	}
 
@@ -2089,125 +2071,28 @@ export class AgentSession {
 	 */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		await this.abort();
-		this._compactionAbortController = new AbortController();
+		const controller = this._compactionOperation.start("manual");
+		const settleOperation = this._trackOperation();
 		this._emit({ type: "compaction_start", reason: "manual" });
 		let fromExtension = false;
-		let cancelledByExtension = false;
 
 		try {
-			const model = this.model;
-			if (!model) {
-				throw new Error(formatNoModelSelectedMessage());
-			}
-
-			const settings = this.settingsManager.getCompactionSettings(model);
-			const {
-				model: requestModel,
-				apiKey,
-				headers,
-				env,
-			} = await this._getSummarizationRequestAuth(model, this._compactionAbortController.signal);
-
-			const pathEntries = this.sessionManager.getBranch();
-
-			const preparation = prepareCompaction(pathEntries, settings);
-			if (!preparation) {
-				// Check why we can't compact
-				const lastEntry = pathEntries[pathEntries.length - 1];
-				if (lastEntry?.type === "compaction") {
-					throw new Error("Already compacted");
-				}
-				throw new Error("Nothing to compact (session too small)");
-			}
-
-			let extensionCompaction: CompactionResult | undefined;
-
-			if (this._extensionRunner.hasHandlers("session_before_compact")) {
-				const result = (await this._extensionRunner.emit({
-					type: "session_before_compact",
-					preparation,
-					branchEntries: pathEntries,
-					customInstructions,
+			if (!this.model) throw new Error(formatNoModelSelectedMessage());
+			const completed = await this._compactionOperation.run(
+				{
 					reason: "manual",
-					willRetry: false,
-					signal: this._compactionAbortController.signal,
-				})) as SessionBeforeCompactResult | undefined;
-
-				if (result?.cancel) {
-					cancelledByExtension = true;
-					throw new Error("Compaction cancelled");
-				}
-
-				if (result?.compaction) {
-					extensionCompaction = result.compaction;
-					fromExtension = true;
-				}
-			}
-
-			let summary: string;
-			let firstKeptEntryId: string;
-			let tokensBefore: number;
-			let usage: Usage | undefined;
-			let details: unknown;
-
-			if (extensionCompaction) {
-				// Extension provided compaction content
-				summary = extensionCompaction.summary;
-				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
-				tokensBefore = extensionCompaction.tokensBefore;
-				usage = extensionCompaction.usage;
-				details = extensionCompaction.details;
-			} else {
-				// Shared default summary generator, also used by automatic compaction.
-				const result = await this._runDefaultCompaction(
-					preparation,
-					requestModel,
-					apiKey,
-					headers,
 					customInstructions,
-					this._compactionAbortController.signal,
-					env,
-					"manual",
-				);
-				summary = result.summary;
-				firstKeptEntryId = result.firstKeptEntryId;
-				tokensBefore = result.tokensBefore;
-				usage = result.usage;
-				details = result.details;
-			}
-
-			if (this._compactionAbortController.signal.aborted) {
-				throw new Error("Compaction cancelled");
-			}
-
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, usage);
-			const newEntries = this.sessionManager.getEntries();
-			this._refreshFinalizedContext();
-			const estimatedTokensAfter = estimateMessagesTokens(this.sessionManager.buildSessionProjection().messages);
-
-			// Get the saved compaction entry for the extension event
-			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
-				| CompactionEntry
-				| undefined;
-
-			if (this._extensionRunner && savedCompactionEntry) {
-				await this._extensionRunner.emit({
-					type: "session_compact",
-					compactionEntry: savedCompactionEntry,
-					fromExtension,
-					reason: "manual",
 					willRetry: false,
-				});
-			}
-
-			const compactionResult: CompactionResult = {
-				summary,
-				firstKeptEntryId,
-				tokensBefore,
-				estimatedTokensAfter,
-				usage,
-				details,
-			};
+					signal: controller.signal,
+					allowEmptyPreparation: false,
+				},
+				(hasExtensionResult) => {
+					fromExtension = hasExtensionResult;
+				},
+			);
+			if (!completed) throw new Error("Nothing to compact (session too small)");
+			fromExtension = completed.fromExtension;
+			const compactionResult = completed.result;
 			// compaction_end listeners may submit queued prompts, so expose idle state before notifying them.
 			this._clearManualCompactionState();
 			this._emit({
@@ -2221,7 +2106,7 @@ export class AgentSession {
 			return compactionResult;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			const aborted = this._compactionAbortController.signal.aborted || cancelledByExtension;
+			const aborted = controller.signal.aborted || error instanceof CompactionCancelledError;
 			const errorMessage = aborted ? undefined : `Compaction failed: ${message}`;
 			this._clearManualCompactionState();
 			this._emit({
@@ -2240,9 +2125,13 @@ export class AgentSession {
 				fromExtension,
 			});
 			void this._drainPendingCompactionInputs();
+			if (controller.signal.aborted && !(error instanceof CompactionCancelledError)) {
+				throw new CompactionCancelledError();
+			}
 			throw error;
 		} finally {
 			this._clearManualCompactionState();
+			settleOperation();
 		}
 	}
 
@@ -2250,8 +2139,7 @@ export class AgentSession {
 	 * Cancel in-progress compaction (manual or auto).
 	 */
 	abortCompaction(): void {
-		this._compactionAbortController?.abort();
-		this._autoCompactionAbortController?.abort();
+		this._compactionOperation.abort();
 	}
 
 	/**
@@ -2285,7 +2173,8 @@ export class AgentSession {
 	private async _checkCompaction(
 		assistantMessage: AssistantMessage,
 		skipAbortedCheck = true,
-		toolResults: AgentMessage[] = [],
+		assistantEntryId: string | undefined = undefined,
+		toolResultEntryIds: readonly string[] = [],
 	): Promise<boolean> {
 		const settings = this.settingsManager.getCompactionSettings(this.model);
 		if (!settings.enabled) return false;
@@ -2316,9 +2205,8 @@ export class AgentSession {
 		// A length stop is recoverable when output ended below the model's original desired limit,
 		// independent of the configured context size or any context-clamped provider request limit.
 		const currentProjection = this.sessionManager.buildSessionProjection();
-		const assistantEntryId = this._findPersistedMessageEntryId(assistantMessage);
 		const assistantIsProjected =
-			assistantEntryId === undefined ||
+			assistantEntryId !== undefined &&
 			currentProjection.entries.some(
 				(entry) =>
 					entry.sourceEntry.id === assistantEntryId &&
@@ -2334,9 +2222,9 @@ export class AgentSession {
 			)
 			.at(-1);
 		const assistantRetainedForExplicitRecovery =
-			assistantEntryId === undefined ||
-			(!entriesAfterAssistant.some((entry) => entry.type === "compaction") &&
-				latestAssistantEdit?.replacement !== null);
+			assistantEntryId !== undefined &&
+			!entriesAfterAssistant.some((entry) => entry.type === "compaction") &&
+			latestAssistantEdit?.replacement !== null;
 		const assistantUsageMatchesProjection = assistantIsProjected && !hasPostAssistantContextEdit;
 		const explicitOverflow = assistantMessage.stopReason === "error" && isContextOverflow(assistantMessage);
 		const contextOverflow =
@@ -2344,7 +2232,10 @@ export class AgentSession {
 			((explicitOverflow && assistantRetainedForExplicitRecovery) ||
 				(assistantUsageMatchesProjection && isContextOverflow(assistantMessage, contextWindow)));
 		const recoverableLength =
-			sameModel && assistantIsProjected && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
+			sameModel &&
+			assistantEntryId !== undefined &&
+			assistantIsProjected &&
+			isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
 		if (contextOverflow || recoverableLength) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 
@@ -2378,7 +2269,8 @@ export class AgentSession {
 
 			// Persistently omit the selected final attempt before post-run recovery compaction.
 			this._overflowRecoveryAttempted = true;
-			this._omitRecoveryAttempt(assistantMessage, toolResults);
+			if (assistantEntryId === undefined) return false;
+			this._omitRecoveryAttempt([assistantEntryId, ...toolResultEntryIds]);
 			return await this._runAutoCompaction("overflow", willRetry);
 		}
 
@@ -2431,6 +2323,7 @@ export class AgentSession {
 	 * @returns Whether the post-run loop should call `agent.continue()`
 	 */
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
+		const settleOperation = this._trackOperation();
 		const model = this.model;
 		const settings = this.settingsManager.getCompactionSettings(model);
 		let abortController: AbortController | undefined;
@@ -2450,105 +2343,25 @@ export class AgentSession {
 			}
 
 			abortController = new AbortController();
-			this._autoCompactionAbortController = abortController;
+			abortController = this._compactionOperation.start("automatic");
 			started = true;
 			this._emit({ type: "compaction_start", reason });
 			abortController.signal.throwIfAborted();
 
-			const {
-				model: requestModel,
-				apiKey,
-				headers,
-				env,
-			} = await this._getSummarizationRequestAuth(model, abortController.signal);
-			abortController.signal.throwIfAborted();
-
-			let extensionCompaction: CompactionResult | undefined;
-
-			if (this._extensionRunner.hasHandlers("session_before_compact")) {
-				const extensionResult = (await this._extensionRunner.emit({
-					type: "session_before_compact",
-					preparation,
-					branchEntries: pathEntries,
-					customInstructions: undefined,
+			const completed = await this._compactionOperation.run(
+				{
 					reason,
 					willRetry,
 					signal: abortController.signal,
-				})) as SessionBeforeCompactResult | undefined;
-
-				if (extensionResult?.cancel) {
-					cancelledByExtension = true;
-					throw new Error("Compaction cancelled");
-				}
-
-				if (extensionResult?.compaction) {
-					extensionCompaction = extensionResult.compaction;
-					fromExtension = true;
-				}
-			}
-			abortController.signal.throwIfAborted();
-
-			let summary: string;
-			let firstKeptEntryId: string;
-			let tokensBefore: number;
-			let usage: Usage | undefined;
-			let details: unknown;
-
-			if (extensionCompaction) {
-				// Extension provided compaction content
-				summary = extensionCompaction.summary;
-				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
-				tokensBefore = extensionCompaction.tokensBefore;
-				usage = extensionCompaction.usage;
-				details = extensionCompaction.details;
-			} else {
-				// Shared default summary generator, also used by manual compaction.
-				const compactResult = await this._runDefaultCompaction(
-					preparation,
-					requestModel,
-					apiKey,
-					headers,
-					undefined,
-					abortController.signal,
-					env,
-					reason,
-				);
-				summary = compactResult.summary;
-				firstKeptEntryId = compactResult.firstKeptEntryId;
-				tokensBefore = compactResult.tokensBefore;
-				usage = compactResult.usage;
-				details = compactResult.details;
-			}
-			abortController.signal.throwIfAborted();
-
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, usage);
-			const newEntries = this.sessionManager.getEntries();
-			this._refreshFinalizedContext();
-			const estimatedTokensAfter = estimateMessagesTokens(this.sessionManager.buildSessionProjection().messages);
-
-			// Get the saved compaction entry for the extension event
-			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
-				| CompactionEntry
-				| undefined;
-
-			if (this._extensionRunner && savedCompactionEntry) {
-				await this._extensionRunner.emit({
-					type: "session_compact",
-					compactionEntry: savedCompactionEntry,
-					fromExtension,
-					reason,
-					willRetry,
-				});
-			}
-
-			const result: CompactionResult = {
-				summary,
-				firstKeptEntryId,
-				tokensBefore,
-				estimatedTokensAfter,
-				usage,
-				details,
-			};
+					allowEmptyPreparation: true,
+				},
+				(hasExtensionResult) => {
+					fromExtension = hasExtensionResult;
+				},
+			);
+			if (!completed) return false;
+			fromExtension = completed.fromExtension;
+			const result = completed.result;
 			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
 
 			if (willRetry) return true;
@@ -2558,6 +2371,7 @@ export class AgentSession {
 			return this.agent.hasQueuedMessages();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "compaction failed";
+			cancelledByExtension = error instanceof CompactionCancelledError;
 			const aborted = abortController?.signal.aborted === true || cancelledByExtension;
 			if (started) {
 				const errorMessage = aborted
@@ -2583,10 +2397,9 @@ export class AgentSession {
 			}
 			return false;
 		} finally {
-			if (this._autoCompactionAbortController === abortController) {
-				this._autoCompactionAbortController = undefined;
-			}
+			this._compactionOperation.finish("automatic", abortController);
 			this._resolveIdleWaitIfIdle();
+			settleOperation();
 		}
 	}
 
@@ -2594,7 +2407,7 @@ export class AgentSession {
 	 * Toggle auto-compaction setting.
 	 */
 	async setAutoCompactionEnabled(enabled: boolean): Promise<void> {
-		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setCompactionEnabled(enabled));
+		await this.settingsManager.setCompactionEnabled(enabled);
 	}
 
 	/** Whether auto-compaction is enabled */
@@ -2689,8 +2502,8 @@ export class AgentSession {
 			: undefined;
 	}
 
-	private _bindExtensionCore(runner: ExtensionRunner): void {
-		runner.bindCore(
+	private _bindExtensionCore(runner: ExtensionRunner): boolean {
+		return runner.bindCore(
 			{
 				sendMessage: (message, options) => {
 					this.sendCustomMessage(message, options).catch((err) => {
@@ -2728,11 +2541,11 @@ export class AgentSession {
 				},
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
-				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
+				setActiveTools: (toolNames) => this._applyActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
 				getCommands: () => this.getCommands(),
 				setModel: async (model) => {
-					if (!(await this._modelRuntime.checkAuth(model.provider))) return false;
+					if (!(await this._hasProviderAuth(model.provider))) return false;
 					await this.setModel(model);
 					return true;
 				},
@@ -2741,6 +2554,7 @@ export class AgentSession {
 			},
 			{
 				getModel: () => this.model,
+				getResources: () => this._resources,
 				isIdle: () => this.isIdle,
 				isProjectTrusted: () => this.settingsManager.isProjectTrusted(),
 				getSignal: () => this.agent.signal,
@@ -2773,10 +2587,12 @@ export class AgentSession {
 			{
 				registerProvider: (name, config) => {
 					this._modelRuntime.registerProvider(name, config);
+					this._pendingProviderRefreshes.add(name);
 					this._modelSelection.refreshFromRegistry();
 				},
 				registerNativeProvider: (provider) => {
 					this._modelRuntime.registerNativeProvider(provider);
+					this._pendingProviderRefreshes.add(provider.id);
 					this._modelSelection.refreshFromRegistry();
 				},
 				unregisterProvider: (name) => {
@@ -2788,103 +2604,21 @@ export class AgentSession {
 	}
 
 	private _refreshToolRegistry(options?: { activeToolNames?: string[]; includeAllExtensionTools?: boolean }): void {
-		const previousRegistryNames = new Set(this._toolRegistry.keys());
 		const previousActiveToolNames = this.getActiveToolNames();
-		const allowedToolNames = this._allowedToolNames;
-		const excludedToolNames = this._excludedToolNames;
-		const isAllowedTool = (name: string): boolean =>
-			(!allowedToolNames || allowedToolNames.has(name)) && !excludedToolNames?.has(name);
-
-		const registeredTools = this._extensionRunner.getAllRegisteredTools();
-		const allCustomTools = [
-			...registeredTools,
-			...this._customTools.map((definition) => ({
-				definition,
-				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }),
-			})),
-		].filter((tool) => isAllowedTool(tool.definition.name));
-		const definitionRegistry = new Map<string, ToolDefinitionEntry>(
-			Array.from(this._baseToolDefinitions.entries())
-				.filter(([name]) => isAllowedTool(name))
-				.map(([name, definition]) => [
-					name,
-					{
-						definition,
-						sourceInfo: createSyntheticSourceInfo(`<builtin:${name}>`, { source: "builtin" }),
-					},
-				]),
+		const activeToolNames = this._tools.refresh(
+			this._extensionRunner,
+			this._customTools,
+			previousActiveToolNames,
+			options,
 		);
-		for (const tool of allCustomTools) {
-			definitionRegistry.set(tool.definition.name, {
-				definition: tool.definition,
-				sourceInfo: tool.sourceInfo,
-			});
-		}
-		this._toolDefinitions = definitionRegistry;
-		this._toolPromptSnippets = new Map(
-			Array.from(definitionRegistry.values())
-				.map(({ definition }) => {
-					const snippet = this._normalizePromptSnippet(definition.promptSnippet);
-					return snippet ? ([definition.name, snippet] as const) : undefined;
-				})
-				.filter((entry): entry is readonly [string, string] => entry !== undefined),
-		);
-		this._toolPromptGuidelines = new Map(
-			Array.from(definitionRegistry.values())
-				.map(({ definition }) => {
-					const guidelines = this._normalizePromptGuidelines(definition.promptGuidelines);
-					return guidelines.length > 0 ? ([definition.name, guidelines] as const) : undefined;
-				})
-				.filter((entry): entry is readonly [string, string[]] => entry !== undefined),
-		);
-		const runner = this._extensionRunner;
-		const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, runner);
-		const wrappedBuiltInTools = wrapRegisteredTools(
-			Array.from(this._baseToolDefinitions.values())
-				.filter((definition) => isAllowedTool(definition.name))
-				.map((definition) => ({
-					definition,
-					sourceInfo: createSyntheticSourceInfo(`<builtin:${definition.name}>`, { source: "builtin" }),
-				})),
-			runner,
-		);
-
-		const toolRegistry = new Map(wrappedBuiltInTools.map((tool) => [tool.name, tool]));
-		for (const tool of wrappedExtensionTools as AgentTool[]) {
-			toolRegistry.set(tool.name, tool);
-		}
-		this._toolRegistry = toolRegistry;
-
-		const nextActiveToolNames = (
-			options?.activeToolNames ? [...options.activeToolNames] : [...previousActiveToolNames]
-		).filter((name) => isAllowedTool(name));
-
-		if (allowedToolNames) {
-			for (const toolName of this._toolRegistry.keys()) {
-				if (allowedToolNames.has(toolName)) {
-					nextActiveToolNames.push(toolName);
-				}
-			}
-		} else if (options?.includeAllExtensionTools) {
-			for (const tool of wrappedExtensionTools) {
-				nextActiveToolNames.push(tool.name);
-			}
-		} else if (!options?.activeToolNames) {
-			for (const toolName of this._toolRegistry.keys()) {
-				if (!previousRegistryNames.has(toolName)) {
-					nextActiveToolNames.push(toolName);
-				}
-			}
-		}
-
-		this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
+		this.setActiveToolsByName(activeToolNames);
 	}
 
 	private _buildRuntime(options: {
 		activeToolNames?: string[];
 		flagValues?: Map<string, boolean | string>;
 		includeAllExtensionTools?: boolean;
-	}): void {
+	}): boolean {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
 		const shellPath = this.settingsManager.getShellPath();
@@ -2900,9 +2634,7 @@ export class AgentSession {
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
 				});
 
-		this._baseToolDefinitions = new Map(
-			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
-		);
+		this._tools.setBaseDefinitions(baseToolDefinitions);
 
 		const extensionsResult = this._resourceLoader.getExtensions();
 		if (options.flagValues) {
@@ -2921,7 +2653,7 @@ export class AgentSession {
 		if (this._extensionRunnerRef) {
 			this._extensionRunnerRef.current = this._extensionRunner;
 		}
-		this._bindExtensionCore(this._extensionRunner);
+		const hasProviderRegistrations = this._bindExtensionCore(this._extensionRunner);
 		this._applyExtensionBindings(this._extensionRunner);
 
 		const defaultActiveToolNames = this._baseToolsOverride
@@ -2932,6 +2664,7 @@ export class AgentSession {
 			activeToolNames: baseActiveToolNames,
 			includeAllExtensionTools: options.includeAllExtensionTools,
 		});
+		return hasProviderRegistrations;
 	}
 
 	async reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void> {
@@ -2942,11 +2675,12 @@ export class AgentSession {
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
 		await this._resourceLoader.reload();
-		this._buildRuntime({
+		const hasProviderRegistrations = this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
 			flagValues: previousFlagValues,
 			includeAllExtensionTools: true,
 		});
+		if (hasProviderRegistrations) await this._modelRuntime.refresh({ allowNetwork: false });
 
 		const hasBindings =
 			this._extensionUIContext ||
@@ -3021,7 +2755,7 @@ export class AgentSession {
 	 * Prepare a retryable error for continuation with exponential backoff.
 	 * @returns true if the caller should continue the agent, false otherwise
 	 */
-	private async _prepareRetry(message: AssistantMessage): Promise<boolean> {
+	private async _prepareRetry(message: AssistantMessage, assistantEntryId?: string): Promise<boolean> {
 		const settings = this.settingsManager.getRetrySettings();
 		if (!settings.enabled) {
 			return false;
@@ -3046,10 +2780,13 @@ export class AgentSession {
 		});
 
 		// Keep the failed attempt in raw history while durably omitting it from model projection.
-		this._omitRecoveryAttempt(message);
+		if (assistantEntryId === undefined)
+			throw new Error("Cannot omit retry attempt without its committed journal entry ID");
+		this._omitRecoveryAttempt([assistantEntryId]);
 
 		// Wait with exponential backoff (abortable)
 		this._retryAbortController = new AbortController();
+		const settleOperation = this._trackOperation();
 		try {
 			await sleep(delayMs, this._retryAbortController.signal);
 		} catch {
@@ -3058,6 +2795,7 @@ export class AgentSession {
 			return false;
 		} finally {
 			this._retryAbortController = undefined;
+			settleOperation();
 		}
 
 		return true;
@@ -3084,7 +2822,7 @@ export class AgentSession {
 	 * Toggle auto-retry setting.
 	 */
 	async setAutoRetryEnabled(enabled: boolean): Promise<void> {
-		await this.settingsManager.mutateAndPersist(() => this.settingsManager.setRetryEnabled(enabled));
+		await this.settingsManager.setRetryEnabled(enabled);
 	}
 
 	// =========================================================================
@@ -3107,6 +2845,7 @@ export class AgentSession {
 	): Promise<BashResult> {
 		const abortController = new AbortController();
 		this._bashAbortControllers.add(abortController);
+		const settleOperation = this._trackOperation();
 
 		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
 		const prefix = this.settingsManager.getShellCommandPrefix();
@@ -3131,6 +2870,7 @@ export class AgentSession {
 			return result;
 		} finally {
 			this._bashAbortControllers.delete(abortController);
+			settleOperation();
 		}
 	}
 
@@ -3244,7 +2984,8 @@ export class AgentSession {
 		}
 
 		// Model required for summarization
-		if (options.summarize && !this.model) {
+		const summarySnapshot = options.summarize ? { model: this.model, thinkingLevel: this.thinkingLevel } : undefined;
+		if (options.summarize && !summarySnapshot?.model) {
 			throw new Error("No model available for summarization");
 		}
 
@@ -3278,6 +3019,7 @@ export class AgentSession {
 
 		// Set up abort controller for summarization
 		this._branchSummaryAbortController = new AbortController();
+		const settleOperation = this._trackOperation();
 
 		try {
 			let extensionSummary: { summary: string; details?: unknown; usage?: Usage } | undefined;
@@ -3317,11 +3059,18 @@ export class AgentSession {
 			let summaryDetails: unknown;
 			let summaryUsage: Usage | undefined;
 			if (options.summarize && entriesToSummarize.length > 0 && !extensionSummary) {
-				const model = this.model!;
-				const { model: requestModel, apiKey, headers, env } = await this._getSummarizationRequestAuth(model);
+				const snapshot = summarySnapshot;
+				if (!snapshot?.model) throw new Error("No model available for summarization");
+				const {
+					model: requestModel,
+					apiKey,
+					headers,
+					env,
+				} = await this._getSummarizationRequestAuth(snapshot.model, this._branchSummaryAbortController.signal);
 				const branchSummarySettings = this.settingsManager.getBranchSummarySettings();
 				const result = await generateBranchSummary(entriesToSummarize, {
 					model: requestModel,
+					thinkingLevel: snapshot.thinkingLevel,
 					apiKey,
 					headers,
 					env,
@@ -3417,6 +3166,7 @@ export class AgentSession {
 			return { editorText, cancelled: false, summaryEntry };
 		} finally {
 			this._branchSummaryAbortController = undefined;
+			settleOperation();
 			void this._drainPendingCompactionInputs();
 			this._resolveIdleWaitIfIdle();
 		}

@@ -23,6 +23,14 @@
 		"./extension-host-modules": {
 			"types": "./dist/presentation/extensions/virtual-modules.d.ts",
 			"import": "./dist/presentation/extensions/virtual-modules.js"
+		},
+		"./ui": {
+			"types": "./dist/ui.d.ts",
+			"import": "./dist/ui.js"
+		},
+		"./rpc": {
+			"types": "./dist/rpc.d.ts",
+			"import": "./dist/rpc.js"
 		}
 	},
 	"files": [
@@ -40,6 +48,7 @@
 		"copy-assets": "shx mkdir -p dist/modes/interactive/theme && shx cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && shx mkdir -p dist/presentation/export-html/vendor && shx cp src/presentation/export-html/template.html src/presentation/export-html/template.css src/presentation/export-html/template.js dist/presentation/export-html/ && shx cp src/presentation/export-html/vendor/*.js dist/presentation/export-html/vendor/",
 		"copy-binary-assets": "shx cp package.json dist/ && shx cp README.md dist/ && shx cp CHANGELOG.md dist/ && shx mkdir -p dist/modes/interactive/theme && shx cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && shx mkdir -p dist/presentation/export-html/vendor && shx cp src/presentation/export-html/template.html src/presentation/export-html/template.css src/presentation/export-html/template.js dist/presentation/export-html/ && shx cp src/presentation/export-html/vendor/*.js dist/presentation/export-html/vendor/ && shx cp -r docs dist/ && shx cp -r examples dist/ && shx cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm dist/",
 		"test": "vitest --run",
+		"test:bun": "bun test ./test/http-dispatcher.bun.test.mjs",
 		"test:e2e": "vitest --run --config vitest.e2e.config.ts",
 		"probe:codex-cache": "node --experimental-strip-types scripts/sdk-codex-cache-probe-tool-loop.ts",
 		"example:rpc": "node --experimental-strip-types examples/rpc-example.ts",

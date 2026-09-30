@@ -1,7 +1,8 @@
-import { constants, copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { basename, join, parse, resolve } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import type { AgentSession } from "./agent-session.ts";
+import type { CreateAgentSessionResult } from "./agent-session-factory.ts";
 import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./agent-session-services.ts";
 import type {
 	ProjectTrustContext,
@@ -10,7 +11,6 @@ import type {
 	SessionStartEvent,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
-import type { CreateAgentSessionResult } from "./sdk.ts";
 import { assertSessionCwdExists } from "./session-cwd.ts";
 import { SessionManager } from "./session-manager.ts";
 
@@ -75,6 +75,27 @@ export class AgentSessionRuntime {
 	private readonly createRuntime: CreateAgentSessionRuntimeFactory;
 	private _diagnostics: AgentSessionRuntimeDiagnostic[];
 	private _modelFallbackMessage?: string;
+	private replacementQueue: Promise<void> = Promise.resolve();
+	private disposePromise?: Promise<void>;
+	private disposed = false;
+	private readonly sessionListeners = new Set<(session: AgentSession) => Promise<void>>();
+
+	subscribeSession(listener: (session: AgentSession) => Promise<void>): () => void {
+		this.sessionListeners.add(listener);
+		return () => this.sessionListeners.delete(listener);
+	}
+
+	private enqueueReplacement<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.replacementQueue.then(() => {
+			if (this.disposed) throw new Error("Session runtime is disposed");
+			return operation();
+		});
+		this.replacementQueue = result.then(
+			() => {},
+			() => {},
+		);
+		return result;
+	}
 
 	constructor(
 		_session: AgentSession,
@@ -163,14 +184,64 @@ export class AgentSessionRuntime {
 	private async teardownCurrent(reason: SessionShutdownEvent["reason"], targetSessionFile?: string): Promise<void> {
 		// Settle any active response first so the aborted turn (including tool
 		// results) is persisted to the outgoing session before it is replaced.
-		await this.session.abort();
-		await emitSessionShutdownEvent(this.session.extensionRunner, {
-			type: "session_shutdown",
-			reason,
-			targetSessionFile,
-		});
-		this.beforeSessionInvalidate?.();
-		this.session.dispose();
+		const errors: unknown[] = [];
+		try {
+			await this.session.abort();
+		} catch (error) {
+			errors.push(error);
+		}
+		try {
+			await emitSessionShutdownEvent(this.session.extensionRunner, {
+				type: "session_shutdown",
+				reason,
+				targetSessionFile,
+			});
+		} catch (error) {
+			errors.push(error);
+		}
+		try {
+			this.beforeSessionInvalidate?.();
+		} catch (error) {
+			errors.push(error);
+		}
+		try {
+			await this.session.dispose();
+		} catch (error) {
+			errors.push(error);
+		}
+		if (errors.length) throw new AggregateError(errors, "Outgoing session cleanup failed");
+	}
+
+	private async discardCandidate(
+		error: unknown,
+		candidate?: AgentSession,
+		candidateServices?: AgentSessionServices,
+		ownedFile?: string,
+	): Promise<never> {
+		const errors = [error];
+		if (candidate) {
+			try {
+				await candidate.dispose();
+			} catch (disposeError) {
+				errors.push(disposeError);
+			}
+		}
+		if (candidateServices) {
+			try {
+				await candidateServices.dispose();
+			} catch (disposeError) {
+				errors.push(disposeError);
+			}
+		}
+		if (ownedFile && existsSync(ownedFile)) {
+			try {
+				unlinkSync(ownedFile);
+			} catch (fileError) {
+				errors.push(fileError);
+			}
+		}
+		if (errors.length > 1) throw new AggregateError(errors, "Session preparation and candidate cleanup failed");
+		throw error;
 	}
 
 	private apply(result: CreateAgentSessionRuntimeResult): void {
@@ -181,6 +252,7 @@ export class AgentSessionRuntime {
 	}
 
 	private async finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
+		for (const listener of this.sessionListeners) await listener(this.session);
 		if (this.rebindSession) {
 			await this.rebindSession(this.session);
 		}
@@ -194,19 +266,40 @@ export class AgentSessionRuntime {
 		reason: SessionShutdownEvent["reason"],
 		targetSessionFile: string | undefined,
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>,
+		ownedFile?: string,
 	): Promise<void> {
-		const replacement = await create();
+		let replacement: CreateAgentSessionRuntimeResult;
+		try {
+			replacement = await create();
+		} catch (error) {
+			return this.discardCandidate(error, undefined, undefined, ownedFile);
+		}
+		const outgoingServices = this.services;
 		try {
 			await this.teardownCurrent(reason, targetSessionFile);
 		} catch (error) {
-			replacement.session.dispose();
-			throw error;
+			return this.discardCandidate(error, replacement.session, replacement.services, ownedFile);
 		}
 		this.apply(replacement);
-		await this.finishSessionReplacement(withSession);
+		const errors: unknown[] = [];
+		try {
+			await outgoingServices.dispose();
+		} catch (error) {
+			errors.push(error);
+		}
+		try {
+			await this.finishSessionReplacement(withSession);
+		} catch (error) {
+			errors.push(error);
+		}
+		if (errors.length) throw new AggregateError(errors, "Session replacement cleanup failed");
 	}
 
-	async switchSession(
+	switchSession(...args: Parameters<AgentSessionRuntime["switchSessionOperation"]>) {
+		return this.enqueueReplacement(() => this.switchSessionOperation(...args));
+	}
+
+	private async switchSessionOperation(
 		sessionPath: string,
 		options?: {
 			cwdOverride?: string;
@@ -238,7 +331,11 @@ export class AgentSessionRuntime {
 		return { cancelled: false };
 	}
 
-	async newSession(options?: {
+	newSession(...args: Parameters<AgentSessionRuntime["newSessionOperation"]>) {
+		return this.enqueueReplacement(() => this.newSessionOperation(...args));
+	}
+
+	private async newSessionOperation(options?: {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
@@ -269,8 +366,12 @@ export class AgentSessionRuntime {
 				replacement.session.refreshContext();
 			}
 		} catch (error) {
-			replacement.session.dispose();
-			throw error;
+			return this.discardCandidate(
+				error,
+				replacement.session,
+				replacement.services,
+				sessionManager.getSessionFile(),
+			);
 		}
 
 		await this.replaceSession(
@@ -278,11 +379,25 @@ export class AgentSessionRuntime {
 			"new",
 			sessionManager.getSessionFile(),
 			options?.withSession,
+			sessionManager.getSessionFile(),
 		);
 		return { cancelled: false };
 	}
 
-	async fork(
+	fork(...args: Parameters<AgentSessionRuntime["forkOperation"]>) {
+		return this.enqueueReplacement(() => this.forkOperation(...args));
+	}
+
+	clone(options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> }): Promise<{ cancelled: boolean }> {
+		return this.enqueueReplacement(async () => {
+			const leafId = this.session.sessionManager.getLeafId();
+			if (!leafId) throw new Error("Nothing to clone yet");
+			const { cancelled } = await this.forkOperation(leafId, { position: "at", ...options });
+			return { cancelled };
+		});
+	}
+
+	private async forkOperation(
 		entryId: string,
 		options?: { position?: "before" | "at"; withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
 	): Promise<{ cancelled: boolean; selectedText?: string }> {
@@ -310,7 +425,6 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		await this.session.abort();
 		if (this.session.sessionManager.isPersisted()) {
 			const currentSessionFile = this.session.sessionFile;
 			if (!currentSessionFile) {
@@ -354,6 +468,7 @@ export class AgentSessionRuntime {
 				"fork",
 				sessionManager.getSessionFile(),
 				options?.withSession,
+				forkedSessionPath,
 			);
 			return { cancelled: false, selectedText };
 		}
@@ -386,13 +501,20 @@ export class AgentSessionRuntime {
 	 * @throws {SessionImportFileNotFoundError} When the input path does not exist.
 	 * @throws {MissingSessionCwdError} When the imported session cwd cannot be resolved and no override is provided.
 	 */
-	async importFromJsonl(inputPath: string, cwdOverride?: string): Promise<{ cancelled: boolean }> {
+	importFromJsonl(inputPath: string, cwdOverride?: string): Promise<{ cancelled: boolean }> {
+		return this.enqueueReplacement(() => this.importOperation(inputPath, cwdOverride));
+	}
+
+	private async importOperation(inputPath: string, cwdOverride?: string): Promise<{ cancelled: boolean }> {
 		const resolvedPath = resolvePath(inputPath);
 		if (!existsSync(resolvedPath)) {
 			throw new SessionImportFileNotFoundError(resolvedPath);
 		}
 
 		const sessionDir = this.session.sessionManager.getSessionDir();
+		const source = SessionManager.open(resolvedPath, sessionDir, cwdOverride);
+		assertSessionCwdExists(source, this.cwd);
+		source.buildSessionContext();
 		if (!existsSync(sessionDir)) {
 			mkdirSync(sessionDir, { recursive: true });
 		}
@@ -416,29 +538,61 @@ export class AgentSessionRuntime {
 			copyFileSync(resolvedPath, destinationPath, constants.COPYFILE_EXCL);
 		}
 
-		const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);
-		assertSessionCwdExists(sessionManager, this.cwd);
-		await this.replaceSession(
-			() =>
-				this.createRuntime({
-					cwd: sessionManager.getCwd(),
-					agentDir: this.services.agentDir,
-					sessionManager,
-					sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
-				}),
-			"resume",
-			sessionManager.getSessionFile(),
-		);
+		try {
+			const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);
+			await this.replaceSession(
+				() =>
+					this.createRuntime({
+						cwd: sessionManager.getCwd(),
+						agentDir: this.services.agentDir,
+						sessionManager,
+						sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
+					}),
+				"resume",
+				sessionManager.getSessionFile(),
+			);
+		} catch (error) {
+			if (!sourceAlreadyStored && this.session.sessionFile !== destinationPath) {
+				return this.discardCandidate(error, undefined, undefined, destinationPath);
+			}
+			throw error;
+		}
 		return { cancelled: false };
 	}
 
-	async dispose(): Promise<void> {
-		await emitSessionShutdownEvent(this.session.extensionRunner, {
-			type: "session_shutdown",
-			reason: "quit",
+	dispose(): Promise<void> {
+		this.disposePromise ??= this.enqueueReplacement(async () => {
+			this.disposed = true;
+			const errors: unknown[] = [];
+			try {
+				await this.session.abort();
+			} catch (error) {
+				errors.push(error);
+			}
+			try {
+				await emitSessionShutdownEvent(this.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+			} catch (error) {
+				errors.push(error);
+			}
+			try {
+				this.beforeSessionInvalidate?.();
+			} catch (error) {
+				errors.push(error);
+			}
+			try {
+				await this.session.dispose();
+			} catch (error) {
+				errors.push(error);
+			}
+			try {
+				await this.services.dispose();
+			} catch (error) {
+				errors.push(error);
+			}
+			this.sessionListeners.clear();
+			if (errors.length) throw new AggregateError(errors, "Session runtime disposal failed");
 		});
-		this.beforeSessionInvalidate?.();
-		this.session.dispose();
+		return this.disposePromise;
 	}
 }
 
@@ -448,7 +602,7 @@ export class AgentSessionRuntime {
  * The same factory is stored on the returned AgentSessionRuntime and reused for
  * later new-session, resume, fork, and import flows.
  */
-export async function createAgentSessionRuntime(
+export async function createRuntimeFromFactory(
 	createRuntime: CreateAgentSessionRuntimeFactory,
 	options: {
 		cwd: string;
@@ -471,8 +625,8 @@ export async function createAgentSessionRuntime(
 export {
 	type AgentSessionRuntimeDiagnostic,
 	type AgentSessionServices,
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 	type CreateAgentSessionFromServicesOptions,
 	type CreateAgentSessionServicesOptions,
-	createAgentSessionFromServices,
-	createAgentSessionServices,
 } from "./agent-session-services.ts";

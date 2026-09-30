@@ -20,9 +20,9 @@ function createWaitTool(released: Promise<void>): AgentTool {
 describe("regression #6363: agent settled event and idle waiting", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -120,6 +120,7 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 				waitForIdle: () => harness.session.waitForIdle(),
 				newSession: async () => ({ cancelled: false }),
 				fork: async () => ({ cancelled: false }),
+				clone: async () => ({ cancelled: false }),
 				navigateTree: async () => ({ cancelled: false }),
 				switchSession: async () => ({ cancelled: false }),
 				reload: async () => {},
@@ -140,7 +141,7 @@ describe("regression #6363: agent settled event and idle waiting", () => {
 
 		const promptPromise = harness.session.prompt("start");
 		await toolStarted;
-		const commandPromise = harness.session.prompt("/after-idle");
+		const commandPromise = harness.session.executeCommand({ source: "extension", name: "after-idle", args: "" });
 		await commandStarted;
 		let commandFinished = false;
 		void commandPromise.then(() => {

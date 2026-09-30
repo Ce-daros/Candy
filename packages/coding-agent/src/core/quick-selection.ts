@@ -32,6 +32,6 @@ export async function reconcileQuickSelection(
 		return "empty";
 	}
 	session.clearModel();
-	await session.setModel(models[0], { persist: false, signal });
+	await session.setModel(models[0], { signal });
 	return "selected";
 }

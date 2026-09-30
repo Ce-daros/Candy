@@ -22,7 +22,7 @@ describe("issue #6904 DNS transport failure retry", () => {
 			]);
 			expect(harness.eventsOfType("auto_retry_end").map((event) => event.success)).toEqual([true]);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

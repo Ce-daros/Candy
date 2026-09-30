@@ -32,8 +32,8 @@ function seedCompactableSession(harness: Harness): void {
 describe("#7048 truncated compaction summaries", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 		harness = undefined;
 	});
 

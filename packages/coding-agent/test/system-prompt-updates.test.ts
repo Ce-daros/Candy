@@ -13,7 +13,7 @@ import {
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
-import { createAgentSession } from "../src/core/sdk.ts";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import {
@@ -51,7 +51,7 @@ describe("system prompt updates", () => {
 			expect(head.toolsAdded?.map((tool) => tool.name)).toEqual(["read", "bash", "edit", "write"]);
 			expect(getSystemMessageText(head)).toBe(harness.session.systemPrompt);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -60,7 +60,7 @@ describe("system prompt updates", () => {
 		try {
 			const sessionManager = SessionManager.inMemory(tempDir);
 			sessionManager.appendMessage({ role: "user", content: "existing", timestamp: 1 });
-			const created = await createAgentSession({
+			const created = await assembleAgentSession({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				cwd: tempDir,
@@ -83,7 +83,7 @@ describe("system prompt updates", () => {
 		}
 	});
 
-	test("diffs sections into a patch", () => {
+	test("diffs sections into a patch", async () => {
 		const previous = buildSystemPromptSections({ cwd: "/tmp", sections: { plan_mode: "Plan only." } });
 		const current = buildSystemPromptSections({ cwd: "/tmp", sections: { plan_mode: "Implementation allowed." } });
 		expect(diffSystemPromptSections(previous, current)).toEqual({
@@ -95,7 +95,7 @@ describe("system prompt updates", () => {
 		});
 	});
 
-	test("keeps the preamble untagged and replaces it like any section", () => {
+	test("keeps the preamble untagged and replaces it like any section", async () => {
 		const previous = buildSystemPromptSections({ customPrompt: "You are A.", cwd: "/tmp" });
 		const current = buildSystemPromptSections({ customPrompt: "You are B.", cwd: "/tmp" });
 		expect(previous.preamble).toBe("You are A.");
@@ -167,7 +167,7 @@ describe("system prompt updates", () => {
 			]);
 			expect(getCurrentSystemPrompt(harness.session.messages)).toBe(harness.session.systemPrompt);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -232,7 +232,7 @@ describe("system prompt updates", () => {
 			expect(current?.toolsAdded?.map((value) => value.name)).toEqual(["second"]);
 			expect(getSystemMessageText(current!)).toBe(harness.session.systemPrompt);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -273,7 +273,7 @@ describe("system prompt updates", () => {
 			expect(update?.toolsAdded).toBeUndefined();
 			expect(harness.session.getActiveToolNames()).toEqual(["second"]);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -301,7 +301,7 @@ describe("system prompt updates", () => {
 			await harness.session.prompt("two");
 			expect(harness.session.messages.filter((message) => message.role === "system")).toHaveLength(1);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

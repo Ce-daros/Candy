@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { Provider } from "@candy/ai";
 import type { KeyId } from "@candy/tui";
 import type { createJiti } from "jiti";
-import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode } from "../../config.ts";
+import { CONFIG_DIR_NAME, getAgentDir, getPackageDir, isBunBinary, isBundledNode } from "../../config.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { readCandyManifest } from "../candy-manifest.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
@@ -58,14 +58,13 @@ let _aliases: Record<string, string> | null = null;
 function getAliases(): Record<string, string> {
 	if (_aliases) return _aliases;
 
-	const __dirname = path.dirname(fileURLToPath(import.meta.url));
-	const packageIndex = path.resolve(__dirname, "../..", "index.js");
+	const packageIndex = path.join(getPackageDir(), "dist", "index.js");
 
 	const typeboxEntry = require.resolve("typebox");
 	const typeboxCompileEntry = require.resolve("typebox/compile");
 	const typeboxValueEntry = require.resolve("typebox/value");
 
-	const packagesRoot = path.resolve(__dirname, "../../../../");
+	const packagesRoot = path.dirname(getPackageDir());
 	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
 		const workspacePath = path.join(packagesRoot, workspaceRelativePath);
 		if (fs.existsSync(workspacePath)) {
@@ -83,6 +82,8 @@ function getAliases(): Record<string, string> {
 
 	_aliases = {
 		"@candy/coding-agent": piCodingAgentEntry,
+		"@candy/coding-agent/ui": path.join(getPackageDir(), "dist", "ui.js"),
+		"@candy/coding-agent/rpc": path.join(getPackageDir(), "dist", "rpc.js"),
 		"@candy/agent-core": piAgentCoreEntry,
 		"@candy/tui": piTuiEntry,
 		"@candy/ai/providers/all": piAiProvidersEntry,
@@ -91,9 +92,6 @@ function getAliases(): Record<string, string> {
 		typebox: typeboxEntry,
 		"typebox/compile": typeboxCompileEntry,
 		"typebox/value": typeboxValueEntry,
-		"@sinclair/typebox": typeboxEntry,
-		"@sinclair/typebox/compile": typeboxCompileEntry,
-		"@sinclair/typebox/value": typeboxValueEntry,
 	};
 
 	return _aliases;
@@ -101,28 +99,23 @@ function getAliases(): Record<string, string> {
 
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
-let extensionCacheCwd: string | undefined;
-let extensionCacheGeneration = 0;
-const extensionCache = new Map<string, ExtensionFactory>();
-
 interface ExtensionCacheToken {
-	cwd: string;
+	cache: ExtensionModuleCache;
 	generation: number;
 }
 
-export function clearExtensionCache(): void {
-	extensionCache.clear();
-	extensionCacheCwd = undefined;
-	extensionCacheGeneration++;
-}
+export class ExtensionModuleCache {
+	readonly factories = new Map<string, ExtensionFactory>();
+	generation = 0;
 
-function useExtensionCacheCwd(cwd: string): ExtensionCacheToken {
-	const resolvedCwd = resolvePath(cwd);
-	if (extensionCacheCwd !== undefined && extensionCacheCwd !== resolvedCwd) {
-		clearExtensionCache();
+	clear(): void {
+		this.factories.clear();
+		this.generation++;
 	}
-	extensionCacheCwd = resolvedCwd;
-	return { cwd: resolvedCwd, generation: extensionCacheGeneration };
+
+	token(): ExtensionCacheToken {
+		return { cache: this, generation: this.generation };
+	}
 }
 
 /**
@@ -165,7 +158,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 			if (state.staleMessage) return;
 			state.staleMessage =
 				message ??
-				"This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().";
+				"This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.clone(), ctx.switchSession(), or ctx.reload(). For newSession, fork, clone, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().";
 			for (const unsubscribe of eventBusUnsubscribers) unsubscribe();
 			eventBusUnsubscribers.clear();
 		},
@@ -448,11 +441,7 @@ function createExtensionAPI(
 }
 
 function isCurrentCacheToken(cacheToken: ExtensionCacheToken | undefined): cacheToken is ExtensionCacheToken {
-	return (
-		cacheToken !== undefined &&
-		extensionCacheCwd === cacheToken.cwd &&
-		extensionCacheGeneration === cacheToken.generation
-	);
+	return cacheToken !== undefined && cacheToken.cache.generation === cacheToken.generation;
 }
 
 async function loadExtensionModule(
@@ -461,7 +450,7 @@ async function loadExtensionModule(
 	cacheToken?: ExtensionCacheToken,
 ) {
 	if (isCurrentCacheToken(cacheToken)) {
-		const cachedFactory = extensionCache.get(extensionPath);
+		const cachedFactory = cacheToken.cache.factories.get(extensionPath);
 		if (cachedFactory) {
 			return cachedFactory;
 		}
@@ -487,7 +476,7 @@ async function loadExtensionModule(
 		return undefined;
 	}
 	if (isCurrentCacheToken(cacheToken)) {
-		extensionCache.set(extensionPath, factory);
+		cacheToken.cache.factories.set(extensionPath, factory);
 	}
 	return factory;
 }
@@ -593,13 +582,13 @@ async function loadExtensionsInternal(
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
 	extensionModules?: Record<string, unknown>,
-	useCache = false,
+	cache?: ExtensionModuleCache,
 ): Promise<LoadExtensionsResult> {
 	const extensions: Extension[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 	const warnings: Array<{ path: string; warning: string }> = [];
-	const cacheToken = useCache ? useExtensionCacheCwd(cwd) : undefined;
-	const resolvedCwd = cacheToken?.cwd ?? resolvePath(cwd);
+	const cacheToken = cache?.token();
+	const resolvedCwd = resolvePath(cwd);
 	const resolvedEventBus = eventBus ?? createEventBus();
 	const resolvedRuntime = runtime ?? createExtensionRuntime();
 
@@ -642,13 +631,14 @@ export async function loadExtensions(
 }
 
 export async function loadExtensionsCached(
+	cache: ExtensionModuleCache,
 	paths: string[],
 	cwd: string,
 	eventBus?: EventBus,
 	runtime?: ExtensionRuntime,
 	extensionModules?: Record<string, unknown>,
 ): Promise<LoadExtensionsResult> {
-	return loadExtensionsInternal(paths, cwd, eventBus, runtime, extensionModules, true);
+	return loadExtensionsInternal(paths, cwd, eventBus, runtime, extensionModules, cache);
 }
 
 function isExtensionFile(name: string): boolean {

@@ -1,8 +1,8 @@
 import { dirname, join, relative } from "node:path";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { canonicalizePath, isLocalPath, resolvePath, toPosixPath } from "../utils/paths.ts";
-import type { PathMetadata, ResolvedPaths } from "./package-manager.ts";
-import type { PackageSource, SettingsManager } from "./settings-manager.ts";
+import { DefaultPackageManager, type PathMetadata, type ResolvedPaths } from "./package-manager.ts";
+import { type PackageSource, SettingsManager } from "./settings-manager.ts";
 
 export type ResourceType = "extensions" | "skills" | "prompts" | "themes";
 export type ConfigWriteScope = "global" | "project";
@@ -19,6 +19,22 @@ export interface ResourceConfigurationItem {
 const RESOURCE_TYPES = ["extensions", "skills", "prompts", "themes"] as const satisfies readonly ResourceType[];
 
 export class ResourceConfiguration {
+	static async resolve(
+		settingsManager: SettingsManager,
+		cwd: string,
+		agentDir: string,
+	): Promise<{ global: ResolvedPaths; project: ResolvedPaths }> {
+		const global = await new DefaultPackageManager({
+			cwd,
+			agentDir,
+			settingsManager: SettingsManager.inMemory(settingsManager.getGlobalSettings(), { projectTrusted: false }),
+		}).resolve();
+		const project = settingsManager.isProjectTrusted()
+			? await new DefaultPackageManager({ cwd, agentDir, settingsManager }).resolve()
+			: global;
+		return { global, project };
+	}
+
 	private readonly settingsManager: SettingsManager;
 	private readonly cwd: string;
 	private readonly agentDir: string;
@@ -47,23 +63,23 @@ export class ResourceConfiguration {
 		this.writeScope = scope;
 	}
 
-	toggleResource(item: ResourceConfigurationItem): boolean | undefined {
+	async toggleResource(item: ResourceConfigurationItem): Promise<boolean | undefined> {
 		if (this.writeScope === "project") {
 			const state = this.getNextOverrideState(item);
-			if (!this.setProjectResourceOverride(item, state)) return undefined;
+			if (!(await this.setProjectResourceOverride(item, state))) return undefined;
 			return state === "inherit" ? this.getInheritedEnabled(item) : state === "load";
 		}
 
 		const enabled = !item.enabled;
 		if (item.metadata.origin === "top-level") {
-			this.toggleTopLevelResource(item, enabled);
+			await this.toggleTopLevelResource(item, enabled);
 		} else {
-			this.togglePackageResource(item, enabled);
+			await this.togglePackageResource(item, enabled);
 		}
 		return enabled;
 	}
 
-	private toggleTopLevelResource(item: ResourceConfigurationItem, enabled: boolean): void {
+	private async toggleTopLevelResource(item: ResourceConfigurationItem, enabled: boolean): Promise<void> {
 		const scope = item.metadata.scope as "user" | "project";
 		const settings =
 			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
@@ -85,30 +101,10 @@ export class ResourceConfiguration {
 			updated.push(disablePattern);
 		}
 
-		if (scope === "project") {
-			if (arrayKey === "extensions") {
-				this.settingsManager.setProjectExtensionPaths(updated);
-			} else if (arrayKey === "skills") {
-				this.settingsManager.setProjectSkillPaths(updated);
-			} else if (arrayKey === "prompts") {
-				this.settingsManager.setProjectPromptTemplatePaths(updated);
-			} else if (arrayKey === "themes") {
-				this.settingsManager.setProjectThemePaths(updated);
-			}
-		} else {
-			if (arrayKey === "extensions") {
-				this.settingsManager.setExtensionPaths(updated);
-			} else if (arrayKey === "skills") {
-				this.settingsManager.setSkillPaths(updated);
-			} else if (arrayKey === "prompts") {
-				this.settingsManager.setPromptTemplatePaths(updated);
-			} else if (arrayKey === "themes") {
-				this.settingsManager.setThemePaths(updated);
-			}
-		}
+		await this.commitResourcePaths(scope, arrayKey, updated);
 	}
 
-	private togglePackageResource(item: ResourceConfigurationItem, enabled: boolean): void {
+	private async togglePackageResource(item: ResourceConfigurationItem, enabled: boolean): Promise<void> {
 		const scope = item.metadata.scope as "user" | "project";
 		const settings =
 			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
@@ -157,20 +153,20 @@ export class ResourceConfiguration {
 			packages[pkgIndex] = (pkg as { source: string }).source;
 		}
 
-		if (scope === "project") {
-			this.settingsManager.setProjectPackages(packages);
-		} else {
-			this.settingsManager.setPackages(packages);
-		}
+		if (scope === "project") await this.settingsManager.setProjectPackages(packages);
+		else await this.settingsManager.setPackages(packages);
 	}
 
-	private setProjectResourceOverride(item: ResourceConfigurationItem, state: ProjectOverrideState): boolean {
+	private setProjectResourceOverride(item: ResourceConfigurationItem, state: ProjectOverrideState): Promise<boolean> {
 		return item.metadata.origin === "top-level"
 			? this.setProjectTopLevelOverride(item, state)
 			: this.setProjectPackageOverride(item, state);
 	}
 
-	private setProjectTopLevelOverride(item: ResourceConfigurationItem, state: ProjectOverrideState): boolean {
+	private async setProjectTopLevelOverride(
+		item: ResourceConfigurationItem,
+		state: ProjectOverrideState,
+	): Promise<boolean> {
 		const current = (this.settingsManager.getProjectSettings()[item.resourceType] ?? []) as string[];
 		const pattern = this.isInheritedGlobalItem(item)
 			? toPosixPath(item.path)
@@ -186,18 +182,27 @@ export class ResourceConfiguration {
 			if (this.isInheritedGlobalItem(item) && !updated.includes(pattern)) updated.push(pattern);
 			updated.push(`${state === "load" ? "+" : "-"}${pattern}`);
 		}
-		this.setProjectTopLevelPaths(item.resourceType, updated);
+		await this.commitResourcePaths("project", item.resourceType, updated);
 		return true;
 	}
 
-	private setProjectTopLevelPaths(key: ResourceType, paths: string[]): void {
-		if (key === "extensions") this.settingsManager.setProjectExtensionPaths(paths);
-		else if (key === "skills") this.settingsManager.setProjectSkillPaths(paths);
-		else if (key === "prompts") this.settingsManager.setProjectPromptTemplatePaths(paths);
-		else this.settingsManager.setProjectThemePaths(paths);
+	private commitResourcePaths(scope: "user" | "project", key: ResourceType, paths: string[]): Promise<void> {
+		if (scope === "project") {
+			if (key === "extensions") return this.settingsManager.setProjectExtensionPaths(paths);
+			if (key === "skills") return this.settingsManager.setProjectSkillPaths(paths);
+			if (key === "prompts") return this.settingsManager.setProjectPromptTemplatePaths(paths);
+			return this.settingsManager.setProjectThemePaths(paths);
+		}
+		if (key === "extensions") return this.settingsManager.setExtensionPaths(paths);
+		if (key === "skills") return this.settingsManager.setSkillPaths(paths);
+		if (key === "prompts") return this.settingsManager.setPromptTemplatePaths(paths);
+		return this.settingsManager.setThemePaths(paths);
 	}
 
-	private setProjectPackageOverride(item: ResourceConfigurationItem, state: ProjectOverrideState): boolean {
+	private async setProjectPackageOverride(
+		item: ResourceConfigurationItem,
+		state: ProjectOverrideState,
+	): Promise<boolean> {
 		const packages = [...(this.settingsManager.getProjectSettings().packages ?? [])] as PackageSource[];
 		let pkgIndex = packages.findIndex((pkg) =>
 			this.packageSourceStringMatches(
@@ -228,7 +233,7 @@ export class ResourceConfiguration {
 			if (pkg.autoload === false) packages.splice(pkgIndex, 1);
 			else packages[pkgIndex] = pkg.source;
 		}
-		this.settingsManager.setProjectPackages(packages);
+		await this.settingsManager.setProjectPackages(packages);
 		return true;
 	}
 

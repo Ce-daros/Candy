@@ -81,7 +81,7 @@ function createRuntimeHost(harness: Harness): AgentSessionRuntime {
 }
 
 describe("RPC unknown command responses (#5868)", () => {
-	afterEach(() => {
+	afterEach(async () => {
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
 	});
@@ -106,7 +106,7 @@ describe("RPC unknown command responses (#5868)", () => {
 				});
 			});
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 			restoreListeners(listenerSnapshot);
 		}
 	});

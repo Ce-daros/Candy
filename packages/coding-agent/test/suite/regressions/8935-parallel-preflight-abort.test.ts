@@ -7,9 +7,9 @@ import { createHarness, getMessageText, type Harness } from "../harness.ts";
 describe("#8935 parallel preflight abort", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

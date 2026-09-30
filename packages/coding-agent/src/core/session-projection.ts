@@ -37,19 +37,29 @@ function buildSessionPath(
 	if (leafId === null) {
 		return [];
 	}
-	if (leafId) {
+	if (leafId !== undefined) {
 		leaf = index.get(leafId);
+		if (!leaf) throw new Error(`Session leaf ${String(leafId)} does not exist`);
 	}
-	leaf ??= entries[entries.length - 1];
+	if (leafId === undefined) leaf = entries[entries.length - 1];
 	if (!leaf) {
 		return [];
 	}
 
 	const path: SessionEntry[] = [];
 	let current: SessionEntry | undefined = leaf;
+	const visited = new Set<string>();
 	while (current) {
+		if (visited.has(current.id)) throw new Error(`Session history contains a parent cycle at ${current.id}`);
+		visited.add(current.id);
 		path.push(current);
-		current = current.parentId ? index.get(current.parentId) : undefined;
+		if (current.parentId !== null) {
+			const parent = index.get(current.parentId);
+			if (!parent) throw new Error(`Session entry ${current.id} refers to missing parent ${current.parentId}`);
+			current = parent;
+		} else {
+			current = undefined;
+		}
 	}
 	path.reverse();
 	return path;
@@ -78,22 +88,10 @@ function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "
  */
 export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage[] {
 	if (entry.type === "message") {
-		const message = entry.message;
-		// Session files are parsed without validation; old versions, forks, or
-		// hand-edited files can contain messages with null/missing content.
-		if (message.role === "system" && message.content == null) return [{ ...message, content: "" }];
-		if (
-			(message.role === "user" || message.role === "assistant" || message.role === "toolResult") &&
-			message.content == null
-		) {
-			return [{ ...message, content: [] }];
-		}
-		return [message];
+		return [entry.message];
 	}
 	if (entry.type === "custom_message") {
-		return [
-			createCustomMessage(entry.customType, entry.content ?? [], entry.display, entry.details, entry.timestamp),
-		];
+		return [createCustomMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp)];
 	}
 	if (entry.type === "branch_summary" && entry.summary) {
 		return [createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp)];
@@ -118,21 +116,21 @@ export function buildContextEntries(
 	leafId?: string | null,
 	byId?: Map<string, SessionEntry>,
 ): SessionEntry[] {
-	const path = buildSessionPath(entries, leafId, byId);
-	let compaction: CompactionEntry | null = null;
+	return contextEntriesForPath(buildSessionPath(entries, leafId, byId));
+}
 
-	for (const entry of path) {
+function contextEntriesForPath(path: SessionEntry[]): SessionEntry[] {
+	let compaction: CompactionEntry | null = null;
+	let compactionIdx = -1;
+
+	for (const [index, entry] of path.entries()) {
 		if (entry.type === "compaction") {
 			compaction = entry;
+			compactionIdx = index;
 		}
 	}
 
 	if (!compaction) {
-		return path;
-	}
-
-	const compactionIdx = path.findIndex((entry) => entry.id === compaction.id);
-	if (compactionIdx < 0) {
 		return path;
 	}
 
@@ -187,7 +185,7 @@ export function buildSessionProjection(
 ): SessionProjection {
 	const path = buildSessionPath(entries, leafId, byId);
 	const { thinkingLevel, model } = getSessionContextSettings(path);
-	const contextEntries = buildContextEntries(entries, leafId, byId);
+	const contextEntries = contextEntriesForPath(path);
 	const edits = new Map<string, ContextEditEntry>();
 	for (const entry of contextEntries) {
 		if (entry.type === "context_edit") edits.set(entry.targetId, entry);

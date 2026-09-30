@@ -7,6 +7,7 @@ import type { InlineExtension } from "./core/extensions/types.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { DefaultPackageManager } from "./core/package-manager.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
+import { ResourceConfiguration } from "./core/resource-configuration.ts";
 import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
@@ -464,23 +465,23 @@ export async function handleConfigCommand(
 		return true;
 	}
 	reportSettingsErrors(settingsManager, "config command");
-	const globalSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
-	const globalResolvedPaths = await new DefaultPackageManager({
+	const resolvedPaths = await ResourceConfiguration.resolve(settingsManager, cwd, agentDir);
+	const operations = new ResourceConfiguration(
+		settingsManager,
 		cwd,
 		agentDir,
-		settingsManager: globalSettingsManager,
-	}).resolve();
-	const projectResolvedPaths = settingsManager.isProjectTrusted()
-		? await new DefaultPackageManager({ cwd, agentDir, settingsManager }).resolve()
-		: globalResolvedPaths;
+		resolvedPaths.global,
+		local ? "project" : "global",
+	);
 
 	await selectConfig({
-		resolvedPaths: { global: globalResolvedPaths, project: projectResolvedPaths },
+		resolvedPaths,
 		settingsManager,
 		cwd,
 		agentDir,
 		writeScope: local ? "project" : "global",
 		projectModeAvailable: settingsManager.isProjectTrusted(),
+		resourceConfiguration: operations,
 	});
 
 	process.exit(0);

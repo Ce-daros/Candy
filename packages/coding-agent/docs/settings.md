@@ -159,5 +159,4 @@ Resource arrays support glob exclusions with `!pattern`, exact inclusion with `+
 |---|---|---|---|
 | `collapseChangelog` | boolean | `true` | Keep update notes as a one-line entry; set to `false` to open the reading panel at startup. |
 | `enableInstallTelemetry` | boolean | `true` | Attach candy attribution headers to requests for OpenRouter, NVIDIA NIM, and Cloudflare. |
-| `enableAnalytics` | boolean | `false` | Opt in to analytics data sharing. |
 | `warnings.anthropicExtraUsage` | boolean | `true` | Warn when Anthropic subscription authentication may use paid extra usage. |

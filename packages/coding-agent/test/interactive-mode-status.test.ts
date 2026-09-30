@@ -123,7 +123,7 @@ describe("InteractiveMode.showManagedToolStatus", () => {
 	test("renders tool updates as one contiguous group", () => {
 		const fakeThis: any = {
 			chatContainer: new Container(),
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
 			managedToolStatusStarted: false,
 			lastStatusSpacer: undefined,
 			lastStatusText: undefined,
@@ -152,7 +152,7 @@ describe("InteractiveMode.setToolsExpanded", () => {
 			builtInHeader: header,
 			loadedResourcesContainer: { children: [loadedResourcesChild] },
 			chatContainer: { children: [chatChild] },
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
 			showStatus: vi.fn(),
 		};
 
@@ -167,13 +167,13 @@ describe("InteractiveMode.setToolsExpanded", () => {
 });
 
 describe("InteractiveMode.createExtensionUIContext setTheme", () => {
-	test("persists theme changes to settings manager", () => {
+	test("persists theme changes to settings manager", async () => {
 		initTheme("dark");
 
 		let currentTheme = "dark";
 		const settingsManager = {
 			getTheme: vi.fn(() => currentTheme),
-			setTheme: vi.fn((theme: string) => {
+			commitSetting: vi.fn(async (_scope: string, _field: string, theme: string) => {
 				currentTheme = theme;
 			}),
 		};
@@ -183,29 +183,29 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 			themeController: {
 				setThemeInstance: vi.fn(() => ({ success: true })),
 				setThemeName: vi.fn(() => {
-					fakeThis.ui.requestRender();
+					fakeThis.renderer.requestRender();
 					return { success: true };
 				}),
 			},
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
 		};
 
 		const uiContext = (InteractiveMode as any).prototype.createExtensionUIContext.call(fakeThis);
-		const result = uiContext.setTheme("light");
+		const result = await uiContext.setTheme("light");
 
 		expect(result.success).toBe(true);
 		expect(fakeThis.themeController.setThemeName).toHaveBeenCalledWith("light");
-		expect(settingsManager.setTheme).toHaveBeenCalledWith("light");
+		expect(settingsManager.commitSetting).toHaveBeenCalledWith("global", "theme", "light");
 		expect(currentTheme).toBe("light");
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(fakeThis.renderer.requestRender).toHaveBeenCalledTimes(1);
 	});
 
-	test("does not persist invalid theme names", () => {
+	test("does not persist invalid theme names", async () => {
 		initTheme("dark");
 
 		const settingsManager = {
 			getTheme: vi.fn(() => "dark"),
-			setTheme: vi.fn(),
+			commitSetting: vi.fn(),
 		};
 		const fakeThis: any = {
 			session: { settingsManager },
@@ -214,16 +214,16 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 				setThemeInstance: vi.fn(() => ({ success: true })),
 				setThemeName: vi.fn(() => ({ success: false, error: "Theme not found" })),
 			},
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
 		};
 
 		const uiContext = (InteractiveMode as any).prototype.createExtensionUIContext.call(fakeThis);
-		const result = uiContext.setTheme("__missing_theme__");
+		const result = await uiContext.setTheme("__missing_theme__");
 
 		expect(result.success).toBe(false);
 		expect(fakeThis.themeController.setThemeName).toHaveBeenCalledWith("__missing_theme__");
-		expect(settingsManager.setTheme).not.toHaveBeenCalled();
-		expect(fakeThis.ui.requestRender).not.toHaveBeenCalled();
+		expect(settingsManager.commitSetting).not.toHaveBeenCalled();
+		expect(fakeThis.renderer.requestRender).not.toHaveBeenCalled();
 	});
 });
 
@@ -250,7 +250,8 @@ describe("InteractiveMode.showExtensionCustom", () => {
 			editor,
 			editorContainer,
 			keybindings: {},
-			ui,
+			renderer: ui,
+			pageController: { disposeActiveSelector: vi.fn() },
 			disposeActiveSelector: vi.fn(),
 		};
 		const showExtensionCustom = <T>(
@@ -720,21 +721,21 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  8
-			    answer.ts  · local
+			    answer.ts · local
 			      /tmp/project/.candy/extensions/answer.ts
-			    local-index  · local
+			    local-index · local
 			      /tmp/project/.candy/extensions/local-index/index.ts
-			    user-index  · local
+			    user-index · local
 			      /tmp/agent/extensions/user-index/index.ts
-			    pi-markdown-preview  · npm:pi-markdown-preview
+			    pi-markdown-preview · npm:pi-markdown-preview
 			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts
-			    @scope/pi-scoped  · npm:@scope/pi-scoped
+			    @scope/pi-scoped · npm:@scope/pi-scoped
 			      /tmp/project/.candy/npm/node_modules/@scope/pi-scoped/extensions/index.ts
-			    HazAT/pi-interactive-subagents  · git:github.com/HazAT/pi-interactive-subagents
+			    HazAT/pi-interactive-subagents · git:github.com/HazAT/pi-interactive-subagents
 			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/index.ts
-			    HazAT/pi-interactive-subagents:subagents  · git:github.com/HazAT/pi-interactive-subagents
+			    HazAT/pi-interactive-subagents:subagents · git:github.com/HazAT/pi-interactive-subagents
 			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.ts
-			    cli-extension.ts  · cli
+			    cli-extension.ts · cli
 			      /tmp/temp/cli-extension.ts"
 		`);
 	});
@@ -782,11 +783,11 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  3
-			    alpha/one  · cli
+			    alpha/one · cli
 			      /tmp/alpha/one/index.ts
-			    beta/one  · cli
+			    beta/one · cli
 			      /tmp/beta/one/index.ts
-			    gamma/one  · cli
+			    gamma/one · cli
 			      /tmp/gamma/one/index.ts"
 		`);
 	});
@@ -816,7 +817,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  1
-			    plan-mode  · local
+			    plan-mode · local
 			      /tmp/extensions/plan-mode/index.ts"
 		`);
 	});
@@ -846,7 +847,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  1
-			    plan-mode  · local
+			    plan-mode · local
 			      /tmp/extensions/plan-mode/index.js"
 		`);
 	});
@@ -885,9 +886,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  2
-			    webfetch.ts  · local
+			    webfetch.ts · local
 			      /tmp/extensions/webfetch.ts
-			    plan-mode  · local
+			    plan-mode · local
 			      /tmp/extensions/plan-mode/index.ts"
 		`);
 	});
@@ -926,9 +927,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  2
-			    foo  · local
+			    foo · local
 			      /tmp/extensions/foo/index.ts
-			    bar  · local
+			    bar · local
 			      /tmp/extensions/bar/index.ts"
 		`);
 	});
@@ -967,9 +968,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  2
-			    alpha/tools  · cli
+			    alpha/tools · cli
 			      /tmp/alpha/tools/index.ts
-			    beta/tools  · cli
+			    beta/tools · cli
 			      /tmp/beta/tools/index.ts"
 		`);
 	});
@@ -999,7 +1000,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  1
-			    main.ts  · local
+			    main.ts · local
 			      /tmp/extensions/my-ext/main.ts"
 		`);
 	});
@@ -1032,7 +1033,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  1
-			    pi-markdown-preview  · npm:pi-markdown-preview
+			    pi-markdown-preview · npm:pi-markdown-preview
 			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts"
 		`);
 	});
@@ -1071,9 +1072,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  2
-			    primary-package  · npm:primary-package
+			    primary-package · npm:primary-package
 			      /tmp/project/.candy/npm/node_modules/primary-package/index.ts
-			    primary-package:../sibling-package  · npm:primary-package
+			    primary-package:../sibling-package · npm:primary-package
 			      /tmp/project/.candy/npm/node_modules/sibling-package/index.ts"
 		`);
 	});
@@ -1115,9 +1116,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  2
-			    primary-package  · npm:primary-package
+			    primary-package · npm:primary-package
 			      C:/Users/me/.candy/agent/npm/node_modules/primary-package/index.ts
-			    primary-package:../sibling-package  · npm:primary-package
+			    primary-package:../sibling-package · npm:primary-package
 			      C:/Users/me/.candy/agent/npm/node_modules/sibling-package/index.ts"
 		`);
 	});
@@ -1136,21 +1137,21 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeResourceDetails(fakeThis)).toMatchInlineSnapshot(`
 			"Extensions  8
-			    answer.ts  · local
+			    answer.ts · local
 			      /tmp/project/.candy/extensions/answer.ts
-			    local-index  · local
+			    local-index · local
 			      /tmp/project/.candy/extensions/local-index/index.ts
-			    user-index  · local
+			    user-index · local
 			      /tmp/agent/extensions/user-index/index.ts
-			    pi-markdown-preview  · npm:pi-markdown-preview
+			    pi-markdown-preview · npm:pi-markdown-preview
 			      /tmp/project/.candy/npm/node_modules/pi-markdown-preview/extensions/index.ts
-			    @scope/pi-scoped  · npm:@scope/pi-scoped
+			    @scope/pi-scoped · npm:@scope/pi-scoped
 			      /tmp/project/.candy/npm/node_modules/@scope/pi-scoped/extensions/index.ts
-			    HazAT/pi-interactive-subagents  · git:github.com/HazAT/pi-interactive-subagents
+			    HazAT/pi-interactive-subagents · git:github.com/HazAT/pi-interactive-subagents
 			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/index.ts
-			    HazAT/pi-interactive-subagents:subagents  · git:github.com/HazAT/pi-interactive-subagents
+			    HazAT/pi-interactive-subagents:subagents · git:github.com/HazAT/pi-interactive-subagents
 			      /tmp/project/.candy/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.ts
-			    cli-extension.ts  · cli
+			    cli-extension.ts · cli
 			      /tmp/temp/cli-extension.ts"
 		`);
 	});

@@ -573,23 +573,14 @@ describe("TreeSelectorComponent", () => {
 			const tree = buildBranchingTree();
 			const selector = new TreeSelectorComponent(
 				tree,
-				"asst-4a",
+				"user-3b",
 				24,
 				() => {},
 				() => {},
 			);
 			const list = selector.getTreeList();
 
-			// Navigate down to user-3b (branch B)
-			let found = false;
-			for (let i = 0; i < 20; i++) {
-				selector.handleInput(DOWN);
-				if (list.getSelectedNode()?.entry.id === "user-3b") {
-					found = true;
-					break;
-				}
-			}
-			expect(found).toBe(true);
+			expect(list.getSelectedNode()?.entry.id).toBe("user-3b");
 
 			selector.handleInput(CTRL_RIGHT); // user-3b → user-4b (segment jump to leaf)
 			expect(list.getSelectedNode()?.entry.id).toBe("user-4b");
@@ -696,7 +687,7 @@ describe("TreeSelectorComponent", () => {
 			// Navigate to user-3a to verify fold was reset
 			let currentId = "";
 			for (let i = 0; i < 20; i++) {
-				selector.handleInput(DOWN);
+				selector.handleInput(UP);
 				currentId = list.getSelectedNode()?.entry.id ?? "";
 				if (currentId === "user-3a") break;
 			}
@@ -710,26 +701,20 @@ describe("TreeSelectorComponent", () => {
 			const tree = buildBranchingTree();
 			const selector = new TreeSelectorComponent(
 				tree,
-				"asst-4a",
+				"user-3a",
 				24,
 				() => {},
 				() => {},
 			);
 			const list = selector.getTreeList();
 
-			selector.handleInput(CTRL_LEFT); // asst-4a → user-3a
 			selector.handleInput(CTRL_LEFT); // fold user-3a
 
 			selector.handleInput("\x15"); // ctrl+u: user-only filter resets folds
 			selector.handleInput("\x04"); // ctrl+d: back to default
 
 			// Navigate to user-3a to verify fold was reset
-			let currentId = "";
-			for (let i = 0; i < 20; i++) {
-				selector.handleInput(DOWN);
-				currentId = list.getSelectedNode()?.entry.id ?? "";
-				if (currentId === "user-3a") break;
-			}
+			const currentId = list.getSelectedNode()?.entry.id ?? "";
 			expect(currentId).toBe("user-3a");
 
 			selector.handleInput(DOWN); // user-3a → asst-3a (not user-3b)

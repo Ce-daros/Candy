@@ -10,22 +10,22 @@ import {
 	type SimpleStreamOptions,
 } from "@candy/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { ExtensionFactory } from "../src/core/extensions/types.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { type Settings, SettingsManager } from "../src/core/settings-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 import { createTestModelRuntime } from "./model-runtime-test-utils.ts";
 
-describe("createAgentSession stream options", () => {
+describe("assembleAgentSession stream options", () => {
 	let tempDir: string;
 	let cwd: string;
 	let agentDir: string;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = mkdtempSync(join(tmpdir(), "pi-sdk-stream-options-"));
 		cwd = join(tempDir, "project");
 		agentDir = join(tempDir, "agent");
@@ -33,7 +33,7 @@ describe("createAgentSession stream options", () => {
 		mkdirSync(agentDir, { recursive: true });
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		if (tempDir) {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -122,7 +122,7 @@ describe("createAgentSession stream options", () => {
 		});
 
 		const sessionManager = SessionManager.inMemory(cwd);
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd,
 			agentDir,
 			model,
@@ -145,7 +145,7 @@ describe("createAgentSession stream options", () => {
 			}
 			return capturedOptions;
 		} finally {
-			session.dispose();
+			await session.dispose();
 			modelRuntime.unregisterProvider(model.provider);
 		}
 	}
@@ -169,7 +169,7 @@ describe("createAgentSession stream options", () => {
 		});
 		const sessionManager = SessionManager.inMemory(cwd);
 		populate?.(sessionManager, model);
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd,
@@ -182,8 +182,8 @@ describe("createAgentSession stream options", () => {
 		return {
 			session,
 			providerCalls: () => providerCalls,
-			dispose: () => {
-				session.dispose();
+			dispose: async () => {
+				await session.dispose();
 				modelRuntime.unregisterProvider(model.provider);
 			},
 		};

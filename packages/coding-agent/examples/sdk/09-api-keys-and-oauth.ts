@@ -1,42 +1,26 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * API Keys and OAuth
  *
  * Configure provider auth through ModelRuntime.
  */
 
-import { createAgentSession, ModelRuntime, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
 
-const modelRuntime = await ModelRuntime.create();
-const { session: defaultAuthSession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	sessionManager: SessionManager.inMemory(),
-	modelRuntime,
+const cwd = process.cwd();
+const runtime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.inMemory(cwd),
+	modelRuntimeOptions: {
+		authPath: "/tmp/my-app/auth.json",
+		modelsPath: "/tmp/my-app/models.json",
+	},
 });
-console.log("Session with default model runtime");
-defaultAuthSession.dispose();
 
-const customRuntime = await ModelRuntime.create({
-	authPath: "/tmp/my-app/auth.json",
-	modelsPath: "/tmp/my-app/models.json",
-});
-const { session: customAuthSession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	sessionManager: SessionManager.inMemory(),
-	modelRuntime: customRuntime,
-});
-console.log("Session with custom auth and models locations");
-customAuthSession.dispose();
-
-await modelRuntime.setRuntimeApiKey("anthropic", "sk-my-temp-key");
-const { session: runtimeKeySession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	sessionManager: SessionManager.inMemory(),
-	modelRuntime,
-});
-console.log("Session with runtime API key override");
-runtimeKeySession.dispose();
+try {
+	if (process.env.ANTHROPIC_API_KEY) {
+		await runtime.models.setRuntimeApiKey("anthropic", process.env.ANTHROPIC_API_KEY);
+	}
+	console.log("Session with configured credentials and model storage");
+} finally {
+	await runtime.dispose();
+}

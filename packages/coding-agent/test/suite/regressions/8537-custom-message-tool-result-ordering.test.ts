@@ -12,9 +12,9 @@ function roles(messages: AgentMessage[]): string[] {
 describe("#8537 custom messages injected during tool execution", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

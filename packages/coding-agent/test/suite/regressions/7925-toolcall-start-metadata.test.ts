@@ -6,8 +6,8 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("regression #7925: tool-call metadata is available when streaming starts", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 	});
 
 	it("includes the tool call id and name without cumulative snapshots", async () => {

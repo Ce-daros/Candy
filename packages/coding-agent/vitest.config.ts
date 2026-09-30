@@ -7,7 +7,7 @@ export default mergeConfig(
 		test: {
 			globals: true,
 			environment: "node",
-			exclude: [...configDefaults.exclude, "test/e2e/**"],
+			exclude: [...configDefaults.exclude, "test/e2e/**", "test/**/*.bun.test.mjs"],
 			testTimeout: 30000,
 			// Tests run offline by default; opt in with allowNetwork() from test/test-network-env.ts.
 			env: { CANDY_OFFLINE: "1" },

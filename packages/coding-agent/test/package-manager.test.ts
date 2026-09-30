@@ -134,7 +134,7 @@ describe("DefaultPackageManager", () => {
 			mkdirSync(extDir, { recursive: true });
 			const extPath = join(extDir, "my-extension.ts");
 			writeFileSync(extPath, "export default function() {}");
-			settingsManager.setExtensionPaths(["extensions/my-extension.ts"]);
+			await settingsManager.setExtensionPaths(["extensions/my-extension.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
@@ -153,7 +153,7 @@ description: A test skill
 Content`,
 			);
 
-			settingsManager.setSkillPaths(["skills"]);
+			await settingsManager.setSkillPaths(["skills"]);
 
 			const result = await packageManager.resolve();
 			// Skills with SKILL.md are returned as file paths
@@ -182,7 +182,7 @@ Content`,
 			const extPath = join(extDir, "project-ext.ts");
 			writeFileSync(extPath, "export default function() {}");
 
-			settingsManager.setProjectExtensionPaths(["extensions/project-ext.ts"]);
+			await settingsManager.setProjectExtensionPaths(["extensions/project-ext.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
@@ -194,7 +194,7 @@ Content`,
 			const promptPath = join(promptsDir, "auto.md");
 			writeFileSync(promptPath, "Auto prompt");
 
-			settingsManager.setPromptTemplatePaths(["!prompts/auto.md"]);
+			await settingsManager.setPromptTemplatePaths(["!prompts/auto.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
@@ -289,7 +289,7 @@ Content`,
 			const promptPath = join(promptsDir, "hidden.md");
 			writeFileSync(promptPath, "Hidden prompt");
 
-			settingsManager.setProjectPromptTemplatePaths(["!prompts/hidden.md"]);
+			await settingsManager.setProjectPromptTemplatePaths(["!prompts/hidden.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
@@ -313,7 +313,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "helper.ts"), "export const x = 1;"); // Not in manifest, shouldn't be loaded
 
 			// Add the directory to extensions setting (not packages setting)
-			settingsManager.setExtensionPaths([pkgDir]);
+			await settingsManager.setExtensionPaths([pkgDir]);
 
 			const result = await packageManager.resolve();
 
@@ -581,7 +581,7 @@ Content`,
 			mkdirSync(ignoredSkillDir, { recursive: true });
 			writeFileSync(join(ignoredSkillDir, "SKILL.md"), "---\nname: bad-skill\ndescription: Bad\n---\nContent");
 
-			settingsManager.setSkillPaths(["skills"]);
+			await settingsManager.setSkillPaths(["skills"]);
 
 			const result = await packageManager.resolve();
 			expect(result.skills.some((r) => r.path.includes("good-skill") && r.enabled)).toBe(true);
@@ -716,7 +716,7 @@ Content`,
 	});
 
 	describe("command spawning", () => {
-		it("should preserve argv entries containing spaces", () => {
+		it("should preserve argv entries containing spaces", async () => {
 			const managerWithInternals = packageManager as unknown as {
 				runCommandSync(command: string, args: string[]): string;
 			};
@@ -915,7 +915,7 @@ Content`,
 			expect(runCommandSpy).toHaveBeenCalledWith("git", ["clean", "-fdx"], { cwd: targetDir });
 		});
 
-		it("should prefer the package manager after a separator over the outer executable", () => {
+		it("should prefer the package manager after a separator over the outer executable", async () => {
 			// Regression for #9863.
 			settingsManager = SettingsManager.inMemory({
 				npmCommand: ["npm", "exec", "--", "pnpm"],
@@ -1010,7 +1010,7 @@ Content`,
 			const targetDir = join(tempDir, ".candy", "git", "github.com", "user", "repo");
 			mkdirSync(targetDir, { recursive: true });
 			writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
-			settingsManager.setProjectPackages([source]);
+			await settingsManager.setProjectPackages([source]);
 
 			vi.spyOn(packageManager as any, "runCommandCapture").mockImplementation(async (...callArgs: unknown[]) => {
 				const [_command, args] = callArgs as [string, string[]];
@@ -1043,7 +1043,7 @@ Content`,
 				join(targetDir, "package.json"),
 				JSON.stringify({ name: "repo", version: "1.0.0", dependencies: { dependency: "1.0.0" } }),
 			);
-			settingsManager.setPackages([source]);
+			await settingsManager.setPackages([source]);
 
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
 			vi.spyOn(managerWithInternals.gitOperations, "getLocalUpdateTarget").mockResolvedValue({
@@ -1071,7 +1071,7 @@ Content`,
 				join(targetDir, "package.json"),
 				JSON.stringify({ name: "repo", version: "1.0.0", dependencies: { dependency: "1.0.0" } }),
 			);
-			settingsManager.setPackages([source]);
+			await settingsManager.setPackages([source]);
 
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
 			vi.spyOn(managerWithInternals.gitOperations, "getLocalUpdateTarget").mockResolvedValue({
@@ -1109,7 +1109,7 @@ Content`,
 			const targetDir = join(tempDir, ".candy", "git", "github.com", "user", "repo");
 			mkdirSync(targetDir, { recursive: true });
 			writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
-			settingsManager.setProjectPackages([source]);
+			await settingsManager.setProjectPackages([source]);
 
 			vi.spyOn(packageManager as any, "runCommandCapture").mockImplementation(async (...callArgs: unknown[]) => {
 				const [_command, args] = callArgs as [string, string[]];
@@ -1145,7 +1145,7 @@ Content`,
 			);
 		});
 
-		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", () => {
+		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", async () => {
 			settingsManager = SettingsManager.inMemory({
 				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
 			});
@@ -1178,7 +1178,7 @@ Content`,
 			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBe(join(root20, "@scope", "pkg"));
 			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(1, "mise", ["exec", "node@20", "--", "npm", "root", "-g"]);
 
-			settingsManager.setNpmCommand(["mise", "exec", "node@22", "--", "npm"]);
+			await settingsManager.setNpmCommand(["mise", "exec", "node@22", "--", "npm"]);
 
 			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBeUndefined();
 			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(2, "mise", ["exec", "node@22", "--", "npm", "root", "-g"]);
@@ -1274,7 +1274,7 @@ Content`,
 			expect(packageManager.getInstalledPath("npm:pnpm-pkg", "user")).toBe(packagePath);
 		});
 
-		it("should resolve wrapped pnpm global package paths from pnpm list output", () => {
+		it("should resolve wrapped pnpm global package paths from pnpm list output", async () => {
 			settingsManager = SettingsManager.inMemory({
 				npmCommand: ["mise", "exec", "node@20", "--", "pnpm"],
 			});
@@ -1300,7 +1300,7 @@ Content`,
 			expect(packageManager.getInstalledPath("npm:pnpm-pkg", "user")).toBe(packagePath);
 		});
 
-		it("should ignore malformed legacy pnpm global package lists", () => {
+		it("should ignore malformed legacy pnpm global package lists", async () => {
 			settingsManager = SettingsManager.inMemory({
 				npmCommand: ["pnpm"],
 			});
@@ -1346,7 +1346,7 @@ Content`,
 			expect(events.some((e) => e.type === "start" && e.action === "install")).toBe(true);
 		});
 
-		it("should parse package source types from docs examples", () => {
+		it("should parse package source types from docs examples", async () => {
 			const parseNpm = (source: string) => {
 				const parsed = parsePackageSource(source);
 				if (parsed.type !== "npm") {
@@ -1369,7 +1369,7 @@ Content`,
 			expect(parsePackageSource("../relative/path/to/package").type).toBe("local");
 		});
 
-		it("should never parse dot-relative paths as git", () => {
+		it("should never parse dot-relative paths as git", async () => {
 			const dotSlash = parseSourceAs("./packages/agent-timers", "local");
 			expect(dotSlash.type).toBe("local");
 			expect(dotSlash.path).toBe("./packages/agent-timers");
@@ -1381,7 +1381,7 @@ Content`,
 	});
 
 	describe("git install paths", () => {
-		it("should reject paths outside git install roots", () => {
+		it("should reject paths outside git install roots", async () => {
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
 			const traversalSource = {
 				type: "git" as const,
@@ -1405,7 +1405,7 @@ Content`,
 	});
 
 	describe("temporary install paths", () => {
-		it("should place temporary npm packages under the agent temp extension folder", () => {
+		it("should place temporary npm packages under the agent temp extension folder", async () => {
 			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
 			const source = parsePackageSource("npm:left-pad");
 			if (source.type !== "npm") {
@@ -1425,12 +1425,12 @@ Content`,
 	});
 
 	describe("settings source normalization", () => {
-		it("should store global local packages relative to agent settings base", () => {
+		it("should store global local packages relative to agent settings base", async () => {
 			const pkgDir = join(tempDir, "packages", "local-global-pkg");
 			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
 			writeFileSync(join(pkgDir, "extensions", "index.ts"), "export default function() {}");
 
-			const added = packageManager.addSourceToSettings("./packages/local-global-pkg");
+			const added = await packageManager.addSourceToSettings("./packages/local-global-pkg");
 			expect(added).toBe(true);
 
 			const settings = settingsManager.getGlobalSettings();
@@ -1439,12 +1439,12 @@ Content`,
 			expect(settings.packages?.[0]).toBe(expected);
 		});
 
-		it("should store project local packages relative to .candy settings base", () => {
+		it("should store project local packages relative to .candy settings base", async () => {
 			const projectPkgDir = join(tempDir, "project-local-pkg");
 			mkdirSync(join(projectPkgDir, "extensions"), { recursive: true });
 			writeFileSync(join(projectPkgDir, "extensions", "index.ts"), "export default function() {}");
 
-			const added = packageManager.addSourceToSettings("./project-local-pkg", { local: true });
+			const added = await packageManager.addSourceToSettings("./project-local-pkg", { local: true });
 			expect(added).toBe(true);
 
 			const settings = settingsManager.getProjectSettings();
@@ -1453,36 +1453,36 @@ Content`,
 			expect(settings.packages?.[0]).toBe(expected);
 		});
 
-		it("should remove local package entries using equivalent path forms", () => {
+		it("should remove local package entries using equivalent path forms", async () => {
 			const pkgDir = join(tempDir, "remove-local-pkg");
 			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
 			writeFileSync(join(pkgDir, "extensions", "index.ts"), "export default function() {}");
 
-			packageManager.addSourceToSettings("./remove-local-pkg");
-			const removed = packageManager.removeSourceFromSettings(`${pkgDir}/`);
+			await packageManager.addSourceToSettings("./remove-local-pkg");
+			const removed = await packageManager.removeSourceFromSettings(`${pkgDir}/`);
 			expect(removed).toBe(true);
 			expect(settingsManager.getGlobalSettings().packages ?? []).toHaveLength(0);
 		});
 
-		it("should return false when adding the same git source with the same ref", () => {
-			const first = packageManager.addSourceToSettings("git:github.com/user/repo@v1");
+		it("should return false when adding the same git source with the same ref", async () => {
+			const first = await packageManager.addSourceToSettings("git:github.com/user/repo@v1");
 			expect(first).toBe(true);
 
-			const second = packageManager.addSourceToSettings("git:github.com/user/repo@v1");
+			const second = await packageManager.addSourceToSettings("git:github.com/user/repo@v1");
 			expect(second).toBe(false);
 			expect(settingsManager.getGlobalSettings().packages).toEqual(["git:github.com/user/repo@v1"]);
 		});
 
-		it("should update the ref when adding the same git source with a different ref", () => {
-			packageManager.addSourceToSettings("git:github.com/user/repo@v1");
+		it("should update the ref when adding the same git source with a different ref", async () => {
+			await packageManager.addSourceToSettings("git:github.com/user/repo@v1");
 
-			const updated = packageManager.addSourceToSettings("git:github.com/user/repo@v2");
+			const updated = await packageManager.addSourceToSettings("git:github.com/user/repo@v2");
 			expect(updated).toBe(true);
 			expect(settingsManager.getGlobalSettings().packages).toEqual(["git:github.com/user/repo@v2"]);
 		});
 
-		it("should preserve package filters when replacing a package source ref", () => {
-			settingsManager.setPackages([
+		it("should preserve package filters when replacing a package source ref", async () => {
+			await settingsManager.setPackages([
 				{
 					source: "git:github.com/user/repo@v1",
 					extensions: ["extensions/main.ts"],
@@ -1492,7 +1492,7 @@ Content`,
 				},
 			]);
 
-			const updated = packageManager.addSourceToSettings("git:github.com/user/repo@v2");
+			const updated = await packageManager.addSourceToSettings("git:github.com/user/repo@v2");
 			expect(updated).toBe(true);
 			expect(settingsManager.getGlobalSettings().packages).toEqual([
 				{
@@ -1591,7 +1591,7 @@ Content`,
 
 			// Mock the package as if it were cloned from different URL formats
 			// In reality, these would all point to the same local dir after install
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				"https://github.com/user/repo",
 				"git:github.com/user/repo",
 				"https://github.com/user/repo.git",
@@ -1625,7 +1625,7 @@ Content`,
 			writeFileSync(join(extDir, "keep.ts"), "export default function() {}");
 			writeFileSync(join(extDir, "remove.ts"), "export default function() {}");
 
-			settingsManager.setExtensionPaths(["extensions", "!**/remove.ts"]);
+			await settingsManager.setExtensionPaths(["extensions", "!**/remove.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isEnabled(r, "keep.ts"))).toBe(true);
@@ -1639,7 +1639,7 @@ Content`,
 			writeFileSync(join(themesDir, "light.json"), "{}");
 			writeFileSync(join(themesDir, "funky.json"), "{}");
 
-			settingsManager.setThemePaths(["themes", "!funky.json"]);
+			await settingsManager.setThemePaths(["themes", "!funky.json"]);
 
 			const result = await packageManager.resolve();
 			expect(result.themes.some((r) => isEnabled(r, "dark.json"))).toBe(true);
@@ -1653,7 +1653,7 @@ Content`,
 			writeFileSync(join(promptsDir, "review.md"), "Review code");
 			writeFileSync(join(promptsDir, "explain.md"), "Explain code");
 
-			settingsManager.setPromptTemplatePaths(["prompts", "!explain.md"]);
+			await settingsManager.setPromptTemplatePaths(["prompts", "!explain.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => isEnabled(r, "review.md"))).toBe(true);
@@ -1673,7 +1673,7 @@ Content`,
 				"---\nname: bad-skill\ndescription: Bad\n---\nContent",
 			);
 
-			settingsManager.setSkillPaths(["skills", "!**/bad-skill"]);
+			await settingsManager.setSkillPaths(["skills", "!**/bad-skill"]);
 
 			const result = await packageManager.resolve();
 			expect(result.skills.some((r) => isEnabled(r, "good-skill", "includes"))).toBe(true);
@@ -1686,7 +1686,7 @@ Content`,
 			const extPath = join(extDir, "my-ext.ts");
 			writeFileSync(extPath, "export default function() {}");
 
-			settingsManager.setExtensionPaths(["extensions/my-ext.ts"]);
+			await settingsManager.setExtensionPaths(["extensions/my-ext.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
@@ -1846,7 +1846,7 @@ Content`,
 			);
 
 			// User filter adds exclusion for bar.ts
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: ["!**/bar.ts"],
@@ -1872,7 +1872,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "bar.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "baz.ts"), "export default function() {}");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: ["!**/baz.ts"],
@@ -1894,7 +1894,7 @@ Content`,
 			writeFileSync(join(pkgDir, "themes", "nice.json"), "{}");
 			writeFileSync(join(pkgDir, "themes", "ugly.json"), "{}");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: [],
@@ -1916,7 +1916,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "beta.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "gamma.ts"), "export default function() {}");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: ["**/alpha.ts", "**/beta.ts", "!**/beta.ts"],
@@ -1938,7 +1938,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "one.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "two.ts"), "export default function() {}");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: ["extensions/one.ts"],
@@ -1959,8 +1959,8 @@ Content`,
 			writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "pi-tools", version: "1.0.0" }));
 			writeFileSync(join(pkgDir, "extensions", "foo.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "bar.ts"), "export default function() {}");
-			settingsManager.setPackages(["npm:pi-tools"]);
-			settingsManager.setProjectPackages([
+			await settingsManager.setPackages(["npm:pi-tools"]);
+			await settingsManager.setProjectPackages([
 				{ source: "npm:pi-tools", autoload: false, extensions: ["-extensions/foo.ts"] },
 			]);
 			const runCommandSpy = vi
@@ -1987,7 +1987,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "foo.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "bar.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "skills", "foo", "SKILL.md"), "# Foo\n");
-			settingsManager.setProjectPackages([
+			await settingsManager.setProjectPackages([
 				{ source: relative(join(tempDir, ".candy"), pkgDir), autoload: false, extensions: ["+extensions/foo.ts"] },
 			]);
 
@@ -2007,7 +2007,7 @@ Content`,
 			writeFileSync(join(extDir, "force-back.ts"), "export default function() {}");
 
 			// Exclude all, then force-include one back
-			settingsManager.setExtensionPaths(["extensions", "!extensions/*.ts", "+extensions/force-back.ts"]);
+			await settingsManager.setExtensionPaths(["extensions", "!extensions/*.ts", "+extensions/force-back.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isDisabled(r, "keep.ts"))).toBe(true);
@@ -2022,7 +2022,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "beta.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "gamma.ts"), "export default function() {}");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: ["!**/*.ts", "+extensions/beta.ts"],
@@ -2047,7 +2047,7 @@ Content`,
 			writeFileSync(join(pkgDir, "skills/skill-b", "SKILL.md"), "---\nname: skill-b\ndescription: B\n---\nContent");
 			writeFileSync(join(pkgDir, "skills/skill-c", "SKILL.md"), "---\nname: skill-c\ndescription: C\n---\nContent");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: [],
@@ -2070,7 +2070,7 @@ Content`,
 			writeFileSync(join(extDir, "b.ts"), "export default function() {}");
 
 			// Specifically exclude b.ts, then force it back
-			settingsManager.setExtensionPaths(["extensions", "!extensions/b.ts", "+extensions/b.ts"]);
+			await settingsManager.setExtensionPaths(["extensions", "!extensions/b.ts", "+extensions/b.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isEnabled(r, "a.ts"))).toBe(true);
@@ -2106,7 +2106,7 @@ Content`,
 			writeFileSync(join(themesDir, "light.json"), "{}");
 			writeFileSync(join(themesDir, "special.json"), "{}");
 
-			settingsManager.setThemePaths(["themes", "!themes/*.json", "+themes/special.json"]);
+			await settingsManager.setThemePaths(["themes", "!themes/*.json", "+themes/special.json"]);
 
 			const result = await packageManager.resolve();
 			expect(result.themes.some((r) => isDisabled(r, "dark.json"))).toBe(true);
@@ -2121,7 +2121,7 @@ Content`,
 			writeFileSync(join(promptsDir, "explain.md"), "Explain");
 			writeFileSync(join(promptsDir, "debug.md"), "Debug");
 
-			settingsManager.setPromptTemplatePaths(["prompts", "!prompts/*.md", "+prompts/debug.md"]);
+			await settingsManager.setPromptTemplatePaths(["prompts", "!prompts/*.md", "+prompts/debug.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => isDisabled(r, "review.md"))).toBe(true);
@@ -2137,7 +2137,7 @@ Content`,
 			writeFileSync(join(extDir, "alpha.ts"), "export default function() {}");
 			writeFileSync(join(extDir, "beta.ts"), "export default function() {}");
 
-			settingsManager.setExtensionPaths(["extensions", "+extensions/alpha.ts", "-extensions/alpha.ts"]);
+			await settingsManager.setExtensionPaths(["extensions", "+extensions/alpha.ts", "-extensions/alpha.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isDisabled(r, "alpha.ts"))).toBe(true);
@@ -2150,7 +2150,7 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "alpha.ts"), "export default function() {}");
 			writeFileSync(join(pkgDir, "extensions", "beta.ts"), "export default function() {}");
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				{
 					source: pkgDir,
 					extensions: ["extensions/*.ts", "+extensions/alpha.ts", "-extensions/alpha.ts"],
@@ -2173,8 +2173,8 @@ Content`,
 			writeFileSync(join(pkgDir, "extensions", "shared.ts"), "export default function() {}");
 
 			// Same package in both global and project
-			settingsManager.setPackages([pkgDir]); // global
-			settingsManager.setProjectPackages([pkgDir]); // project
+			await settingsManager.setPackages([pkgDir]); // global
+			await settingsManager.setProjectPackages([pkgDir]); // project
 
 			// Debug: verify settings are stored correctly
 			const globalSettings = settingsManager.getGlobalSettings();
@@ -2197,8 +2197,8 @@ Content`,
 			writeFileSync(join(pkg1Dir, "extensions", "from-pkg1.ts"), "export default function() {}");
 			writeFileSync(join(pkg2Dir, "extensions", "from-pkg2.ts"), "export default function() {}");
 
-			settingsManager.setPackages([pkg1Dir]); // global
-			settingsManager.setProjectPackages([pkg2Dir]); // project
+			await settingsManager.setPackages([pkg1Dir]); // global
+			await settingsManager.setProjectPackages([pkg2Dir]); // project
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path.includes("pkg1"))).toBe(true);
@@ -2387,7 +2387,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
+			await settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
 
 			const runCommandCaptureSpy = vi
 				.spyOn(packageManager as any, "runCommandCapture")
@@ -2412,7 +2412,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.3.1" }));
-			settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
+			await settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
 
 			const runCommandCaptureSpy = vi
 				.spyOn(packageManager as any, "runCommandCapture")
@@ -2433,7 +2433,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "2.0.0" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			await settingsManager.setProjectPackages(["npm:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.9.0"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
@@ -2454,7 +2454,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const managedPath = join(agentDir, "npm", "node_modules", "legacy-pkg");
 			mkdirSync(legacyPath, { recursive: true });
 			writeFileSync(join(legacyPath, "package.json"), JSON.stringify({ name: "legacy-pkg", version: "1.0.0" }));
-			settingsManager.setPackages(["npm:legacy-pkg"]);
+			await settingsManager.setPackages(["npm:legacy-pkg"]);
 
 			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(legacyRoot);
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.0.0"');
@@ -2511,7 +2511,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 				JSON.stringify({ name: "project-current", version: "1.0.0" }),
 			);
 
-			settingsManager.setPackages([
+			await settingsManager.setPackages([
 				"npm:user-old",
 				"npm:user-current",
 				"npm:user-unknown",
@@ -2520,7 +2520,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 				"git:github.com/example/user-repo-b",
 				"git:github.com/example/user-repo-pinned@v1",
 			]);
-			settingsManager.setProjectPackages([
+			await settingsManager.setProjectPackages([
 				"npm:project-old",
 				"npm:project-current",
 				"npm:project-missing",
@@ -2610,7 +2610,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 
 		it("should suggest npm source prefixes for update lookups", async () => {
-			settingsManager.setProjectPackages(["npm:example"]);
+			await settingsManager.setProjectPackages(["npm:example"]);
 
 			await expect(packageManager.update("example")).rejects.toThrow(
 				"No matching package found for example. Did you mean npm:example?",
@@ -2618,7 +2618,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 
 		it("should suggest git source prefixes for update lookups", async () => {
-			settingsManager.setProjectPackages(["git:github.com/example/repo"]);
+			await settingsManager.setProjectPackages(["git:github.com/example/repo"]);
 
 			await expect(packageManager.update("github.com/example/repo")).rejects.toThrow(
 				"No matching package found for github.com/example/repo. Did you mean git:github.com/example/repo?",
@@ -2627,7 +2627,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 
 		it("should skip installing missing package sources when offline", async () => {
 			process.env.CANDY_OFFLINE = "1";
-			settingsManager.setProjectPackages(["npm:missing-package", "git:github.com/example/missing-repo"]);
+			await settingsManager.setProjectPackages(["npm:missing-package", "git:github.com/example/missing-repo"]);
 
 			const installParsedSourceSpy = vi.spyOn(packageManager as any, "installParsedSource");
 
@@ -2706,7 +2706,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			mkdirSync(join(installedPath, "extensions"), { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
 			writeFileSync(join(installedPath, "extensions", "index.ts"), "export default function() {};");
-			settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
+			await settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture");
 
@@ -2719,7 +2719,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example@2.0.0"]);
+			await settingsManager.setProjectPackages(["npm:example@2.0.0"]);
 
 			const installParsedSourceSpy = vi
 				.spyOn(packageManager as any, "installParsedSource")
@@ -2742,7 +2742,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			await settingsManager.setProjectPackages(["npm:example"]);
 
 			vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 
@@ -2761,7 +2761,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const installedPath = join(tempDir, ".candy", "npm", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "2.0.0" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			await settingsManager.setProjectPackages(["npm:example"]);
 
 			vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.9.0"');
 
@@ -2782,7 +2782,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			);
 			mkdirSync(installedGitPath, { recursive: true });
 
-			settingsManager.setProjectPackages(["npm:example@1.0.0", "git:github.com/example/repo@v1"]);
+			await settingsManager.setProjectPackages(["npm:example@1.0.0", "git:github.com/example/repo@v1"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture");
 			const gitUpdateSpy = vi.spyOn(

@@ -6,8 +6,8 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("issue #7443 cached Powerbar models", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 		harness = undefined;
 		vi.restoreAllMocks();
 	});

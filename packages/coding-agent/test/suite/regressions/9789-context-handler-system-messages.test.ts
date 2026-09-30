@@ -46,8 +46,8 @@ async function compactSession(harness: Harness): Promise<void> {
 describe("context handlers and system messages", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
-		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+	afterEach(async () => {
+		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
 	});
 
 	// Regression #9789, #9822: pruning from the compaction summary dropped the prompt and tool checkpoint.
@@ -153,8 +153,8 @@ describe("context handlers and system messages", () => {
 describe("context_with_system handlers", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
-		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+	afterEach(async () => {
+		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
 	});
 
 	it("runs after context handlers on the restored transcript and sends its output verbatim", async () => {

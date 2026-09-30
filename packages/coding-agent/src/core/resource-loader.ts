@@ -1,9 +1,10 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { TerminalCapabilities, TerminalColorMode } from "@candy/tui";
 import { CONFIG_DIR_NAME } from "../config.ts";
-import type { Theme } from "../modes/interactive/theme/theme.ts";
+import type { Theme } from "../contracts/theme.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
+import { collectAutoThemeEntries } from "./package-resource-discovery.ts";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
@@ -11,8 +12,8 @@ import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
-	clearExtensionCache,
 	createExtensionRuntime,
+	ExtensionModuleCache,
 	loadExtensionFromFactory,
 	loadExtensionsCached,
 } from "./extensions/loader.ts";
@@ -47,11 +48,6 @@ const HOST_PROVIDED_EXTENSION_PACKAGES = new Set([
 	"@candy/ai",
 	"@candy/coding-agent",
 	"@candy/tui",
-	"@candy/agent-core",
-	"@candy/ai",
-	"@candy/coding-agent",
-	"@candy/tui",
-	"@sinclair/typebox",
 	"typebox",
 ]);
 
@@ -111,18 +107,13 @@ export interface ResourceLoader {
 	reload(options?: ResourceLoaderReloadOptions): Promise<void>;
 }
 
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
+function resolvePromptInput(input: string | undefined): string | undefined {
 	if (!input) {
 		return undefined;
 	}
 
 	if (existsSync(input)) {
-		try {
-			return stripBom(readFileSync(input, "utf-8"));
-		} catch (error) {
-			console.error(`Warning: Could not read ${description} file ${input}: ${error}`);
-			return input;
-		}
+		return stripBom(readFileSync(input, "utf-8"));
 	}
 
 	return input;
@@ -133,17 +124,13 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
 		if (existsSync(filePath)) {
-			try {
-				if (!statSync(filePath).isFile()) {
-					continue;
-				}
-				return {
-					path: filePath,
-					content: stripBom(readFileSync(filePath, "utf-8")),
-				};
-			} catch (error) {
-				console.error(`Warning: Could not read ${filePath}: ${error}`);
+			if (!statSync(filePath).isFile()) {
+				continue;
 			}
+			return {
+				path: filePath,
+				content: stripBom(readFileSync(filePath, "utf-8")),
+			};
 		}
 	}
 	return null;
@@ -219,7 +206,7 @@ export function loadProjectContextFiles(options: {
 export interface DefaultResourceLoaderOptions {
 	cwd: string;
 	agentDir: string;
-	themeAdapter: ResourceThemeAdapter;
+	themeAdapter?: ResourceThemeAdapter;
 	extensionModules?: Record<string, unknown>;
 	settingsManager?: SettingsManager;
 	eventBus?: EventBus;
@@ -256,12 +243,13 @@ export interface DefaultResourceLoaderOptions {
 }
 
 export class DefaultResourceLoader implements ResourceLoader {
+	private readonly extensionCache = new ExtensionModuleCache();
 	private cwd: string;
 	private agentDir: string;
 	private settingsManager: SettingsManager;
 	private eventBus: EventBus;
 	private packageManager: DefaultPackageManager;
-	private themeAdapter: ResourceThemeAdapter;
+	private themeAdapter?: ResourceThemeAdapter;
 	private extensionModules?: Record<string, unknown>;
 	private additionalExtensionPaths: string[];
 	private additionalSkillPaths: string[];
@@ -335,7 +323,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.noExtensions = options.noExtensions ?? false;
 		this.noSkills = options.noSkills ?? false;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
-		this.noThemes = options.noThemes ?? false;
+		this.noThemes = options.noThemes ?? options.themeAdapter === undefined;
 		this.noContextFiles = options.noContextFiles ?? false;
 		this.systemPromptSource = options.systemPrompt;
 		this.appendSystemPromptSource = options.appendSystemPrompt;
@@ -455,7 +443,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		resetTimings("extensions");
 
 		if (this.loaded) {
-			clearExtensionCache();
+			this.extensionCache.clear();
 		}
 
 		let preTrustExtensions: LoadExtensionsResult | undefined;
@@ -592,7 +580,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
 
 		const systemPromptSource = this.systemPromptSource ?? this.discoverSystemPromptFile();
-		const baseSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
+		const baseSystemPrompt = resolvePromptInput(systemPromptSource);
 		this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
 		this.systemPromptSourcePath =
 			systemPromptSource && existsSync(systemPromptSource) ? resolvePath(systemPromptSource) : undefined;
@@ -602,9 +590,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			const discoveredAppendSystemPromptFile = this.discoverAppendSystemPromptFile();
 			appendSources = discoveredAppendSystemPromptFile ? [discoveredAppendSystemPromptFile] : [];
 		}
-		const baseAppend = appendSources
-			.map((s) => resolvePromptInput(s, "append system prompt"))
-			.filter((s): s is string => s !== undefined);
+		const baseAppend = appendSources.map((s) => resolvePromptInput(s)).filter((s): s is string => s !== undefined);
 		this.appendSystemPrompt = this.appendSystemPromptOverride
 			? this.appendSystemPromptOverride(baseAppend)
 			: baseAppend;
@@ -632,6 +618,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		);
 		const packageWarnings = collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 		const extensionsResult = await loadExtensionsCached(
+			this.extensionCache,
 			extensionPaths,
 			this.cwd,
 			this.eventBus,
@@ -659,6 +646,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	): Promise<LoadExtensionsResult> {
 		if (!preTrustExtensions) {
 			const extensionsResult = await loadExtensionsCached(
+				this.extensionCache,
 				extensionPaths,
 				this.cwd,
 				this.eventBus,
@@ -685,6 +673,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return !preloadedByPath.has(resolvedPath) && !failedPreloadPaths.has(resolvedPath);
 		});
 		const remainingExtensions = await loadExtensionsCached(
+			this.extensionCache,
 			remainingPaths,
 			this.cwd,
 			this.eventBus,
@@ -816,10 +805,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 			themesResult = { themes: [], diagnostics: [] };
 		} else {
 			// Theme construction only needs trueColor, so skip the unrelated tmux hyperlink probe.
+			if (!this.themeAdapter) throw new Error("Loading themes requires a presentation theme adapter");
 			const colorMode = this.themeAdapter.getTerminalColorMode(
 				this.settingsManager.getTerminalCapabilityOverrides(),
 			);
-			const loaded = this.loadThemes(themePaths, false, colorMode);
+			const loaded = this.loadThemes(themePaths, colorMode);
 			const deduped = this.dedupeThemes(loaded.themes);
 			themesResult = { themes: deduped.themes, diagnostics: [...loaded.diagnostics, ...deduped.diagnostics] };
 		}
@@ -962,7 +952,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private loadThemes(
 		paths: string[],
-		includeDefaults: boolean,
 		colorMode: TerminalColorMode,
 	): {
 		themes: Theme[];
@@ -970,14 +959,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 	} {
 		const themes: Theme[] = [];
 		const diagnostics: ResourceDiagnostic[] = [];
-		if (includeDefaults) {
-			const defaultDirs = [join(this.agentDir, "themes"), join(this.cwd, CONFIG_DIR_NAME, "themes")];
-
-			for (const dir of defaultDirs) {
-				this.loadThemesFromDir(dir, themes, diagnostics, colorMode);
-			}
-		}
-
 		for (const p of paths) {
 			const resolved = this.resolveResourcePath(p);
 			if (!existsSync(resolved)) {
@@ -988,7 +969,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 			try {
 				const stats = statSync(resolved);
 				if (stats.isDirectory()) {
-					this.loadThemesFromDir(resolved, themes, diagnostics, colorMode);
+					for (const path of collectAutoThemeEntries(resolved))
+						this.loadThemeFromFile(path, themes, diagnostics, colorMode);
 				} else if (stats.isFile() && resolved.endsWith(".json")) {
 					this.loadThemeFromFile(resolved, themes, diagnostics, colorMode);
 				} else {
@@ -1003,41 +985,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { themes, diagnostics };
 	}
 
-	private loadThemesFromDir(
-		dir: string,
-		themes: Theme[],
-		diagnostics: ResourceDiagnostic[],
-		colorMode: TerminalColorMode,
-	): void {
-		if (!existsSync(dir)) {
-			return;
-		}
-
-		try {
-			const entries = readdirSync(dir, { withFileTypes: true });
-			for (const entry of entries) {
-				let isFile = entry.isFile();
-				if (entry.isSymbolicLink()) {
-					try {
-						isFile = statSync(join(dir, entry.name)).isFile();
-					} catch {
-						continue;
-					}
-				}
-				if (!isFile) {
-					continue;
-				}
-				if (!entry.name.endsWith(".json")) {
-					continue;
-				}
-				this.loadThemeFromFile(join(dir, entry.name), themes, diagnostics, colorMode);
-			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "failed to read theme directory";
-			diagnostics.push({ type: "warning", message, path: dir });
-		}
-	}
-
 	private loadThemeFromFile(
 		filePath: string,
 		themes: Theme[],
@@ -1045,6 +992,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		colorMode: TerminalColorMode,
 	): void {
 		try {
+			if (!this.themeAdapter) throw new Error("Loading themes requires a presentation theme adapter");
 			themes.push(this.themeAdapter.loadThemeFromPath(filePath, colorMode));
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "failed to load theme";

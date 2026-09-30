@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	AgentSessionRuntime,
 	type AgentSessionServices,
+	assembleAgentSessionFromServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
 } from "../../../src/core/agent-session-runtime.ts";
 import { createHarness } from "../harness.ts";
 
@@ -47,9 +47,10 @@ describe("regression #8724: in-memory fork during an active tool turn", () => {
 			settingsManager: harness.settingsManager,
 			resourceLoader: harness.session.resourceLoader,
 			diagnostics: [],
+			dispose: async () => {},
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ sessionManager, sessionStartEvent }) => ({
-			...(await createAgentSessionFromServices({
+			...(await assembleAgentSessionFromServices({
 				services,
 				sessionManager,
 				sessionStartEvent,
@@ -64,7 +65,7 @@ describe("regression #8724: in-memory fork during an active tool turn", () => {
 			if (runtime.session !== harness.session) {
 				await runtime.dispose();
 			}
-			harness.cleanup();
+			await harness.cleanup();
 		});
 
 		harness.setResponses([

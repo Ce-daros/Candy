@@ -289,42 +289,4 @@ describe("extension provider model lifecycle", () => {
 		expect(runtime.getModel("extension-dynamic", "live")).toBeDefined();
 		expect(await modelsStore.read("extension-dynamic")).toBeUndefined();
 	});
-
-	it("applies legacy OAuth modifyModels after async credential initialization", async () => {
-		const runtime = await ModelRuntime.create({
-			credentials: AuthStorage.inMemory({
-				"extension-oauth": {
-					type: "oauth",
-					access: "access",
-					refresh: "refresh",
-					expires: Date.now() + 60_000,
-				},
-			}),
-			modelsStore: new InMemoryModelsStore(),
-			modelsPath: null,
-			allowModelNetwork: false,
-		});
-		runtime.registerProvider("extension-oauth", {
-			baseUrl: "https://example.test/v1",
-			api: "openai-completions",
-			models: [model("base")],
-			oauth: {
-				name: "Extension OAuth",
-				login: async () => {
-					throw new Error("not used");
-				},
-				refreshToken: async (credential) => credential,
-				getApiKey: (credential) => credential.access,
-				modifyModels: (models, credential) =>
-					credential.access === "access" ? [...models, model("credential-model")] : models,
-			},
-		});
-
-		await runtime.refresh({ allowNetwork: false });
-		expect(runtime.getModel("extension-oauth", "base")).toBeDefined();
-		expect(runtime.getModel("extension-oauth", "credential-model")).toBeDefined();
-
-		await runtime.logout("extension-oauth");
-		expect(runtime.getModel("extension-oauth", "credential-model")).toBeUndefined();
-	});
 });

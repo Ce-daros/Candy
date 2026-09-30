@@ -28,9 +28,9 @@ function seedHistory(harness: Harness, totalTokens = 650): string {
 // Regression coverage for #8133.
 describe("AgentSession compaction model overrides", () => {
 	const harnesses: Harness[] = [];
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
-		while (harnesses.length) harnesses.pop()?.cleanup();
+		while (harnesses.length) await harnesses.pop()?.cleanup();
 	});
 
 	it.each(["manual", "pre-prompt", "post-run", "overflow"] as const)(

@@ -94,6 +94,7 @@ describe("ConfigSelectorComponent viewport", () => {
 		expect(text).toContain("review");
 		expect(text).not.toContain("Extensions");
 		selector.getResourceList().handleInput(" ");
+		await new Promise((resolve) => setTimeout(resolve, 0));
 		await settings.flush();
 		expect(toggles).toBe(1);
 		expect(settings.getGlobalSettings().skills).toEqual(["-skills/review/SKILL.md"]);

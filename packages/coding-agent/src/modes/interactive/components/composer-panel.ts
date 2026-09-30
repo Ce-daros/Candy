@@ -42,7 +42,7 @@ export class ComposerPanel implements Component, Focusable {
 		this.transition.setOptions(enabled, intensity);
 	}
 
-	show(content: PanelContent, _compact = false, heightRatio = 0.8, inputTarget: Component = content): void {
+	show(content: PanelContent, heightRatio = 0.8, inputTarget: Component = content): void {
 		if (this.inputTarget && isFocusable(this.inputTarget)) this.inputTarget.focused = false;
 		this.content = content;
 		this.inputTarget = inputTarget;

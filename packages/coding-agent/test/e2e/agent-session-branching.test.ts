@@ -17,10 +17,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../../src/core/agent-session.ts";
 import {
 	type AgentSessionRuntime,
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
+	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
@@ -63,14 +63,14 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 			},
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				...servicesOptions,
 				cwd,
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -81,7 +81,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 				diagnostics: services.diagnostics,
 			};
 		};
-		runtimeHost = await createAgentSessionRuntime(createRuntime, {
+		runtimeHost = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager,

@@ -9,7 +9,6 @@ import { createHarness, getMessageText } from "../harness.ts";
 vi.mock("@candy/coding-agent", () => ({
 	CONFIG_DIR_NAME: ".candy",
 	getAgentDir: () => "/missing-user-agent-dir",
-	getMarkdownTheme: () => ({}),
 	parseFrontmatter: (content: string) => ({
 		frontmatter: { name: "project-agent", description: "Project test agent" },
 		body: content,
@@ -61,7 +60,7 @@ async function runProjectAgent(options: RunOptions): Promise<{ confirmCalls: num
 			toolResult: getMessageText(toolResult),
 		};
 	} finally {
-		harness.cleanup();
+		await harness.cleanup();
 	}
 }
 

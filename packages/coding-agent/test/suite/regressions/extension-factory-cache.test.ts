@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearExtensionCache, loadExtensions, loadExtensionsCached } from "../../../src/core/extensions/loader.ts";
+import { ExtensionModuleCache, loadExtensions, loadExtensionsCached } from "../../../src/core/extensions/loader.ts";
 import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../../../src/presentation/resource-theme-adapter.ts";
@@ -41,6 +41,7 @@ export default function () {
 
 describe("extension factory cache", () => {
 	const roots: string[] = [];
+	let cache: ExtensionModuleCache;
 
 	function fixture(name: string) {
 		const root = join(tmpdir(), `candy-extension-cache-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -54,7 +55,7 @@ describe("extension factory cache", () => {
 
 	beforeEach(() => {
 		resetState();
-		clearExtensionCache();
+		cache = new ExtensionModuleCache();
 	});
 
 	afterEach(() => {
@@ -65,7 +66,6 @@ describe("extension factory cache", () => {
 			}
 		}
 		resetState();
-		clearExtensionCache();
 	});
 
 	it("caches extension modules for cached same-cwd loads but reruns factories", async () => {
@@ -73,8 +73,15 @@ describe("extension factory cache", () => {
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		const first = await loadExtensionsCached([extensionPath], cwd, undefined, undefined, extensionHostModules);
-		const second = await loadExtensionsCached([extensionPath], cwd, undefined, undefined, extensionHostModules);
+		const first = await loadExtensionsCached(cache, [extensionPath], cwd, undefined, undefined, extensionHostModules);
+		const second = await loadExtensionsCached(
+			cache,
+			[extensionPath],
+			cwd,
+			undefined,
+			undefined,
+			extensionHostModules,
+		);
 
 		expect(state().moduleLoads).toBe(1);
 		expect(state().factoryRuns).toBe(2);
@@ -116,18 +123,19 @@ describe("extension factory cache", () => {
 		expect(state().factoryRuns).toBe(2);
 	});
 
-	it("keeps the cache scoped to one cwd", async () => {
+	it("keeps independent loader caches isolated", async () => {
 		const { root } = fixture("cross-cwd");
 		const firstCwd = join(root, "first");
 		const secondCwd = join(root, "second");
+		const secondCache = new ExtensionModuleCache();
 		mkdirSync(firstCwd, { recursive: true });
 		mkdirSync(secondCwd, { recursive: true });
 		const extensionPath = join(root, "counting.ts");
 		writeCountingExtension(extensionPath);
 
-		await loadExtensionsCached([extensionPath], firstCwd, undefined, undefined, extensionHostModules);
-		await loadExtensionsCached([extensionPath], secondCwd, undefined, undefined, extensionHostModules);
-		await loadExtensionsCached([extensionPath], secondCwd, undefined, undefined, extensionHostModules);
+		await loadExtensionsCached(cache, [extensionPath], firstCwd, undefined, undefined, extensionHostModules);
+		await loadExtensionsCached(secondCache, [extensionPath], secondCwd, undefined, undefined, extensionHostModules);
+		await loadExtensionsCached(secondCache, [extensionPath], secondCwd, undefined, undefined, extensionHostModules);
 
 		expect(state().moduleLoads).toBe(2);
 		expect(state().factoryRuns).toBe(3);

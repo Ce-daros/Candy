@@ -37,6 +37,8 @@ candy --extension ./hello.ts
 
 candy uses `jiti`, so local TypeScript extensions do not need a separate compilation step. Use [candy packages](packages.md) for distributed extensions and dependencies.
 
+Import extension contracts such as `ExtensionAPI` from `@candy/coding-agent`. Terminal components have a separate import, `@candy/coding-agent/ui`. Hosts that load extension files through the SDK must pass `extensionModules` from `@candy/coding-agent/extension-host-modules` when those files import the UI subpath. The SDK root stays headless and does not load terminal rendering code.
+
 <a id="extension-locations"></a>
 <a id="available-imports"></a>
 <a id="choose-where-it-loads"></a>
@@ -84,6 +86,8 @@ Automatic retries, recovery, compaction, or queued work can continue afterward.
 | Communicate with another extension | `candy.events` |
 
 Use the exported declarations in [`extensions/types.ts`](../src/core/extensions/types.ts) for exact event, context, tool, and result types.
+
+`ctx.resources` exposes the active session's shared resource operations. Use it to inspect discovered resources, read or save discovered instruction files, inspect or update scoped resource configuration, change active or default tools, and reload resources. Instruction saves report a reload failure separately from a successful file write. Resource changes follow the same idle checks and settings commits used by other Candy entry points.
 
 ## Follow the extension contracts
 
@@ -160,7 +164,7 @@ Use `ctx.modelRuntime.streamSimple()` for provider-neutral nested model calls.
 Command handlers receive `ExtensionCommandContext`, which adds operations for waiting until idle, reloading, tree navigation, and session replacement.
 These operations are command-only because calling them from lifecycle handlers can deadlock the runtime.
 
-Session replacement invalidates the old context. Capture only plain data before switching, then use the fresh context supplied to `withSession` for session-bound work.
+Session replacement invalidates the old context. Capture only plain data before switching, then use the fresh context supplied to `withSession` for session-bound work. Command handlers can call `ctx.clone({ withSession })` to duplicate the current branch through the same replacement lifecycle.
 
 <a id="state-management"></a>
 <a id="persist-state"></a>
@@ -190,6 +194,7 @@ Register an entry or message renderer when custom stored content should appear i
 `ctx.ui` provides dialogs, notifications, status text, widgets, titles, editor access, and custom components.
 Use `ctx.ui.custom()` only when the interaction needs its own rendering and input.
 See [Terminal UI](tui.md) for component, focus, overlay, theme, and performance guidance.
+`ctx.ui.setTheme()` is asynchronous because an interactive theme change also persists a setting. Await its `{ success, error? }` result before reporting the outcome.
 
 In interactive mode, built-in select and input dialogs expand above the composer. Long editor dialogs use a larger panel; confirm dialogs place Yes and No side by side. Loader text and countdowns update in place. Extensions remain responsible for their custom widget, footer, and renderer content.
 

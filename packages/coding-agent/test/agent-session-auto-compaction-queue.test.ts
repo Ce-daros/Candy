@@ -49,8 +49,8 @@ describe("AgentSession auto-compaction queue resume", () => {
 		});
 	});
 
-	afterEach(() => {
-		session.dispose();
+	afterEach(async () => {
+		await session.dispose();
 		vi.restoreAllMocks();
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
@@ -117,7 +117,7 @@ describe("AgentSession auto-compaction queue resume", () => {
 			timestamp: Date.now(),
 		});
 
-		expect(session.pendingMessageCount).toBe(0);
+		expect(session.pendingMessageCount).toBe(1);
 		expect(session.agent.hasQueuedMessages()).toBe(true);
 
 		const continueSpy = vi.spyOn(session.agent, "continue").mockResolvedValue();
@@ -153,6 +153,7 @@ describe("AgentSession auto-compaction queue resume", () => {
 			errorMessage: "prompt is too long",
 			timestamp: Date.now(),
 		};
+		const firstEntryId = sessionManager.appendMessage(overflowMessage);
 
 		const runAutoCompactionSpy = vi
 			.spyOn(
@@ -172,12 +173,18 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const checkCompaction = (
 			session as unknown as {
-				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+				_checkCompaction: (
+					assistantMessage: AssistantMessage,
+					skipAbortedCheck?: boolean,
+					assistantEntryId?: string,
+				) => Promise<void>;
 			}
 		)._checkCompaction.bind(session);
 
-		await checkCompaction(overflowMessage);
-		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 1 });
+		await checkCompaction(overflowMessage, true, firstEntryId);
+		const repeatedOverflowMessage = { ...overflowMessage, timestamp: Date.now() + 1 };
+		const repeatedEntryId = sessionManager.appendMessage(repeatedOverflowMessage);
+		await checkCompaction(repeatedOverflowMessage, true, repeatedEntryId);
 
 		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
 		expect(events).toContainEqual({

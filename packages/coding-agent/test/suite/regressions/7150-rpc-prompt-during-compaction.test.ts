@@ -6,9 +6,9 @@ import { createHarness, getMessageText, getUserTexts, type Harness } from "../ha
 describe("issue #7150: RPC prompt during manual compaction", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -49,9 +49,17 @@ describe("issue #7150: RPC prompt during manual compaction", () => {
 			content: [{ type: "text", text: "old user message" }],
 			timestamp: timestamp - 1000,
 		});
-		harness.sessionManager.appendMessage(
-			fauxAssistantMessage("old assistant response", { timestamp: timestamp - 500 }),
-		);
+		harness.sessionManager.appendMessage({
+			...fauxAssistantMessage("old assistant response", { timestamp: timestamp - 500 }),
+			usage: {
+				input: 100,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 100,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+		});
 		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 		harness.setResponses([fauxAssistantMessage("probe response")]);
 

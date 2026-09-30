@@ -18,6 +18,7 @@ import {
 import { ExtensionRunner, emitProjectTrustEvent } from "../src/core/extensions/runner.ts";
 import type {
 	ExtensionActions,
+	ExtensionContext,
 	ExtensionContextActions,
 	ExtensionFactory,
 	ExtensionUIContext,
@@ -116,6 +117,7 @@ describe("ExtensionRunner", () => {
 
 	const extensionContextActions: ExtensionContextActions = {
 		getModel: () => undefined,
+		getResources: () => ({}) as ExtensionContext["resources"],
 		isIdle: () => true,
 		isProjectTrusted: () => true,
 		getSignal: () => undefined,
@@ -1123,6 +1125,15 @@ describe("ExtensionRunner", () => {
 	});
 
 	describe("provider registration", () => {
+		it("reports queued provider registrations flushed during bindCore", () => {
+			const runtime = createExtensionRuntime();
+			runtime.registerProvider("queued-provider", providerModelConfig);
+			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
+
+			expect(runner.bindCore(extensionActions, extensionContextActions)).toBe(true);
+			expect(modelRuntime.getModel("queued-provider", "instant-model")).toBeDefined();
+		});
+
 		it("bindCore ignores invalid queued registrations and reports extension error", async () => {
 			const runtime = createExtensionRuntime();
 			runtime.registerProvider(
@@ -1139,7 +1150,7 @@ describe("ExtensionRunner", () => {
 			const errors: string[] = [];
 			runner.onError((error) => errors.push(`${error.extensionPath}: ${error.error}`));
 
-			expect(() => runner.bindCore(extensionActions, extensionContextActions)).not.toThrow();
+			expect(runner.bindCore(extensionActions, extensionContextActions)).toBe(false);
 			expect(errors).toEqual([
 				'/tmp/broken-extension.ts: Provider broken-provider: "api" is required when registering streamSimple.',
 			]);
@@ -1174,7 +1185,7 @@ describe("ExtensionRunner", () => {
 			const runtime = createExtensionRuntime();
 			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
 
-			runner.bindCore(extensionActions, extensionContextActions);
+			expect(runner.bindCore(extensionActions, extensionContextActions)).toBe(false);
 			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
 
 			runtime.registerProvider("instant-provider", providerModelConfig);
@@ -1195,6 +1206,26 @@ describe("ExtensionRunner", () => {
 	});
 
 	describe("command context", () => {
+		it("passes clone options through to the bound handler", async () => {
+			const runtime = createExtensionRuntime();
+			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
+			const clone = vi.fn(async () => ({ cancelled: false }));
+
+			runner.bindCommandContext({
+				waitForIdle: async () => {},
+				newSession: async () => ({ cancelled: false }),
+				fork: async () => ({ cancelled: false }),
+				clone,
+				navigateTree: async () => ({ cancelled: false }),
+				switchSession: async () => ({ cancelled: false }),
+				reload: async () => {},
+			});
+
+			const withSession = vi.fn(async () => {});
+			await runner.createCommandContext().clone({ withSession });
+			expect(clone).toHaveBeenCalledWith({ withSession });
+		});
+
 		it("passes fork options through to the bound handler", async () => {
 			const runtime = createExtensionRuntime();
 			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRuntime);
@@ -1204,6 +1235,7 @@ describe("ExtensionRunner", () => {
 				waitForIdle: async () => {},
 				newSession: async () => ({ cancelled: false }),
 				fork,
+				clone: async () => ({ cancelled: false }),
 				navigateTree: async () => ({ cancelled: false }),
 				switchSession: async () => ({ cancelled: false }),
 				reload: async () => {},

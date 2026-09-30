@@ -89,8 +89,4 @@ These practices do not replace isolation, but they reduce exposure or make recov
 - Review diffs and generated output before applying results to another system.
 - Review sessions before exporting or sharing them. They can contain prompts, tool arguments, command output, file contents, and credentials exposed during the conversation.
 
-## Report a security issue
-
-Follow the repository [Security Policy](../../../SECURITY.md). Do not open a public issue for a security-sensitive report.
-
 Expected local-agent behavior, prompt injection from untrusted content, lack of a built-in sandbox, and behavior from user-installed extensions or skills are generally outside the security boundary unless the report demonstrates a privilege-boundary bypass or access that the local user did not already have.

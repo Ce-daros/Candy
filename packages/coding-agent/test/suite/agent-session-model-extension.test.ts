@@ -8,9 +8,9 @@ import { createHarness, getAssistantTexts, type Harness } from "./harness.ts";
 describe("AgentSession model and extension characterization", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -31,6 +31,7 @@ describe("AgentSession model and extension characterization", () => {
 		});
 		harnesses.push(harness);
 		const nextModel = harness.getModel("faux-2")!;
+		const previousModelChanges = harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change");
 
 		await harness.session.setModel(nextModel);
 
@@ -41,12 +42,15 @@ describe("AgentSession model and extension characterization", () => {
 				.getEntries()
 				.filter((entry) => entry.type === "model_change")
 				.map((entry) => `${entry.provider}/${entry.modelId}`),
-		).toEqual([`${nextModel.provider}/${nextModel.id}`]);
+		).toEqual([
+			...previousModelChanges.map((entry) => `${entry.provider}/${entry.modelId}`),
+			`${nextModel.provider}/${nextModel.id}`,
+		]);
 		expect(harness.settingsManager.getDefaultProvider()).toBeUndefined();
 		expect(harness.settingsManager.getDefaultModel()).toBeUndefined();
 	});
 
-	it("only persists model and thinking defaults when requested", async () => {
+	it("saves model and thinking defaults through explicit setting commits", async () => {
 		const harness = await createHarness({
 			models: [
 				{ id: "faux-1", name: "One", reasoning: true },
@@ -63,16 +67,16 @@ describe("AgentSession model and extension characterization", () => {
 		harness.session.setThinkingLevel("low");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBeUndefined();
 
-		await harness.session.setModel(nextModel, { persist: true });
+		await harness.settingsManager.commitDefaultModelAndProvider(nextModel.provider, nextModel.id);
 		expect(harness.settingsManager.getDefaultProvider()).toBe(nextModel.provider);
 		expect(harness.settingsManager.getDefaultModel()).toBe(nextModel.id);
 
-		await harness.settingsManager.mutateAndPersist(() => harness.settingsManager.setDefaultThinkingLevel("high"));
+		await harness.settingsManager.setDefaultThinkingLevel("high");
 		harness.session.setThinkingLevel("high");
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("high");
 	});
 
-	it("does not switch the active model when saving the default fails", async () => {
+	it("keeps model application independent from a failed default save", async () => {
 		const harness = await createHarness({
 			models: [
 				{ id: "faux-1", name: "One", reasoning: true },
@@ -80,20 +84,23 @@ describe("AgentSession model and extension characterization", () => {
 			],
 		});
 		harnesses.push(harness);
-		vi.spyOn(harness.settingsManager, "mutateAndPersist").mockRejectedValueOnce(new Error("Settings write failed"));
+		await harness.session.setModel(harness.getModel("faux-2")!);
+		vi.spyOn(harness.settingsManager, "commitDefaultModelAndProvider").mockRejectedValueOnce(
+			new Error("Settings write failed"),
+		);
 
-		await expect(harness.session.setModel(harness.getModel("faux-2")!, { persist: true })).rejects.toThrow(
+		await expect(harness.settingsManager.commitDefaultModelAndProvider("faux", "faux-2")).rejects.toThrow(
 			"Settings write failed",
 		);
-		expect(harness.session.model?.id).toBe("faux-1");
-		expect(harness.sessionManager.getEntries().some((entry) => entry.type === "model_change")).toBe(false);
+		expect(harness.session.model?.id).toBe("faux-2");
+		expect(harness.sessionManager.getEntries().some((entry) => entry.type === "model_change")).toBe(true);
 	});
 
 	it("persists the requested default thinking level even when the current model clamps it", async () => {
 		const harness = await createHarness({ models: [{ id: "faux-1", reasoning: true }] });
 		harnesses.push(harness);
 
-		await harness.settingsManager.mutateAndPersist(() => harness.settingsManager.setDefaultThinkingLevel("max"));
+		await harness.settingsManager.setDefaultThinkingLevel("max");
 		harness.session.setThinkingLevel("max");
 
 		expect(harness.session.thinkingLevel).toBe("high");
@@ -127,7 +134,7 @@ describe("AgentSession model and extension characterization", () => {
 		harnesses.push(harness);
 
 		// Set a per-model override for faux-2
-		harness.settingsManager.setModelThinkingLevel("faux", "faux-2", "low");
+		await harness.settingsManager.setModelThinkingLevel("faux", "faux-2", "low");
 
 		// Session starts on faux-1 with default thinking
 		harness.session.setThinkingLevel("high");
@@ -219,6 +226,84 @@ describe("AgentSession model and extension characterization", () => {
 		await expect(harness.session.setModel(harness.getModel("faux-2")!)).rejects.toThrow(
 			`No API key for ${harness.getModel().provider}/faux-2`,
 		);
+	});
+
+	it("keeps the latest model selection when an earlier auth check finishes later", async () => {
+		const harness = await createHarness({
+			models: [
+				{ id: "faux-1", name: "One", reasoning: true },
+				{ id: "faux-2", name: "Two", reasoning: true },
+				{ id: "faux-3", name: "Three", reasoning: true },
+			],
+		});
+		harnesses.push(harness);
+		let finishFirst!: (value: { source: string; type: "api_key" }) => void;
+		let finishSecond!: (value: { source: string; type: "api_key" }) => void;
+		let checkCount = 0;
+		harness.session.modelRuntime.checkAuth = () =>
+			new Promise((resolve) => {
+				if (checkCount++ === 0) finishFirst = resolve;
+				else finishSecond = resolve;
+			});
+
+		const first = harness.session.setModel(harness.getModel("faux-2")!);
+		const second = harness.session.setModel(harness.getModel("faux-3")!);
+		finishSecond({ source: "test", type: "api_key" });
+		await second;
+		finishFirst({ source: "test", type: "api_key" });
+		await first;
+
+		expect(harness.session.model?.id).toBe("faux-3");
+	});
+
+	it("commits a supported thinking level together with the selected model", async () => {
+		const harness = await createHarness({
+			models: [
+				{ id: "reasoning", reasoning: true },
+				{ id: "plain", reasoning: false },
+			],
+			settings: { defaultThinkingLevel: "max" },
+		});
+		harnesses.push(harness);
+		await harness.session.setModel(harness.getModel("plain")!);
+		expect(harness.session.thinkingLevel).toBe("off");
+		expect(harness.sessionManager.buildSessionContext().thinkingLevel).toBe("off");
+		await harness.session.setModel(harness.getModel("reasoning")!);
+		expect(harness.session.thinkingLevel).toBe("high");
+		expect(harness.sessionManager.buildSessionContext().thinkingLevel).toBe("high");
+		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("max");
+	});
+
+	it("rejects thinking changes after disposal without appending a journal entry", async () => {
+		const harness = await createHarness({ models: [{ id: "reasoning", reasoning: true }] });
+		harnesses.push(harness);
+		await harness.session.dispose();
+		const entries = harness.sessionManager.getEntries();
+		expect(() => harness.session.setThinkingLevel("high")).toThrow("Session was disposed");
+		expect(harness.sessionManager.getEntries()).toEqual(entries);
+	});
+
+	it("does not restore a pending model selection after clearModel", async () => {
+		const harness = await createHarness({ models: [{ id: "faux-1" }, { id: "faux-2" }] });
+		harnesses.push(harness);
+		let finishAuth!: (value: { source: string; type: "api_key" }) => void;
+		harness.session.modelRuntime.checkAuth = () =>
+			new Promise((resolve) => {
+				finishAuth = resolve;
+			});
+
+		const pendingSelection = harness.session.setModel(harness.getModel("faux-2")!);
+		harness.session.clearModel();
+		finishAuth({ source: "test", type: "api_key" });
+		await pendingSelection;
+
+		expect(harness.session.model).toBeUndefined();
+		expect(
+			harness.sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "model_change")
+				.at(-1)?.modelId,
+		).toBe("faux-1");
 	});
 
 	it("allows extension tool_call handlers to block tool execution", async () => {

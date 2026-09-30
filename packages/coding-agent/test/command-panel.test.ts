@@ -225,8 +225,10 @@ describe("CommandPanel", () => {
 		for (const char of "First model") panel.handleInput(char);
 		expect(panel.getQuery()).toBe("First model");
 		panel.handleInput("\x01");
+		await flush();
 		expect(selection).toHaveBeenLastCalledWith(["first"], true);
 		panel.handleInput("\x04");
+		await flush();
 		expect(selection).toHaveBeenLastCalledWith(["first"], false);
 		panel.handleInput("\x1b[B");
 		panel.handleInput(" ");

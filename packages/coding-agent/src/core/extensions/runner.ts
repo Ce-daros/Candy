@@ -5,8 +5,8 @@
 import type { AgentMessage } from "@candy/agent-core";
 import { getCurrentSystemMessage, type ImageContent, type Model, type Provider, type ProviderHeaders } from "@candy/ai";
 import type { KeyId } from "@candy/tui";
-import type { Theme } from "../../modes/interactive/theme/theme.ts";
-import type { KeybindingsConfig } from "../../presentation/keybindings.ts";
+import type { KeybindingsConfig } from "../../contracts/keybindings.ts";
+import type { Theme } from "../../contracts/theme.ts";
 import type { CacheWarmingAction } from "../cache-warmer.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { ModelRuntime } from "../model-runtime.ts";
@@ -215,7 +215,6 @@ interface BoundaryDispatchResult {
 
 export type NewSessionHandler = (options?: {
 	parentSession?: string;
-	setup?: (sessionManager: SessionManager) => Promise<void>;
 	withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 }) => Promise<{ cancelled: boolean }>;
 
@@ -223,6 +222,10 @@ export type ForkHandler = (
 	entryId: string,
 	options?: { position?: "before" | "at"; withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
 ) => Promise<{ cancelled: boolean }>;
+
+export type CloneHandler = (options?: {
+	withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+}) => Promise<{ cancelled: boolean }>;
 
 export type NavigateTreeHandler = (
 	targetId: string,
@@ -334,7 +337,7 @@ const noOpUIContext: ExtensionUIContext = {
 	},
 	getAllThemes: () => [],
 	getTheme: () => undefined,
-	setTheme: (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
+	setTheme: async (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
 	getToolsExpanded: () => false,
 	setToolsExpanded: () => {},
 };
@@ -347,6 +350,7 @@ export class ExtensionRunner {
 	private cwd: string;
 	private sessionManager: SessionManager;
 	private modelRuntime: ModelRuntime;
+	private getResources!: ExtensionContextActions["getResources"];
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
 	private isIdleFn: () => boolean = () => true;
@@ -362,6 +366,7 @@ export class ExtensionRunner {
 		normalizeBuildSystemPromptOptions({ cwd: this.cwd });
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
+	private cloneHandler: CloneHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
 	private reloadHandler: ReloadHandler = async () => {};
@@ -395,7 +400,7 @@ export class ExtensionRunner {
 			registerNativeProvider?: (provider: Provider) => void;
 			unregisterProvider?: (name: string) => void;
 		},
-	): void {
+	): boolean {
 		// Copy actions into the shared runtime (all extension APIs reference this)
 		this.runtime.sendMessage = actions.sendMessage;
 		this.runtime.sendUserMessage = actions.sendUserMessage;
@@ -414,6 +419,7 @@ export class ExtensionRunner {
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;
+		this.getResources = contextActions.getResources;
 		this.isIdleFn = contextActions.isIdle;
 		this.isProjectTrustedFn = contextActions.isProjectTrusted;
 		this.getSignalFn = contextActions.getSignal;
@@ -426,6 +432,7 @@ export class ExtensionRunner {
 		this.getSystemPromptOptionsFn =
 			contextActions.getSystemPromptOptions ?? (() => normalizeBuildSystemPromptOptions({ cwd: this.cwd }));
 
+		let registeredProvider = false;
 		// Flush provider registrations queued during extension loading
 		for (const { name, config, extensionPath } of this.runtime.pendingProviderRegistrations) {
 			try {
@@ -434,6 +441,7 @@ export class ExtensionRunner {
 				} else {
 					this.modelRuntime.registerProvider(name, config);
 				}
+				registeredProvider = true;
 			} catch (err) {
 				this.emitError({
 					extensionPath,
@@ -451,6 +459,7 @@ export class ExtensionRunner {
 				} else {
 					this.modelRuntime.registerNativeProvider(provider);
 				}
+				registeredProvider = true;
 			} catch (err) {
 				this.emitError({
 					extensionPath,
@@ -485,6 +494,7 @@ export class ExtensionRunner {
 			}
 			this.modelRuntime.unregisterProvider(name);
 		};
+		return registeredProvider;
 	}
 
 	bindCommandContext(actions?: ExtensionCommandContextActions): void {
@@ -492,6 +502,7 @@ export class ExtensionRunner {
 			this.waitForIdleFn = actions.waitForIdle;
 			this.newSessionHandler = actions.newSession;
 			this.forkHandler = actions.fork;
+			this.cloneHandler = actions.clone;
 			this.navigateTreeHandler = actions.navigateTree;
 			this.switchSessionHandler = actions.switchSession;
 			this.reloadHandler = actions.reload;
@@ -501,6 +512,7 @@ export class ExtensionRunner {
 		this.waitForIdleFn = async () => {};
 		this.newSessionHandler = async () => ({ cancelled: false });
 		this.forkHandler = async () => ({ cancelled: false });
+		this.cloneHandler = async () => ({ cancelled: false });
 		this.navigateTreeHandler = async () => ({ cancelled: false });
 		this.switchSessionHandler = async () => ({ cancelled: false });
 		this.reloadHandler = async () => {};
@@ -664,7 +676,7 @@ export class ExtensionRunner {
 	}
 
 	invalidate(
-		message = "This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+		message = "This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.clone(), ctx.switchSession(), or ctx.reload(). For newSession, fork, clone, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 	): void {
 		if (!this.staleMessage) {
 			this.staleMessage = message;
@@ -821,6 +833,10 @@ export class ExtensionRunner {
 				runner.assertActive();
 				return runner.modelRuntime;
 			},
+			get resources() {
+				runner.assertActive();
+				return runner.getResources();
+			},
 			get model() {
 				runner.assertActive();
 				return getModel();
@@ -891,6 +907,10 @@ export class ExtensionRunner {
 		context.fork = (entryId, options) => {
 			this.assertActive();
 			return this.forkHandler(entryId, options);
+		};
+		context.clone = (options) => {
+			this.assertActive();
+			return this.cloneHandler(options);
 		};
 		context.navigateTree = (targetId, options) => {
 			this.assertActive();

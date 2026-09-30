@@ -74,7 +74,7 @@ describe("regression #3616: in-memory settings survive reload", () => {
 			compaction: { enabled: false },
 		});
 
-		settingsManager.setTheme("dark");
+		await settingsManager.setTheme("dark");
 		await settingsManager.flush();
 		await settingsManager.reload();
 

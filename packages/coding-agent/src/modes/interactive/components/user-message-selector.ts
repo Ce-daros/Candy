@@ -140,7 +140,7 @@ class UserMessageList implements Component {
 			if (this.region === "preview")
 				this.previewOffset = moveViewport(this.previewOffset, this.previewLineCount, this.previewHeight, delta);
 			else {
-				this.selectedIndex = moveSelection(this.selectedIndex, this.messages.length, delta, true);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.messages.length, delta);
 				this.previewOffset = 0;
 			}
 		} else if (kb.matches(data, "tui.select.confirm")) {

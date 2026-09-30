@@ -1,3 +1,4 @@
+import { createSessionCommandActions } from "../core/session-command-actions.ts";
 /**
  * Print mode (single-shot): Send prompts, output result, exit.
  *
@@ -33,18 +34,20 @@ export interface PrintModeOptions {
 export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: PrintModeOptions): Promise<number> {
 	const { mode, messages = [], initialMessage, initialImages } = options;
 	let exitCode = 0;
+	let signalExitCode: number | undefined;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
-	let disposed = false;
+	let disposePromise: Promise<void> | undefined;
 	const signalCleanupHandlers: Array<() => void> = [];
 
-	const disposeRuntime = async (): Promise<void> => {
-		if (disposed) return;
-		disposed = true;
-		unsubscribe?.();
-		unsubscribeBackpressure?.();
-		await runtimeHost.dispose();
+	const disposeRuntime = (): Promise<void> => {
+		disposePromise ??= (async () => {
+			unsubscribe?.();
+			unsubscribeBackpressure?.();
+			await runtimeHost.dispose();
+		})();
+		return disposePromise;
 	};
 
 	const registerSignalHandlers = (): void => {
@@ -55,9 +58,11 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		for (const signal of signals) {
 			const handler = () => {
+				signalExitCode = signal === "SIGHUP" ? 129 : 143;
 				killTrackedDetachedChildren();
-				void disposeRuntime().finally(() => {
-					process.exit(signal === "SIGHUP" ? 129 : 143);
+				void disposeRuntime().catch((error: unknown) => {
+					console.error(error instanceof Error ? error.message : String(error));
+					signalExitCode = 1;
 				});
 			};
 			process.on(signal, handler);
@@ -75,29 +80,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		session = runtimeHost.session;
 		await session.bindExtensions({
 			mode: mode === "json" ? "json" : "print",
-			commandContextActions: {
-				waitForIdle: () => session.waitForIdle(),
-				newSession: async (newSessionOptions) => runtimeHost.newSession(newSessionOptions),
-				fork: async (entryId, forkOptions) => {
-					const result = await runtimeHost.fork(entryId, forkOptions);
-					return { cancelled: result.cancelled };
-				},
-				navigateTree: async (targetId, navigateOptions) => {
-					const result = await session.navigateTree(targetId, {
-						summarize: navigateOptions?.summarize,
-						customInstructions: navigateOptions?.customInstructions,
-						replaceInstructions: navigateOptions?.replaceInstructions,
-						label: navigateOptions?.label,
-					});
-					return { cancelled: result.cancelled };
-				},
-				switchSession: async (sessionPath, switchOptions) => {
-					return runtimeHost.switchSession(sessionPath, switchOptions);
-				},
-				reload: async () => {
-					await session.reload();
-				},
-			},
+			commandContextActions: createSessionCommandActions(runtimeHost),
 			onError: (err) => {
 				console.error(`Extension error (${err.extensionPath}): ${err.error}`);
 			},
@@ -112,7 +95,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		});
 		unsubscribeBackpressure =
 			mode === "json"
-				? session.agent.subscribe(async () => {
+				? session.subscribeExecution(async () => {
 						await waitForRawStdoutBackpressure();
 					})
 				: undefined;
@@ -155,10 +138,10 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			}
 		}
 
-		return exitCode;
+		return signalExitCode ?? exitCode;
 	} catch (error: unknown) {
 		console.error(error instanceof Error ? error.message : String(error));
-		return 1;
+		return signalExitCode ?? 1;
 	} finally {
 		for (const cleanup of signalCleanupHandlers) {
 			cleanup();

@@ -8,9 +8,9 @@ import { createHarness, getAssistantTexts, getUserTexts, type Harness } from "..
 describe("issue #2023 queued slash-command follow-up", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

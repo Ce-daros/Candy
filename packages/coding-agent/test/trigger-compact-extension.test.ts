@@ -10,6 +10,7 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
 		cwd: process.cwd(),
 		sessionManager: {} as ExtensionContext["sessionManager"],
 		modelRuntime: {} as ExtensionContext["modelRuntime"],
+		resources: {} as ExtensionContext["resources"],
 		model: undefined,
 		isIdle: () => true,
 		isProjectTrusted: () => true,

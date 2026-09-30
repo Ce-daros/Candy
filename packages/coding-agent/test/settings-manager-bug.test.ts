@@ -3,18 +3,7 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
-/**
- * Tests for the fix to a bug where external file changes to arrays were overwritten.
- *
- * The bug scenario was:
- * 1. candy starts with settings.json containing packages: ["npm:some-pkg"]
- * 2. User externally edits file to packages: []
- * 3. User changes an unrelated setting (e.g., theme) via UI
- * 4. save() would overwrite packages back to ["npm:some-pkg"] from stale in-memory state
- *
- * The fix tracks which fields were explicitly modified during the session, and only
- * those fields override file values during save().
- */
+/** Settings commits preserve external changes to fields outside the current patch. */
 describe("SettingsManager - External Edit Preservation", () => {
 	const testDir = join(process.cwd(), "test-settings-bug-tmp");
 	const agentDir = join(testDir, "agent");
@@ -39,14 +28,13 @@ describe("SettingsManager - External Edit Preservation", () => {
 		const manager = SettingsManager.create(projectDir, agentDir);
 		writeFileSync(settingsPath, "{broken");
 
-		manager.setShowImages(false);
-		await expect(manager.flushOrThrow()).rejects.toThrow();
+		await expect(manager.setShowImages(false)).rejects.toThrow();
 		expect(readFileSync(settingsPath, "utf8")).toBe("{broken");
+		expect(manager.getShowImages()).toBe(true);
 
 		writeFileSync(settingsPath, "{}");
-		manager.setShowImages(true);
-		await expect(manager.flushOrThrow()).resolves.toBeUndefined();
-		expect(JSON.parse(readFileSync(settingsPath, "utf8")).terminal.showImages).toBe(true);
+		await manager.setShowImages(false);
+		expect(JSON.parse(readFileSync(settingsPath, "utf8")).terminal.showImages).toBe(false);
 	});
 
 	it("does not hide an earlier queued write failure behind a later success", async () => {
@@ -68,13 +56,14 @@ describe("SettingsManager - External Edit Preservation", () => {
 		});
 
 		failNextWrite = true;
-		manager.setTheme("dark");
-		manager.setShowImages(false);
-		await expect(manager.flushOrThrow()).rejects.toThrow("first write failed");
-		expect(JSON.parse(global)).toMatchObject({ theme: "dark", terminal: { showImages: false } });
+		const failedCommit = manager.setTheme("dark");
+		const successfulCommit = manager.setShowImages(false);
+		await expect(failedCommit).rejects.toThrow("first write failed");
+		await successfulCommit;
+		expect(JSON.parse(global)).toEqual({ terminal: { showImages: false } });
 	});
 
-	it("restores active settings when an awaited mutation cannot be saved", async () => {
+	it("keeps effective settings unchanged when a commit cannot be saved", async () => {
 		let failWrite = false;
 		const storage = {
 			withLock(_scope: "global" | "project", update: (current: string | undefined) => string | undefined) {
@@ -85,7 +74,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 		const manager = SettingsManager.fromStorage(storage);
 		failWrite = true;
 
-		await expect(manager.mutateAndPersist(() => manager.setTheme("dark"))).rejects.toThrow("disk unavailable");
+		await expect(manager.setTheme("dark")).rejects.toThrow("disk unavailable");
 		expect(manager.getTheme()).toBeUndefined();
 	});
 
@@ -116,7 +105,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 		expect(JSON.parse(readFileSync(settingsPath, "utf-8")).packages).toEqual([]);
 
 		// User changes an UNRELATED setting via UI (this triggers save)
-		manager.setTheme("light");
+		await manager.setTheme("light");
 		await manager.flush();
 
 		// With the fix, packages should be preserved as [] (not reverted to startup value)
@@ -145,7 +134,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 		writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
 
 		// Change unrelated setting
-		manager.setDefaultThinkingLevel("high");
+		await manager.setDefaultThinkingLevel("high");
 		await manager.flush();
 
 		const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));

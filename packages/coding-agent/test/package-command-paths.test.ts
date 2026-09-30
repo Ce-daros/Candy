@@ -61,10 +61,10 @@ describe("package commands", () => {
 		originalPath = process.env.PATH;
 		originalExitCode = process.exitCode;
 		originalExecPath = process.execPath;
-		process.exitCode = undefined;
+		process.exitCode = 0;
 		vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null) => {
 			if (code === undefined || code === null || Number(code) === 0) {
-				process.exitCode = undefined;
+				process.exitCode = 0;
 			} else {
 				process.exitCode = code;
 			}
@@ -155,7 +155,7 @@ describe("package commands", () => {
 			expect(stdout).toContain("Project packages:");
 			expect(stdout).toContain("npm:@project/pkg");
 			expect(stdout).not.toContain("No packages installed.");
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -173,7 +173,7 @@ describe("package commands", () => {
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			expect(stdout).toContain("No packages installed.");
 			expect(stdout).not.toContain("Project packages:");
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -191,7 +191,7 @@ describe("package commands", () => {
 			expect(stdout).toContain("Project packages:");
 			expect(stdout).toContain("npm:@project/pkg");
 			expect(stdout).not.toContain("No packages installed.");
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -210,7 +210,7 @@ describe("package commands", () => {
 			expect(stdout).toContain("Project packages:");
 			expect(stdout).toContain("npm:@project/pkg");
 			expect(stdout).not.toContain("No packages installed.");
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -236,7 +236,7 @@ describe("package commands", () => {
 			expect(stdout).toContain("Project packages:");
 			expect(stdout).toContain("npm:@project/pkg");
 			expect(stdout).not.toContain("No packages installed.");
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -274,7 +274,7 @@ describe("package commands", () => {
 
 			expect(projectTrustCalled).toBe(false);
 			expect(existsSync(recordPath)).toBe(false);
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -299,7 +299,7 @@ describe("package commands", () => {
 			await expect(main(["update", "--extensions"])).resolves.toBeUndefined();
 
 			expect(existsSync(recordPath)).toBe(true);
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -318,7 +318,7 @@ describe("package commands", () => {
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			expect(stdout).toContain("No packages installed.");
 			expect(stdout).not.toContain("Project packages:");
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -341,14 +341,14 @@ describe("package commands", () => {
 	});
 
 	it("allows local package install to initialize fresh project settings", async () => {
-		await main(["install", "-l", packageDir]);
+		await main(["install", "-l", packageDir, "--approve"]);
 
 		const settingsPath = join(projectDir, ".candy", "settings.json");
 		const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
 		expect(settings.packages?.length).toBe(1);
 		const stored = settings.packages?.[0] ?? "";
 		expect(realpathSync(join(projectDir, ".candy", stored))).toBe(realpathSync(packageDir));
-		expect(process.exitCode).toBeUndefined();
+		expect(process.exitCode).toBe(0);
 	});
 
 	it("shows install subcommand help", async () => {
@@ -362,7 +362,7 @@ describe("package commands", () => {
 			expect(stdout).toContain("Usage:");
 			expect(stdout).toContain("candy install <source> [-l]");
 			expect(errorSpy).not.toHaveBeenCalled();
-			expect(process.exitCode).toBeUndefined();
+			expect(process.exitCode).toBe(0);
 		} finally {
 			logSpy.mockRestore();
 			errorSpy.mockRestore();
@@ -390,7 +390,7 @@ describe("package commands", () => {
 		});
 		expect(logSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain("Model catalogs refreshed");
 		expect(errorSpy).not.toHaveBeenCalled();
-		expect(process.exitCode).toBeUndefined();
+		expect(process.exitCode).toBe(0);
 	});
 
 	it("rejects update --models combined with another update target", async () => {
@@ -411,6 +411,7 @@ describe("package commands", () => {
 		storage.withLock("global", () => JSON.stringify({ packages: ["npm:pi-tools"] }));
 		const settingsManager = SettingsManager.fromStorage(storage, { projectTrusted: true });
 		const resolvedPaths = extensionPaths(join(tempDir, "pkg"), "npm:pi-tools", "user", ["bar.ts"]);
+		const requestRender = vi.fn();
 		const selector = new ConfigSelectorComponent(
 			{ global: resolvedPaths, project: resolvedPaths },
 			settingsManager,
@@ -418,22 +419,25 @@ describe("package commands", () => {
 			agentDir,
 			() => {},
 			() => {},
-			() => {},
+			requestRender,
 			24,
 			"project",
 		);
 
 		selector.getResourceList().handleInput(" ");
+		await vi.waitFor(() => expect(requestRender).toHaveBeenCalledTimes(1));
 		expect(settingsManager.getProjectSettings().packages).toEqual([
 			{ source: "npm:pi-tools", autoload: false, extensions: ["-extensions/bar.ts"] },
 		]);
 
 		selector.getResourceList().handleInput(" ");
+		await vi.waitFor(() => expect(requestRender).toHaveBeenCalledTimes(2));
 		expect(settingsManager.getProjectSettings().packages).toEqual([
 			{ source: "npm:pi-tools", autoload: false, extensions: ["+extensions/bar.ts"] },
 		]);
 
 		selector.getResourceList().handleInput(" ");
+		await vi.waitFor(() => expect(requestRender).toHaveBeenCalledTimes(3));
 		expect(settingsManager.getProjectSettings().packages).toEqual([]);
 	});
 

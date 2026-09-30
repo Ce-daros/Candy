@@ -156,6 +156,7 @@ async function createRuntimeHost(options: {
 		newSession: vi.fn(async () => ({ cancelled: true })),
 		switchSession: vi.fn(async () => ({ cancelled: true })),
 		fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),
+		importFromJsonl: vi.fn(async () => ({ cancelled: true })),
 		dispose: vi.fn(async () => {}),
 		setRebindSession: vi.fn(),
 	} as unknown as AgentSessionRuntime;
@@ -168,7 +169,7 @@ async function createRuntimeHost(options: {
 			} catch {
 				// ignore test cleanup failures
 			}
-			session.dispose();
+			await session.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true });
 			}
@@ -179,19 +180,45 @@ async function createRuntimeHost(options: {
 async function startRpcMode(options: Parameters<typeof createRuntimeHost>[0]): Promise<{
 	lineHandler: (line: string) => void;
 	cleanup: () => Promise<void>;
+	runtimeHost: AgentSessionRuntime;
 }> {
 	rpcIo.outputLines = [];
 	rpcIo.lineHandler = undefined;
+	const processSignals = ["SIGTERM", "SIGHUP"] satisfies NodeJS.Signals[];
+	type ProcessListener = (...args: never[]) => void;
+	const previousProcessListeners = new Map<NodeJS.Signals, Set<ProcessListener>>(
+		processSignals.map((signal) => [signal, new Set(process.listeners(signal) as ProcessListener[])]),
+	);
+	const previousInputEndListeners = new Set(process.stdin.listeners("end"));
 
 	const { runtimeHost, cleanup } = await createRuntimeHost(options);
 	void runRpcMode(runtimeHost);
 	await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 
-	return { lineHandler: rpcIo.lineHandler!, cleanup };
+	return {
+		lineHandler: rpcIo.lineHandler!,
+		runtimeHost,
+		cleanup: async () => {
+			try {
+				await cleanup();
+			} finally {
+				for (const [signal, previous] of previousProcessListeners) {
+					for (const listener of process.listeners(signal)) {
+						if (!previous.has(listener as ProcessListener))
+							process.off(signal, listener as NodeJS.SignalsListener);
+					}
+				}
+				for (const listener of process.stdin.listeners("end")) {
+					if (!previousInputEndListeners.has(listener))
+						process.stdin.off("end", listener as NodeJS.SignalsListener);
+				}
+			}
+		},
+	};
 }
 
 describe("RPC prompt response semantics", () => {
-	afterEach(() => {
+	afterEach(async () => {
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
 	});
@@ -540,6 +567,174 @@ describe("RPC prompt response semantics", () => {
 
 			await sleep(600);
 			expect(parseOutputLines(rpcIo.outputLines).filter((record) => record.type === "agent_start")).toHaveLength(1);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("commits only catalog settings, emits the commit event, and clears one nested value", async () => {
+		const { lineHandler, cleanup, runtimeHost } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+		const settings = runtimeHost.session.settingsManager;
+
+		try {
+			await settings.commitSetting("global", "terminal", { images: "kitty" });
+			rpcIo.outputLines = [];
+
+			lineHandler(
+				JSON.stringify({
+					id: "bad-setting",
+					type: "commit_setting",
+					scope: "global",
+					settingId: "unknown",
+					value: true,
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "bad-setting",
+					type: "response",
+					command: "commit_setting",
+					success: false,
+					error: "Unknown setting: unknown",
+				});
+			});
+
+			lineHandler(
+				JSON.stringify({
+					id: "bad-value",
+					type: "commit_setting",
+					scope: "global",
+					settingId: "show-images",
+					value: "false",
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "bad-value",
+					type: "response",
+					command: "commit_setting",
+					success: false,
+					error: "Invalid value for setting show-images",
+				});
+			});
+			expect(settings.getGlobalSettings().terminal).toEqual({ images: "kitty" });
+
+			lineHandler(
+				JSON.stringify({
+					id: "set-setting",
+					type: "commit_setting",
+					scope: "global",
+					settingId: "show-images",
+					value: false,
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "set-setting",
+					type: "response",
+					command: "commit_setting",
+					success: true,
+					data: { scope: "global", settingId: "show-images", cleared: false },
+				});
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					type: "settings_commit",
+					scope: "global",
+					fields: ["terminal"],
+				});
+			});
+
+			lineHandler(
+				JSON.stringify({
+					id: "clear-setting",
+					type: "commit_setting",
+					scope: "global",
+					settingId: "show-images",
+					clear: true,
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "clear-setting",
+					type: "response",
+					command: "commit_setting",
+					success: true,
+					data: { scope: "global", settingId: "show-images", cleared: true },
+				});
+			});
+			expect(settings.getGlobalSettings().terminal).toEqual({ images: "kitty" });
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("forwards paired default-model commits and exposes resource and tool operations", async () => {
+		const { lineHandler, cleanup, runtimeHost } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(
+				JSON.stringify({
+					id: "save-model",
+					type: "save_default_model",
+					provider: "anthropic",
+					modelId: "claude-sonnet-4-5",
+				}),
+			);
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual(
+					expect.objectContaining({ id: "save-model", type: "response", success: true }),
+				),
+			);
+			lineHandler(JSON.stringify({ id: "settings", type: "get_settings" }));
+			await vi.waitFor(() => {
+				const record = parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "settings");
+				expect(record).toMatchObject({
+					success: true,
+					data: { global: { defaultProvider: "anthropic", defaultModel: "claude-sonnet-4-5" } },
+				});
+			});
+			lineHandler(JSON.stringify({ id: "resources", type: "get_resources" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "resources")).toMatchObject({
+					success: true,
+					data: { skills: { skills: [] } },
+				}),
+			);
+			lineHandler(JSON.stringify({ id: "active-get", type: "active_tools", action: "get" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "active-get")).toMatchObject({
+					success: true,
+					data: { names: runtimeHost.session.getActiveToolNames() },
+				}),
+			);
+			lineHandler(JSON.stringify({ id: "active-set", type: "active_tools", action: "set", names: [] }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "active-set")).toMatchObject({
+					success: true,
+					data: { names: [] },
+				}),
+			);
+			lineHandler(JSON.stringify({ id: "defaults-save", type: "default_tools", action: "save", names: [] }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "defaults-save")).toMatchObject({
+					success: true,
+					data: { names: [] },
+				}),
+			);
+			lineHandler(JSON.stringify({ id: "defaults-get", type: "default_tools", action: "get" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "defaults-get")).toMatchObject({
+					success: true,
+					data: { names: [] },
+				}),
+			);
+			lineHandler(JSON.stringify({ id: "import", type: "import_session", inputPath: "ignored.jsonl" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines).find((entry) => entry.id === "import")).toMatchObject({
+					success: true,
+					data: { cancelled: true },
+				}),
+			);
+			expect(runtimeHost.importFromJsonl).toHaveBeenCalledWith("ignored.jsonl", undefined);
 		} finally {
 			await cleanup();
 		}

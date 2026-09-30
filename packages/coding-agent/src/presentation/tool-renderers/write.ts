@@ -7,8 +7,9 @@
  */
 
 import { Container, Text } from "@candy/tui";
+import type { Theme } from "../../contracts/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
-import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
+import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "../tool-render-utils.ts";
 
 type WriteHighlightCache = {

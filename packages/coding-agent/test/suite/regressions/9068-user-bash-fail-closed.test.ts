@@ -87,12 +87,12 @@ function createRuntimeHost(harness: Harness): AgentSessionRuntime {
 async function startRpcHarness(extension: (candy: ExtensionAPI) => void): Promise<{
 	harness: Harness;
 	send(command: Record<string, unknown>): void;
-	cleanup(): void;
+	cleanup(): Promise<void>;
 }> {
 	const listenerSnapshot = takeListenerSnapshot();
 	const harness = await createHarness({ extensionFactories: [extension] });
-	const cleanup = () => {
-		harness.cleanup();
+	const cleanup = async () => {
+		await harness.cleanup();
 		restoreListeners(listenerSnapshot);
 	};
 
@@ -119,11 +119,11 @@ type InteractiveBashContext = {
 	editor: { addToHistory?: (text: string) => void };
 	session: Harness["session"];
 	sessionManager: Harness["sessionManager"];
-	ui: { requestRender(): void };
+	renderer: { requestRender(): void };
+	inputMode: "normal" | "shell" | "shell-no-context";
 	chatContainer: { addChild(component: unknown): void };
 	pendingMessagesContainer: { addChild(component: unknown): void };
 	pendingBashComponents: unknown[];
-	shellMode: "shell" | "shell-no-context";
 	handleBashCommand(command: string, excludeFromContext?: boolean): Promise<void>;
 	showError(message: string): void;
 	updateEditorBorderColor(): void;
@@ -174,7 +174,7 @@ const rpcCases: Array<{
 	},
 ];
 
-afterEach(() => {
+afterEach(async () => {
 	rpcIo.outputLines = [];
 	rpcIo.lineHandler = undefined;
 });
@@ -241,11 +241,11 @@ describe("Interactive user_bash failure handling (#9068)", () => {
 			editor: { addToHistory: vi.fn() },
 			session: harness.session,
 			sessionManager: harness.sessionManager,
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
+			inputMode: shellMode,
 			chatContainer: { addChild: vi.fn() },
 			pendingMessagesContainer: { addChild: vi.fn() },
 			pendingBashComponents: [],
-			shellMode,
 			handleBashCommand: interactiveModePrototype.handleBashCommand,
 			showError: vi.fn(),
 			updateEditorBorderColor: vi.fn(),
@@ -266,7 +266,7 @@ describe("Interactive user_bash failure handling (#9068)", () => {
 			expect(executeBash).not.toHaveBeenCalled();
 		} finally {
 			executeBash.mockRestore();
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

@@ -4,7 +4,7 @@ import type { PanelContent } from "./components/composer-panel.ts";
 export interface InteractivePageControllerHost {
 	suspendPresentation(content: Component): void;
 	closeTranscriptSearch(content: Component): void;
-	mount(content: PanelContent, compact: boolean, heightRatio: number, inputTarget: Component): void;
+	mount(content: PanelContent, heightRatio: number, inputTarget: Component): void;
 	resumePresentation(): boolean;
 	focusEditor(): void;
 	closeAnimation(onComplete: () => void): void;
@@ -33,11 +33,11 @@ export class InteractivePageController {
 		dispose?.();
 	}
 
-	mountPanel(content: PanelContent, compact = false, heightRatio = 0.8, inputTarget: Component = content): void {
+	mountPanel(content: PanelContent, heightRatio = 0.8, inputTarget: Component = content): void {
 		this.host.suspendPresentation(content);
 		this.host.closeTranscriptSearch(content);
 		this.generationValue++;
-		this.host.mount(content, compact, heightRatio, inputTarget);
+		this.host.mount(content, heightRatio, inputTarget);
 		this.host.requestRender();
 	}
 
@@ -54,7 +54,6 @@ export class InteractivePageController {
 
 	showSelector(
 		create: (done: () => void) => { component: Component; focus: Component; dispose?: () => void },
-		compact = false,
 		heightRatio = 0.8,
 	): void {
 		const token = {};
@@ -71,6 +70,6 @@ export class InteractivePageController {
 		this.disposeActiveSelector();
 		this.activeSelectorToken = token;
 		this.activeSelectorDispose = dispose;
-		this.mountPanel(created.component, compact, heightRatio, created.focus);
+		this.mountPanel(created.component, heightRatio, created.focus);
 	}
 }

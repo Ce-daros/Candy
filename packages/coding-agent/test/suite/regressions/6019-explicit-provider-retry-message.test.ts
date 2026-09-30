@@ -25,7 +25,7 @@ describe("regression: issue 6019 explicit provider retry messages", () => {
 			expect(harness.eventsOfType("auto_retry_start").map((event) => event.errorMessage)).toEqual([errorMessage]);
 			expect(harness.eventsOfType("auto_retry_end").map((event) => event.success)).toEqual([true]);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

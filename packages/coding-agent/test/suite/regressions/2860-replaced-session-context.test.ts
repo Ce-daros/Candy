@@ -5,13 +5,14 @@ import { fauxAssistantMessage, fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../../../src/core/agent-session.ts";
 import {
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
+	createRuntimeFromFactory,
 } from "../../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
+import { createSessionCommandActions } from "../../../src/core/session-command-actions.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "../../../src/index.ts";
 import { extensionHostModules } from "../../../src/presentation/extensions/virtual-modules.ts";
@@ -56,7 +57,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		});
 
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				cwd,
@@ -75,7 +76,7 @@ describe("regression #2860: replaced session callbacks", () => {
 				},
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -86,7 +87,7 @@ describe("regression #2860: replaced session callbacks", () => {
 			};
 		};
 
-		const runtime = await createAgentSessionRuntime(createRuntime, {
+		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.create(tempDir),
@@ -95,27 +96,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		const rebindSession = async (): Promise<void> => {
 			const session = runtime.session;
 			await session.bindExtensions({
-				commandContextActions: {
-					waitForIdle: () => session.agent.waitForIdle(),
-					newSession: async (options) => runtime.newSession(options),
-					fork: async (entryId, options) => {
-						const result = await runtime.fork(entryId, options);
-						return { cancelled: result.cancelled };
-					},
-					navigateTree: async (targetId, options) => {
-						const result = await session.navigateTree(targetId, {
-							summarize: options?.summarize,
-							customInstructions: options?.customInstructions,
-							replaceInstructions: options?.replaceInstructions,
-							label: options?.label,
-						});
-						return { cancelled: result.cancelled };
-					},
-					switchSession: async (sessionPath, options) => runtime.switchSession(sessionPath, options),
-					reload: async () => {
-						await session.reload();
-					},
-				},
+				commandContextActions: createSessionCommandActions(runtime),
 			});
 		};
 

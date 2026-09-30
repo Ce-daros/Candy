@@ -18,13 +18,13 @@ describe("quick selection reconciliation", () => {
 		return harness;
 	};
 
-	afterEach(() => {
-		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+	afterEach(async () => {
+		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
 	});
 
 	it("uses available snapshot order and keeps unavailable configured references", async () => {
 		const harness = await create({ settings: { scopedModels: undefined } });
-		harness.settingsManager.setScopedModels([
+		await harness.settingsManager.setScopedModels([
 			{ provider: "faux", modelId: "faux-3" },
 			{ provider: "faux", modelId: "missing" },
 			{ provider: "faux", modelId: "faux-2" },
@@ -40,16 +40,19 @@ describe("quick selection reconciliation", () => {
 
 	it("preserves the current model when it remains selected", async () => {
 		const harness = await create();
-		harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-1" }]);
+		await harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-1" }]);
+		const previousModelChanges = harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change");
 
 		expect(await reconcileQuickSelection(harness.session)).toBe("unchanged");
 		expect(harness.session.model?.id).toBe("faux-1");
-		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change")).toHaveLength(0);
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change")).toEqual(
+			previousModelChanges,
+		);
 	});
 
 	it("selects the first available model when the current one was removed", async () => {
 		const harness = await create();
-		harness.settingsManager.setScopedModels([
+		await harness.settingsManager.setScopedModels([
 			{ provider: "faux", modelId: "faux-3" },
 			{ provider: "faux", modelId: "faux-2" },
 		]);
@@ -61,18 +64,21 @@ describe("quick selection reconciliation", () => {
 
 	it("clears the active model when no selected model is available without writing transcript or defaults", async () => {
 		const harness = await create();
-		harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "missing" }]);
+		await harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "missing" }]);
+		const previousModelChanges = harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change");
 
 		expect(await reconcileQuickSelection(harness.session)).toBe("empty");
 		expect(harness.session.model).toBeUndefined();
-		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change")).toHaveLength(0);
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "model_change")).toEqual(
+			previousModelChanges,
+		);
 		expect(harness.settingsManager.getScopedModels()).toEqual([{ provider: "faux", modelId: "missing" }]);
 		expect(harness.settingsManager.getDefaultModel()).toBeUndefined();
 	});
 
 	it("leaves the model cleared and surfaces authentication failure instead of falling back", async () => {
 		const harness = await create();
-		harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
+		await harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
 		harness.session.modelRuntime.checkAuth = async () => undefined;
 
 		await expect(reconcileQuickSelection(harness.session)).rejects.toThrow();
@@ -81,7 +87,7 @@ describe("quick selection reconciliation", () => {
 
 	it("honors an already-aborted signal before changing the model", async () => {
 		const harness = await create();
-		harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
+		await harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
 		const controller = new AbortController();
 		controller.abort();
 
@@ -112,14 +118,14 @@ describe("quick selection reconciliation", () => {
 
 	it("rejects reconciliation for a disposed session", async () => {
 		const harness = await create();
-		harness.session.dispose();
+		await harness.session.dispose();
 
 		await expect(reconcileQuickSelection(harness.session)).rejects.toThrow("disposed");
 	});
 
 	it("rejects reconciliation while a response is running", async () => {
 		const harness = await create();
-		harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
+		await harness.settingsManager.setScopedModels([{ provider: "faux", modelId: "faux-2" }]);
 		let markStarted!: () => void;
 		let finishResponse!: () => void;
 		const started = new Promise<void>((resolve) => {

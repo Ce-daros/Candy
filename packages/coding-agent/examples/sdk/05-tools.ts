@@ -1,58 +1,48 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Tools Configuration
  *
  * Use tool names to choose which built-in tools are enabled.
  *
  * Tool names are matched against all available tools. If you use a custom `cwd`,
- * createAgentSession() applies that cwd when it builds the actual built-in tools.
+ * createAgentSessionRuntime() applies that cwd when it builds the actual built-in tools.
  *
  * For custom tools, see 06-extensions.ts - custom tools are registered via the
  * extensions system using candy.registerTool().
  */
 
-import { createAgentSession, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
 
 // Read-only mode (no edit/write)
-const { session: readOnlySession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
+const readOnlySessionRuntime = await createAgentSessionRuntime({
 	tools: ["read", "grep", "find", "ls"],
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Read-only session created");
-readOnlySession.dispose();
+await readOnlySessionRuntime.dispose();
 
 // Custom tool selection
-const { session: customToolsSession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
+const customToolsSessionRuntime = await createAgentSessionRuntime({
 	tools: ["read", "bash", "grep"],
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Custom tools session created");
-customToolsSession.dispose();
+await customToolsSessionRuntime.dispose();
 
 // With custom cwd
 const customCwd = "/path/to/project";
-const { session: customCwdSession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
+const customCwdSessionRuntime = await createAgentSessionRuntime({
 	cwd: customCwd,
 	tools: ["read", "bash", "edit", "write"],
 	sessionManager: SessionManager.inMemory(customCwd),
 });
 console.log("Custom cwd session created");
-customCwdSession.dispose();
+await customCwdSessionRuntime.dispose();
 
 // Or pick specific tools for custom cwd
-const { session: specificToolsSession } = await createAgentSession({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
+const specificToolsSessionRuntime = await createAgentSessionRuntime({
 	cwd: customCwd,
 	tools: ["read", "bash", "grep"],
 	sessionManager: SessionManager.inMemory(customCwd),
 });
 console.log("Specific tools with custom cwd session created");
-specificToolsSession.dispose();
+await specificToolsSessionRuntime.dispose();

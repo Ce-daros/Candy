@@ -41,8 +41,8 @@ function seedCompactableSession(harness: Harness): void {
 describe("issue #6768 Copilot compaction base URL", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 		harness = undefined;
 	});
 

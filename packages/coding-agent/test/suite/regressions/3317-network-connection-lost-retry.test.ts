@@ -5,9 +5,9 @@ import { createHarness, getAssistantTexts, type Harness } from "../harness.ts";
 describe("issue #3317 network connection lost retry", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

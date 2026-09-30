@@ -20,7 +20,7 @@ Some `ExtensionUIContext` methods are not supported or degraded in RPC mode beca
 - `getToolsExpanded()` returns `false`.
 - `pasteToEditor()` delegates to `setEditorText()` without terminal paste handling.
 - `getAllThemes()` returns `[]`, and `getTheme()` returns `undefined`.
-- `setTheme()` returns `{ success: false, error: "Theme switching not supported in RPC mode" }`.
+- `setTheme()` resolves to `{ success: false, error: "Theme switching not supported in RPC mode" }`; extension handlers should await the result before reporting whether a theme change succeeded.
 
 Note: `ctx.mode` is `"rpc"` and `ctx.hasUI` is `true` in RPC mode because the dialog and fire-and-forget methods are functional via the extension UI sub-protocol. Use `ctx.mode === "tui"` to guard TUI-specific features like `custom()` that require a real terminal.
 

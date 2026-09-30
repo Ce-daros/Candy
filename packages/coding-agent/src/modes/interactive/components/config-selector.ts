@@ -10,6 +10,7 @@ import {
 	type Focusable,
 	getKeybindings,
 	Input,
+	moveSelection,
 	Spacer,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
@@ -32,6 +33,7 @@ import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 export type ScopedResolvedPaths = Record<ConfigWriteScope, ResolvedPaths>;
 
 export interface ConfigSelectorOptions {
+	resourceConfiguration?: ResourceConfiguration;
 	resourceTypes?: readonly ResourceType[];
 	onToggle?: () => void;
 	onOpen?: (path: string) => void;
@@ -253,7 +255,9 @@ class ResourceList implements Component, Focusable {
 	private lastVisibleCount = 0;
 	private lastSearchRow = 0;
 	private toggleError?: string;
+	private pendingToggle = false;
 	private readonly embedded: boolean;
+	private readonly requestRender: () => void;
 
 	public onCancel?: () => void;
 	public onExit?: () => void;
@@ -278,11 +282,13 @@ class ResourceList implements Component, Focusable {
 		writeScope: ConfigWriteScope = "global",
 		resourceTypes: readonly ResourceType[] = RESOURCE_TYPES,
 		embedded = false,
+		requestRender: () => void = () => {},
 	) {
 		this.groupsByScope = groupsByScope;
 		this.resourceConfiguration = resourceConfiguration;
 		this.resourceTypes = resourceTypes;
 		this.embedded = embedded;
+		this.requestRender = requestRender;
 		this.writeScope = writeScope;
 		this.searchInput = new Input();
 		this.maxVisible = Math.max(1, (terminalHeight ?? 24) - (embedded ? 11 : 19));
@@ -326,14 +332,16 @@ class ResourceList implements Component, Focusable {
 	}
 
 	private findNextItem(fromIndex: number, direction: 1 | -1): number {
-		let idx = fromIndex + direction;
-		while (idx >= 0 && idx < this.filteredItems.length) {
+		let idx = moveSelection(fromIndex, this.filteredItems.length, direction);
+		while (idx !== fromIndex) {
 			if (this.filteredItems[idx].type === "item") {
 				return idx;
 			}
-			idx += direction;
+			const next = moveSelection(idx, this.filteredItems.length, direction);
+			if (next === idx) return fromIndex;
+			idx = next;
 		}
-		return fromIndex; // Stay at current if no item found
+		return fromIndex;
 	}
 
 	private filterItems(query: string): void {
@@ -568,7 +576,7 @@ class ResourceList implements Component, Focusable {
 			if (this.filteredItems[index]?.type !== "item") return undefined;
 			this.selectedIndex = index;
 			this.region = "list";
-			if (event.type === "click") this.toggleSelected();
+			if (event.type === "click") void this.toggleSelected();
 			return { handled: true, focus: true, render: true };
 		}
 		return undefined;
@@ -586,8 +594,7 @@ class ResourceList implements Component, Focusable {
 		}
 		if (this.region === "categories" && (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down"))) {
 			const delta = kb.matches(data, "tui.select.down") ? 1 : -1;
-			this.selectedTypeIndex =
-				(this.selectedTypeIndex + delta + this.resourceTypes.length) % this.resourceTypes.length;
+			this.selectedTypeIndex = moveSelection(this.selectedTypeIndex, this.resourceTypes.length, delta);
 			this.buildFlatList();
 			this.filterItems(this.searchInput.getValue());
 			return;
@@ -607,24 +614,14 @@ class ResourceList implements Component, Focusable {
 		}
 		if (kb.matches(data, "tui.select.pageUp")) {
 			// Jump up by maxVisible, then find nearest item
-			let target = Math.max(0, this.selectedIndex - this.maxVisible);
-			while (target < this.filteredItems.length && this.filteredItems[target].type !== "item") {
-				target++;
-			}
-			if (target < this.filteredItems.length) {
-				this.selectedIndex = target;
-			}
+			const target = moveSelection(this.selectedIndex, this.filteredItems.length, -this.maxVisible);
+			this.selectedIndex = this.findNextItem(target, 1);
 			return;
 		}
 		if (kb.matches(data, "tui.select.pageDown")) {
 			// Jump down by maxVisible, then find nearest item
-			let target = Math.min(this.filteredItems.length - 1, this.selectedIndex + this.maxVisible);
-			while (target >= 0 && this.filteredItems[target].type !== "item") {
-				target--;
-			}
-			if (target >= 0) {
-				this.selectedIndex = target;
-			}
+			const target = moveSelection(this.selectedIndex, this.filteredItems.length, this.maxVisible);
+			this.selectedIndex = this.findNextItem(target, -1);
 			return;
 		}
 		if (kb.matches(data, "app.clear")) {
@@ -640,13 +637,13 @@ class ResourceList implements Component, Focusable {
 			return;
 		}
 		if (this.region === "list" && data === " ") {
-			this.toggleSelected();
+			void this.toggleSelected();
 			return;
 		}
 		if (this.region === "list" && kb.matches(data, "tui.select.confirm")) {
 			const entry = this.filteredItems[this.selectedIndex];
 			if (entry?.type === "item" && this.onOpen) this.onOpen(entry.item.path);
-			else this.toggleSelected();
+			else void this.toggleSelected();
 			return;
 		}
 
@@ -655,20 +652,28 @@ class ResourceList implements Component, Focusable {
 		this.filterItems(this.searchInput.getValue());
 	}
 
-	private toggleSelected(): void {
+	private async toggleSelected(): Promise<void> {
 		const entry = this.filteredItems[this.selectedIndex];
 		if (
+			this.pendingToggle ||
 			entry?.type !== "item" ||
 			(this.writeScope !== "project" && this.resourceConfiguration.getItemScope(entry.item) !== "user")
 		)
 			return;
 		this.toggleError = this.beforeToggle?.();
 		if (this.toggleError) return;
-		const newEnabled = this.resourceConfiguration.toggleResource(entry.item);
-		if (newEnabled !== undefined) {
-			this.toggleError = undefined;
-			this.updateItem(entry.item, newEnabled);
-			this.onToggle?.(entry.item, newEnabled);
+		this.pendingToggle = true;
+		try {
+			const newEnabled = await this.resourceConfiguration.toggleResource(entry.item);
+			if (newEnabled !== undefined) {
+				this.updateItem(entry.item, newEnabled);
+				this.onToggle?.(entry.item, newEnabled);
+			}
+		} catch (error: unknown) {
+			this.toggleError = error instanceof Error ? error.message : String(error);
+		} finally {
+			this.pendingToggle = false;
+			this.requestRender();
 		}
 	}
 
@@ -751,17 +756,18 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		// Resource list
 		this.resourceList = new ResourceList(
 			groupsByScope,
-			new ResourceConfiguration(settingsManager, cwd, agentDir, resolvedPaths.global, writeScope),
+			options.resourceConfiguration ??
+				new ResourceConfiguration(settingsManager, cwd, agentDir, resolvedPaths.global, writeScope),
 			terminalHeight,
 			this.writeScope,
 			options.resourceTypes,
 			embedded,
+			requestRender,
 		);
 		this.resourceList.onCancel = onClose;
 		this.resourceList.onExit = onExit;
 		this.resourceList.onToggle = () => {
 			options.onToggle?.();
-			requestRender();
 		};
 		this.resourceList.onOpen = options.onOpen;
 		this.resourceList.beforeToggle = options.beforeToggle;

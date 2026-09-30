@@ -13,9 +13,9 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("#6647 compaction retries transient summarization failures", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -80,7 +80,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 	}
 
 	it("retries a transient `terminated` summarization error and compacts successfully", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness();
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 3, baseDelayMs: 0 } });
@@ -112,7 +112,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 	});
 
 	it("does not retry a non-retryable error (insufficient_quota)", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness();
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 3, baseDelayMs: 0 } });
@@ -129,7 +129,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 	});
 
 	it("does not retry when retry is disabled", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness();
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.settingsManager.applyOverrides({ retry: { enabled: false, maxRetries: 3, baseDelayMs: 0 } });
@@ -146,7 +146,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 	});
 
 	it("stops retrying after maxRetries and reports failure", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness();
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 2, baseDelayMs: 0 } });
@@ -167,7 +167,7 @@ describe("#6647 compaction retries transient summarization failures", () => {
 	});
 
 	it("aborts an in-flight retry backoff via abortCompaction", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness();
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.settingsManager.applyOverrides({ retry: { enabled: true, maxRetries: 5, baseDelayMs: 30_000 } });

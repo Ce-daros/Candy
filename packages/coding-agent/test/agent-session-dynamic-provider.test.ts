@@ -4,11 +4,11 @@ import { join } from "node:path";
 import type { Provider } from "@candy/ai";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import type { ExtensionFactory } from "../src/core/extensions/index.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import type { ExtensionFactory } from "../src/core/sdk.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
@@ -40,13 +40,13 @@ describe("AgentSession dynamic provider registration", () => {
 	let tempDir: string;
 	let agentDir: string;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-dynamic-provider-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -71,7 +71,7 @@ describe("AgentSession dynamic provider registration", () => {
 		});
 		await resourceLoader.reload();
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir,
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
@@ -106,7 +106,7 @@ describe("AgentSession dynamic provider registration", () => {
 		expect(session.model?.baseUrl).toBe("http://localhost:8080/top-level");
 		expect(await capturePromptBaseUrl(session)).toBe("http://localhost:8080/top-level");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("applies session_start registerProvider overrides to the active model", async () => {
@@ -123,7 +123,7 @@ describe("AgentSession dynamic provider registration", () => {
 		expect(session.model?.baseUrl).toBe("http://localhost:8080/session-start");
 		expect(await capturePromptBaseUrl(session)).toBe("http://localhost:8080/session-start");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("registers native pi-ai providers during extension loading", async () => {
@@ -136,7 +136,7 @@ describe("AgentSession dynamic provider registration", () => {
 		expect(session.model?.baseUrl).toBe("http://localhost:8080/native-top-level");
 		expect(await capturePromptBaseUrl(session)).toBe("http://localhost:8080/native-top-level");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("applies command-time registerProvider overrides without reload", async () => {
@@ -152,12 +152,12 @@ describe("AgentSession dynamic provider registration", () => {
 		]);
 
 		await session.bindExtensions({});
-		await session.prompt("/use-proxy");
+		await session.executeCommand({ source: "extension", name: "use-proxy", args: "" });
 
 		expect(session.model?.baseUrl).toBe("http://localhost:8080/command");
 		expect(await capturePromptBaseUrl(session)).toBe("http://localhost:8080/command");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("registers native pi-ai providers at command time", async () => {
@@ -173,11 +173,11 @@ describe("AgentSession dynamic provider registration", () => {
 		]);
 
 		await session.bindExtensions({});
-		await session.prompt("/use-native");
+		await session.executeCommand({ source: "extension", name: "use-native", args: "" });
 
 		expect(session.model?.baseUrl).toBe("http://localhost:8080/native-command");
 		expect(await capturePromptBaseUrl(session)).toBe("http://localhost:8080/native-command");
 
-		session.dispose();
+		await session.dispose();
 	});
 });

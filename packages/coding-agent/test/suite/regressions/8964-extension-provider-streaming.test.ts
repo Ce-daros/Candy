@@ -54,7 +54,7 @@ it.each(["stream", "streamSimple"] as const)(
 			expect(receivedApiKey).toBe("extension-key");
 			expect(streamedText).toBe("custom provider response");
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	},
 );

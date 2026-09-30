@@ -914,10 +914,10 @@ class TreeList implements Component {
 		} else if (this.region === "detail" && kb.matches(keyData, "tui.select.down")) {
 			this.detailOffset = Math.min(Math.max(0, this.detailLineCount - this.detailHeight), this.detailOffset + 1);
 		} else if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = this.selectedIndex === 0 ? this.filteredNodes.length - 1 : this.selectedIndex - 1;
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, -1);
 			this.detailOffset = 0;
 		} else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = this.selectedIndex === this.filteredNodes.length - 1 ? 0 : this.selectedIndex + 1;
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, 1);
 			this.detailOffset = 0;
 		} else if (kb.matches(keyData, "app.tree.foldOrUp")) {
 			const currentId = this.filteredNodes[this.selectedIndex]?.node.entry.id;
@@ -937,10 +937,10 @@ class TreeList implements Component {
 			}
 		} else if (kb.matches(keyData, "tui.editor.cursorLeft") || kb.matches(keyData, "tui.select.pageUp")) {
 			// Page up
-			this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisibleLines);
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, -this.maxVisibleLines);
 		} else if (kb.matches(keyData, "tui.editor.cursorRight") || kb.matches(keyData, "tui.select.pageDown")) {
 			// Page down
-			this.selectedIndex = Math.min(this.filteredNodes.length - 1, this.selectedIndex + this.maxVisibleLines);
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, this.maxVisibleLines);
 		} else if (kb.matches(keyData, "tui.select.confirm")) {
 			const selected = this.filteredNodes[this.selectedIndex];
 			if (selected && this.onSelect) {

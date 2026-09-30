@@ -11,7 +11,12 @@ import type { PromptDisposition, QueuedInput, QueuedInputDisposition, SessionSta
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { InteractiveSettingId } from "../../core/interactive-setting-values.ts";
+import type { ResolvedPaths } from "../../core/package-manager.ts";
+import type { ResourceConfigurationItem, ResourceType } from "../../core/resource-configuration.ts";
+import type { ResourceOperations } from "../../core/resource-operations.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { Settings, SettingsScope } from "../../core/settings-manager.ts";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -29,6 +34,26 @@ export type RpcCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_settings" }
+	| {
+			id?: string;
+			type: "commit_setting";
+			scope: SettingsScope;
+			settingId: InteractiveSettingId;
+			value?: unknown;
+			clear?: boolean;
+	  }
+	| { id?: string; type: "save_default_model"; provider: string; modelId: string }
+	| { id?: string; type: "get_resources" }
+	| { id?: string; type: "get_resource_configuration"; scope: SettingsScope }
+	| { id?: string; type: "toggle_resource"; scope: SettingsScope; resourceType: ResourceType; path: string }
+	| { id?: string; type: "active_tools"; action: "get" }
+	| { id?: string; type: "active_tools"; action: "set"; names: string[] }
+	| { id?: string; type: "default_tools"; action: "get" }
+	| { id?: string; type: "default_tools"; action: "save"; names?: string[]; clear?: boolean }
+	| { id?: string; type: "read_instruction"; path: string }
+	| { id?: string; type: "save_instruction"; path: string; content: string }
+	| { id?: string; type: "reload_resources" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -59,6 +84,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
+	| { id?: string; type: "import_session"; inputPath: string; cwdOverride?: string }
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "clone" }
 	| { id?: string; type: "get_fork_messages" }
@@ -90,6 +116,12 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
+}
+
+export interface RpcSettingsCommitEvent {
+	type: "settings_commit";
+	scope: SettingsScope | "runtime";
+	fields: Array<keyof Settings>;
 }
 
 // ============================================================================
@@ -127,6 +159,51 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_settings";
+			success: true;
+			data: { global: Settings; project: Settings; projectTrusted: boolean };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "commit_setting";
+			success: true;
+			data: { scope: SettingsScope; settingId: InteractiveSettingId; cleared: boolean };
+	  }
+	| { id?: string; type: "response"; command: "save_default_model"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_resources";
+			success: true;
+			data: ReturnType<ResourceOperations["getInventory"]>;
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_resource_configuration";
+			success: true;
+			data: {
+				scope: SettingsScope;
+				paths: { global: ResolvedPaths; project: ResolvedPaths };
+				items: ResourceConfigurationItem[];
+			};
+	  }
+	| { id?: string; type: "response"; command: "toggle_resource"; success: true; data: { enabled: boolean | null } }
+	| { id?: string; type: "response"; command: "active_tools"; success: true; data: { names: string[] } }
+	| { id?: string; type: "response"; command: "default_tools"; success: true; data: { names: string[] | null } }
+	| { id?: string; type: "response"; command: "read_instruction"; success: true; data: { content: string } }
+	| {
+			id?: string;
+			type: "response";
+			command: "save_instruction";
+			success: true;
+			data: { saved: true; reloaded: boolean; error?: string };
+	  }
+	| { id?: string; type: "response"; command: "reload_resources"; success: true }
 
 	// Model
 	| {
@@ -181,6 +258,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "import_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
 	| {

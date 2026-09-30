@@ -19,15 +19,10 @@ import * as path from "node:path";
 import type { AgentToolResult, ThinkingLevel } from "@candy/agent-core";
 import type { Message } from "@candy/ai";
 import { StringEnum } from "@candy/ai";
-import {
-	CONFIG_DIR_NAME,
-	type ExtensionAPI,
-	getAgentDir,
-	getMarkdownTheme,
-	withFileMutationQueue,
-} from "@candy/coding-agent";
+import { CONFIG_DIR_NAME, type ExtensionAPI, getAgentDir, withFileMutationQueue } from "@candy/coding-agent";
 import { Container, Markdown, Spacer, Text } from "@candy/tui";
 import { Type } from "typebox";
+import { getMarkdownTheme } from "../../../src/ui.ts";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
 
 const MAX_PARALLEL_TASKS = 8;

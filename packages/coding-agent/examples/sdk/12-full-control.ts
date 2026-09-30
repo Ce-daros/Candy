@@ -5,7 +5,7 @@
  */
 
 import {
-	createAgentSession,
+	createAgentSessionRuntime,
 	createExtensionRuntime,
 	ModelRuntime,
 	type ResourceLoader,
@@ -32,32 +32,35 @@ const settingsManager = SettingsManager.inMemory({
 
 const cwd = process.cwd();
 
-const resourceLoader: ResourceLoader = {
-	getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-	getSkills: () => ({ skills: [], diagnostics: [] }),
-	getPrompts: () => ({ prompts: [], diagnostics: [] }),
-	getThemes: () => ({ themes: [], diagnostics: [] }),
-	getAgentsFiles: () => ({ agentsFiles: [] }),
-	getSystemPrompt: () => `You are a minimal assistant.
+function createResourceLoader(): ResourceLoader {
+	return {
+		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+		getSkills: () => ({ skills: [], diagnostics: [] }),
+		getPrompts: () => ({ prompts: [], diagnostics: [] }),
+		getThemes: () => ({ themes: [], diagnostics: [] }),
+		getAgentsFiles: () => ({ agentsFiles: [] }),
+		getSystemPrompt: () => `You are a minimal assistant.
 Available: read, bash. Be concise.`,
-	getSystemPromptSource: () => undefined,
-	getAppendSystemPrompt: () => [],
-	getAppendSystemPromptSources: () => [],
-	extendResources: () => {},
-	reload: async () => {},
-};
+		getSystemPromptSource: () => undefined,
+		getAppendSystemPrompt: () => [],
+		getAppendSystemPromptSources: () => [],
+		extendResources: () => {},
+		reload: async () => {},
+	};
+}
 
-const { session } = await createAgentSession({
+const sessionRuntime = await createAgentSessionRuntime({
 	cwd,
 	agentDir: "/tmp/my-agent",
 	model,
 	thinkingLevel: "off",
 	modelRuntime,
-	resourceLoader,
+	resourceLoaderFactory: () => createResourceLoader(),
 	tools: ["read", "bash"],
 	sessionManager: SessionManager.inMemory(cwd),
 	settingsManager,
 });
+const session = sessionRuntime.session;
 
 try {
 	session.subscribe((event) => {
@@ -69,5 +72,5 @@ try {
 	await session.prompt("List files in the current directory.");
 	console.log();
 } finally {
-	session.dispose();
+	await sessionRuntime.dispose();
 }

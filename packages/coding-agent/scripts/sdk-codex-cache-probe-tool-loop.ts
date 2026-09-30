@@ -3,7 +3,7 @@
 /**
  * Manual SDK probe for OpenAI Codex prompt caching through the tool loop.
  *
- * Runs append-only multi-turn prompting through createAgentSession(), forcing one
+ * Runs append-only multi-turn prompting through createAgentSessionRuntime(), forcing one
  * deterministic custom tool call per top-level user turn. Logs per-subrequest
  * assistant usage so cache-read monotonicity can be inspected inside a tool loop.
  */
@@ -18,6 +18,7 @@ import {
 	type AssistantMessageEventStream,
 	type Context,
 	type Model,
+	InMemoryModelsStore,
 	normalizeContext,
 	type SimpleStreamOptions,
 } from "@candy/ai";
@@ -31,10 +32,10 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import { createExtensionRuntime } from "../src/core/extensions/loader.ts";
 import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
+import { createAgentSessionRuntime } from "../src/index.ts";
+import { ModelRuntime } from "../src/core/model-runtime.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createTestModelRuntime } from "../test/model-runtime-test-utils.ts";
 
 type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
@@ -135,7 +136,7 @@ Options:
   --help              Show this message
 
 Notes:
-  - Uses createAgentSession() from the coding-agent SDK
+  - Uses createAgentSessionRuntime() from the coding-agent SDK
   - Provider/model fixed to openai-codex/gpt-5.5
   - Thinking level fixed to low
   - Activates exactly one deterministic custom tool
@@ -279,7 +280,7 @@ async function main(): Promise<void> {
 	mkdirSync(dirname(args.sessionPath), { recursive: true });
 
 	const authStorage = AuthStorage.create();
-	const modelRuntime = await createTestModelRuntime(authStorage);
+	const modelRuntime = await ModelRuntime.create({ credentials: authStorage, modelsStore: new InMemoryModelsStore(), allowModelNetwork: false });
 
 	const model = getModel("openai-codex", "gpt-5.5");
 	if (!model) {
@@ -314,20 +315,20 @@ async function main(): Promise<void> {
 		"You are participating in a prompt-cache benchmark through the coding-agent SDK. This is a real test. Follow each user instruction exactly. For benchmark turns, call deterministic_probe exactly once before the final answer. Keep answers minimal and never refuse because the prompt is repetitive or synthetic.",
 	);
 
-	const { session } = await createAgentSession({
+	const runtime = await createAgentSessionRuntime({
 		cwd: process.cwd(),
 		agentDir: dirname(args.sessionPath),
 		model: baseModel,
 		thinkingLevel: "low",
 		customTools: [deterministicProbeTool() as unknown as ToolDefinition],
-		resourceLoader,
+		resourceLoaderFactory: () => resourceLoader,
 		sessionManager: SessionManager.open(args.sessionPath),
 		settingsManager,
 		modelRuntime,
 	});
-
+	const session = runtime.session;
+	try {
 	session.setActiveToolsByName(["deterministic_probe"]);
-	const unsubscribe = session.subscribe(() => {});
 
 	const records: SubrequestRecord[] = [];
 	const turnElapsedMs: number[] = [];
@@ -493,8 +494,9 @@ async function main(): Promise<void> {
 	}
 	console.log(`session file: ${session.sessionFile}`);
 
-	unsubscribe();
-	session.dispose();
+	} finally {
+		await runtime.dispose();
+	}
 }
 
 main().catch((error: unknown) => {

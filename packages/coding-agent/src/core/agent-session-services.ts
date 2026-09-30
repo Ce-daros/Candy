@@ -4,12 +4,12 @@ import type { Model } from "@candy/ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import {
+	assembleAgentSession,
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
-	createAgentSession,
 } from "./agent-session-factory.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
-import { ModelRuntime } from "./model-runtime.ts";
+import { type CreateModelRuntimeOptions, ModelRuntime } from "./model-runtime.ts";
 import {
 	DefaultResourceLoader,
 	type DefaultResourceLoaderOptions,
@@ -42,14 +42,16 @@ export interface CreateAgentSessionServicesOptions {
 	cwd: string;
 	agentDir?: string;
 	settingsManager?: SettingsManager;
+	resourceLoader?: ResourceLoader;
 	modelRuntime?: ModelRuntime;
+	modelRuntimeOptions?: Omit<CreateModelRuntimeOptions, "signal" | "refreshOnCreate">;
 	modelRuntimeSignal?: AbortSignal;
 	extensionFlagValues?: Map<string, boolean | string>;
 	resourceLoaderOptions?: Omit<
 		DefaultResourceLoaderOptions,
 		"cwd" | "agentDir" | "settingsManager" | "themeAdapter" | "extensionModules"
 	>;
-	themeAdapter: DefaultResourceLoaderOptions["themeAdapter"];
+	themeAdapter?: DefaultResourceLoaderOptions["themeAdapter"];
 	extensionModules?: DefaultResourceLoaderOptions["extensionModules"];
 	resourceLoaderReloadOptions?: ResourceLoaderReloadOptions;
 }
@@ -85,6 +87,7 @@ export interface AgentSessionServices {
 	settingsManager: SettingsManager;
 	resourceLoader: ResourceLoader;
 	diagnostics: AgentSessionRuntimeDiagnostic[];
+	dispose(): Promise<void>;
 }
 
 function applyExtensionFlagValues(
@@ -140,7 +143,7 @@ function applyExtensionFlagValues(
  *
  * Returns services plus diagnostics. It does not create an AgentSession.
  */
-export async function createAgentSessionServices(
+export async function assembleAgentSessionServices(
 	options: CreateAgentSessionServicesOptions,
 ): Promise<AgentSessionServices> {
 	const cwd = resolvePath(options.cwd);
@@ -150,56 +153,76 @@ export async function createAgentSessionServices(
 		(await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
+			...options.modelRuntimeOptions,
 			signal: options.modelRuntimeSignal,
+			refreshOnCreate: false,
 		}));
-	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
-	const resourceLoader = new DefaultResourceLoader({
-		...(options.resourceLoaderOptions ?? {}),
-		cwd,
-		agentDir,
-		settingsManager,
-		themeAdapter: options.themeAdapter,
-		extensionModules: options.extensionModules,
-	});
-	await resourceLoader.reload(options.resourceLoaderReloadOptions);
-
-	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
-	const extensionsResult = resourceLoader.getExtensions();
-	for (const { name, config, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {
-		try {
-			modelRuntime.registerProvider(name, config);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			diagnostics.push({
-				type: "error",
-				message: `Extension "${extensionPath}" error: ${message}`,
+	const ownsModelRuntime = options.modelRuntime === undefined;
+	try {
+		const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
+		const resourceLoader =
+			options.resourceLoader ??
+			new DefaultResourceLoader({
+				...(options.resourceLoaderOptions ?? {}),
+				cwd,
+				agentDir,
+				settingsManager,
+				themeAdapter: options.themeAdapter,
+				extensionModules: options.extensionModules,
 			});
-		}
-	}
-	extensionsResult.runtime.pendingProviderRegistrations = [];
-	for (const { provider, extensionPath } of extensionsResult.runtime.pendingNativeProviderRegistrations) {
-		try {
-			modelRuntime.registerNativeProvider(provider);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			diagnostics.push({
-				type: "error",
-				message: `Extension "${extensionPath}" error: ${message}`,
-			});
-		}
-	}
-	extensionsResult.runtime.pendingNativeProviderRegistrations = [];
-	await modelRuntime.refresh({ allowNetwork: false });
-	diagnostics.push(...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues));
+		if (!options.resourceLoader) await resourceLoader.reload(options.resourceLoaderReloadOptions);
 
-	return {
-		cwd,
-		agentDir,
-		modelRuntime,
-		settingsManager,
-		resourceLoader,
-		diagnostics,
-	};
+		const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
+		const extensionsResult = resourceLoader.getExtensions();
+		for (const { name, config, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {
+			try {
+				modelRuntime.registerProvider(name, config);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				diagnostics.push({
+					type: "error",
+					message: `Extension "${extensionPath}" error: ${message}`,
+				});
+			}
+		}
+		extensionsResult.runtime.pendingProviderRegistrations = [];
+		for (const { provider, extensionPath } of extensionsResult.runtime.pendingNativeProviderRegistrations) {
+			try {
+				modelRuntime.registerNativeProvider(provider);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				diagnostics.push({
+					type: "error",
+					message: `Extension "${extensionPath}" error: ${message}`,
+				});
+			}
+		}
+		extensionsResult.runtime.pendingNativeProviderRegistrations = [];
+		await modelRuntime.refresh({ allowNetwork: false });
+		diagnostics.push(...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues));
+
+		let disposePromise: Promise<void> | undefined;
+		return {
+			cwd,
+			agentDir,
+			modelRuntime,
+			settingsManager,
+			resourceLoader,
+			diagnostics,
+			dispose: () => {
+				disposePromise ??= ownsModelRuntime ? modelRuntime.dispose() : Promise.resolve();
+				return disposePromise;
+			},
+		};
+	} catch (error) {
+		if (!ownsModelRuntime) throw error;
+		try {
+			await modelRuntime.dispose();
+		} catch (disposeError) {
+			throw new AggregateError([error, disposeError], "Runtime services creation and cleanup failed");
+		}
+		throw error;
+	}
 }
 
 /**
@@ -209,10 +232,10 @@ export async function createAgentSessionServices(
  * resolve model, thinking, tools, and other session inputs against the target
  * cwd before constructing the session.
  */
-export async function createAgentSessionFromServices(
+export async function assembleAgentSessionFromServices(
 	options: CreateAgentSessionFromServicesOptions,
 ): Promise<CreateAgentSessionResult> {
-	return createAgentSession({
+	return assembleAgentSession({
 		cwd: options.services.cwd,
 		agentDir: options.services.agentDir,
 		modelRuntime: options.services.modelRuntime,

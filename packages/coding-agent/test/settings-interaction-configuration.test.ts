@@ -7,17 +7,17 @@ describe("interaction configuration", () => {
 		storage.withLock("project", () => JSON.stringify({ scopedModels: [{ provider: "ignored", modelId: "model" }] }));
 		const manager = SettingsManager.fromStorage(storage);
 		expect(manager.getScopedModels()).toBeUndefined();
-		manager.setScopedModels([]);
+		await manager.setScopedModels([]);
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getScopedModels()).toEqual([]);
 		const refs = [{ provider: "offline-provider", modelId: "missing/model" }];
-		manager.setScopedModels(refs);
+		await manager.setScopedModels(refs);
 		refs[0].provider = "changed";
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getScopedModels()).toEqual([{ provider: "offline-provider", modelId: "missing/model" }]);
-		manager.setScopedModels(undefined);
+		await manager.setScopedModels(undefined);
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getScopedModels()).toBeUndefined();
@@ -27,15 +27,15 @@ describe("interaction configuration", () => {
 		const storage = new InMemorySettingsStorage();
 		const manager = SettingsManager.fromStorage(storage);
 		const tools = ["read", "bash"];
-		manager.setDefaultTools(tools);
+		await manager.setDefaultTools(tools);
 		tools.push("write");
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getDefaultTools()).toEqual(["read", "bash"]);
-		manager.setDefaultTools([]);
+		await manager.setDefaultTools([]);
 		await manager.flush();
 		expect(manager.getDefaultTools()).toEqual([]);
-		manager.setDefaultTools(undefined);
+		await manager.setDefaultTools(undefined);
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getDefaultTools()).toBeUndefined();
@@ -70,18 +70,18 @@ describe("interaction configuration", () => {
 			reserveTokens: { value: 40000, source: "global-model", savedGlobalOverride: 40000 },
 			keepRecentTokens: { value: 1000, source: "project-model", savedGlobalOverride: 30000 },
 		});
-		manager.setModelThinkingLevel(model.provider, model.id, "max");
+		await manager.setModelThinkingLevel(model.provider, model.id, "max");
 		expect(manager.getModelThinkingSettingWithSource(model)).toEqual({
 			requested: "low",
 			source: "project-model",
 			savedGlobalOverride: "max",
 		});
-		manager.setModelCompactionOverride(model.provider, model.id, "reserveTokens", 2048);
+		await manager.setModelCompactionOverride(model.provider, model.id, "reserveTokens", 2048);
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getCompactionReserveTokens(model)).toBe(2048);
 		expect(manager.getCompactionTokenSettingsWithSources(model).reserveTokens.source).toBe("global-model");
-		manager.setModelCompactionOverride(model.provider, model.id, "reserveTokens", undefined);
+		await manager.setModelCompactionOverride(model.provider, model.id, "reserveTokens", undefined);
 		await manager.flush();
 		await manager.reload();
 		expect(manager.getCompactionReserveTokens(model)).toBe(8192);
@@ -116,8 +116,8 @@ describe("interaction configuration", () => {
 		});
 		manager.setProjectTrusted(false);
 		expect(manager.getModelThinkingSettingWithSource(model)).toEqual({
-			requested: "medium",
-			source: "global",
+			requested: "low",
+			source: "runtime-model",
 			savedGlobalOverride: undefined,
 		});
 	});
@@ -140,9 +140,9 @@ describe("interaction configuration", () => {
 		});
 	});
 
-	it("rejects invalid model compaction values before changing settings", () => {
+	it("rejects invalid model compaction values before changing settings", async () => {
 		const manager = SettingsManager.inMemory();
-		expect(() => manager.setModelCompactionOverride("p", "m", "reserveTokens", -1)).toThrow();
+		await expect(manager.setModelCompactionOverride("p", "m", "reserveTokens", -1)).rejects.toThrow();
 		expect(manager.getGlobalSettings().compaction).toBeUndefined();
 	});
 });

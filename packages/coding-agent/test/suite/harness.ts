@@ -1,3 +1,4 @@
+import { assembleAgentSession } from "../../src/core/agent-session-factory.ts";
 import { createInMemoryModelRuntime, createTestModelRuntime } from "../model-runtime-test-utils.ts";
 /**
  * Local test harness for the new coding-agent test suite.
@@ -6,8 +7,7 @@ import { createInMemoryModelRuntime, createTestModelRuntime } from "../model-run
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentMessage, AgentTool } from "@candy/agent-core";
-import { Agent } from "@candy/agent-core";
+import type { AgentTool } from "@candy/agent-core";
 import type { Model } from "@candy/ai";
 import {
 	type FauxModelDefinition,
@@ -15,10 +15,8 @@ import {
 	type FauxResponseStep,
 	fauxProvider,
 } from "@candy/ai/providers/faux";
-import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
+import type { AgentSession, AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
-import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
@@ -90,7 +88,7 @@ export interface Harness {
 	events: AgentSessionEvent[];
 	eventsOfType<T extends AgentSessionEvent["type"]>(type: T): Extract<AgentSessionEvent, { type: T }>[];
 	tempDir: string;
-	cleanup: () => void;
+	cleanup: () => Promise<void>;
 }
 
 function createTempDir(): string {
@@ -109,9 +107,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const model = faux.getModel();
 	const toolMap = options.tools ? Object.fromEntries(options.tools.map((tool) => [tool.name, tool])) : undefined;
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
-	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-	const sessionManager = SessionManager.inMemory();
+	const sessionManager = SessionManager.inMemory(tempDir);
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();
@@ -123,62 +120,31 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const modelRuntime = modelsPath
 		? await createTestModelRuntime(authStorage, modelsPath)
 		: await createInMemoryModelRuntime(authStorage);
-	if (withConfiguredAuth) {
-		modelRuntime.registerNativeProvider(configuredFauxProvider(faux));
-		await modelRuntime.refresh({ allowNetwork: false });
-	}
+	modelRuntime.registerNativeProvider(
+		withConfiguredAuth
+			? configuredFauxProvider(faux)
+			: { ...faux.provider, auth: { apiKey: { name: "Faux", resolve: async () => undefined } } },
+	);
+	await modelRuntime.refresh({ allowNetwork: false });
 
-	const agent = new Agent({
-		getApiKey: () => (withConfiguredAuth ? "faux-key" : undefined),
-		streamFn: faux.provider.streamSimple,
-		initialState: {
-			model,
-			systemPrompt: "",
-			tools: [],
-		},
-		convertToLlm,
-		onPayload: async (payload) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("before_provider_request")) {
-				return payload;
-			}
-			return runner.emitBeforeProviderRequest(payload);
-		},
-		onResponse: async (response) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("after_provider_response")) {
-				return;
-			}
-			await runner.emit({
-				type: "after_provider_response",
-				status: response.status,
-				headers: response.headers,
-			});
-		},
-		transformContext: async (messages: AgentMessage[]) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner) return messages;
-			return runner.emitContext(messages);
-		},
-	});
 	const extensionsResult = options.extensionFactories
 		? await createTestExtensionsResult(options.extensionFactories, tempDir)
 		: undefined;
 	const resourceLoader =
 		options.resourceLoader ?? createTestResourceLoader(extensionsResult ? { extensionsResult } : undefined);
 
-	const session = new AgentSession({
-		agent,
-		sessionManager,
-		settingsManager,
+	const { session } = await assembleAgentSession({
 		cwd: tempDir,
-		modelRuntime: modelRuntime,
+		agentDir: tempDir,
+		model,
+		modelRuntime,
+		settingsManager,
+		sessionManager,
 		resourceLoader,
 		baseToolsOverride: toolMap,
 		initialActiveToolNames: options.initialActiveToolNames,
-		allowedToolNames: options.allowedToolNames,
-		excludedToolNames: options.excludedToolNames,
-		extensionRunnerRef,
+		tools: options.allowedToolNames,
+		excludeTools: options.excludedToolNames,
 	});
 
 	const events: AgentSessionEvent[] = [];
@@ -202,9 +168,9 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			return events.filter((event): event is Extract<AgentSessionEvent, { type: T }> => event.type === type);
 		},
 		tempDir,
-		cleanup() {
-			session.dispose();
-			modelRuntime.unregisterProvider(faux.provider.id);
+		async cleanup() {
+			await session.dispose();
+			await modelRuntime.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true });
 			}

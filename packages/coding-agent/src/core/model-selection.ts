@@ -1,14 +1,12 @@
 import type { Agent, ThinkingLevel } from "@candy/agent-core";
 import type { Model } from "@candy/ai";
 import { clampThinkingLevel, getSupportedThinkingLevels, modelsAreEqual } from "@candy/ai";
-import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "./defaults.ts";
+import { THINKING_LEVEL_OPTIONS } from "./defaults.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 
 export interface ModelMutationOptions {
-	/** Persist the model to global defaults. Defaults to session-only. */
-	persist?: boolean;
 	/** Cancel an in-flight authentication check before the model is applied. */
 	signal?: AbortSignal;
 }
@@ -26,6 +24,7 @@ export class ModelSelection {
 	private readonly sessionManager: SessionManager;
 	private readonly settingsManager: SettingsManager;
 	private readonly callbacks: ModelSelectionCallbacks;
+	private selectionRevision = 0;
 
 	constructor(
 		agent: Agent,
@@ -59,44 +58,45 @@ export class ModelSelection {
 	}
 
 	async setModel(model: Model<any>, options: ModelMutationOptions = {}): Promise<void> {
+		const revision = ++this.selectionRevision;
 		options.signal?.throwIfAborted();
 		if (this.callbacks.isDisposed()) throw new Error("Session was disposed before the model could be set");
 		const authenticated = await this.modelRuntime.checkAuth(model.provider, { signal: options.signal });
 		options.signal?.throwIfAborted();
+		if (revision !== this.selectionRevision) return;
 		if (this.callbacks.isDisposed()) throw new Error("Session was disposed before the model could be set");
 		if (!authenticated) throw new Error(`No API key for ${model.provider}/${model.id}`);
 
 		const previousModel = this.model;
-		const thinkingLevel = this.getThinkingLevelForModelSwitch(model);
-		if (options.persist) {
-			await this.settingsManager.mutateAndPersist(() =>
-				this.settingsManager.setDefaultModelAndProvider(model.provider, model.id),
-			);
-			options.signal?.throwIfAborted();
-			if (this.callbacks.isDisposed()) throw new Error("Session was disposed before the model could be set");
-		}
+		if (modelsAreEqual(previousModel, model)) return;
+		const previousThinkingLevel = this.thinkingLevel;
+		const thinkingLevel = clampThinkingLevel(model, this.getThinkingLevelForModelSwitch(model)) as ThinkingLevel;
+		const thinkingChanged = thinkingLevel !== previousThinkingLevel;
+		this.sessionManager.appendModelSelection(model.provider, model.id, thinkingChanged ? thinkingLevel : undefined);
 		this.agent.state.model = model;
-		this.sessionManager.appendModelChange(model.provider, model.id);
-		this.setThinkingLevel(thinkingLevel);
+		this.agent.state.thinkingLevel = thinkingLevel;
 
-		if (!modelsAreEqual(previousModel, model)) await this.callbacks.onModelSelect(model, previousModel);
+		if (thinkingChanged) this.callbacks.onThinkingLevelChange(thinkingLevel, previousThinkingLevel);
+		await this.callbacks.onModelSelect(model, previousModel);
 	}
 
 	clearModel(): void {
 		if (this.callbacks.isDisposed()) throw new Error("Session was disposed before the model could be cleared");
 		if (this.callbacks.isBusy()) throw new Error("Cannot clear the model while the session is busy");
+		this.selectionRevision++;
 		this.agent.clearModel();
 	}
 
 	setThinkingLevel(level: ThinkingLevel): void {
+		if (this.callbacks.isDisposed()) throw new Error("Session was disposed before the thinking level could be set");
 		const availableLevels = this.getAvailableThinkingLevels();
 		const effectiveLevel = availableLevels.includes(level) ? level : this.clampThinkingLevel(level);
 		const previousLevel = this.thinkingLevel;
 		const isChanging = effectiveLevel !== previousLevel;
-		this.agent.state.thinkingLevel = effectiveLevel;
 
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+			this.agent.state.thinkingLevel = effectiveLevel;
 			this.callbacks.onThinkingLevelChange(effectiveLevel, previousLevel);
 		}
 	}
@@ -111,6 +111,7 @@ export class ModelSelection {
 	}
 
 	refreshFromRegistry(): void {
+		this.selectionRevision++;
 		const currentModel = this.model;
 		if (!currentModel) return;
 		const refreshedModel = this.modelRuntime.getModel(currentModel.provider, currentModel.id);
@@ -123,7 +124,7 @@ export class ModelSelection {
 			const perModel = this.settingsManager.getModelThinkingLevel(targetModel.provider, targetModel.id);
 			if (perModel !== undefined) return perModel;
 		}
-		return this.settingsManager.getDefaultThinkingLevel() ?? this.thinkingLevel ?? DEFAULT_THINKING_LEVEL;
+		return this.settingsManager.getDefaultThinkingLevel() ?? this.thinkingLevel;
 	}
 
 	private clampThinkingLevel(level: ThinkingLevel): ThinkingLevel {

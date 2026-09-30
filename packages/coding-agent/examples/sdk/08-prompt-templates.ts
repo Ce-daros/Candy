@@ -1,21 +1,12 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
-/**
- * Prompt Templates
- *
- * File-based templates that inject content when invoked with /templatename.
- */
+/** Add a host-defined prompt template to templates discovered from disk. */
 
 import {
-	createAgentSession,
+	createAgentSessionRuntime,
 	createSyntheticSourceInfo,
-	DefaultResourceLoader,
-	getAgentDir,
 	type PromptTemplate,
 	SessionManager,
 } from "@candy/coding-agent";
 
-// Define custom templates
 const deployTemplate: PromptTemplate = {
 	name: "deploy",
 	description: "Deploy the application",
@@ -28,28 +19,22 @@ const deployTemplate: PromptTemplate = {
 3. Deploy: npm run deploy`,
 };
 
-const loader = new DefaultResourceLoader({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	cwd: process.cwd(),
-	agentDir: getAgentDir(),
-	promptsOverride: (current) => ({
-		prompts: [...current.prompts, deployTemplate],
-		diagnostics: current.diagnostics,
-	}),
+const cwd = process.cwd();
+const runtime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.inMemory(cwd),
+	resourceLoaderOptions: {
+		promptsOverride: (current) => ({
+			prompts: [...current.prompts, deployTemplate],
+			diagnostics: current.diagnostics,
+		}),
+	},
 });
-await loader.reload();
 
-// Discover templates from cwd/.candy/prompts/ and ~/.candy/agent/prompts/
-const discovered = loader.getPrompts().prompts;
-console.log("Discovered prompt templates:");
-for (const template of discovered) {
-	console.log(`  /${template.name}: ${template.description}`);
+try {
+	const { prompts } = runtime.resources.getInventory().prompts;
+	console.log("Prompt templates:");
+	for (const prompt of prompts) console.log(`  /${prompt.name}: ${prompt.description}`);
+} finally {
+	await runtime.dispose();
 }
-
-const { session } = await createAgentSession({
-	resourceLoader: loader,
-	sessionManager: SessionManager.inMemory(),
-});
-console.log(`Session created with ${discovered.length + 1} prompt templates`);
-session.dispose();

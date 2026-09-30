@@ -5,7 +5,7 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { AgentMessage, StreamFn } from "@candy/agent-core";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "@candy/agent-core";
 import type { Model, RetryCallbacks, RetryPolicy, SimpleStreamOptions, Usage } from "@candy/ai";
 import { contentText, normalizeContext } from "@candy/ai";
 import { estimateMessageTokens } from "@candy/ai/utils/estimate";
@@ -67,6 +67,8 @@ export interface CollectEntriesResult {
 export interface GenerateBranchSummaryOptions {
 	/** Model to use for summarization */
 	model: Model<any>;
+	/** Thinking level captured when tree navigation began */
+	thinkingLevel?: ThinkingLevel;
 	/** API key for the model */
 	apiKey?: string;
 	/** Request headers for the model */
@@ -349,7 +351,16 @@ export async function generateBranchSummary(
 	// without running through agent state/events. Retried via completeSummarization
 	// so transient stream drops reuse the configured retry policy.
 	const context = normalizeContext({ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages });
-	const requestOptions: SimpleStreamOptions = { apiKey, headers, env, signal, maxTokens };
+	const requestOptions: SimpleStreamOptions = {
+		apiKey,
+		headers,
+		env,
+		signal,
+		maxTokens,
+	};
+	if (model.reasoning && options.thinkingLevel && options.thinkingLevel !== "off") {
+		requestOptions.reasoning = options.thinkingLevel;
+	}
 	const response = await completeSummarization(model, context, requestOptions, streamFn, retry, callbacks);
 
 	// Check if aborted or errored

@@ -1,6 +1,7 @@
 import { type Component, Container, Spacer, Text, type TUI } from "@candy/tui";
+import type { Theme } from "../../contracts/theme.ts";
 import type { ExtensionWidgetOptions } from "../../core/extensions/index.ts";
-import { type Theme, theme } from "./theme/theme.ts";
+import { theme } from "./theme/theme.ts";
 
 type ExtensionWidget = Component & { dispose?(): void };
 

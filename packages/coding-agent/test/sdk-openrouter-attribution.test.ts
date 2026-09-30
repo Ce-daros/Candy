@@ -11,21 +11,21 @@ import {
 	type SimpleStreamOptions,
 } from "@candy/ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 import { createInMemoryModelRuntime } from "./model-runtime-test-utils.ts";
 
-describe("createAgentSession provider attribution headers", () => {
+describe("assembleAgentSession provider attribution headers", () => {
 	let tempDir: string;
 	let cwd: string;
 	let agentDir: string;
 	let originalTelemetryEnv: string | undefined;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-sdk-attribution-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		cwd = join(tempDir, "project");
 		agentDir = join(tempDir, "agent");
@@ -35,7 +35,7 @@ describe("createAgentSession provider attribution headers", () => {
 		delete process.env.CANDY_TELEMETRY;
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		if (originalTelemetryEnv === undefined) {
 			delete process.env.CANDY_TELEMETRY;
 		} else {
@@ -95,7 +95,7 @@ describe("createAgentSession provider attribution headers", () => {
 	): Promise<ProviderHeaders | undefined> {
 		const settingsManager = SettingsManager.create(cwd, agentDir);
 		if (options.telemetryEnabled === false) {
-			settingsManager.setEnableInstallTelemetry(false);
+			await settingsManager.setEnableInstallTelemetry(false);
 		}
 
 		const authStorage = AuthStorage.inMemory({
@@ -118,7 +118,7 @@ describe("createAgentSession provider attribution headers", () => {
 			sessionManager.newSession({ id: options.sessionId });
 		}
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd,
@@ -137,7 +137,7 @@ describe("createAgentSession provider attribution headers", () => {
 			await stream.result();
 			return capturedOptions?.headers;
 		} finally {
-			session.dispose();
+			await session.dispose();
 			modelRuntime.unregisterProvider(model.provider);
 		}
 	}

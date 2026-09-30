@@ -30,6 +30,7 @@ import { APP_NAME, getAgentDir as getDefaultAgentDir, getSessionsDir } from "../
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import {
+	appendSessionEntries,
 	appendSessionEntry,
 	loadEntriesFromFile,
 	parseSessionEntryLine,
@@ -39,7 +40,7 @@ import {
 	SessionHeaderScanLimitError,
 	writeSessionFile,
 } from "./session-jsonl.ts";
-import { buildContextEntries, buildSessionProjection } from "./session-projection.ts";
+import { buildSessionProjection } from "./session-projection.ts";
 
 export { loadEntriesFromFile } from "./session-jsonl.ts";
 export {
@@ -341,6 +342,14 @@ function migrateV2ToV3(entries: FileEntry[]): void {
 	}
 }
 
+function migrateUsageTotal(usage: unknown): boolean {
+	if (!isRecord(usage) || usage.totalTokens !== undefined) return false;
+	const parts = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite];
+	if (!parts.every((part) => typeof part === "number" && Number.isFinite(part))) return false;
+	usage.totalTokens = parts.reduce<number>((sum, part) => sum + (part as number), 0);
+	return true;
+}
+
 /**
  * Run all necessary migrations to bring entries to current version.
  * Mutates entries in place. Returns true if any migration was applied.
@@ -348,13 +357,386 @@ function migrateV2ToV3(entries: FileEntry[]): void {
 function migrateToCurrentVersion(entries: FileEntry[]): boolean {
 	const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
 	const version = header?.version ?? 1;
+	let migrated = false;
 
-	if (version >= CURRENT_SESSION_VERSION) return false;
+	if (version < 2) {
+		migrateV1ToV2(entries);
+		migrated = true;
+	}
+	if (version < 3) {
+		migrateV2ToV3(entries);
+		migrated = true;
+	}
+	for (const entry of entries) {
+		if (entry.type === "message") {
+			const message = entry.message as unknown as Record<string, unknown>;
+			if (!isRecord(message)) throw new Error(`Session message ${entry.id} has no valid message object`);
+			if (migrateUsageTotal(message.usage)) migrated = true;
+			if (
+				message.content == null &&
+				message.role !== "bashExecution" &&
+				message.role !== "branchSummary" &&
+				message.role !== "compactionSummary"
+			) {
+				if (message.role === "system") message.content = "";
+				else if (
+					message.role === "user" ||
+					message.role === "assistant" ||
+					message.role === "toolResult" ||
+					message.role === "custom"
+				) {
+					message.content = [];
+				} else {
+					throw new Error(`Session entry ${entry.id} has unsupported message role "${String(message.role)}"`);
+				}
+				migrated = true;
+			}
+		}
+		if (
+			(entry.type === "usage" || entry.type === "compaction" || entry.type === "branch_summary") &&
+			migrateUsageTotal(entry.usage)
+		) {
+			migrated = true;
+		}
+		if (entry.type === "custom_message" && entry.content == null) {
+			entry.content = [];
+			migrated = true;
+		}
+	}
 
-	if (version < 2) migrateV1ToV2(entries);
-	if (version < 3) migrateV2ToV3(entries);
+	return migrated;
+}
 
-	return true;
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateContentBlocks(content: unknown, entryId: string, role: string): void {
+	if (!Array.isArray(content)) throw new Error(`Session message ${entryId} (${role}) has invalid content blocks`);
+	for (const [index, block] of content.entries()) {
+		if (!isRecord(block) || typeof block.type !== "string") {
+			throw new Error(`Session message ${entryId} (${role}) has an invalid content block at index ${index}`);
+		}
+		const valid =
+			(block.type === "text" && typeof block.text === "string") ||
+			(block.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") ||
+			(role === "assistant" && block.type === "thinking" && typeof block.thinking === "string") ||
+			(role === "assistant" &&
+				block.type === "toolCall" &&
+				typeof block.id === "string" &&
+				typeof block.name === "string" &&
+				isRecord(block.arguments));
+		if (!valid)
+			throw new Error(
+				`Session message ${entryId} (${role}) has an invalid ${block.type} content block at index ${index}`,
+			);
+	}
+}
+
+function validateStoredMessage(entry: SessionMessageEntry): void {
+	const message = entry.message as unknown;
+	if (!isRecord(message) || typeof message.role !== "string") {
+		throw new Error(`Session message ${entry.id} has no valid message object or role`);
+	}
+	const role = message.role;
+	if (role === "bashExecution") {
+		if (
+			typeof message.command !== "string" ||
+			typeof message.output !== "string" ||
+			(message.exitCode !== undefined && typeof message.exitCode !== "number") ||
+			typeof message.cancelled !== "boolean" ||
+			typeof message.truncated !== "boolean" ||
+			typeof message.timestamp !== "number"
+		)
+			throw new Error(`Session message ${entry.id} (bashExecution) has an invalid structure`);
+		return;
+	}
+	if (role === "branchSummary") {
+		if (
+			typeof message.summary !== "string" ||
+			(message.fromId !== null && typeof message.fromId !== "string") ||
+			typeof message.timestamp !== "number"
+		) {
+			throw new Error(`Session message ${entry.id} (branchSummary) has an invalid structure`);
+		}
+		return;
+	}
+	if (role === "compactionSummary") {
+		if (
+			typeof message.summary !== "string" ||
+			typeof message.tokensBefore !== "number" ||
+			typeof message.timestamp !== "number"
+		) {
+			throw new Error(`Session message ${entry.id} (compactionSummary) has an invalid structure`);
+		}
+		return;
+	}
+	if (!["system", "user", "assistant", "toolResult", "custom"].includes(role)) {
+		throw new Error(`Session message ${entry.id} has unsupported message role "${role}"`);
+	}
+	if (message.content === null || message.content === undefined) {
+		throw new Error(`Session message ${entry.id} (${role}) has no content after history migration`);
+	}
+	if (typeof message.content === "string" && !["system", "user", "custom"].includes(role)) {
+		throw new Error(`Session message ${entry.id} (${role}) requires content blocks`);
+	}
+	if (typeof message.content !== "string") {
+		validateContentBlocks(message.content, entry.id, role);
+		if (
+			role === "system" &&
+			(message.content as unknown[]).some((block) => !isRecord(block) || block.type !== "text")
+		) {
+			throw new Error(`Session message ${entry.id} (system) accepts text blocks only`);
+		}
+	}
+	if (role === "system" && typeof message.timestamp !== "number") {
+		throw new Error(`Session message ${entry.id} (system) has no valid timestamp`);
+	}
+	if (role === "assistant") {
+		if (
+			typeof message.api !== "string" ||
+			typeof message.provider !== "string" ||
+			typeof message.model !== "string" ||
+			!isRecord(message.usage) ||
+			!isUsage(message.usage) ||
+			!(["pending", "stop", "length", "toolUse", "error", "aborted", "deferred"] as const).includes(
+				message.stopReason as "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred",
+			)
+		)
+			throw new Error(`Session message ${entry.id} (assistant) has an invalid structure`);
+	}
+	if (
+		role === "toolResult" &&
+		(typeof message.toolCallId !== "string" ||
+			typeof message.toolName !== "string" ||
+			typeof message.isError !== "boolean")
+	)
+		throw new Error(`Session message ${entry.id} (toolResult) has an invalid structure`);
+	if (role === "custom" && (typeof message.customType !== "string" || typeof message.display !== "boolean")) {
+		throw new Error(`Session message ${entry.id} (custom) has an invalid structure`);
+	}
+	if (role !== "system" && typeof message.timestamp !== "number") {
+		throw new Error(`Session message ${entry.id} (${role}) has no valid timestamp`);
+	}
+}
+
+function isUsage(value: unknown): boolean {
+	if (!isRecord(value)) return false;
+	const cost = value.cost;
+	if (!isRecord(cost)) return false;
+	const numbers = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"];
+	const costs = ["input", "output", "cacheRead", "cacheWrite", "total"];
+	return (
+		numbers.every((key) => typeof value[key] === "number" && Number.isFinite(value[key])) &&
+		costs.every((key) => typeof cost[key] === "number" && Number.isFinite(cost[key])) &&
+		(value.cacheWrite1h === undefined ||
+			(typeof value.cacheWrite1h === "number" && Number.isFinite(value.cacheWrite1h))) &&
+		(value.reasoning === undefined || (typeof value.reasoning === "number" && Number.isFinite(value.reasoning)))
+	);
+}
+
+const SESSION_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+function validateEntryStructure(entry: SessionEntry): void {
+	const entryType = entry.type;
+	const entryId = entry.id;
+	if (typeof entry.id !== "string" || entry.id.length === 0) throw new Error("Session entry has no id");
+	if (typeof entry.timestamp !== "string" || entry.timestamp.length === 0) {
+		throw new Error(`Session entry ${entry.id} has no valid timestamp`);
+	}
+	if (entry.parentId !== null && typeof entry.parentId !== "string") {
+		throw new Error(`Session entry ${entry.id} has invalid parentId ${String(entry.parentId)}`);
+	}
+	switch (entry.type) {
+		case "message":
+			validateStoredMessage(entry);
+			break;
+		case "thinking_level_change":
+			if (!SESSION_THINKING_LEVELS.has(entry.thinkingLevel)) {
+				throw new Error(`Thinking level change ${entry.id} has invalid level ${entry.thinkingLevel}`);
+			}
+			break;
+		case "model_change":
+			if (
+				typeof entry.provider !== "string" ||
+				entry.provider.length === 0 ||
+				typeof entry.modelId !== "string" ||
+				entry.modelId.length === 0
+			)
+				throw new Error(`Model change ${entry.id} has no valid provider or model id`);
+			break;
+		case "usage":
+			if (
+				typeof entry.kind !== "string" ||
+				entry.kind.length === 0 ||
+				typeof entry.provider !== "string" ||
+				entry.provider.length === 0 ||
+				typeof entry.model !== "string" ||
+				entry.model.length === 0 ||
+				!isUsage(entry.usage) ||
+				(entry.note !== undefined && typeof entry.note !== "string")
+			) {
+				throw new Error(`Usage entry ${entry.id} has an invalid structure`);
+			}
+			break;
+		case "compaction":
+			if (
+				typeof entry.summary !== "string" ||
+				!Number.isFinite(entry.tokensBefore) ||
+				typeof entry.firstKeptEntryId !== "string" ||
+				entry.firstKeptEntryId.length === 0 ||
+				(entry.usage !== undefined && !isUsage(entry.usage))
+			)
+				throw new Error(`Compaction ${entry.id} has an invalid structure`);
+			if (entry.systemMessage !== undefined) {
+				if (
+					entry.systemMessage.role !== "system" ||
+					typeof entry.systemMessage.timestamp !== "number" ||
+					(typeof entry.systemMessage.content !== "string" && !Array.isArray(entry.systemMessage.content))
+				)
+					throw new Error(`Compaction ${entry.id} has an invalid system message`);
+				if (typeof entry.systemMessage.content !== "string")
+					validateContentBlocks(entry.systemMessage.content, entry.id, "system");
+			}
+			break;
+		case "branch_summary":
+			if (
+				typeof entry.fromId !== "string" ||
+				typeof entry.summary !== "string" ||
+				(entry.usage !== undefined && !isUsage(entry.usage))
+			)
+				throw new Error(`Branch summary ${entry.id} has an invalid structure`);
+			break;
+		case "custom":
+			if (typeof entry.customType !== "string" || entry.customType.length === 0)
+				throw new Error(`Custom entry ${entry.id} has no valid custom type`);
+			break;
+		case "custom_message":
+			if (
+				typeof entry.customType !== "string" ||
+				entry.customType.length === 0 ||
+				typeof entry.display !== "boolean" ||
+				entry.content === null ||
+				entry.content === undefined
+			) {
+				throw new Error(`Custom message entry ${entry.id} has an invalid structure`);
+			}
+			if (typeof entry.content !== "string") validateContentBlocks(entry.content, entry.id, "custom_message");
+			break;
+		case "context_edit":
+			if (entry.replacement !== null) {
+				if (!isRecord(entry.replacement) || !("content" in entry.replacement)) {
+					throw new Error(`Context edit ${entry.id} has an invalid replacement`);
+				}
+				if (typeof entry.replacement.content !== "string" && !Array.isArray(entry.replacement.content)) {
+					throw new Error(`Context edit ${entry.id} has invalid content`);
+				}
+			}
+			break;
+		case "label":
+			if (entry.label !== undefined && typeof entry.label !== "string")
+				throw new Error(`Label ${entry.id} has an invalid value`);
+			break;
+		case "session_info":
+			if (entry.name !== undefined && typeof entry.name !== "string")
+				throw new Error(`Session info ${entry.id} has an invalid name`);
+			break;
+		default:
+			throw new Error(`Session entry ${entryId} has unsupported entry type "${entryType}"`);
+	}
+}
+
+function validateEntryReferences(
+	entry: SessionEntry,
+	has: (id: string) => boolean,
+	get: (id: string) => SessionEntry | undefined,
+): void {
+	if (entry.parentId !== null && !has(entry.parentId)) {
+		throw new Error(`Session entry ${entry.id} refers to missing parent ${entry.parentId}`);
+	}
+	if (entry.type === "compaction") {
+		let ancestorId = entry.parentId;
+		let found = entry.firstKeptEntryId === entry.id;
+		while (!found && ancestorId !== null) {
+			if (ancestorId === entry.firstKeptEntryId) found = true;
+			ancestorId = get(ancestorId)?.parentId ?? null;
+		}
+		if (!found)
+			throw new Error(
+				`Compaction ${entry.id} refers to first kept entry ${entry.firstKeptEntryId} outside its parent chain`,
+			);
+	}
+	if (entry.type === "context_edit") {
+		const target = get(entry.targetId);
+		if (!target) throw new Error(`Context edit ${entry.id} refers to missing target ${entry.targetId}`);
+		if (
+			!(
+				target.type === "custom_message" ||
+				(target.type === "message" && ["user", "assistant", "toolResult"].includes(target.message.role))
+			)
+		) {
+			throw new Error(`Context edit ${entry.id} refers to non-editable target ${entry.targetId}`);
+		}
+		if (entry.replacement !== null && typeof entry.replacement.content !== "string") {
+			validateContentBlocks(
+				entry.replacement.content,
+				entry.id,
+				target.type === "message" ? target.message.role : "custom",
+			);
+		}
+		let ancestorId = entry.parentId;
+		let onParentChain = false;
+		while (ancestorId !== null) {
+			if (ancestorId === entry.targetId) onParentChain = true;
+			ancestorId = get(ancestorId)?.parentId ?? null;
+		}
+		if (!onParentChain)
+			throw new Error(`Context edit ${entry.id} refers to target ${entry.targetId} outside its parent chain`);
+	}
+	if (entry.type === "label" && !has(entry.targetId))
+		throw new Error(`Label ${entry.id} refers to missing target ${entry.targetId}`);
+	if (entry.type === "branch_summary" && !has(entry.fromId))
+		throw new Error(`Branch summary ${entry.id} refers to missing source ${entry.fromId}`);
+}
+
+function validateNewEntries(entries: readonly SessionEntry[], existing: Map<string, SessionEntry>): void {
+	const pending = new Map<string, SessionEntry>();
+	const has = (id: string) => pending.has(id) || existing.has(id);
+	const get = (id: string) => pending.get(id) ?? existing.get(id);
+	for (const entry of entries) {
+		validateEntryStructure(entry);
+		if (has(entry.id)) throw new Error(`Session entry ${entry.id} is duplicated`);
+		validateEntryReferences(entry, has, get);
+		pending.set(entry.id, entry);
+	}
+}
+
+function validateSessionEntries(entries: FileEntry[]): void {
+	const header = entries[0];
+	if (
+		!header ||
+		header.type !== "session" ||
+		typeof header.id !== "string" ||
+		header.id.length === 0 ||
+		typeof header.cwd !== "string" ||
+		typeof header.timestamp !== "string" ||
+		(header.version !== undefined && typeof header.version !== "number")
+	)
+		throw new Error("Session history must begin with a valid session header");
+	const byId = new Map<string, SessionEntry>();
+	for (const [index, entry] of entries.entries()) {
+		if (index === 0) continue;
+		if (entry.type === "session") throw new Error(`Unexpected session header at line ${index + 1}`);
+		validateEntryStructure(entry);
+		if (byId.has(entry.id)) throw new Error(`Session entry ${entry.id} is duplicated at line ${index + 1}`);
+		if (entry.parentId !== null && !byId.has(entry.parentId)) {
+			throw new Error(`Session entry ${entry.id} refers to missing parent ${entry.parentId}`);
+		}
+		byId.set(entry.id, entry);
+	}
+	const has = (id: string) => byId.has(id);
+	const get = (id: string) => byId.get(id);
+	for (const entry of byId.values()) validateEntryReferences(entry, has, get);
 }
 
 /** Exported for testing */
@@ -371,6 +753,8 @@ export function parseSessionEntries(content: string): FileEntry[] {
 		const entry = parseSessionEntryLine(line, "session content", index + 1);
 		if (entry) entries.push(entry);
 	}
+	migrateToCurrentVersion(entries);
+	validateSessionEntries(entries);
 
 	return entries;
 }
@@ -657,6 +1041,10 @@ export class SessionManager {
 	private labelsById: Map<string, string> = new Map();
 	private labelTimestampsById: Map<string, string> = new Map();
 	private leafId: string | null = null;
+	private projectionRevision = 0;
+	private projectionCache:
+		| { revision: number; leafId: string | null; projection: SessionProjection; contextEntries: SessionEntry[] }
+		| undefined;
 
 	private constructor(
 		cwd: string,
@@ -742,6 +1130,7 @@ export class SessionManager {
 		this.labelsById.clear();
 		this.labelTimestampsById.clear();
 		this.leafId = null;
+		this.invalidateProjection();
 		this.flushed = false;
 		this.pendingFileRewrite = false;
 		this.emptyExistingFile = false;
@@ -766,6 +1155,12 @@ export class SessionManager {
 			this.fileEntries = this.fileEntries.concat(entries);
 		}
 
+		try {
+			validateSessionEntries(this.fileEntries);
+		} catch (error) {
+			if (!(error instanceof Error)) throw error;
+			throw new Error(`${this.sessionFile ?? "In-memory session"}: ${error.message}`, { cause: error });
+		}
 		this._buildIndex();
 	}
 
@@ -774,6 +1169,7 @@ export class SessionManager {
 		this.labelsById.clear();
 		this.labelTimestampsById.clear();
 		this.leafId = null;
+		this.invalidateProjection();
 		for (const entry of this.fileEntries) {
 			if (entry.type === "session") continue;
 			this.byId.set(entry.id, entry);
@@ -790,10 +1186,9 @@ export class SessionManager {
 		}
 	}
 
-	private _rewriteFile(): void {
-		if (!this.persist || !this.sessionFile) return;
-		rewriteSessionFile(this.sessionFile, this.fileEntries);
-		this.pendingFileRewrite = false;
+	private invalidateProjection(): void {
+		this.projectionRevision++;
+		this.projectionCache = undefined;
 	}
 
 	isPersisted(): boolean {
@@ -820,38 +1215,56 @@ export class SessionManager {
 		return this.sessionFile;
 	}
 
-	/**
-	 * A new session file is created only once the session contains a user or assistant message.
-	 * Setup entries alone (model, thinking level, system prompt) stay in memory so opening and
-	 * closing candy without chatting leaves no file behind. Starting at the user message (not the
-	 * first assistant reply) keeps the prompt on disk if the first turn never completes (#10000).
-	 */
-	private _hasConversation(): boolean {
-		return this.fileEntries.some(
-			(e) => e.type === "message" && (e.message.role === "user" || e.message.role === "assistant"),
-		);
-	}
-
-	_persist(entry: SessionEntry): void {
+	_persist(entry: SessionEntry, candidateEntries: FileEntry[] = this.fileEntries): void {
 		if (!this.persist || !this.sessionFile) return;
 
 		if (!this.flushed) {
-			if (!this._hasConversation()) return;
-			writeSessionFile(this.sessionFile, this.fileEntries, { flag: this.emptyExistingFile ? "w" : "wx" });
+			const hasConversation = candidateEntries.some(
+				(candidate) =>
+					candidate.type === "message" &&
+					(candidate.message.role === "user" || candidate.message.role === "assistant"),
+			);
+			if (!hasConversation) return;
+			writeSessionFile(this.sessionFile, candidateEntries, { flag: this.emptyExistingFile ? "w" : "wx" });
 			this.flushed = true;
 			this.emptyExistingFile = false;
 		} else if (this.pendingFileRewrite) {
-			this._rewriteFile();
+			rewriteSessionFile(this.sessionFile, candidateEntries);
+			this.pendingFileRewrite = false;
 		} else {
 			appendSessionEntry(this.sessionFile, entry);
 		}
 	}
 
+	private _persistEntries(entries: readonly SessionEntry[], candidateEntries: FileEntry[]): void {
+		if (!this.persist || !this.sessionFile) return;
+
+		if (!this.flushed) {
+			const hasConversation = candidateEntries.some(
+				(candidate) =>
+					candidate.type === "message" &&
+					(candidate.message.role === "user" || candidate.message.role === "assistant"),
+			);
+			if (!hasConversation) return;
+			writeSessionFile(this.sessionFile, candidateEntries, { flag: this.emptyExistingFile ? "w" : "wx" });
+			this.flushed = true;
+			this.emptyExistingFile = false;
+		} else if (this.pendingFileRewrite) {
+			rewriteSessionFile(this.sessionFile, candidateEntries);
+			this.pendingFileRewrite = false;
+		} else {
+			appendSessionEntries(this.sessionFile, entries);
+		}
+	}
+
 	private _appendEntry(entry: SessionEntry): void {
-		this.fileEntries.push(entry);
+		const candidateEntries = [...this.fileEntries, entry];
+		validateNewEntries([entry], this.byId);
+		this._persist(entry, candidateEntries);
+		this.fileEntries = candidateEntries;
 		this.byId.set(entry.id, entry);
 		this.leafId = entry.id;
-		this._persist(entry);
+		this.invalidateProjection();
 	}
 
 	/** Append a message as child of current leaf, then advance leaf. Returns entry id.
@@ -861,6 +1274,10 @@ export class SessionManager {
 	 * These need to be appended via appendCompaction() and appendBranchSummary() methods.
 	 */
 	appendMessage(message: Message | CustomMessage | BashExecutionMessage): string {
+		const messageRecord = message as unknown as Record<string, unknown>;
+		if (messageRecord.role !== "bashExecution" && messageRecord.content == null) {
+			throw new Error("Cannot append a message without content");
+		}
 		const entry: SessionMessageEntry = {
 			type: "message",
 			id: generateId(this.byId),
@@ -897,6 +1314,45 @@ export class SessionManager {
 		};
 		this._appendEntry(entry);
 		return entry.id;
+	}
+
+	/** Commit a model selection and its optional thinking change as one journal write. */
+	appendModelSelection(
+		provider: string,
+		modelId: string,
+		thinkingLevel?: string,
+	): { modelChangeId: string; thinkingLevelChangeId?: string } {
+		const modelChange: ModelChangeEntry = {
+			type: "model_change",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			provider,
+			modelId,
+		};
+		const entries: SessionEntry[] = [modelChange];
+		let thinkingLevelChange: ThinkingLevelChangeEntry | undefined;
+		if (thinkingLevel !== undefined) {
+			thinkingLevelChange = {
+				type: "thinking_level_change",
+				id: generateId({ has: (id) => id === modelChange.id || this.byId.has(id) }),
+				parentId: modelChange.id,
+				timestamp: new Date().toISOString(),
+				thinkingLevel,
+			};
+			entries.push(thinkingLevelChange);
+		}
+		const candidateEntries = [...this.fileEntries, ...entries];
+		validateNewEntries(entries, this.byId);
+		this._persistEntries(entries, candidateEntries);
+		this.fileEntries = candidateEntries;
+		for (const entry of entries) this.byId.set(entry.id, entry);
+		this.leafId = entries.at(-1)!.id;
+		this.invalidateProjection();
+		return {
+			modelChangeId: modelChange.id,
+			...(thinkingLevelChange ? { thinkingLevelChangeId: thinkingLevelChange.id } : {}),
+		};
 	}
 
 	/** Append model-attributed usage that does not participate in LLM context. Returns the appended entry. */
@@ -1128,10 +1584,21 @@ export class SessionManager {
 	getBranch(fromId?: string): SessionEntry[] {
 		const path: SessionEntry[] = [];
 		const startId = fromId ?? this.leafId;
+		if (fromId !== undefined && !this.byId.has(fromId)) throw new Error(`Session entry ${fromId} does not exist`);
 		let current = startId ? this.byId.get(startId) : undefined;
+		if (startId && !current) throw new Error(`Session entry ${startId} does not exist`);
+		const visited = new Set<string>();
 		while (current) {
+			if (visited.has(current.id)) throw new Error(`Session history contains a parent cycle at ${current.id}`);
+			visited.add(current.id);
 			path.push(current);
-			current = current.parentId ? this.byId.get(current.parentId) : undefined;
+			if (current.parentId !== null) {
+				const parent = this.byId.get(current.parentId);
+				if (!parent) throw new Error(`Session entry ${current.id} refers to missing parent ${current.parentId}`);
+				current = parent;
+			} else {
+				current = undefined;
+			}
 		}
 		path.reverse();
 		return path;
@@ -1142,7 +1609,7 @@ export class SessionManager {
 	 * Uses tree traversal from current leaf.
 	 */
 	buildContextEntries(): SessionEntry[] {
-		return buildContextEntries(this.getEntries(), this.leafId, this.byId);
+		return this.getProjectionCache().contextEntries;
 	}
 
 	/**
@@ -1150,7 +1617,27 @@ export class SessionManager {
 	 * Uses tree traversal from current leaf.
 	 */
 	buildSessionProjection(): SessionProjection {
-		return buildSessionProjection(this.getEntries(), this.leafId, this.byId);
+		return this.getProjectionCache().projection;
+	}
+
+	private getProjectionCache(): NonNullable<SessionManager["projectionCache"]> {
+		if (
+			this.projectionCache &&
+			this.projectionCache.revision === this.projectionRevision &&
+			this.projectionCache.leafId === this.leafId
+		) {
+			return this.projectionCache;
+		}
+		const entries = this.getEntries();
+		const projection = buildSessionProjection(entries, this.leafId, this.byId);
+		const contextEntries = projection.entries.map(({ sourceEntry }) => sourceEntry);
+		this.projectionCache = {
+			revision: this.projectionRevision,
+			leafId: this.leafId,
+			projection,
+			contextEntries,
+		};
+		return this.projectionCache;
 	}
 
 	buildSessionContext(): SessionContext {
@@ -1235,6 +1722,7 @@ export class SessionManager {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
 		this.leafId = branchFromId;
+		this.invalidateProjection();
 	}
 
 	/**
@@ -1244,6 +1732,7 @@ export class SessionManager {
 	 */
 	resetLeaf(): void {
 		this.leafId = null;
+		this.invalidateProjection();
 	}
 
 	/**
@@ -1258,11 +1747,11 @@ export class SessionManager {
 		fromHook?: boolean,
 		usage?: Usage,
 	): string {
+		if (this.leafId === null) throw new Error("Cannot summarize a branch before the session has an entry");
 		if (branchFromId !== null && !this.byId.has(branchFromId)) {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
-		const fromId = this.leafId ?? "root";
-		this.leafId = branchFromId;
+		const fromId = this.leafId;
 		const entry: BranchSummaryEntry = {
 			type: "branch_summary",
 			id: generateId(this.byId),
@@ -1363,19 +1852,19 @@ export class SessionManager {
 				parentId = labelEntry.id;
 			}
 
-			this.fileEntries = [header, ...pathWithoutLabels, ...labelEntries];
+			const candidateEntries = [header, ...pathWithoutLabels, ...labelEntries];
+			const hasConversation = candidateEntries.some(
+				(entry) =>
+					entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant"),
+			);
+			if (hasConversation) writeSessionFile(newSessionFile, candidateEntries, { flag: "wx" });
+			this.fileEntries = candidateEntries;
 			this.sessionId = newSessionId;
 			this.sessionFile = newSessionFile;
+			this.flushed = hasConversation;
+			this.pendingFileRewrite = false;
+			this.emptyExistingFile = false;
 			this._buildIndex();
-
-			// Use the same rule as _persist(): write now if the branched path already
-			// has a conversation, otherwise let _persist() create the file later.
-			if (this._hasConversation()) {
-				this._rewriteFile();
-				this.flushed = true;
-			} else {
-				this.flushed = false;
-			}
 
 			return newSessionFile;
 		}

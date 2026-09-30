@@ -7,10 +7,10 @@
  */
 
 import { Text } from "@candy/tui";
+import type { Theme } from "../../contracts/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
 import type { GrepToolDetails } from "../../core/tools/grep.ts";
 import { DEFAULT_MAX_BYTES, formatSize } from "../../core/tools/truncate.ts";
-import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { getTextOutput, invalidArgText, shortenPath, str } from "../tool-render-utils.ts";
 
 function formatGrepCall(

@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- Runtime disposal is awaitable and settles model-catalog, credential, shell, execution, and retry work. Internally created `ModelRuntime` instances belong to runtime services; injected instances remain caller-owned.
+- Removed first-time setup analytics opt-in and its settings methods; setup retains theme selection, and existing configuration keys remain on disk.
 - `estimateTokens` is `estimateMessageTokens` from `@candy/ai/utils/estimate`. The context estimate, per-message estimate, and usage-based context total now have one implementation shared with the runtime.
 - Removed `FileAuthStorageBackend` and `InMemoryCodingAgentModelsStore`. Locked JSON access lives in `core/storage/json-file.ts`, and the in-memory model store is `InMemoryModelsStore` from `@candy/ai`.
 - Removed unused SDK and internal helpers: `isBunRuntime`, `getModelsPath`, `getToolsDir`, `getPromptsDir`, `restoreModelFromSession`, `getConfigValueEnvVarName`, `resolveHeaders`, the unused plural tool-definition factories and wrapper, `getModelSearchText`, `isLightTheme`, `RpcCommandType`, `ToolRenderResultLike`, `BashRenderState`, and the unused deprecation utility.
@@ -28,14 +30,17 @@
 - Command panel section titles (Commands, Settings, History groups) now render flush-left in the palette warning color instead of muted, indented like list items.
 
 - Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.
-- Model changes with `{ persist: true }` now await the default-setting write before changing the active session. `setThinkingLevel()` and `cycleThinkingLevel()` only change the active session; save the default separately with `SettingsManager.mutateAndPersist()`.
-- AgentSession behavior-setting methods now return promises and report save failures before applying their runtime side effects.
+- `createAgentSession()` and the lower-level session/service assembly APIs are no longer public SDK constructors. Create `AgentSessionRuntime` with `createAgentSessionRuntime()` and use `runtime.session`; await `runtime.dispose()` to settle and release the active session. Runtime replacements use `newSession()`, `switchSession()`, `fork()`, `clone()`, and `importFromJsonl()`.
+- The SDK root no longer exports terminal UI implementations or RPC clients. Import UI components from `@candy/coding-agent/ui`, and import `RpcClient` and protocol types from `@candy/coding-agent/rpc`. The `@candy/coding-agent/rpc-entry` launcher remains available.
+- `SettingsManager` changes are asynchronous commits. Await setting setters or `commitSetting(scope, field, value)`; the old `mutateAndPersist()` transaction API is removed. Runtime overrides remain process-local.
+- `AgentSession.setModel()` is asynchronous because it checks provider authentication before applying a selection. It no longer accepts a persistence option; persist defaults explicitly with `SettingsManager.setDefaultModelAndProvider()`. `setThinkingLevel()` and `cycleThinkingLevel()` change only the active session.
+- AgentSession behavior-setting methods return promises and reject on a failed settings commit before applying their runtime effects.
 - Removed `ModelRegistry` and the legacy AI compatibility entrypoint. SDK and extension callers use `ModelRuntime` through `ctx.modelRuntime`; built-in API streams are available through `@candy/ai/api/streams` when explicit stream injection is needed.
-- SDK session and default resource-loader construction now require a theme adapter when the factory owns resource discovery. Pass the exported `resourceThemeAdapter`, or supply a custom `ResourceLoader`; the runtime no longer imports terminal theme rendering.
-- The `main` CLI launcher is no longer exported from the SDK root; use the `candy` executable or `@candy/coding-agent/rpc-entry`. Hosts that load extension files must pass `extensionHostModules` from `@candy/coding-agent/extension-host-modules` as `extensionModules` to the resource loader.
+- The SDK runtime uses `resourceLoaderOptions` for headless discovery overrides and disables theme discovery unless the host supplies `themeAdapter` from `@candy/coding-agent/ui`. Extension files that import UI modules must be loaded with `extensionModules` from `@candy/coding-agent/extension-host-modules`.
+- Removed the legacy OAuth `modifyModels` extension hook. Provider extensions now implement `refreshModels(context)` and return the refreshed model list.
 - `AgentSession.clearQueue()` and RPC `clear_queue` return queued text with its image attachments so clients can restore complete input. Resource commands must be submitted explicitly; text beginning with `/` or `skill:` remains ordinary text.
-- Settings operations in Command now await persistence. Failed writes keep the page open and restore the prior in-memory value; callers that change settings programmatically can use `SettingsManager.mutateAndPersist()`.
-- Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package now publishes the SDK and RPC entrypoints only.
+- Settings commits validate and persist a candidate before publishing effective state; write failures reject and leave the previous setting in effect.
+- Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package publishes a headless SDK root, separate UI and RPC subpaths, the extension-host module map, and the RPC launcher.
 - First-time setup now runs for the official distribution whenever the default agent directory has no settings file; `CANDY_EXPERIMENTAL` no longer gates setup.
 - Session reads report malformed JSONL records with their file and line number and do not modify files. Legacy records and missing final newlines are rewritten atomically on the next save.
 - Removed the pi.dev release infrastructure from the product: the automatic version check, the self-update installer (`candy update` managed/npm/pnpm/yarn/bun self-update paths), and the install-report ping. Upgrade candy with your package manager, for example `npm install -g @candy/coding-agent@latest`.
@@ -46,6 +51,8 @@
 
 ### Added
 
+- Added a Bun-specific transport test entry, `npm run test:bun`, separate from the Node Vitest collection.
+- Added explicit RPC settings commits, paired default-model saving, resource configuration and instruction operations, and `import_session`. Settings commits emit a post-persistence `settings_commit` event. Extensions receive the same session-scoped operations through `ctx.resources`.
 - Added `?` Help mode for Hotkeys and Changelog.
 - Exposed optional tool cancellation metadata in the `tool_execution_end` extension event so transcript views can distinguish an aborted tool from an ordinary error after reloading a session.
 - Added `toolPreviewLines` (`5`, `10`, or `20`, default `5`) to control the visible row limit for `bash` and tool previews; extension tool renderers receive the limit as `previewLines`.

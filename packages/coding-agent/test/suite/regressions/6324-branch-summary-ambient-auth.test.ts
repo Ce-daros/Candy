@@ -1,4 +1,4 @@
-import { createAssistantMessageEventStream } from "@candy/ai";
+import { fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { assistantMsg, userMsg } from "../../utilities.ts";
 import { createHarness, type Harness } from "../harness.ts";
@@ -6,45 +6,42 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("issue #6324 branch summary ambient auth", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
 	it("summarizes tree branches when request auth has no API key", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-1", reasoning: true, cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }],
+		});
 		harnesses.push(harness);
 
-		let streamCallCount = 0;
-		harness.session.agent.streamFunction = (model, _context, options) => {
-			streamCallCount++;
-			expect(options?.apiKey).toBeUndefined();
-
-			const stream = createAssistantMessageEventStream();
-			stream.push({
-				type: "done",
-				reason: "stop",
-				message: {
-					role: "assistant",
-					content: [{ type: "text", text: "branch summary text" }],
-					api: model.api,
-					provider: model.provider,
-					model: model.id,
-					usage: {
-						input: 1,
-						output: 1,
-						cacheRead: 0,
-						cacheWrite: 0,
-						totalTokens: 2,
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.25 },
+		let ambientAuthResolved = 0;
+		harness.session.modelRuntime.registerNativeProvider({
+			...harness.faux.provider,
+			auth: {
+				apiKey: {
+					name: "Ambient test credentials",
+					resolve: async () => {
+						ambientAuthResolved++;
+						return { auth: {}, source: "ambient test credentials" };
 					},
-					stopReason: "stop",
-					timestamp: Date.now(),
 				},
-			});
-			return stream;
-		};
+			},
+		});
+		await harness.session.modelRuntime.refresh({ allowNetwork: false });
+		harness.session.setThinkingLevel("high");
+		harness.setResponses([
+			(_context, requestOptions) => {
+				expect(requestOptions?.apiKey).toBeUndefined();
+				expect(requestOptions?.reasoning).toBe("high");
+				expect(requestOptions?.resourceOwner).toBeDefined();
+				return fauxAssistantMessage("branch summary text");
+			},
+		]);
 
 		const targetId = harness.sessionManager.appendMessage(userMsg("first branch"));
 		harness.sessionManager.appendMessage(assistantMsg("first reply"));
@@ -54,9 +51,10 @@ describe("issue #6324 branch summary ambient auth", () => {
 		const result = await harness.session.navigateTree(targetId, { summarize: true });
 
 		expect(result.cancelled).toBe(false);
-		expect(streamCallCount).toBe(1);
+		expect(harness.faux.state.callCount).toBe(1);
+		expect(ambientAuthResolved).toBeGreaterThan(0);
 		expect(result.summaryEntry?.type).toBe("branch_summary");
 		expect(result.summaryEntry?.summary).toContain("branch summary text");
-		expect(result.summaryEntry?.usage?.cost.total).toBe(0.25);
+		expect(result.summaryEntry?.usage?.input).toBeGreaterThan(0);
 	});
 });

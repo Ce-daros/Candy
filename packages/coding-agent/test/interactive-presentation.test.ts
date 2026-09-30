@@ -23,7 +23,9 @@ describe("interactive presentation", () => {
 				{ id: "plain", name: "Plain", reasoning: false },
 			],
 		});
-		harness.settingsManager.setScopedModels(
+		await harness.settingsManager.commitSetting(
+			"global",
+			"scopedModels",
 			harness.models.map((model) => ({ provider: model.provider, modelId: model.id })),
 		);
 		host = {
@@ -37,12 +39,12 @@ describe("interactive presentation", () => {
 			exit: vi.fn(),
 			render: vi.fn(),
 			read: vi.fn(),
+			reportError: vi.fn(),
 			applyQuickSelection: vi.fn(async (signal) => {
 				await reconcileQuickSelection(harness.session, signal);
 			}),
 			edit: vi.fn(async () => undefined),
 			login: vi.fn(async () => {}),
-			reload: vi.fn(async () => {}),
 			skills: vi.fn(async () => {}),
 			settingsActions: () => [],
 			localCommands: () => [],
@@ -51,9 +53,9 @@ describe("interactive presentation", () => {
 		};
 		presentation = new InteractivePresentation(host);
 	});
-	afterEach(() => {
+	afterEach(async () => {
 		presentation.dispose();
-		harness.cleanup();
+		await harness.cleanup();
 	});
 
 	async function settle(): Promise<void> {
@@ -118,8 +120,8 @@ describe("interactive presentation", () => {
 		expect(stripAnsi(panel.render(100).join("\n"))).not.toContain("Search:");
 	});
 
-	it("shows the inherited thinking source and model constraint", () => {
-		harness.settingsManager.setDefaultThinkingLevel("high");
+	it("shows the inherited thinking source and model constraint", async () => {
+		await harness.settingsManager.commitSetting("global", "defaultThinkingLevel", "high");
 		presentation.open("details", harness.models[2]);
 		const text = stripAnsi(panel.render(100).join("\n"));
 		expect(text).toContain("off · User (requested high)");
@@ -129,7 +131,9 @@ describe("interactive presentation", () => {
 		presentation.open("sources");
 		await choose("Clear quick selection");
 		expect(harness.settingsManager.getScopedModels()).toEqual([]);
-		harness.settingsManager.setScopedModels([{ provider: "missing-provider", modelId: "missing-model" }]);
+		await harness.settingsManager.commitSetting("global", "scopedModels", [
+			{ provider: "missing-provider", modelId: "missing-model" },
+		]);
 		presentation.open("sources");
 		await choose("missing-provider");
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("missing-model");
@@ -170,8 +174,8 @@ describe("interactive presentation", () => {
 
 	it("clears one model compaction override while retaining the other", async () => {
 		const model = harness.models[0];
-		harness.settingsManager.setModelCompactionOverride(model.provider, model.id, "reserveTokens", 20000);
-		harness.settingsManager.setModelCompactionOverride(model.provider, model.id, "keepRecentTokens", 4000);
+		await harness.settingsManager.commitModelCompactionOverride(model.provider, model.id, "reserveTokens", 20000);
+		await harness.settingsManager.commitModelCompactionOverride(model.provider, model.id, "keepRecentTokens", 4000);
 		presentation.open("details", model);
 		focus("reserveTokens");
 		panel.handleInput("\x1b[3~");
@@ -183,17 +187,19 @@ describe("interactive presentation", () => {
 	it("toggles and selects matching provider models without changing other sources or the session", async () => {
 		const provider = harness.models[0].provider;
 		const unavailable = { provider: "missing-provider", modelId: "saved-model" };
-		harness.settingsManager.setScopedModels([unavailable]);
+		await harness.settingsManager.commitSetting("global", "scopedModels", [unavailable]);
 		presentation.open("sources");
 		await choose(harness.session.modelRuntime.getProvider(provider)!.name);
 		panel.handleInput("First");
 		panel.handleInput("\x1b[B");
 		panel.handleInput(" ");
-		await Promise.resolve();
+		await settle();
 		expect(harness.settingsManager.getScopedModels()).toEqual([unavailable, { provider, modelId: "first" }]);
 		panel.handleInput("\x04");
+		await settle();
 		expect(harness.settingsManager.getScopedModels()).toEqual([unavailable]);
 		panel.handleInput("\x01");
+		await settle();
 		expect(harness.settingsManager.getScopedModels()).toEqual([unavailable, { provider, modelId: "first" }]);
 		expect(harness.session.model?.id).toBe("first");
 		panel.handleInput("\x1b");
@@ -206,7 +212,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("keeps automatic scope when bulk keys have no matches", async () => {
-		harness.settingsManager.setScopedModels(undefined);
+		await harness.settingsManager.setScopedModels(undefined);
 		presentation.open("sources");
 		await choose(harness.session.modelRuntime.getProvider(harness.models[0].provider)!.name);
 		panel.handleInput("no-such-model");
@@ -232,7 +238,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("clears saved default tools without altering the current session tools", async () => {
-		harness.settingsManager.setDefaultTools([]);
+		await harness.settingsManager.setDefaultTools([]);
 		const tools = harness.session.getActiveToolNames();
 		presentation.open("agent");
 		await choose("Tools");
@@ -248,7 +254,7 @@ describe("interactive presentation", () => {
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("> Research notes");
 	});
 
-	it("places the New session action in the Sessions group", () => {
+	it("places the New session action in the Sessions group", async () => {
 		host.historyCommands = () => [
 			{ id: "local:New session", name: "New session", argumentMode: "none", execute: vi.fn(async () => {}) },
 			{ id: "local:Export", name: "Export", argumentMode: "none", execute: vi.fn(async () => {}) },
@@ -284,7 +290,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("does not reconcile a restored model when Sources was only browsed", async () => {
-		harness.settingsManager.setScopedModels([]);
+		await harness.settingsManager.commitSetting("global", "scopedModels", []);
 		presentation.open("sources");
 		panel.handleInput("\x1b");
 		await settle();
@@ -302,7 +308,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("does not reconcile a restored model after a no-op clear", async () => {
-		harness.settingsManager.setScopedModels([]);
+		await harness.settingsManager.commitSetting("global", "scopedModels", []);
 		presentation.open("sources");
 		await choose("Clear quick selection");
 		panel.handleInput("\x1b");
@@ -315,7 +321,11 @@ describe("interactive presentation", () => {
 		const runtime = harness.session.modelRuntime;
 		presentation.open("sources");
 		await choose(runtime.getProvider(harness.models[0].provider)!.name);
-		vi.spyOn(runtime, "checkAuth").mockResolvedValue(undefined);
+		vi.spyOn(runtime, "getAvailability").mockResolvedValue({
+			available: [],
+			providers: [{ providerId: harness.models[0].provider, auth: undefined, credentialStored: false }],
+			credentialProviderIds: [],
+		});
 		await choose("Check authentication");
 		const lines = stripAnsi(panel.render(100).join("\n")).split("\n");
 		expect(lines.filter((line) => line.includes("Not connected"))).toHaveLength(1);
@@ -326,7 +336,7 @@ describe("interactive presentation", () => {
 		const runtime = harness.session.modelRuntime;
 		presentation.open("sources");
 		await choose(runtime.getProvider(harness.models[0].provider)!.name);
-		const check = vi.spyOn(runtime, "checkAuth").mockRejectedValue(new Error("Credentials could not be read"));
+		const check = vi.spyOn(runtime, "getAvailability").mockRejectedValue(new Error("Credentials could not be read"));
 		await choose("Check authentication");
 		const text = stripAnsi(panel.render(100).join("\n"));
 		expect(text).toContain("Check failed");
@@ -335,7 +345,12 @@ describe("interactive presentation", () => {
 		check.mockImplementation(
 			() =>
 				new Promise((resolve) => {
-					finish = () => resolve(undefined);
+					finish = () =>
+						resolve({
+							available: [],
+							providers: [{ providerId: harness.models[0].provider, auth: undefined, credentialStored: false }],
+							credentialProviderIds: [],
+						});
 				}),
 		);
 		panel.handleInput("\r");

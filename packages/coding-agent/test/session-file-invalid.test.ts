@@ -59,9 +59,9 @@ describe("--session invalid file handling", () => {
 		const result = await runCli(["--session", sessionFile, "-p", "hi"], projectDir, agentDir);
 
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain(`Error: Session file is not a valid candy session: ${sessionFile}`);
+		expect(result.stderr).toContain(`Error: Unknown session entry type "event" at ${sessionFile}:1`);
 		expect(result.stderr).not.toContain("SessionManager.open");
-		expect(result.stderr).not.toContain("at ");
+		expect(result.stderr).not.toMatch(/\n\s+at /);
 		expect(readFileSync(sessionFile, "utf8")).toBe(originalContent);
 	});
 });

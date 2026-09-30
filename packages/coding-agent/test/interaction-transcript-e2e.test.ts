@@ -27,6 +27,7 @@ describe("assistant transcript interaction", () => {
 			process.env.CANDY_OFFLINE = "1";
 			const terminal = new VirtualTerminal(80, 30);
 			smoke = await createInteractiveSmoke({ terminal, empty: true, transcript: true, animations });
+			await smoke.harness.settingsManager.commitSetting("global", "hideThinkingBlock", true);
 			await smoke.mode.init();
 			const prompt = smoke.runtime.session.prompt("pig pig pork 中文");
 			await vi.waitFor(

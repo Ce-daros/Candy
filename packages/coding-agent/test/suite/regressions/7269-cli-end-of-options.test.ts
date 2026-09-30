@@ -6,8 +6,8 @@ import { createHarness, getUserTexts, type Harness } from "../harness.ts";
 describe("issue #7269 CLI end-of-options delimiter", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 		harness = undefined;
 	});
 
@@ -26,7 +26,7 @@ describe("issue #7269 CLI end-of-options delimiter", () => {
 		},
 	);
 
-	it("stops parsing options while retaining @file handling", () => {
+	it("stops parsing options while retaining @file handling", async () => {
 		const parsed = parseArgs(["--unknown-flag", "value", "--", "--provider", "openai", "-c", "@prompt.md"]);
 
 		expect(parsed.unknownFlags.get("unknown-flag")).toBe("value");

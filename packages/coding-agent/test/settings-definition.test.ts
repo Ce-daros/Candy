@@ -1,56 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
+import { SettingsManager } from "../src/core/settings-manager.ts";
+import { commitInteractiveSetting } from "../src/core/settings-operations.ts";
 import {
 	createSettingsDefinition,
 	type SettingsCallbacks,
-	type SettingsConfig,
 } from "../src/modes/interactive/components/settings-definition.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
-const config = {
+const settingsContext = {
 	autoCompact: false,
-	showImages: true,
-	imageWidthCells: 80,
-	autoResizeImages: true,
-	blockImages: false,
-	enableSkillCommands: true,
 	steeringMode: "one-at-a-time",
 	followUpMode: "one-at-a-time",
-	transport: "auto",
-	httpIdleTimeoutMs: 300_000,
-	cacheWarmingMode: "off",
-	thinkingLevel: "medium",
 	currentTheme: "dark",
-	uiAnimations: true,
-	animationIntensity: "moderate",
 	terminalTheme: "dark",
 	availableThemes: ["dark", "light"],
-	hideThinkingBlock: false,
-	mermaidRenderingMode: "off",
-	showCacheMissNotices: false,
-	collapseChangelog: false,
-	enableInstallTelemetry: false,
-	doubleEscapeAction: "tree",
-	treeFilterMode: "default",
-	toolPreviewLines: 10,
-	showHardwareCursor: false,
-	editorPaddingX: 0,
-	outputPad: 0,
-	autocompleteMaxVisible: 5,
-	quietStartup: false,
-	defaultProjectTrust: "ask",
-	clearOnShrink: false,
-	showTerminalProgress: false,
-	fullscreenExitOutput: "transcript",
-	fullscreenScrollbar: "auto",
-	fullscreenCopyOnSelect: true,
-	warnings: {},
-} satisfies SettingsConfig;
+} as const;
 
 describe("settings definition", () => {
 	it("keeps the theme submenu open and shows async save errors", async () => {
 		initTheme("dark");
-		const definition = createSettingsDefinition(config, {
+		const definition = createSettingsDefinition(SettingsManager.inMemory(), settingsContext, {
 			onThemeChange: async () => {
 				throw new Error("Could not save settings");
 			},
@@ -69,5 +39,29 @@ describe("settings definition", () => {
 
 		expect(done).toHaveBeenCalledOnce();
 		expect(stripAnsi(submenu.render(80).join("\n"))).toContain("Could not save theme: Could not save settings");
+	});
+
+	it("saves warning toggles through the shared interactive setting operation", async () => {
+		initTheme("dark");
+		const settings = SettingsManager.inMemory();
+		const onInteractiveSettingChange = vi.fn(async (id, value) => {
+			await commitInteractiveSetting(settings, "global", id, value);
+		});
+		const definition = createSettingsDefinition(settings, settingsContext, {
+			onInteractiveSettingChange,
+			onThemeChange: vi.fn(),
+			onThemePreview: vi.fn(),
+			onCancel: vi.fn(),
+		} satisfies SettingsCallbacks);
+		const warningSetting = definition.items.find((item) => item.id === "warnings");
+		if (!warningSetting?.submenu) throw new Error("Warnings submenu is missing");
+		const submenu = warningSetting.submenu(warningSetting.currentValue, vi.fn());
+		if (!submenu.handleInput) throw new Error("Warnings submenu does not accept input");
+
+		submenu.handleInput("\r");
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(onInteractiveSettingChange).toHaveBeenCalledWith("anthropic-extra-usage", false);
+		expect(settings.getWarnings().anthropicExtraUsage).toBe(false);
 	});
 });

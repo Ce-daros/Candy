@@ -1,17 +1,7 @@
-import type { Api, Model, Provider } from "@candy/ai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Model, Provider } from "@candy/ai";
+import { describe, expect, it } from "vitest";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
 import { ModelRuntime } from "../../../src/core/model-runtime.ts";
-import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
-import { createHarness, type Harness } from "../harness.ts";
-
-const complete = Reflect.get(InteractiveMode.prototype, "completeProviderAuthentication") as (
-	this: object,
-	providerId: string,
-	providerName: string,
-	authType: "oauth" | "api_key",
-	previousModel: Model<Api>,
-) => Promise<void>;
 
 const dynamicModel: Model<"openai-completions"> = {
 	id: "dynamic",
@@ -26,16 +16,7 @@ const dynamicModel: Model<"openai-completions"> = {
 	maxTokens: 100,
 };
 
-describe("issues #7027 and #7113 credential refresh hang", () => {
-	let harness: Harness | undefined;
-
-	afterEach(() => {
-		vi.useRealTimers();
-		harness?.cleanup();
-		harness = undefined;
-		vi.restoreAllMocks();
-	});
-
+describe("provider login while catalog refresh is pending", () => {
 	it("does not hold login behind an older stalled network catalog refresh", async () => {
 		let markNetworkStarted: (() => void) | undefined;
 		const networkStarted = new Promise<void>((resolve) => {
@@ -83,75 +64,5 @@ describe("issues #7027 and #7113 credential refresh hang", () => {
 		expect(runtime.getAvailableSnapshot().map((model) => model.id)).toContain(dynamicModel.id);
 		expect(await credentials.read(provider.id)).toEqual({ type: "api_key", key: "secret" });
 		await expect(stalledRefresh).resolves.toMatchObject({ aborted: false });
-	});
-
-	it("completes interactive login before its bounded background refresh", async () => {
-		harness = await createHarness();
-		vi.useFakeTimers();
-		const runtime = harness.session.modelRuntime;
-		vi.spyOn(runtime, "refresh").mockImplementation(
-			(options) =>
-				new Promise((resolve) => {
-					options?.signal?.addEventListener("abort", () => resolve({ aborted: true, errors: new Map() }), {
-						once: true,
-					});
-				}),
-		);
-		const showWarning = vi.fn();
-		const context = {
-			session: harness.session,
-			updateAvailableProviderCount: vi.fn(),
-			footer: { invalidate: vi.fn() },
-			refreshContextLine: vi.fn(),
-			updateEditorBorderColor: vi.fn(),
-			showStatus: vi.fn(),
-			showError: vi.fn(),
-			showWarning,
-			maybeWarnAboutAnthropicSubscriptionAuth: vi.fn(),
-			ui: { requestRender: vi.fn() },
-			pageController: { generation: 0 },
-		};
-		await complete.call(context, dynamicModel.provider, "Stalled Login", "api_key", harness.getModel());
-		expect(runtime.refresh).toHaveBeenCalledWith({
-			providers: [dynamicModel.provider],
-			signal: expect.any(AbortSignal),
-		});
-		expect(showWarning).not.toHaveBeenCalled();
-
-		await vi.advanceTimersByTimeAsync(15_000);
-		expect(showWarning).toHaveBeenCalledWith(
-			"Saved API key for Stalled Login, but its model catalog refresh timed out; using cached models.",
-		);
-	});
-
-	it("does not report a late catalog result after leaving the login page", async () => {
-		harness = await createHarness();
-		let resolveRefresh: (result: { aborted: boolean; errors: Map<string, Error> }) => void = () => {};
-		vi.spyOn(harness.session.modelRuntime, "refresh").mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					resolveRefresh = resolve;
-				}),
-		);
-		const context = {
-			session: harness.session,
-			pageController: { generation: 1 },
-			updateAvailableProviderCount: vi.fn(),
-			footer: { invalidate: vi.fn() },
-			refreshContextLine: vi.fn(),
-			updateEditorBorderColor: vi.fn(),
-			showStatus: vi.fn(),
-			showError: vi.fn(),
-			showWarning: vi.fn(),
-			maybeWarnAboutAnthropicSubscriptionAuth: vi.fn(),
-			ui: { requestRender: vi.fn() },
-		};
-		await complete.call(context, dynamicModel.provider, "Stalled Login", "api_key", harness.getModel());
-		context.pageController.generation++;
-		resolveRefresh({ aborted: true, errors: new Map() });
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(context.ui.requestRender).not.toHaveBeenCalled();
-		expect(context.showWarning).not.toHaveBeenCalled();
 	});
 });

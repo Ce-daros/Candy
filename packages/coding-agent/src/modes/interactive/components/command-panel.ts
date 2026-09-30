@@ -50,7 +50,7 @@ export interface CommandPanelOptions {
 	onCancel: () => void;
 	onMessage: () => void;
 	requestRender: () => void;
-	onSelectionChange?: (ids: string[], checked: boolean) => void;
+	onSelectionChange?: (ids: string[], checked: boolean) => void | Promise<void>;
 	searchable?: boolean;
 }
 
@@ -354,18 +354,16 @@ export class CommandPanel implements Component, Focusable {
 		}
 		if (!this.activeAction && this.options.onSelectionChange) {
 			if (kb.matches(data, "app.models.selectAll") || kb.matches(data, "app.models.clearSelection")) {
-				try {
-					this.options.onSelectionChange(
-						this.filteredActions()
-							.filter((action) => action.checked !== undefined)
-							.map((action) => action.id),
-						kb.matches(data, "app.models.selectAll"),
-					);
-					this.error = undefined;
-				} catch (error) {
-					this.error = error instanceof Error ? error.message : String(error);
-				}
-				this.options.requestRender();
+				void this.runInlineAction(() =>
+					Promise.resolve(
+						this.options.onSelectionChange?.(
+							this.filteredActions()
+								.filter((action) => action.checked !== undefined)
+								.map((action) => action.id),
+							kb.matches(data, "app.models.selectAll"),
+						),
+					),
+				);
 				return;
 			}
 			if (!this.searchFocused && kb.matches(data, "app.models.toggle")) {

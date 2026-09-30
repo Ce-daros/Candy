@@ -203,6 +203,55 @@ Response:
 
 Messages are `AgentMessage` objects (see [Message Types](message-types.md)).
 
+### get_settings
+
+Read the current global and project settings and whether project settings are trusted.
+
+```json
+{"type":"get_settings"}
+```
+
+### commit_setting
+
+Commit a value from the supported setting catalog. `settingId` must be one of the interactive setting IDs, and values outside that setting's declared choices are rejected. Use `scope: "global"` or `"project"` where supported. Clearing removes that scope's stored override and reveals the next effective source.
+
+```json
+{"type":"commit_setting","scope":"global","settingId":"transport","value":"auto"}
+{"type":"commit_setting","scope":"project","settingId":"hide-thinking","clear":true}
+```
+
+Send exactly one of `value` or `clear: true`.
+
+### save_default_model
+
+Save a provider and model as one global default update.
+
+```json
+{"type":"save_default_model","provider":"anthropic","modelId":"claude-sonnet-4-20250514"}
+```
+
+Settings commits emit a `settings_commit` event with the changed scope and setting fields after persistence succeeds.
+
+### Resource commands
+
+`get_resources` returns the current discovered resource inventory. `get_resource_configuration` returns the resolved global and project paths and the selected scope's resource enablement items.
+
+```json
+{"type":"get_resources"}
+{"type":"get_resource_configuration","scope":"project"}
+{"type":"toggle_resource","scope":"project","resourceType":"skill","path":"/project/.candy/skills/example"}
+```
+
+`toggle_resource` changes one resource in the chosen configuration scope and returns its new enabled state. `active_tools` supports `{"action":"get"}` and `{"action":"set","names":["read","grep"]}`. `default_tools` supports `{"action":"get"}` and `{"action":"save","names":["read","grep"]}`; omit `names` or send `clear:true` to remove the saved default.
+
+`read_instruction` returns the contents of an instruction file in the active resource inventory. `save_instruction` writes the file and reloads resources; its result reports whether the write and reload succeeded. `reload_resources` reloads the current resources explicitly.
+
+```json
+{"type":"read_instruction","path":"/project/AGENTS.md"}
+{"type":"save_instruction","path":"/project/AGENTS.md","content":"..."}
+{"type":"reload_resources"}
+```
+
 ## Model
 
 ### set_model
@@ -579,6 +628,14 @@ Response:
 If an extension canceled the switch:
 ```json
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
+```
+
+### import_session
+
+Import a JSONL session through the runtime session lifecycle. An optional working directory overrides the imported session's recorded directory.
+
+```json
+{"type":"import_session","inputPath":"/path/to/session.jsonl","cwdOverride":"/project"}
 ```
 
 ### fork

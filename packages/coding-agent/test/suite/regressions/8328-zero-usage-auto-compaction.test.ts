@@ -31,10 +31,10 @@ function createZeroUsageAssistant(harness: Harness): AssistantMessage {
 describe("issue #8328 zero-usage auto-compaction", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

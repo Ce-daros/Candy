@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createBashTool } from "../src/core/tools/bash.ts";
@@ -16,13 +16,13 @@ describe("AgentSession dynamic tool registration", () => {
 	let tempDir: string;
 	let agentDir: string;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-dynamic-tool-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -66,7 +66,7 @@ describe("AgentSession dynamic tool registration", () => {
 		await resourceLoader.reload();
 
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir,
 			model,
@@ -97,7 +97,7 @@ describe("AgentSession dynamic tool registration", () => {
 		expect(optedOutEnv).not.toHaveProperty("CANDY_MODEL");
 		expect(optedOutEnv).not.toHaveProperty("CANDY_REASONING_LEVEL");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("refreshes tool registry when tools are registered after initialization", async () => {
@@ -131,7 +131,7 @@ describe("AgentSession dynamic tool registration", () => {
 		});
 		await resourceLoader.reload();
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir,
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
@@ -168,7 +168,7 @@ describe("AgentSession dynamic tool registration", () => {
 		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
 		expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("returns source metadata for SDK custom tools", async () => {
@@ -183,7 +183,7 @@ describe("AgentSession dynamic tool registration", () => {
 		});
 		await resourceLoader.reload();
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir,
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
@@ -194,7 +194,7 @@ describe("AgentSession dynamic tool registration", () => {
 				{
 					name: "sdk_tool",
 					label: "SDK Tool",
-					description: "Tool registered through createAgentSession",
+					description: "Tool registered through assembleAgentSession",
 					parameters: Type.Object({}),
 					execute: async () => ({
 						content: [{ type: "text", text: "ok" }],
@@ -213,7 +213,7 @@ describe("AgentSession dynamic tool registration", () => {
 		});
 		expect(session.getActiveToolNames()).toContain("sdk_tool");
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("keeps custom tools active but omits them from available tools when promptSnippet is not provided", async () => {
@@ -245,7 +245,7 @@ describe("AgentSession dynamic tool registration", () => {
 		});
 		await resourceLoader.reload();
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			cwd: tempDir,
 			agentDir,
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
@@ -261,6 +261,6 @@ describe("AgentSession dynamic tool registration", () => {
 		expect(session.systemPrompt).not.toContain("hidden_tool");
 		expect(session.systemPrompt).not.toContain("Description should not appear in available tools");
 
-		session.dispose();
+		await session.dispose();
 	});
 });

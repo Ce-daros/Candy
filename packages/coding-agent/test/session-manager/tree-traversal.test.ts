@@ -432,7 +432,7 @@ describe("createBranchedSession", () => {
 		const session = SessionManager.inMemory();
 		session.appendMessage(userMsg("hello"));
 
-		expect(() => session.createBranchedSession("nonexistent")).toThrow("Entry nonexistent not found");
+		expect(() => session.createBranchedSession("nonexistent")).toThrow("Session entry nonexistent does not exist");
 	});
 
 	it("creates new session with path to specified leaf (in-memory)", () => {

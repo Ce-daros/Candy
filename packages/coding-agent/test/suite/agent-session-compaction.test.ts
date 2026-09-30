@@ -15,7 +15,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
 type SessionWithCompactionInternals = {
-	_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<boolean>;
+	_checkCompaction: (
+		assistantMessage: AssistantMessage,
+		skipAbortedCheck?: boolean,
+		assistantEntryId?: string,
+		toolResultEntryIds?: readonly string[],
+	) => Promise<boolean>;
 	_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
 };
 
@@ -124,11 +129,11 @@ async function createAbortableCompactionHarness(): Promise<{
 describe("AgentSession compaction characterization", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		vi.useRealTimers();
 		vi.restoreAllMocks();
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -281,16 +286,13 @@ describe("AgentSession compaction characterization", () => {
 		await expect(harness.session.compact()).rejects.toThrow("No model selected");
 	});
 
-	it("manually compacts with a custom streamFn when registry auth is absent", async () => {
+	it("rejects manual compaction when registry auth is absent", async () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
 		seedCompactableSession(harness);
-		const getStreamCallCount = useSummaryStreamFn(harness, "summary from custom stream");
+		useSummaryStreamFn(harness, "summary from custom stream");
 
-		const result = await harness.session.compact();
-
-		expect(result.summary).toContain("summary from custom stream");
-		expect(getStreamCallCount()).toBe(1);
+		await expect(harness.session.compact()).rejects.toThrow("No API key found for faux");
 	});
 
 	it("manually compacts with provider-resolved bearer auth", async () => {
@@ -314,17 +316,15 @@ describe("AgentSession compaction characterization", () => {
 			streamSimple: () => createAssistantMessageEventStream(),
 		});
 		seedCompactableSession(harness);
-		const summaryResponse = (_context: TranscriptContext, options: SimpleStreamOptions | undefined) => {
+		const getStreamCallCount = useSummaryStreamFn(harness, "summary with bearer auth", (_context, options) => {
 			expect(options?.apiKey).toBeUndefined();
 			expect(options?.headers).toEqual({ Authorization: "Bearer ambient-token" });
-			return fauxAssistantMessage("summary with bearer auth");
-		};
-		harness.setResponses([summaryResponse]);
+		});
 
 		const result = await harness.session.compact();
 
 		expect(result.summary).toContain("summary with bearer auth");
-		expect(harness.faux.state.callCount).toBe(1);
+		expect(getStreamCallCount()).toBe(1);
 	});
 
 	it("uses the standalone compaction request context", async () => {
@@ -357,7 +357,7 @@ describe("AgentSession compaction characterization", () => {
 	});
 
 	it("persists usage from pi-generated manual compaction", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness();
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		useSummaryStreamFn(harness, "summary from custom stream");
@@ -372,20 +372,19 @@ describe("AgentSession compaction characterization", () => {
 		);
 	});
 
-	it("auto-compacts with a custom streamFn when registry auth is absent", async () => {
+	it("reports missing auth from automatic compaction", async () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
 		seedCompactableSession(harness);
-		const getStreamCallCount = useSummaryStreamFn(harness, "auto summary from custom stream");
+		useSummaryStreamFn(harness, "auto summary from custom stream");
 		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
 
 		await sessionInternals._runAutoCompaction("threshold", false);
 
 		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
 		const compactionEnd = harness.eventsOfType("compaction_end").at(-1);
-		expect(compactionEntries).toHaveLength(1);
-		expect(compactionEnd?.result?.estimatedTokensAfter).toBeGreaterThan(0);
-		expect(getStreamCallCount()).toBe(1);
+		expect(compactionEntries).toHaveLength(0);
+		expect(compactionEnd?.errorMessage).toContain("No API key found for faux");
 	});
 
 	it("notifies extensions when auto-compaction fails", async () => {
@@ -708,6 +707,7 @@ describe("AgentSession compaction characterization", () => {
 			totalTokens: 100,
 			timestamp: Date.now(),
 		});
+		const firstEntryId = harness.sessionManager.appendMessage(lengthOverflowMessage);
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
 		const compactionErrors: string[] = [];
 		harness.session.subscribe((event) => {
@@ -716,8 +716,10 @@ describe("AgentSession compaction characterization", () => {
 			}
 		});
 
-		await sessionInternals._checkCompaction(lengthOverflowMessage);
-		await sessionInternals._checkCompaction({ ...lengthOverflowMessage, timestamp: Date.now() + 1 });
+		await sessionInternals._checkCompaction(lengthOverflowMessage, true, firstEntryId);
+		const repeatedLengthMessage = { ...lengthOverflowMessage, timestamp: Date.now() + 1 };
+		const repeatedEntryId = harness.sessionManager.appendMessage(repeatedLengthMessage);
+		await sessionInternals._checkCompaction(repeatedLengthMessage, true, repeatedEntryId);
 
 		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
 		expect(compactionErrors).toContain(
@@ -804,6 +806,7 @@ describe("AgentSession compaction characterization", () => {
 			errorMessage: "prompt is too long",
 			timestamp: Date.now(),
 		});
+		const firstEntryId = harness.sessionManager.appendMessage(overflowMessage);
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
 		const compactionErrors: string[] = [];
 		harness.session.subscribe((event) => {
@@ -812,8 +815,10 @@ describe("AgentSession compaction characterization", () => {
 			}
 		});
 
-		await sessionInternals._checkCompaction(overflowMessage);
-		await sessionInternals._checkCompaction({ ...overflowMessage, timestamp: Date.now() + 1 });
+		await sessionInternals._checkCompaction(overflowMessage, true, firstEntryId);
+		const repeatedOverflowMessage = { ...overflowMessage, timestamp: Date.now() + 1 };
+		const repeatedEntryId = harness.sessionManager.appendMessage(repeatedOverflowMessage);
+		await sessionInternals._checkCompaction(repeatedOverflowMessage, true, repeatedEntryId);
 
 		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
 		expect(compactionErrors).toContain(

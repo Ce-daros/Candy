@@ -4,6 +4,8 @@
 		"noEmit": true,
 		"paths": {
 			"@candy/coding-agent": ["./src/index.ts"],
+			"@candy/coding-agent/rpc": ["./src/rpc.ts"],
+			"@candy/coding-agent/ui": ["./src/ui.ts"],
 			"@candy/coding-agent/hooks": ["./src/core/hooks/index.ts"],
 			"@candy/tui": ["../tui/src/index.ts"],
 			"@candy/ai": ["../ai/src/index.ts"],

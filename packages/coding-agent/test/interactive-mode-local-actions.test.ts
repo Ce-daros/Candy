@@ -6,6 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { CommandPanelAction } from "../src/modes/interactive/components/command-panel.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { exportSessionHtml } from "../src/presentation/session-html-export.ts";
+
+vi.mock("../src/presentation/session-html-export.ts", () => ({
+	exportSessionHtml: vi.fn(async (_session: unknown, outputPath?: string) => outputPath ?? "default.html"),
+}));
 
 describe("InteractiveMode local Command and History actions", () => {
 	it("keeps only Debug in Command", () => {
@@ -32,7 +37,7 @@ describe("InteractiveMode local Command and History actions", () => {
 		await exportCommand.call(context, "report.html");
 
 		expect(context.session.exportToJsonl).toHaveBeenCalledWith("session.jsonl");
-		expect(context.session.exportToHtml).toHaveBeenCalledWith("report.html", { themeName: "dark" });
+		expect(exportSessionHtml).toHaveBeenCalledWith(context.session, "report.html", { themeName: "dark" });
 		expect(context.showStatus).toHaveBeenCalledWith("Session exported to: report.html");
 		expect(context.showError).not.toHaveBeenCalled();
 	});
@@ -49,7 +54,7 @@ describe("InteractiveMode local Command and History actions", () => {
 			sessionManager: { getSessionName: () => name },
 			chatContainer: new Container(),
 			showWarning: vi.fn(),
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
 		};
 		const rename = Reflect.get(InteractiveMode.prototype, "handleNameCommand") as (
 			this: typeof context,
@@ -60,7 +65,7 @@ describe("InteractiveMode local Command and History actions", () => {
 
 		expect(context.session.setSessionName).toHaveBeenCalledWith("Research session");
 		expect(context.sessionManager.getSessionName()).toBe("Research session");
-		expect(context.ui.requestRender).toHaveBeenCalledOnce();
+		expect(context.renderer.requestRender).toHaveBeenCalledOnce();
 		expect(context.showWarning).not.toHaveBeenCalled();
 	});
 

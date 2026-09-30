@@ -98,7 +98,7 @@ describe("DefaultPackageManager git update", () => {
 	});
 
 	/** Sets up a "remote" repository and clones it to the installed directory. */
-	function setupRemoteAndInstall(): void {
+	async function setupRemoteAndInstall(): Promise<void> {
 		// Create "remote" repository
 		mkdirSync(remoteDir, { recursive: true });
 		initGitRepo(remoteDir);
@@ -111,7 +111,7 @@ describe("DefaultPackageManager git update", () => {
 		git(["config", "--local", "user.name", "Test"], installedDir);
 
 		// Add to global packages so update() processes this source
-		settingsManager.setPackages([gitSource]);
+		await settingsManager.setPackages([gitSource]);
 	}
 
 	describe("normal updates (no force-push)", () => {
@@ -123,7 +123,7 @@ describe("DefaultPackageManager git update", () => {
 
 			mkdirSync(join(agentDir, "git", "github.com", "test"), { recursive: true });
 			git(["clone", remoteDir, installedDir], tempDir);
-			settingsManager.setPackages([gitSource]);
+			await settingsManager.setPackages([gitSource]);
 
 			const executedCommands: string[] = [];
 			const managerWithInternals = packageManager as unknown as {
@@ -156,7 +156,7 @@ describe("DefaultPackageManager git update", () => {
 		});
 
 		it("should update to latest commit when remote has new commits", async () => {
-			setupRemoteAndInstall();
+			await setupRemoteAndInstall();
 			expect(getFileContent(installedDir, "extension.ts")).toBe("// v1");
 
 			// Add a new commit to remote
@@ -173,7 +173,7 @@ describe("DefaultPackageManager git update", () => {
 
 	describe("force-push scenarios", () => {
 		it("should handle complete history rewrite", async () => {
-			setupRemoteAndInstall();
+			await setupRemoteAndInstall();
 
 			// Remote gets several commits
 			createCommit(remoteDir, "extension.ts", "// v2", "v2");
@@ -210,7 +210,7 @@ describe("DefaultPackageManager git update", () => {
 			expect(getCurrentCommit(installedDir)).toBe(v1Commit);
 
 			const pinnedSource = `${gitSource}@v2`;
-			settingsManager.setPackages([pinnedSource]);
+			await settingsManager.setPackages([pinnedSource]);
 
 			await packageManager.update();
 

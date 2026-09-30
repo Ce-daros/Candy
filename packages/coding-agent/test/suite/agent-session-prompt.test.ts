@@ -89,10 +89,10 @@ describe("AgentSession prompt characterization", () => {
 	const harnesses: Harness[] = [];
 	const tempDirs: string[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		processImage.mockClear();
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 		while (tempDirs.length > 0) {
 			const tempDir = tempDirs.pop();
@@ -858,7 +858,7 @@ describe("AgentSession prompt characterization", () => {
 			releaseCompaction();
 			await compactPromise;
 			await inputStarted;
-			harness.session.dispose();
+			await harness.session.dispose();
 			releaseInput();
 			expect(await firstResult).toContain("disposed");
 			expect(await secondResult).toContain("disposed");

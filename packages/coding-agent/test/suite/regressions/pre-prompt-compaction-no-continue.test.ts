@@ -16,10 +16,10 @@ function createUsage(totalTokens: number) {
 describe("pre-prompt compaction regression", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

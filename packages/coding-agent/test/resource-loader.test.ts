@@ -439,10 +439,10 @@ export default function(candy) {
 
 		it("should honor overrides for auto-discovered resources", async () => {
 			const settingsManager = SettingsManager.inMemory();
-			settingsManager.setExtensionPaths(["-extensions/disabled.ts"]);
-			settingsManager.setSkillPaths(["-skills/skip-skill"]);
-			settingsManager.setPromptTemplatePaths(["-prompts/skip.md"]);
-			settingsManager.setThemePaths(["-themes/skip.json"]);
+			await settingsManager.setExtensionPaths(["-extensions/disabled.ts"]);
+			await settingsManager.setSkillPaths(["-skills/skip-skill"]);
+			await settingsManager.setPromptTemplatePaths(["-prompts/skip.md"]);
+			await settingsManager.setThemePaths(["-themes/skip.json"]);
 
 			const extensionsDir = join(agentDir, "extensions");
 			mkdirSync(extensionsDir, { recursive: true });

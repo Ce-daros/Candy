@@ -16,11 +16,11 @@ import { createInMemoryModelRuntime } from "../../model-runtime-test-utils.ts";
 import { createTestResourceLoader } from "../../utilities.ts";
 
 describe("regression #5596: missing configured theme export", () => {
-	const cleanups: Array<() => void> = [];
+	const cleanups: Array<() => Promise<void>> = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (cleanups.length > 0) {
-			cleanups.pop()?.();
+			await cleanups.pop()?.();
 		}
 		initTheme("dark");
 	});
@@ -58,8 +58,8 @@ describe("regression #5596: missing configured theme export", () => {
 			modelRuntime: modelRuntime,
 			resourceLoader: createTestResourceLoader(),
 		});
-		cleanups.push(() => {
-			session.dispose();
+		cleanups.push(async () => {
+			await session.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}

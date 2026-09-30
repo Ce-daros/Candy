@@ -3,66 +3,19 @@ import net from "node:net";
 import tls from "node:tls";
 import * as undici from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHttpProxySettings, configureHttpDispatcher } from "../src/core/http-dispatcher.ts";
+import { HttpDispatcherHost } from "../src/core/http-dispatcher.ts";
 
 const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY"] as const;
 const DISPATCHER_PROXY_ENV_KEYS = [...PROXY_ENV_KEYS, "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"] as const;
-
-describe("http proxy settings", () => {
-	let savedEnv: Record<(typeof PROXY_ENV_KEYS)[number], string | undefined>;
-
-	beforeEach(() => {
-		savedEnv = Object.fromEntries(PROXY_ENV_KEYS.map((key) => [key, process.env[key]])) as Record<
-			(typeof PROXY_ENV_KEYS)[number],
-			string | undefined
-		>;
-		for (const key of PROXY_ENV_KEYS) {
-			delete process.env[key];
-		}
-	});
-
-	afterEach(() => {
-		for (const key of PROXY_ENV_KEYS) {
-			const value = savedEnv[key];
-			if (value === undefined) {
-				delete process.env[key];
-			} else {
-				process.env[key] = value;
-			}
-		}
-	});
-
-	it("applies httpProxy to HTTP_PROXY and HTTPS_PROXY", () => {
-		applyHttpProxySettings("http://127.0.0.1:7890");
-
-		expect(process.env.HTTP_PROXY).toBe("http://127.0.0.1:7890");
-		expect(process.env.HTTPS_PROXY).toBe("http://127.0.0.1:7890");
-	});
-
-	it("does not override existing proxy env vars", () => {
-		process.env.HTTP_PROXY = "http://env-http:8080";
-		process.env.HTTPS_PROXY = "http://env-https:8080";
-
-		applyHttpProxySettings("http://settings:7890");
-
-		expect(process.env.HTTP_PROXY).toBe("http://env-http:8080");
-		expect(process.env.HTTPS_PROXY).toBe("http://env-https:8080");
-	});
-
-	it("ignores empty values", () => {
-		applyHttpProxySettings("   ");
-
-		expect(process.env.HTTP_PROXY).toBeUndefined();
-		expect(process.env.HTTPS_PROXY).toBeUndefined();
-	});
-});
 
 describe("http dispatcher", () => {
 	const originalDispatcher = undici.getGlobalDispatcher();
 	const originalFetch = globalThis.fetch;
 	let savedProxyEnv: Record<(typeof DISPATCHER_PROXY_ENV_KEYS)[number], string | undefined>;
+	let host: HttpDispatcherHost;
 
 	beforeEach(() => {
+		host = new HttpDispatcherHost();
 		savedProxyEnv = Object.fromEntries(DISPATCHER_PROXY_ENV_KEYS.map((key) => [key, process.env[key]])) as Record<
 			(typeof DISPATCHER_PROXY_ENV_KEYS)[number],
 			string | undefined
@@ -73,11 +26,8 @@ describe("http dispatcher", () => {
 	});
 
 	afterEach(async () => {
-		const dispatcher = undici.getGlobalDispatcher();
-		if (dispatcher !== originalDispatcher) {
-			await dispatcher.close();
-			undici.setGlobalDispatcher(originalDispatcher);
-		}
+		await host.dispose();
+		if (undici.getGlobalDispatcher() !== originalDispatcher) undici.setGlobalDispatcher(originalDispatcher);
 		for (const key of DISPATCHER_PROXY_ENV_KEYS) {
 			const value = savedProxyEnv[key];
 			if (value === undefined) {
@@ -125,8 +75,7 @@ describe("http dispatcher", () => {
 		}
 
 		process.env.HTTP_PROXY = `http://127.0.0.1:${proxyAddress.port}`;
-		configureHttpDispatcher();
-		const dispatcher = undici.getGlobalDispatcher();
+		await host.configure();
 		try {
 			const originUrl = `http://127.0.0.1:${originAddress.port}/v1/chat/completions`;
 			await expect(undici.fetch(originUrl).then((response) => response.text())).resolves.toBe("origin");
@@ -138,8 +87,6 @@ describe("http dispatcher", () => {
 				]),
 			);
 		} finally {
-			await dispatcher.close();
-			undici.setGlobalDispatcher(originalDispatcher);
 			await Promise.all([
 				new Promise<void>((resolve) => proxy.close(() => resolve())),
 				new Promise<void>((resolve) => origin.close(() => resolve())),
@@ -157,7 +104,7 @@ describe("http dispatcher", () => {
 			throw new Error("Connection captured");
 		});
 
-		configureHttpDispatcher();
+		await host.configure();
 		await expect(undici.fetch("https://example.invalid")).rejects.toThrow();
 
 		expect(connectSpy).toHaveBeenCalledWith(
@@ -167,5 +114,17 @@ describe("http dispatcher", () => {
 		);
 		expect(connectSpy.mock.calls[0]?.[0]).not.toHaveProperty("autoSelectFamily");
 		expect(net.getDefaultAutoSelectFamilyAttemptTimeout()).toBe(originalAttemptTimeoutMs);
+	});
+
+	it("closes the prior process dispatcher when settings replace it without installing global fetch", async () => {
+		const originalFetch = globalThis.fetch;
+		await host.configure();
+		const first = undici.getGlobalDispatcher();
+		const close = vi.spyOn(first, "close").mockResolvedValue(undefined);
+
+		await host.configure({ timeoutMs: 30_000, httpProxy: "http://127.0.0.1:7890" });
+
+		expect(close).toHaveBeenCalledOnce();
+		expect(globalThis.fetch).toBe(originalFetch);
 	});
 });

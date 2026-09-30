@@ -20,7 +20,7 @@ describe("max thinking level", () => {
 		expect(isValidThinkingLevel("max")).toBe(true);
 
 		const settings = SettingsManager.inMemory();
-		settings.setDefaultThinkingLevel("max");
+		await settings.setDefaultThinkingLevel("max");
 		await settings.flush();
 		expect(settings.getDefaultThinkingLevel()).toBe("max");
 	});

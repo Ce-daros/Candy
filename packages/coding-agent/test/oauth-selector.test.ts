@@ -1,7 +1,11 @@
 import { setKeybindings } from "@candy/tui";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { OAuthSelectorComponent } from "../src/modes/interactive/components/oauth-selector.ts";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { ModelRuntime } from "../src/core/model-runtime.ts";
+import {
+	getAuthSelectorProviders,
+	OAuthSelectorComponent,
+} from "../src/modes/interactive/components/oauth-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -15,44 +19,16 @@ describe("OAuthSelectorComponent", () => {
 		setKeybindings(new KeybindingsManager());
 	});
 
-	it("projects provider-owned auth options without provider-specific filtering", () => {
-		const getLoginProviderOptions = (
-			InteractiveMode as unknown as {
-				prototype: {
-					getLoginProviderOptions(
-						this: object,
-						authType?: "oauth" | "api_key",
-					): Array<{ id: string; name: string; authType: string; method?: { name: string; login?: unknown } }>;
-				};
-			}
-		).prototype.getLoginProviderOptions;
-		const providers = [
-			{
-				id: "anthropic",
-				name: "Anthropic",
-				auth: {
-					oauth: { name: "Anthropic (Claude Pro/Max)", login: async () => ({}) },
-					apiKey: { name: "Anthropic API key", login: async () => ({}) },
-				},
-			},
-			{
-				id: "google-vertex",
-				name: "Google Vertex AI",
-				auth: { apiKey: { name: "Google Cloud credentials" } },
-			},
-		];
-		const fakeThis = {
-			session: {
-				modelRuntime: {
-					getProviders: () => providers,
-					getProviderAuthStatus: () => ({ configured: false }),
-					isUsingOAuth: () => false,
-				},
-			},
-		};
-
-		const apiKeyOptions = getLoginProviderOptions.call(fakeThis, "api_key");
-		expect(apiKeyOptions).toMatchObject([
+	it("projects provider-owned auth options without provider-specific filtering", async () => {
+		const runtime = await ModelRuntime.create({
+			credentials: AuthStorage.inMemory(),
+			modelsPath: null,
+			allowModelNetwork: false,
+		});
+		const apiKeyOptions = getAuthSelectorProviders(runtime, "api_key");
+		expect(
+			apiKeyOptions.filter((option) => option.id === "anthropic" || option.id === "google-vertex"),
+		).toMatchObject([
 			{
 				id: "anthropic",
 				name: "Anthropic",
@@ -66,7 +42,7 @@ describe("OAuthSelectorComponent", () => {
 				method: { name: "Google Cloud credentials" },
 			},
 		]);
-		expect(getLoginProviderOptions.call(fakeThis, "oauth")).toMatchObject([
+		expect(getAuthSelectorProviders(runtime, "oauth").filter((option) => option.id === "anthropic")).toMatchObject([
 			{ id: "anthropic", name: "Anthropic", authType: "oauth" },
 		]);
 	});

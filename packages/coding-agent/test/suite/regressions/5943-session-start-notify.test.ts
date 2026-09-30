@@ -1,10 +1,11 @@
 import { fauxAssistantMessage } from "@candy/ai";
 import { Container, Text } from "@candy/tui";
 import { describe, expect, it, vi } from "vitest";
+import type { Theme } from "../../../src/contracts/theme.ts";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.ts";
 import type { ExtensionUIContext } from "../../../src/core/extensions/index.ts";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
-import { initTheme, type Theme, theme } from "../../../src/modes/interactive/theme/theme.ts";
+import { initTheme, theme } from "../../../src/modes/interactive/theme/theme.ts";
 import { createHarness } from "../harness.ts";
 
 function createUiContext(
@@ -36,7 +37,7 @@ function createUiContext(
 		},
 		getAllThemes: () => [],
 		getTheme: () => undefined,
-		setTheme: (_theme: string | Theme) => ({ success: false, error: "Theme switching not available in tests" }),
+		setTheme: async (_theme: string | Theme) => ({ success: false, error: "Theme switching not available in tests" }),
 		getToolsExpanded: () => false,
 		setToolsExpanded: () => {},
 	};
@@ -117,7 +118,7 @@ type ReloadCommandContext = {
 	customHeader?: unknown;
 	builtInHeader?: unknown;
 	editorContainer: { clear: () => void; addChild: (component: unknown) => void };
-	ui: {
+	renderer: {
 		setFocus: (component: unknown) => void;
 		requestRender: (force?: boolean) => void;
 		setShowHardwareCursor: (enabled: boolean) => void;
@@ -151,13 +152,13 @@ const interactiveModePrototype = InteractiveMode.prototype as unknown as Interac
 
 type ReloadCommandContextOverrides = Omit<
 	Partial<ReloadCommandContext>,
-	"session" | "settingsManager" | "keybindings" | "editorContainer" | "ui" | "defaultEditor" | "themeController"
+	"session" | "settingsManager" | "keybindings" | "editorContainer" | "renderer" | "defaultEditor" | "themeController"
 > & {
 	session?: Partial<ReloadCommandContext["session"]>;
 	settingsManager?: Partial<ReloadCommandContext["settingsManager"]>;
 	keybindings?: Partial<ReloadCommandContext["keybindings"]>;
 	editorContainer?: Partial<ReloadCommandContext["editorContainer"]>;
-	ui?: Partial<ReloadCommandContext["ui"]>;
+	renderer?: Partial<ReloadCommandContext["renderer"]>;
 	defaultEditor?: Partial<ReloadCommandContext["defaultEditor"]>;
 	themeController?: Partial<ReloadCommandContext["themeController"]>;
 };
@@ -189,12 +190,12 @@ function createReloadCommandContext(overrides: ReloadCommandContextOverrides = {
 		},
 		keybindings: { reload: () => {}, ...overrides.keybindings },
 		editorContainer: { clear: () => {}, addChild: () => {}, ...overrides.editorContainer },
-		ui: {
+		renderer: {
 			setFocus: () => {},
 			requestRender: () => {},
 			setShowHardwareCursor: () => {},
 			setClearOnShrink: () => {},
-			...overrides.ui,
+			...overrides.renderer,
 		},
 		editor,
 		defaultEditor: { setPaddingX: () => {}, setAutocompleteMaxVisible: () => {}, ...overrides.defaultEditor },
@@ -262,7 +263,7 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 }
 
 describe("regression #5943: session_start transient UI", () => {
-	it("renders loaded resources before restored messages without stale entries", () => {
+	it("renders loaded resources before restored messages without stale entries", async () => {
 		initTheme("dark", false);
 		const context = createLoadedResourcesContext();
 		const root = new Container();
@@ -341,7 +342,7 @@ describe("regression #5943: session_start transient UI", () => {
 				"editor-entrance",
 			]);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -407,7 +408,7 @@ describe("regression #5943: session_start transient UI", () => {
 				"message_end:custom:custom from start",
 			]);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -468,7 +469,7 @@ describe("regression #5943: session_start transient UI", () => {
 			expect(events).toContain("message_end:user:user from start");
 			expect(events).toContain("message_end:assistant:assistant from start");
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -501,7 +502,7 @@ describe("regression #5943: session_start transient UI", () => {
 			expect(beforeSessionStart).toHaveBeenCalledTimes(1);
 			expect(events).toEqual(["render", "start:reload", "notify:reload"]);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
@@ -552,7 +553,7 @@ describe("regression #5943: session_start transient UI", () => {
 					await reloadFinished;
 				},
 			},
-			ui: {
+			renderer: {
 				setFocus: (component) => {
 					focused = component;
 				},

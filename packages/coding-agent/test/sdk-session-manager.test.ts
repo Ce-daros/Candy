@@ -3,17 +3,17 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createAgentSession } from "../src/core/sdk.ts";
+import { assembleAgentSession } from "../src/core/agent-session-factory.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { extensionHostModules } from "../src/presentation/extensions/virtual-modules.ts";
 import { resourceThemeAdapter } from "../src/presentation/resource-theme-adapter.ts";
 
-describe("createAgentSession session manager defaults", () => {
+describe("assembleAgentSession session manager defaults", () => {
 	let tempDir: string;
 	let cwd: string;
 	let agentDir: string;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-sdk-session-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		cwd = join(tempDir, "project");
 		agentDir = join(tempDir, "agent");
@@ -21,7 +21,7 @@ describe("createAgentSession session manager defaults", () => {
 		mkdirSync(agentDir, { recursive: true });
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -31,7 +31,7 @@ describe("createAgentSession session manager defaults", () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5");
 		expect(model).toBeTruthy();
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd,
@@ -47,7 +47,7 @@ describe("createAgentSession session manager defaults", () => {
 		expect(sessionDir).toBe(expectedSessionDir);
 		expect(sessionFile?.startsWith(`${expectedSessionDir}${sep}`)).toBe(true);
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("keeps an explicit sessionManager override", async () => {
@@ -55,7 +55,7 @@ describe("createAgentSession session manager defaults", () => {
 		expect(model).toBeTruthy();
 
 		const sessionManager = SessionManager.inMemory(cwd);
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd,
@@ -67,7 +67,7 @@ describe("createAgentSession session manager defaults", () => {
 		expect(session.sessionManager).toBe(sessionManager);
 		expect(session.sessionManager.isPersisted()).toBe(false);
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("derives cwd from an explicit sessionManager when cwd is omitted", async () => {
@@ -77,7 +77,7 @@ describe("createAgentSession session manager defaults", () => {
 		const sessionCwd = join(tempDir, "session-project");
 		mkdirSync(sessionCwd, { recursive: true });
 		const sessionManager = SessionManager.inMemory(sessionCwd);
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			agentDir,
@@ -98,14 +98,14 @@ describe("createAgentSession session manager defaults", () => {
 
 		expect(realpathSync(output.trim())).toBe(realpathSync(sessionCwd));
 
-		session.dispose();
+		await session.dispose();
 	});
 
 	it("exposes current session state to the built-in bash tool", async () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5");
 		expect(model).toBeTruthy();
 
-		const { session } = await createAgentSession({
+		const { session } = await assembleAgentSession({
 			extensionModules: extensionHostModules,
 			themeAdapter: resourceThemeAdapter,
 			cwd,
@@ -136,6 +136,6 @@ describe("createAgentSession session manager defaults", () => {
 			session.thinkingLevel,
 		]);
 
-		session.dispose();
+		await session.dispose();
 	});
 });

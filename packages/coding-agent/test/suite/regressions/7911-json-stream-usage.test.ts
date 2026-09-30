@@ -6,8 +6,8 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("regression #7911: JSON message updates retain usage", () => {
 	let harness: Harness | undefined;
 
-	afterEach(() => {
-		harness?.cleanup();
+	afterEach(async () => {
+		await harness?.cleanup();
 	});
 
 	it("includes cumulative usage without cumulative message snapshots", async () => {

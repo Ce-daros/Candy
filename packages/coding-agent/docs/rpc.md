@@ -2,7 +2,9 @@
 
 RPC mode runs candy as a long-lived subprocess controlled through JSON records on stdin and stdout. Use it for language-independent integrations, process isolation, IDEs, and custom user interfaces.
 
-For an in-process Node.js or Bun integration, prefer the [SDK](sdk.md). For a subprocess-based TypeScript integration, prefer the exported `RpcClient`, which starts candy, correlates responses, exposes typed command methods, and delivers events to listeners.
+For an in-process Node.js or Bun integration, prefer the [SDK](sdk.md). For a subprocess-based TypeScript integration, import `RpcClient` and protocol types from `@candy/coding-agent/rpc`. The client starts candy, correlates responses, exposes typed command methods, and delivers events to listeners.
+
+Successful setting commits also emit a `settings_commit` event containing the committed scope and changed settings fields. It is published only after persistence succeeds. When RPC replaces its active session, subscriptions to the previous session are removed before events from the new session are forwarded.
 
 | Interface | Process boundary | Control model | Best fit |
 |---|---|---|---|

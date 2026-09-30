@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
@@ -46,8 +47,8 @@ function createSessionFile(projectDir: string, sessionFile: string): void {
 				parentId: null,
 				timestamp,
 				message: {
-					role: "assistant",
-					content: [{ type: "text", text: "hello" }],
+					...fauxAssistantMessage("hello"),
+					api: "anthropic-messages",
 					provider: "anthropic",
 					model: "claude-sonnet-4-5",
 					timestamp: Date.now(),

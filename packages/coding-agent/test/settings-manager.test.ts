@@ -3,7 +3,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS } from "../src/core/http-dispatcher.ts";
-import { type Settings, SettingsManager } from "../src/core/settings-manager.ts";
+import { InMemorySettingsStorage, type Settings, SettingsManager } from "../src/core/settings-manager.ts";
 
 describe("SettingsManager", () => {
 	const testDir = join(process.cwd(), "test-settings-tmp");
@@ -32,7 +32,7 @@ describe("SettingsManager", () => {
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 			expect(manager.getGlobalSettings()).not.toHaveProperty("enabledModels");
-			manager.setDefaultThinkingLevel("high");
+			await manager.setDefaultThinkingLevel("high");
 			await manager.flush();
 
 			expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).not.toHaveProperty("enabledModels");
@@ -56,7 +56,7 @@ describe("SettingsManager", () => {
 			writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
 
 			// User changes theme
-			manager.setTheme("light");
+			await manager.setTheme("light");
 			await manager.flush();
 
 			// Verify all settings preserved
@@ -83,7 +83,7 @@ describe("SettingsManager", () => {
 			writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
 
 			// But then changes it via UI to "high"
-			manager.setDefaultThinkingLevel("high");
+			await manager.setDefaultThinkingLevel("high");
 			await manager.flush();
 
 			// In-memory change should win
@@ -173,7 +173,7 @@ describe("SettingsManager", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
 			writeFileSync(settingsPath, "{ invalid json");
-			await manager.reload();
+			await expect(manager.reload()).rejects.toThrow();
 
 			expect(manager.getTheme()).toBe("dark");
 			expect(manager.drainErrors()).toMatchObject([{ scope: "global", path: settingsPath }]);
@@ -190,7 +190,7 @@ describe("SettingsManager", () => {
 			expect(manager.getTheme()).toBeUndefined();
 			expect(manager.getThemeSetting()).toBe("light/dark");
 
-			manager.setTheme("solarized-light/tokyo-night");
+			await manager.setTheme("solarized-light/tokyo-night");
 			await manager.flush();
 
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -240,15 +240,32 @@ describe("SettingsManager", () => {
 			expect(manager.getTheme()).toBe("project");
 		});
 
-		it("should fail project settings writes when project is not trusted", async () => {
+		it("preserves runtime overrides and publishes project trust changes", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "global" }));
+			writeFileSync(join(projectDir, ".candy", "settings.json"), JSON.stringify({ theme: "project" }));
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
+			const events: Array<{ scope: string; fields: readonly string[] }> = [];
+			manager.subscribe((event) => events.push(event));
+			manager.setRuntimeOverride("theme", "runtime");
+			events.length = 0;
+
+			manager.setProjectTrusted(true);
+			expect(manager.getThemeSetting()).toBe("runtime");
+			expect(events).toEqual([{ scope: "project", fields: ["theme"] }]);
+
+			manager.setProjectTrusted(false);
+			expect(manager.getThemeSetting()).toBe("runtime");
+			expect(events.at(-1)).toEqual({ scope: "project", fields: ["theme"] });
+		});
+
+		it("should reject project settings writes when project is not trusted", async () => {
 			const projectSettingsPath = join(projectDir, ".candy", "settings.json");
 			writeFileSync(projectSettingsPath, JSON.stringify({ packages: ["npm:existing"] }));
 			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
 
-			expect(() => manager.setProjectPackages(["npm:new"])).toThrow(
+			await expect(manager.setProjectPackages(["npm:new"])).rejects.toThrow(
 				"Project is not trusted; refusing to write project settings",
 			);
-			await manager.flush();
 
 			expect(manager.getProjectSettings()).toEqual({});
 			expect(JSON.parse(readFileSync(projectSettingsPath, "utf-8"))).toEqual({ packages: ["npm:existing"] });
@@ -390,7 +407,7 @@ describe("SettingsManager", () => {
 
 		it("persists the mode globally", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			manager.setCacheWarmingMode("off");
+			await manager.setCacheWarmingMode("off");
 			await manager.flush();
 
 			expect(SettingsManager.create(projectDir, agentDir).getCacheWarmingMode()).toBe("off");
@@ -448,7 +465,7 @@ describe("SettingsManager", () => {
 		expect(manager.getFullscreenCopyOnSelect()).toBe(true);
 
 		manager.setFullscreenExitOutput("resume-hint");
-		manager.setFullscreenScrollbar("hidden");
+		await manager.setFullscreenScrollbar("hidden");
 		manager.setFullscreenCopyOnSelect(false);
 		await manager.flush();
 		const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
@@ -526,7 +543,7 @@ describe("SettingsManager", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			expect(manager.getToolPreviewLines()).toBe(5);
 
-			manager.setToolPreviewLines(20);
+			await manager.setToolPreviewLines(20);
 			await manager.flush();
 
 			expect(SettingsManager.create(projectDir, agentDir).getToolPreviewLines()).toBe(20);
@@ -558,7 +575,7 @@ describe("SettingsManager", () => {
 			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
-			manager.setTheme("light");
+			await manager.setTheme("light");
 			await manager.flush();
 
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -637,6 +654,82 @@ describe("SettingsManager", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ shellPath: "~" }));
 			const manager = SettingsManager.create(projectDir, agentDir);
 			expect(manager.getShellPath()).toBe(homedir());
+		});
+	});
+
+	describe("settings commits", () => {
+		it("publishes only after persistence and preserves runtime overrides", async () => {
+			let failWrite = false;
+			let global = JSON.stringify({ theme: "saved" });
+			const manager = SettingsManager.fromStorage({
+				withLock(scope, update) {
+					const current = scope === "global" ? global : undefined;
+					const next = update(current);
+					if (next === undefined) return;
+					if (failWrite) throw new Error("disk unavailable");
+					if (scope === "global") global = next;
+				},
+			});
+			const events: Array<{ scope: string; fields: readonly string[] }> = [];
+			manager.subscribe((event) => events.push(event));
+			manager.setRuntimeOverride("theme", "runtime");
+			events.length = 0;
+
+			failWrite = true;
+			await expect(manager.commitSetting("global", "defaultModel", "model-a")).rejects.toThrow("disk unavailable");
+			expect(manager.getDefaultModel()).toBeUndefined();
+			expect(events).toEqual([]);
+
+			failWrite = false;
+			await manager.commitDefaultModelAndProvider("provider-a", "model-a");
+			expect(manager.getGlobalSettings()).toMatchObject({ defaultProvider: "provider-a", defaultModel: "model-a" });
+			expect(manager.getThemeSetting()).toBe("runtime");
+			expect(events).toEqual([{ scope: "global", fields: ["defaultProvider", "defaultModel"] }]);
+
+			manager.clearRuntimeOverride("theme");
+			expect(manager.getThemeSetting()).toBe("saved");
+		});
+
+		it("merges a nested commit into the latest locked settings", async () => {
+			const path = join(agentDir, "settings.json");
+			writeFileSync(path, JSON.stringify({ terminal: { showImages: true } }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			writeFileSync(path, JSON.stringify({ terminal: { showImages: true, trueColor: false } }));
+
+			await manager.commitTerminalSetting("showImages", false);
+
+			expect(JSON.parse(readFileSync(path, "utf-8"))).toEqual({
+				terminal: { showImages: false, trueColor: false },
+			});
+		});
+
+		it("publishes runtime override batches and changed settings after reload", async () => {
+			const storage = new InMemorySettingsStorage();
+			storage.withLock("global", () => JSON.stringify({ theme: "saved", transport: "sse" }));
+			const manager = SettingsManager.fromStorage(storage);
+			const events: Array<{ scope: string; fields: readonly string[] }> = [];
+			manager.subscribe((event) => events.push(event));
+
+			manager.applyOverrides({ theme: "runtime", transport: "websocket" });
+			expect(events).toEqual([{ scope: "runtime", fields: ["theme", "transport"] }]);
+			events.length = 0;
+
+			storage.withLock("global", () => JSON.stringify({ theme: "changed", retry: { enabled: false } }));
+			await manager.reload();
+
+			expect(events).toEqual([{ scope: "global", fields: ["theme", "transport", "retry"] }]);
+			expect(manager.getThemeSetting()).toBe("runtime");
+			expect(manager.getRetryEnabled()).toBe(false);
+		});
+
+		it("rejects malformed reloads and retains the last valid settings", async () => {
+			const storage = new InMemorySettingsStorage();
+			storage.withLock("global", () => JSON.stringify({ theme: "saved" }));
+			const manager = SettingsManager.fromStorage(storage);
+			storage.withLock("global", () => "{ invalid json");
+
+			await expect(manager.reload()).rejects.toThrow();
+			expect(manager.getThemeSetting()).toBe("saved");
 		});
 	});
 });

@@ -1,22 +1,7 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
-/**
- * Skills Configuration
- *
- * Skills provide specialized instructions loaded into the system prompt.
- * Discover, filter, merge, or replace them.
- */
+/** Filter discovered skills and add one supplied by the host. */
 
-import {
-	createAgentSession,
-	createSyntheticSourceInfo,
-	DefaultResourceLoader,
-	getAgentDir,
-	SessionManager,
-	type Skill,
-} from "@candy/coding-agent";
+import { createAgentSessionRuntime, createSyntheticSourceInfo, SessionManager, type Skill } from "@candy/coding-agent";
 
-// Or define custom skills inline
 const customSkill: Skill = {
 	name: "my-skill",
 	description: "Custom project instructions",
@@ -26,34 +11,28 @@ const customSkill: Skill = {
 	disableModelInvocation: false,
 };
 
-const loader = new DefaultResourceLoader({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
-	cwd: process.cwd(),
-	agentDir: getAgentDir(),
-	skillsOverride: (current) => {
-		const filteredSkills = current.skills.filter((s) => s.name.includes("browser") || s.name.includes("search"));
-		return {
-			skills: [...filteredSkills, customSkill],
+const cwd = process.cwd();
+const runtime = await createAgentSessionRuntime({
+	cwd,
+	sessionManager: SessionManager.inMemory(cwd),
+	resourceLoaderOptions: {
+		skillsOverride: (current) => ({
+			skills: [
+				...current.skills.filter((skill) => skill.name.includes("browser") || skill.name.includes("search")),
+				customSkill,
+			],
 			diagnostics: current.diagnostics,
-		};
+		}),
 	},
 });
-await loader.reload();
 
-// Discover all skills from cwd/.candy/skills, ~/.candy/agent/skills, etc.
-const { skills: allSkills, diagnostics } = loader.getSkills();
-console.log(
-	"Discovered skills:",
-	allSkills.map((s) => s.name),
-);
-if (diagnostics.length > 0) {
-	console.log("Warnings:", diagnostics);
+try {
+	const { skills, diagnostics } = runtime.resources.getInventory().skills;
+	console.log(
+		"Skills:",
+		skills.map((skill) => skill.name),
+	);
+	if (diagnostics.length) console.log("Warnings:", diagnostics);
+} finally {
+	await runtime.dispose();
 }
-
-const { session } = await createAgentSession({
-	resourceLoader: loader,
-	sessionManager: SessionManager.inMemory(),
-});
-console.log("Session created with filtered skills");
-session.dispose();

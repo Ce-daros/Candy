@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInteractiveSmoke } from "./interactive-smoke.ts";
@@ -27,6 +27,9 @@ if (process.argv.includes("--probe-isolation")) {
 		longModelName: process.argv.includes("--long-model-name"),
 		transcript: process.argv.includes("--transcript"),
 	});
-	process.once("exit", () => rmSync(smoke.harness.tempDir, { recursive: true, force: true }));
-	await smoke.mode.run();
+	try {
+		await smoke.mode.run();
+	} finally {
+		await smoke.cleanup();
+	}
 }

@@ -20,7 +20,7 @@ type ShutdownThis = {
 	isShuttingDown: boolean;
 	unregisterSignalHandlers: () => void;
 	runtimeHost: { dispose: () => Promise<void> };
-	ui: { terminal: { drainInput: (ms: number) => Promise<void> } };
+	renderer: { terminal: { drainInput: (ms: number) => Promise<void> } };
 	themeController: { disableAutoSync: () => void };
 	stop: () => void;
 	sessionManager: SessionManager;
@@ -75,7 +75,7 @@ function createContext(order: string[], sessionManager = createSessionManager())
 				order.push("dispose");
 			}),
 		},
-		ui: {
+		renderer: {
 			terminal: {
 				drainInput: vi.fn(async () => {
 					order.push("drainInput");

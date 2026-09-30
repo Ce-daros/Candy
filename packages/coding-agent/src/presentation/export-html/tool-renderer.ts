@@ -7,8 +7,8 @@
 
 import type { ImageContent, TextContent } from "@candy/ai";
 import type { Component } from "@candy/tui";
+import type { Theme } from "../../contracts/theme.ts";
 import type { ToolDefinition, ToolRenderContext } from "../../core/extensions/types.ts";
-import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { ansiLinesToHtml } from "./ansi-to-html.ts";
 
 export interface ToolHtmlRendererDeps {

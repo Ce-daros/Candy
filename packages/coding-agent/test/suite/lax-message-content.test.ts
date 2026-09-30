@@ -1,11 +1,4 @@
-/**
- * The Message types require `content` to always be present, but untyped JS
- * extension tools, hand-built histories, and old or hand-edited session files
- * can violate that contract. We are intentionally lax at the ingestion
- * boundaries and normalize null/missing content to an empty array so it never
- * reaches rendering, compaction, or provider request conversion
- * (issues #6259, #6276).
- */
+/** Boundary checks for extension-produced messages and migrated session history. */
 
 import type { AgentMessage, AgentToolResult } from "@candy/agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
@@ -55,11 +48,11 @@ describe("lax message content handling", () => {
 			// The follow-up turn consumed the normalized tool result without crashing.
 			expect(harness.getPendingResponseCount()).toBe(0);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
-	it("normalizes null content in message_end extension replacements", async () => {
+	it("rejects null content in message_end extension replacements", async () => {
 		const extensionFactories: ExtensionFactory[] = [
 			(candy) => {
 				candy.on("message_end", async (event) => {
@@ -73,87 +66,32 @@ describe("lax message content handling", () => {
 
 		try {
 			harness.setResponses([fauxAssistantMessage("hello")]);
-			await harness.session.prompt("hi");
-
-			const assistantMessages = harness.session.messages.filter((message) => message.role === "assistant");
-			expect(assistantMessages).toHaveLength(1);
-			expect(assistantMessages[0].content).toEqual([]);
+			await expect(harness.session.prompt("hi")).rejects.toThrow("content array");
+			expect(harness.session.messages.some((message) => message.role === "assistant")).toBe(false);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
-	it("normalizes null content in custom messages from extensions", async () => {
+	it("rejects null content in custom messages from extensions", async () => {
 		const harness = await createHarness();
 
 		try {
-			await harness.session.sendCustomMessage({
-				customType: "test",
-				content: null as unknown as string,
-				display: false,
-				details: undefined,
-			});
-
-			const customMessages = harness.session.messages.filter((message) => message.role === "custom");
-			expect(customMessages).toHaveLength(1);
-			expect(customMessages[0].content).toEqual([]);
+			await expect(
+				harness.session.sendCustomMessage({
+					customType: "test",
+					content: null as unknown as string,
+					display: false,
+					details: undefined,
+				}),
+			).rejects.toThrow("must contain text or content parts");
+			expect(harness.session.messages.some((message) => message.role === "custom")).toBe(false);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 
-	it("normalizes null or missing content when loading session message entries", () => {
-		const badMessages = [
-			{ role: "user", content: null, timestamp: Date.now() },
-			{
-				role: "assistant",
-				content: null,
-				api: "openai-completions",
-				provider: "openai",
-				model: "test-model",
-				usage: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					totalTokens: 0,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				},
-				stopReason: "stop",
-				timestamp: Date.now(),
-			},
-			{
-				role: "toolResult",
-				toolCallId: "call_1",
-				toolName: "web_search",
-				isError: false,
-				timestamp: Date.now(),
-			},
-		];
-
-		for (const badMessage of badMessages) {
-			const [message] = sessionEntryToContextMessages(messageEntry(badMessage));
-			expect(message).toMatchObject({ role: badMessage.role, content: [] });
-		}
-	});
-
-	it("normalizes null content when loading custom message entries", () => {
-		const entry = {
-			type: "custom_message",
-			id: "entry-1",
-			parentId: null,
-			timestamp: new Date().toISOString(),
-			customType: "test",
-			content: null,
-			display: false,
-			details: undefined,
-		} as unknown as SessionEntry;
-
-		const [message] = sessionEntryToContextMessages(entry);
-		expect(message).toMatchObject({ role: "custom", content: [] });
-	});
-
-	it("keeps valid message content untouched when loading session entries", () => {
+	it("keeps valid message content untouched when loading session entries", async () => {
 		const [message] = sessionEntryToContextMessages(
 			messageEntry({ role: "user", content: "hello", timestamp: Date.now() }),
 		);

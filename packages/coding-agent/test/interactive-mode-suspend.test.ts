@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
-type FakeUi = {
+type FakeRenderer = {
 	start: () => void;
 	stop: () => void;
 	requestRender: (force?: boolean) => void;
 };
 
 type HandleCtrlZThis = {
-	ui: FakeUi;
+	renderer: FakeRenderer;
 };
 
 type ProcessSignalHandler = () => void;
@@ -36,13 +36,13 @@ describe("InteractiveMode.handleCtrlZ", () => {
 	});
 
 	test("shows a status message and skips suspend on Windows", () => {
-		const ui: FakeUi = {
+		const renderer: FakeRenderer = {
 			start: vi.fn(),
 			stop: vi.fn(),
 			requestRender: vi.fn(),
 		};
 		const showStatus = vi.fn();
-		const context: HandleCtrlZThis & { showStatus: (message: string) => void } = { ui, showStatus };
+		const context: HandleCtrlZThis & { showStatus: (message: string) => void } = { renderer, showStatus };
 		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 		Object.defineProperty(process, "platform", {
 			configurable: true,
@@ -62,7 +62,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		}
 
 		expect(showStatus).toHaveBeenCalledWith("Suspend to background is not supported on Windows");
-		expect(ui.stop).not.toHaveBeenCalled();
+		expect(renderer.stop).not.toHaveBeenCalled();
 		expect(setIntervalSpy).not.toHaveBeenCalled();
 		expect(processOnSpy).not.toHaveBeenCalledWith("SIGINT", expect.any(Function));
 		expect(processOnceSpy).not.toHaveBeenCalledWith("SIGCONT", expect.any(Function));
@@ -70,12 +70,12 @@ describe("InteractiveMode.handleCtrlZ", () => {
 	});
 
 	test("keeps the process alive while suspended and restores the TUI on SIGCONT", () => {
-		const ui: FakeUi = {
+		const renderer: FakeRenderer = {
 			start: vi.fn(),
 			stop: vi.fn(),
 			requestRender: vi.fn(),
 		};
-		const context: HandleCtrlZThis = { ui };
+		const context: HandleCtrlZThis = { renderer };
 		const keepAliveHandle = setTimeout(() => undefined, 0);
 		clearTimeout(keepAliveHandle);
 
@@ -106,7 +106,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 2 ** 30);
 		expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
 		expect(processOnceSpy).toHaveBeenCalledWith("SIGCONT", expect.any(Function));
-		expect(ui.stop).toHaveBeenCalledTimes(1);
+		expect(renderer.stop).toHaveBeenCalledTimes(1);
 		expect(processKillSpy).toHaveBeenCalledWith(0, "SIGTSTP");
 		expect(sigintHandler).toBeDefined();
 		expect(sigcontHandler).toBeDefined();
@@ -115,17 +115,17 @@ describe("InteractiveMode.handleCtrlZ", () => {
 
 		expect(clearIntervalSpy).toHaveBeenCalledWith(keepAliveHandle);
 		expect(removeListenerSpy).toHaveBeenCalledWith("SIGINT", sigintHandler);
-		expect(ui.start).toHaveBeenCalledTimes(1);
-		expect(ui.requestRender).toHaveBeenCalledWith(true);
+		expect(renderer.start).toHaveBeenCalledTimes(1);
+		expect(renderer.requestRender).toHaveBeenCalledWith(true);
 	});
 
 	test("cleans up the temporary handlers if suspension fails", () => {
-		const ui: FakeUi = {
+		const renderer: FakeRenderer = {
 			start: vi.fn(),
 			stop: vi.fn(),
 			requestRender: vi.fn(),
 		};
-		const context: HandleCtrlZThis = { ui };
+		const context: HandleCtrlZThis = { renderer };
 		const keepAliveHandle = setTimeout(() => undefined, 0);
 		clearTimeout(keepAliveHandle);
 		const suspendError = new Error("suspend failed");
@@ -146,11 +146,11 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		});
 
 		expect(() => callHandleCtrlZ(context)).toThrow(suspendError);
-		expect(ui.stop).toHaveBeenCalledTimes(1);
+		expect(renderer.stop).toHaveBeenCalledTimes(1);
 		expect(setIntervalSpy).toHaveBeenCalledTimes(1);
 		expect(clearIntervalSpy).toHaveBeenCalledWith(keepAliveHandle);
 		expect(removeListenerSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
-		expect(ui.start).not.toHaveBeenCalled();
-		expect(ui.requestRender).not.toHaveBeenCalled();
+		expect(renderer.start).not.toHaveBeenCalled();
+		expect(renderer.requestRender).not.toHaveBeenCalled();
 	});
 });

@@ -442,7 +442,9 @@ describe("Coding Agent Tools", () => {
 					path: testFile,
 					edits: [{ oldText: "hello", newText: "world" }],
 				}),
-			).rejects.toThrow(`Could not edit file: ${testFile}. Error code: EACCES.`);
+			).rejects.toThrow(
+				`Could not edit file: ${testFile}. Error code: ${process.platform === "win32" ? "EPERM" : "EACCES"}.`,
+			);
 		});
 
 		it("should include the original error message for unknown edit access errors", async () => {
@@ -471,15 +473,18 @@ describe("Coding Agent Tools", () => {
 			expect(result).toEqual({ error: `Could not edit file: ${missingFile}. Error code: ENOENT.` });
 		});
 
-		it("should include EACCES in diff preview for unreadable files", async () => {
-			const unreadableFile = join(testDir, "unreadable-preview.txt");
-			writeFileSync(unreadableFile, "hello\n");
-			chmodSync(unreadableFile, 0o222);
+		it.skipIf(process.platform === "win32")(
+			"should include EACCES in diff preview for unreadable files",
+			async () => {
+				const unreadableFile = join(testDir, "unreadable-preview.txt");
+				writeFileSync(unreadableFile, "hello\n");
+				chmodSync(unreadableFile, 0o222);
 
-			const result = await computeEditsDiff(unreadableFile, [{ oldText: "hello", newText: "world" }], testDir);
+				const result = await computeEditsDiff(unreadableFile, [{ oldText: "hello", newText: "world" }], testDir);
 
-			expect(result).toEqual({ error: `Could not edit file: ${unreadableFile}. Error code: EACCES.` });
-		});
+				expect(result).toEqual({ error: `Could not edit file: ${unreadableFile}. Error code: EACCES.` });
+			},
+		);
 	});
 
 	describe("bash tool", () => {
@@ -870,6 +875,7 @@ describe("Coding Agent Tools", () => {
 
 			const result = await grepTool.execute("test-call-grep-injection", {
 				pattern: `--pre=${payload}`,
+				literal: true,
 				path: testDir,
 			});
 
@@ -1047,13 +1053,13 @@ describe("tool cwd resolution", () => {
 		const tool = createBashToolDefinition("/", { exposeSessionEnvironment: false });
 		const result = await tool.execute(
 			"test-bash-ctx-cwd",
-			{ command: "pwd" },
+			{ command: process.platform === "win32" ? "pwd -W" : "pwd" },
 			undefined,
 			undefined,
 			fakeCtx(testDir),
 		);
 		const output = getTextOutput(result);
-		expect(output).toContain(testDir);
+		expect(output.trim().replace(/\\/g, "/")).toBe(testDir.replace(/\\/g, "/"));
 	});
 });
 

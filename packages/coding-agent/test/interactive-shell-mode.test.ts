@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { QueuedInput } from "../src/core/agent-session.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 
@@ -53,10 +54,12 @@ type SubmitContext = {
 	defaultEditor: { onSubmit?: (text: string) => Promise<void> };
 	editor: { addToHistory: ReturnType<typeof vi.fn>; setText: ReturnType<typeof vi.fn> };
 	session: { model: { id: string }; isBashRunning: boolean; isCompacting: boolean; isStreaming: boolean };
+	createEditorInput(text: string): QueuedInput;
 	handleBashCommand: ReturnType<typeof vi.fn>;
 	showWarning: ReturnType<typeof vi.fn>;
+	showError: ReturnType<typeof vi.fn>;
 	flushPendingBashComponents: ReturnType<typeof vi.fn>;
-	pendingUserInputs: string[];
+	pendingUserInputs: QueuedInput[];
 };
 
 describe("interactive Shell mode", () => {
@@ -100,8 +103,10 @@ describe("interactive Shell mode", () => {
 			defaultEditor: {},
 			editor: { addToHistory: vi.fn(), setText: vi.fn() },
 			session: { model: { id: "faux" }, isBashRunning: false, isCompacting: false, isStreaming: false },
+			createEditorInput: (text) => ({ text }),
 			handleBashCommand: vi.fn(async () => {}),
 			showWarning: vi.fn(),
+			showError: vi.fn(),
 			flushPendingBashComponents: vi.fn(),
 			pendingUserInputs: [],
 		};
@@ -117,6 +122,6 @@ describe("interactive Shell mode", () => {
 		context.inputMode = "normal";
 		await context.defaultEditor.onSubmit?.("!literal prompt");
 		await context.defaultEditor.onSubmit?.("/literal prompt");
-		expect(context.pendingUserInputs).toEqual(["!literal prompt", "/literal prompt"]);
+		expect(context.pendingUserInputs).toEqual([{ text: "!literal prompt" }, { text: "/literal prompt" }]);
 	});
 });

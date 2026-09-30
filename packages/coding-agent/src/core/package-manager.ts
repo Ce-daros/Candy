@@ -124,8 +124,8 @@ export interface PackageManager {
 		sources: string[],
 		options?: { local?: boolean; temporary?: boolean },
 	): Promise<ResolvedPaths>;
-	addSourceToSettings(source: string, options?: { local?: boolean }): boolean;
-	removeSourceFromSettings(source: string, options?: { local?: boolean }): boolean;
+	addSourceToSettings(source: string, options?: { local?: boolean }): Promise<boolean>;
+	removeSourceFromSettings(source: string, options?: { local?: boolean }): Promise<boolean>;
 	setProgressCallback(callback: ProgressCallback | undefined): void;
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
 }
@@ -221,7 +221,7 @@ export class DefaultPackageManager implements PackageManager {
 		this.progressCallback = callback;
 	}
 
-	addSourceToSettings(source: string, options?: { local?: boolean }): boolean {
+	async addSourceToSettings(source: string, options?: { local?: boolean }): Promise<boolean> {
 		const scope: SourceScope = options?.local ? "project" : "user";
 		const currentSettings =
 			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
@@ -236,23 +236,17 @@ export class DefaultPackageManager implements PackageManager {
 			const nextPackages = [...currentPackages];
 			nextPackages[matchIndex] =
 				typeof existing === "string" ? normalizedSource : { ...existing, source: normalizedSource };
-			if (scope === "project") {
-				this.settingsManager.setProjectPackages(nextPackages);
-			} else {
-				this.settingsManager.setPackages(nextPackages);
-			}
+			if (scope === "project") await this.settingsManager.setProjectPackages(nextPackages);
+			else await this.settingsManager.setPackages(nextPackages);
 			return true;
 		}
 		const nextPackages = [...currentPackages, normalizedSource];
-		if (scope === "project") {
-			this.settingsManager.setProjectPackages(nextPackages);
-		} else {
-			this.settingsManager.setPackages(nextPackages);
-		}
+		if (scope === "project") await this.settingsManager.setProjectPackages(nextPackages);
+		else await this.settingsManager.setPackages(nextPackages);
 		return true;
 	}
 
-	removeSourceFromSettings(source: string, options?: { local?: boolean }): boolean {
+	async removeSourceFromSettings(source: string, options?: { local?: boolean }): Promise<boolean> {
 		const scope: SourceScope = options?.local ? "project" : "user";
 		const currentSettings =
 			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
@@ -262,11 +256,8 @@ export class DefaultPackageManager implements PackageManager {
 		if (!changed) {
 			return false;
 		}
-		if (scope === "project") {
-			this.settingsManager.setProjectPackages(nextPackages);
-		} else {
-			this.settingsManager.setPackages(nextPackages);
-		}
+		if (scope === "project") await this.settingsManager.setProjectPackages(nextPackages);
+		else await this.settingsManager.setPackages(nextPackages);
 		return true;
 	}
 
@@ -428,7 +419,7 @@ export class DefaultPackageManager implements PackageManager {
 
 	async installAndPersist(source: string, options?: { local?: boolean }): Promise<void> {
 		await this.install(source, options);
-		this.addSourceToSettings(source, options);
+		await this.addSourceToSettings(source, options);
 	}
 
 	async remove(source: string, options?: { local?: boolean }): Promise<void> {

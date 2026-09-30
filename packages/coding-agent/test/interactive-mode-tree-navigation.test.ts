@@ -36,7 +36,7 @@ function createTreeUI() {
 		chatContainer: new Container(),
 		isInitialized: true,
 		footer: { invalidate: vi.fn() },
-		ui: { terminal: { rows: 24, setProgress: vi.fn() }, requestRender: vi.fn() },
+		renderer: { terminal: { rows: 24, setProgress: vi.fn() }, requestRender: vi.fn() },
 		pageController: {
 			generation: 0,
 			showSelector: (

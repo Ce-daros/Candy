@@ -38,9 +38,9 @@ function runAutoCompaction(harness: Harness): Promise<boolean> {
 describe("automatic compaction cancellation regressions", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
-		while (harnesses.length > 0) harnesses.pop()?.cleanup();
+		while (harnesses.length > 0) await harnesses.pop()?.cleanup();
 	});
 
 	// Regression test for #9340.

@@ -41,7 +41,7 @@ describe("issue #7187 malformed package manifest", () => {
 			expect(resources.prompts.map((prompt) => prompt.path)).toContain(promptPath);
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

@@ -1,76 +1,40 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
-/**
- * Custom System Prompt
- *
- * Shows how to replace or modify the default system prompt.
- */
+/** Replace or extend the generated system prompt without a UI adapter. */
 
-import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@candy/coding-agent";
+import { createAgentSessionRuntime, SessionManager } from "@candy/coding-agent";
 
 const cwd = process.cwd();
-const agentDir = getAgentDir();
 
-// Option 1: Replace prompt entirely
-const loader1 = new DefaultResourceLoader({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
+const replacementRuntime = await createAgentSessionRuntime({
 	cwd,
-	agentDir,
-	systemPromptOverride: () => `You are a helpful assistant that speaks like a pirate.
+	sessionManager: SessionManager.inMemory(cwd),
+	resourceLoaderOptions: {
+		systemPromptOverride: () => `You are a helpful assistant that speaks like a pirate.
 Always end responses with "Arrr!"`,
-	// Needed to avoid DefaultResourceLoader appending APPEND_SYSTEM.md from ~/.candy/agent or <cwd>/.pi.
-	appendSystemPromptOverride: () => [],
-});
-await loader1.reload();
-
-const { session: session1 } = await createAgentSession({
-	resourceLoader: loader1,
-	sessionManager: SessionManager.inMemory(),
+		appendSystemPromptOverride: () => [],
+	},
 });
 
 try {
-	session1.subscribe((event) => {
-		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-			process.stdout.write(event.assistantMessageEvent.delta);
-		}
-	});
-
-	console.log("=== Replace prompt ===");
-	await session1.prompt("What is 2 + 2?");
-	console.log("\n");
+	await replacementRuntime.session.prompt("What is 2 + 2?");
+	console.log(replacementRuntime.session.getLastAssistantText());
 } finally {
-	session1.dispose();
+	await replacementRuntime.dispose();
 }
 
-// Option 2: Append instructions to the default prompt
-const loader2 = new DefaultResourceLoader({
-	extensionModules: extensionHostModules,
-	themeAdapter: resourceThemeAdapter,
+const appendedRuntime = await createAgentSessionRuntime({
 	cwd,
-	agentDir,
-	appendSystemPromptOverride: (base) => [
-		...base,
-		"## Additional Instructions\n- Always be concise\n- Use bullet points when listing things",
-	],
-});
-await loader2.reload();
-
-const { session: session2 } = await createAgentSession({
-	resourceLoader: loader2,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionManager.inMemory(cwd),
+	resourceLoaderOptions: {
+		appendSystemPromptOverride: (base) => [
+			...base,
+			"## Additional Instructions\n- Always be concise\n- Use bullet points when listing things",
+		],
+	},
 });
 
 try {
-	session2.subscribe((event) => {
-		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-			process.stdout.write(event.assistantMessageEvent.delta);
-		}
-	});
-
-	console.log("=== Modify prompt ===");
-	await session2.prompt("List 3 benefits of TypeScript.");
-	console.log();
+	await appendedRuntime.session.prompt("List 3 benefits of TypeScript.");
+	console.log(appendedRuntime.session.getLastAssistantText());
 } finally {
-	session2.dispose();
+	await appendedRuntime.dispose();
 }

@@ -67,6 +67,13 @@ describe("loadEntriesFromFile", () => {
 		expect(() => loadEntriesFromFile(file)).toThrow(`${file}:1`);
 	});
 
+	it("rejects unknown entry types with their line", () => {
+		const file = join(tempDir, "unknown-entry.jsonl");
+		writeSessionHeader(file, tempDir, "unknown-entry");
+		appendFileSync(file, '{"type":"future_entry","id":"1","parentId":null}\n');
+		expect(() => loadEntriesFromFile(file)).toThrow(`Unknown session entry type "future_entry" at ${file}:2`);
+	});
+
 	it("loads valid session file", () => {
 		const file = join(tempDir, "valid.jsonl");
 		writeFileSync(
@@ -199,6 +206,30 @@ describe("loadEntriesFromFile", () => {
 		);
 
 		expect(() => SessionManager.open(file, tempDir)).toThrow(`${file}:2`);
+	});
+});
+
+describe("session append commits", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `session-append-test-${Date.now()}`);
+		mkdirSync(tempDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("does not publish an entry when the first history write fails", () => {
+		const session = SessionManager.create(tempDir, tempDir);
+		const sessionFile = session.getSessionFile();
+		if (!sessionFile) throw new Error("Persistent session should have a file path");
+		mkdirSync(sessionFile);
+
+		expect(() => session.appendMessage(userMsg("hello"))).toThrow();
+		expect(session.getEntries()).toEqual([]);
+		expect(session.getLeafId()).toBeNull();
 	});
 });
 
@@ -416,7 +447,7 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		writeFileSync(nonSessionFile, originalContent);
 
 		expect(() => SessionManager.open(nonSessionFile, tempDir)).toThrow(
-			`Session file has no valid header: ${nonSessionFile}`,
+			`Unknown session entry type "event" at ${nonSessionFile}:1`,
 		);
 		expect(readFileSync(nonSessionFile, "utf-8")).toBe(originalContent);
 	});
@@ -482,5 +513,87 @@ describe("SessionManager session file creation", () => {
 		session.appendMessage(assistantMsg("first answer"));
 
 		expect(readSessionFileRoles(session.getSessionFile()!)).toEqual(["session", "user", "custom", "assistant"]);
+	});
+
+	it("commits model and thinking entries together only after the journal write succeeds", () => {
+		const session = SessionManager.create(tempDir, tempDir);
+		session.appendMessage(userMsg("first question"));
+		const file = session.getSessionFile()!;
+		const entries = session.getEntries();
+		const leaf = session.getLeafId();
+		rmSync(file);
+		mkdirSync(file);
+
+		expect(() => session.appendModelSelection("anthropic", "claude-sonnet-4-5", "high")).toThrow();
+		expect(session.getEntries()).toEqual(entries);
+		expect(session.getLeafId()).toBe(leaf);
+	});
+
+	it("links model and thinking entries in one selection commit", () => {
+		const session = SessionManager.create(tempDir, tempDir);
+		const userEntryId = session.appendMessage(userMsg("first question"));
+		const selection = session.appendModelSelection("anthropic", "claude-sonnet-4-5", "high");
+		const modelEntry = session.getEntry(selection.modelChangeId);
+		const thinkingEntry = session.getEntry(selection.thinkingLevelChangeId!);
+
+		expect(modelEntry?.type).toBe("model_change");
+		expect(modelEntry?.parentId).toBe(userEntryId);
+		expect(thinkingEntry?.type).toBe("thinking_level_change");
+		expect(thinkingEntry?.parentId).toBe(selection.modelChangeId);
+		expect(session.getLeafId()).toBe(selection.thinkingLevelChangeId);
+		expect(
+			loadEntriesFromFile(session.getSessionFile()!)
+				.slice(-2)
+				.map((entry) => entry.id),
+		).toEqual([selection.modelChangeId, selection.thinkingLevelChangeId]);
+	});
+
+	it("keeps the active leaf and projection when a branch summary cannot be written", () => {
+		const session = SessionManager.create(tempDir, tempDir);
+		const first = session.appendMessage(userMsg("first"));
+		const leaf = session.appendMessage(assistantMsg("answer"));
+		const entries = session.getEntries();
+		const projection = session.buildSessionProjection();
+		const file = session.getSessionFile()!;
+		rmSync(file);
+		mkdirSync(file);
+
+		expect(() => session.branchWithSummary(first, "summary")).toThrow();
+		expect(session.getLeafId()).toBe(leaf);
+		expect(session.getEntries()).toEqual(entries);
+		expect(session.buildSessionProjection()).toBe(projection);
+	});
+
+	it("does not create a partial first log when setup data cannot be serialized", () => {
+		const session = SessionManager.create(tempDir, tempDir);
+		const circular: { self?: unknown } = {};
+		circular.self = circular;
+		session.appendCustomEntry("circular", circular);
+		const entries = session.getEntries();
+		const leaf = session.getLeafId();
+
+		expect(() => session.appendMessage(userMsg("first"))).toThrow();
+		expect(existsSync(session.getSessionFile()!)).toBe(false);
+		expect(session.getEntries()).toEqual(entries);
+		expect(session.getLeafId()).toBe(leaf);
+	});
+
+	it("keeps the source identity when writing a fork fails", () => {
+		const directory = join(tempDir, "sessions");
+		mkdirSync(directory);
+		const session = SessionManager.create(tempDir, directory);
+		const leaf = session.appendMessage(userMsg("source"));
+		const id = session.getSessionId();
+		const file = session.getSessionFile();
+		const entries = session.getEntries();
+		rmSync(file!);
+		rmSync(directory, { recursive: true });
+		writeFileSync(directory, "blocked");
+
+		expect(() => session.createBranchedSession(leaf)).toThrow();
+		expect(session.getSessionId()).toBe(id);
+		expect(session.getSessionFile()).toBe(file);
+		expect(session.getLeafId()).toBe(leaf);
+		expect(session.getEntries()).toEqual(entries);
 	});
 });

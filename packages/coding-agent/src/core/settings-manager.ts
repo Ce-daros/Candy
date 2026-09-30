@@ -1,7 +1,7 @@
+import { isDeepStrictEqual } from "node:util";
 import type { ThinkingLevel } from "@candy/agent-core";
 import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model } from "@candy/ai";
 import type { ScrollViewScrollbar, TerminalCapabilities } from "@candy/tui";
-import { randomUUID } from "crypto";
 import { join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
@@ -58,6 +58,11 @@ function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 	return deepMergeObjects(base as Record<string, unknown>, overrides as Record<string, unknown>) as Settings;
 }
 
+function changedFields(before: Settings, after: Settings): (keyof Settings)[] {
+	const fields = new Set([...Object.keys(before), ...Object.keys(after)] as (keyof Settings)[]);
+	return [...fields].filter((field) => !isDeepStrictEqual(before[field], after[field]));
+}
+
 function parseTimeoutSetting(value: unknown, settingName: string): number | undefined {
 	const timeoutMs = parseHttpIdleTimeoutMs(value);
 	if (timeoutMs !== undefined) {
@@ -81,6 +86,11 @@ export interface SettingsError {
 
 type SettingsPaths = Partial<Record<SettingsScope, string>>;
 
+export interface SettingsCommitEvent {
+	scope: SettingsScope | "runtime";
+	fields: readonly (keyof Settings)[];
+}
+
 function toSettingsError(scope: SettingsScope, error: unknown, path?: string): SettingsError {
 	return {
 		scope,
@@ -96,19 +106,12 @@ export class SettingsManager {
 	private settings: Settings;
 	private runtimeOverrides: Settings = {};
 	private projectTrusted: boolean;
-	private modifiedFields = new Set<keyof Settings>(); // Track global fields modified during session
-	private modifiedNestedFields = new Map<keyof Settings, Set<string>>(); // Track global nested field modifications
-	private modifiedProjectFields = new Set<keyof Settings>(); // Track project fields modified during session
-	private modifiedProjectNestedFields = new Map<keyof Settings, Set<string>>(); // Track project nested field modifications
 	private globalSettingsLoadError: Error | null = null; // Track if global settings file had parse errors
 	private projectSettingsLoadError: Error | null = null; // Track if project settings file had parse errors
-	private writeQueue: Promise<void> = Promise.resolve();
-	private writeSequence = 0;
-	private writeFailures: Array<{ sequence: number; error: unknown }> = [];
-	private mutationQueue: Promise<void> = Promise.resolve();
-	private stateRevision = 0;
+	private commitTail: Promise<void> = Promise.resolve();
 	private errors: SettingsError[];
 	private settingsPaths: SettingsPaths;
+	private commitListeners = new Set<(event: SettingsCommitEvent) => void>();
 
 	private constructor(
 		storage: SettingsStorage,
@@ -286,6 +289,22 @@ export class SettingsManager {
 		return structuredClone(this.globalSettings);
 	}
 
+	getSetting<K extends keyof Settings>(field: K): Settings[K] | undefined {
+		return structuredClone(this.settings[field]);
+	}
+
+	getSettingSource(field: keyof Settings, nestedPath?: string): SettingValueSource {
+		const contains = (settings: Settings): boolean => {
+			const value = settings[field];
+			if (nestedPath === undefined) return Object.hasOwn(settings, field);
+			return isMergeableObject(value) && Object.hasOwn(value, nestedPath);
+		};
+		if (contains(this.runtimeOverrides)) return "runtime";
+		if (this.projectTrusted && contains(this.projectSettings)) return "project";
+		if (contains(this.globalSettings)) return "global";
+		return "default";
+	}
+
 	getProjectSettings(): Settings {
 		return structuredClone(this.projectSettings);
 	}
@@ -299,15 +318,15 @@ export class SettingsManager {
 			return;
 		}
 
+		const previousProjectSettings = this.projectSettings;
 		this.projectTrusted = trusted;
-		this.modifiedProjectFields.clear();
-		this.modifiedProjectNestedFields.clear();
 
 		if (!trusted) {
 			this.projectSettings = {};
 			this.projectSettingsLoadError = null;
-			this.runtimeOverrides = {};
-			this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+			this.rebuildEffectiveSettings();
+			const fields = changedFields(previousProjectSettings, this.projectSettings);
+			if (fields.length > 0) this.publishCommit("project", fields);
 			return;
 		}
 
@@ -317,12 +336,16 @@ export class SettingsManager {
 		if (projectLoad.error) {
 			this.recordError("project", projectLoad.error);
 		}
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
-		this.runtimeOverrides = {};
+		this.rebuildEffectiveSettings();
+		const fields = changedFields(previousProjectSettings, this.projectSettings);
+		if (fields.length > 0) this.publishCommit("project", fields);
 	}
 
 	async reload(): Promise<void> {
-		await this.writeQueue;
+		await this.commitTail;
+		const previousGlobalSettings = this.globalSettings;
+		const previousProjectSettings = this.projectSettings;
+		const errors: Error[] = [];
 		const globalLoad = SettingsManager.tryLoadFromStorage(this.storage, "global");
 		if (!globalLoad.error) {
 			this.globalSettings = globalLoad.settings;
@@ -330,12 +353,8 @@ export class SettingsManager {
 		} else {
 			this.globalSettingsLoadError = globalLoad.error;
 			this.recordError("global", globalLoad.error);
+			errors.push(globalLoad.error);
 		}
-
-		this.modifiedFields.clear();
-		this.modifiedNestedFields.clear();
-		this.modifiedProjectFields.clear();
-		this.modifiedProjectNestedFields.clear();
 
 		const projectLoad = SettingsManager.tryLoadFromStorage(this.storage, "project", this.projectTrusted);
 		if (!projectLoad.error) {
@@ -344,40 +363,28 @@ export class SettingsManager {
 		} else {
 			this.projectSettingsLoadError = projectLoad.error;
 			this.recordError("project", projectLoad.error);
+			errors.push(projectLoad.error);
 		}
 
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
-		this.runtimeOverrides = {};
+		this.rebuildEffectiveSettings();
+		if (!globalLoad.error) {
+			const fields = changedFields(previousGlobalSettings, this.globalSettings);
+			if (fields.length > 0) this.publishCommit("global", fields);
+		}
+		if (!projectLoad.error) {
+			const fields = changedFields(previousProjectSettings, this.projectSettings);
+			if (fields.length > 0) this.publishCommit("project", fields);
+		}
+		if (errors.length === 1) throw errors[0];
+		if (errors.length > 1) throw new AggregateError(errors, "Failed to reload settings");
 	}
 
 	/** Apply additional overrides on top of current settings */
 	applyOverrides(overrides: Partial<Settings>): void {
 		this.runtimeOverrides = deepMergeSettings(this.runtimeOverrides, overrides);
-		this.settings = deepMergeSettings(this.settings, overrides);
-	}
-
-	/** Mark a global field as modified during this session */
-	private markModified(field: keyof Settings, nestedKey?: string): void {
-		this.stateRevision++;
-		this.modifiedFields.add(field);
-		if (nestedKey) {
-			if (!this.modifiedNestedFields.has(field)) {
-				this.modifiedNestedFields.set(field, new Set());
-			}
-			this.modifiedNestedFields.get(field)!.add(nestedKey);
-		}
-	}
-
-	/** Mark a project field as modified during this session */
-	private markProjectModified(field: keyof Settings, nestedKey?: string): void {
-		this.stateRevision++;
-		this.modifiedProjectFields.add(field);
-		if (nestedKey) {
-			if (!this.modifiedProjectNestedFields.has(field)) {
-				this.modifiedProjectNestedFields.set(field, new Set());
-			}
-			this.modifiedProjectNestedFields.get(field)!.add(nestedKey);
-		}
+		this.rebuildEffectiveSettings();
+		const fields = Object.keys(overrides) as (keyof Settings)[];
+		if (fields.length > 0) this.publishCommit("runtime", fields);
 	}
 
 	private assertProjectTrustedForWrite(): void {
@@ -390,188 +397,192 @@ export class SettingsManager {
 		this.errors.push(toSettingsError(scope, error, this.settingsPaths[scope]));
 	}
 
-	private clearModifiedScope(scope: SettingsScope): void {
-		if (scope === "global") {
-			this.modifiedFields.clear();
-			this.modifiedNestedFields.clear();
-			return;
-		}
-
-		this.modifiedProjectFields.clear();
-		this.modifiedProjectNestedFields.clear();
+	private persistTransformed(scope: SettingsScope, transform: (disk: Settings) => Settings): Settings {
+		if (scope === "project") this.assertProjectTrustedForWrite();
+		const loadError = scope === "global" ? this.globalSettingsLoadError : this.projectSettingsLoadError;
+		if (loadError) throw loadError;
+		let committed: Settings | undefined;
+		this.storage.withLock(scope, (current) => {
+			const disk = current
+				? SettingsManager.migrateSettings(JSON.parse(stripBom(current)) as Record<string, unknown>)
+				: {};
+			committed = transform(disk);
+			return JSON.stringify(committed, null, 2);
+		});
+		return committed!;
 	}
 
-	private enqueueWrite(scope: SettingsScope, task: () => void): Promise<void> {
-		const sequence = ++this.writeSequence;
-		const operation = this.writeQueue.then(() => {
-			if (scope === "project") {
-				this.assertProjectTrustedForWrite();
-			}
-			task();
-			this.clearModifiedScope(scope);
-		});
-		this.writeQueue = operation.catch((error) => {
-			this.writeFailures.push({ sequence, error });
-			this.recordError(scope, error);
-		});
-		void operation.catch(() => {});
+	private enqueueCommit<T>(task: () => T | Promise<T>): Promise<T> {
+		const operation = this.commitTail.then(task);
+		this.commitTail = operation.then(
+			() => undefined,
+			() => undefined,
+		);
 		return operation;
 	}
 
-	private cloneModifiedNestedFields(source: Map<keyof Settings, Set<string>>): Map<keyof Settings, Set<string>> {
-		const snapshot = new Map<keyof Settings, Set<string>>();
-		for (const [key, value] of source.entries()) {
-			snapshot.set(key, new Set(value));
-		}
-		return snapshot;
-	}
-
-	private persistScopedSettings(
+	async commitSetting<K extends keyof Settings>(
 		scope: SettingsScope,
-		snapshotSettings: Settings,
-		modifiedFields: Set<keyof Settings>,
-		modifiedNestedFields: Map<keyof Settings, Set<string>>,
-	): void {
-		this.storage.withLock(scope, (current) => {
-			const currentFileSettings = current
-				? SettingsManager.migrateSettings(JSON.parse(stripBom(current)) as Record<string, unknown>)
-				: {};
-			const mergedSettings: Settings = { ...currentFileSettings };
-			for (const field of modifiedFields) {
-				const value = snapshotSettings[field];
-				if (modifiedNestedFields.has(field) && typeof value === "object" && value !== null) {
-					const nestedModified = modifiedNestedFields.get(field)!;
-					const baseNested = (currentFileSettings[field] as Record<string, unknown>) ?? {};
-					const inMemoryNested = value as Record<string, unknown>;
-					const mergedNested = { ...baseNested };
-					for (const nestedKey of nestedModified) {
-						mergedNested[nestedKey] = inMemoryNested[nestedKey];
-					}
-					(mergedSettings as Record<string, unknown>)[field] = mergedNested;
-				} else {
-					(mergedSettings as Record<string, unknown>)[field] = value;
-				}
-			}
-
-			return JSON.stringify(mergedSettings, null, 2);
-		});
-	}
-
-	private save(): void {
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
-		this.runtimeOverrides = {};
-
-		if (this.globalSettingsLoadError) {
-			this.enqueueWrite("global", () => {
-				throw this.globalSettingsLoadError;
+		field: K,
+		value: Settings[K] | undefined,
+	): Promise<void> {
+		await this.enqueueCommit(() => {
+			if (scope === "project") this.assertProjectTrustedForWrite();
+			const committed = this.persistTransformed(scope, (disk) => {
+				if (value === undefined) delete disk[field];
+				else disk[field] = structuredClone(value);
+				return disk;
 			});
-			return;
-		}
-
-		const snapshotGlobalSettings = structuredClone(this.globalSettings);
-		const modifiedFields = new Set(this.modifiedFields);
-		const modifiedNestedFields = this.cloneModifiedNestedFields(this.modifiedNestedFields);
-
-		this.enqueueWrite("global", () => {
-			this.persistScopedSettings("global", snapshotGlobalSettings, modifiedFields, modifiedNestedFields);
+			if (scope === "global") this.globalSettings = committed;
+			else this.projectSettings = committed;
+			this.rebuildEffectiveSettings();
+			this.publishCommit(scope, [field]);
 		});
 	}
 
-	private saveProjectSettings(settings: Settings): void {
-		this.assertProjectTrustedForWrite();
-		this.projectSettings = structuredClone(settings);
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
-		this.runtimeOverrides = {};
-
-		if (this.projectSettingsLoadError) {
-			this.enqueueWrite("project", () => {
-				throw this.projectSettingsLoadError;
+	async commitDefaultModelAndProvider(provider: string | undefined, modelId: string | undefined): Promise<void> {
+		await this.enqueueCommit(() => {
+			this.globalSettings = this.persistTransformed("global", (disk) => {
+				if (provider === undefined) delete disk.defaultProvider;
+				else disk.defaultProvider = provider;
+				if (modelId === undefined) delete disk.defaultModel;
+				else disk.defaultModel = modelId;
+				return disk;
 			});
-			return;
-		}
-
-		const snapshotProjectSettings = structuredClone(this.projectSettings);
-		const modifiedFields = new Set(this.modifiedProjectFields);
-		const modifiedNestedFields = this.cloneModifiedNestedFields(this.modifiedProjectNestedFields);
-		this.enqueueWrite("project", () => {
-			this.persistScopedSettings("project", snapshotProjectSettings, modifiedFields, modifiedNestedFields);
+			this.rebuildEffectiveSettings();
+			this.publishCommit("global", ["defaultProvider", "defaultModel"]);
 		});
 	}
 
-	private updateProjectSettings(field: keyof Settings, update: (settings: Settings) => void): void {
-		this.assertProjectTrustedForWrite();
-		const projectSettings = structuredClone(this.projectSettings);
-		update(projectSettings);
-		this.markProjectModified(field);
-		this.saveProjectSettings(projectSettings);
+	async commitNestedSetting<K extends keyof Settings>(
+		scope: SettingsScope,
+		field: K,
+		key: string,
+		value: string | number | boolean | undefined,
+	): Promise<void> {
+		await this.enqueueCommit(() => {
+			if (scope === "project") this.assertProjectTrustedForWrite();
+			const loadError = scope === "global" ? this.globalSettingsLoadError : this.projectSettingsLoadError;
+			if (loadError) throw loadError;
+			const committed = this.persistTransformed(scope, (disk) => {
+				const next = disk;
+				const nested = { ...((next[field] as Record<string, unknown> | undefined) ?? {}) };
+				if (value === undefined) delete nested[key];
+				else nested[key] = structuredClone(value);
+				if (Object.keys(nested).length === 0) delete next[field];
+				else next[field] = nested as Settings[K];
+				return next;
+			});
+			if (scope === "global") this.globalSettings = committed;
+			else this.projectSettings = committed;
+			this.rebuildEffectiveSettings();
+			this.publishCommit(scope, [field]);
+		});
+	}
+
+	async commitModelThinkingLevel(provider: string, modelId: string, level: ThinkingLevel | undefined): Promise<void> {
+		await this.enqueueCommit(() => {
+			const key = `${provider}/${modelId}`;
+			this.globalSettings = this.persistTransformed("global", (disk) => {
+				const levels = { ...(disk.modelThinkingLevels ?? {}) };
+				if (level === undefined) delete levels[key];
+				else levels[key] = level;
+				if (Object.keys(levels).length === 0) delete disk.modelThinkingLevels;
+				else disk.modelThinkingLevels = levels;
+				return disk;
+			});
+			this.rebuildEffectiveSettings();
+			this.publishCommit("global", ["modelThinkingLevels"]);
+		});
+	}
+
+	async commitModelCompactionOverride(
+		provider: string,
+		modelId: string,
+		field: keyof CompactionModelOverride,
+		value: number | undefined,
+	): Promise<void> {
+		if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+			throw new Error(`Invalid compaction model override ${field}: ${value}`);
+		}
+		await this.enqueueCommit(() => {
+			const key = `${provider}/${modelId}`;
+			this.globalSettings = this.persistTransformed("global", (disk) => {
+				const compaction = { ...(disk.compaction ?? {}) };
+				const models = { ...(compaction.modelOverrides ?? {}) };
+				const model = { ...(models[key] ?? {}) };
+				if (value === undefined) delete model[field];
+				else model[field] = value;
+				if (Object.keys(model).length === 0) delete models[key];
+				else models[key] = model;
+				if (Object.keys(models).length === 0) delete compaction.modelOverrides;
+				else compaction.modelOverrides = models;
+				if (Object.keys(compaction).length === 0) delete disk.compaction;
+				else disk.compaction = compaction;
+				return disk;
+			});
+			this.rebuildEffectiveSettings();
+			this.publishCommit("global", ["compaction"]);
+		});
+	}
+
+	commitTerminalSetting<K extends keyof NonNullable<Settings["terminal"]>>(
+		field: K,
+		value: NonNullable<Settings["terminal"]>[K] | undefined,
+	): Promise<void> {
+		return this.commitNestedSetting("global", "terminal", field, value as string | number | boolean | undefined);
+	}
+
+	commitImageSetting<K extends keyof NonNullable<Settings["images"]>>(
+		field: K,
+		value: NonNullable<Settings["images"]>[K] | undefined,
+	): Promise<void> {
+		return this.commitNestedSetting("global", "images", field, value);
+	}
+
+	commitMarkdownSetting<K extends keyof NonNullable<Settings["markdown"]>>(
+		field: K,
+		value: NonNullable<Settings["markdown"]>[K] | undefined,
+	): Promise<void> {
+		return this.commitNestedSetting("global", "markdown", field, value);
+	}
+
+	setRuntimeOverride<K extends keyof Settings>(field: K, value: Settings[K] | undefined): void {
+		if (value === undefined) delete this.runtimeOverrides[field];
+		else this.runtimeOverrides[field] = structuredClone(value);
+		this.rebuildEffectiveSettings();
+		this.publishCommit("runtime", [field]);
+	}
+
+	clearRuntimeOverride<K extends keyof Settings>(field: K): void {
+		delete this.runtimeOverrides[field];
+		this.rebuildEffectiveSettings();
+		this.publishCommit("runtime", [field]);
+	}
+
+	subscribe(listener: (event: SettingsCommitEvent) => void): () => void {
+		this.commitListeners.add(listener);
+		return () => this.commitListeners.delete(listener);
+	}
+
+	private publishCommit(scope: SettingsCommitEvent["scope"], fields: readonly (keyof Settings)[]): void {
+		const event: SettingsCommitEvent = { scope, fields };
+		for (const listener of this.commitListeners) listener(event);
+	}
+
+	private rebuildEffectiveSettings(): void {
+		this.settings = deepMergeSettings(
+			deepMergeSettings(this.globalSettings, this.projectSettings),
+			this.runtimeOverrides,
+		);
 	}
 
 	async flush(): Promise<void> {
-		await this.writeQueue;
+		await this.commitTail;
 	}
 
 	async flushOrThrow(): Promise<void> {
-		const throughSequence = this.writeSequence;
-		await this.writeQueue;
-		const failedIndex = this.writeFailures.findIndex(({ sequence }) => sequence <= throughSequence);
-		if (failedIndex !== -1) {
-			const [{ error }] = this.writeFailures.splice(failedIndex, 1);
-			throw error;
-		}
-	}
-
-	/** Apply one SettingsManager setter, await its save, and restore memory if persistence fails. */
-	async mutateAndPersist(mutation: () => void): Promise<void> {
-		const operation = this.mutationQueue.then(async () => {
-			const snapshot = {
-				globalSettings: structuredClone(this.globalSettings),
-				projectSettings: structuredClone(this.projectSettings),
-				settings: structuredClone(this.settings),
-				runtimeOverrides: structuredClone(this.runtimeOverrides),
-				modifiedFields: new Set(this.modifiedFields),
-				modifiedNestedFields: this.cloneModifiedNestedFields(this.modifiedNestedFields),
-				modifiedProjectFields: new Set(this.modifiedProjectFields),
-				modifiedProjectNestedFields: this.cloneModifiedNestedFields(this.modifiedProjectNestedFields),
-			};
-			const sequenceBefore = this.writeSequence;
-			let revisionAfterMutation = this.stateRevision;
-			try {
-				try {
-					mutation();
-				} catch (error) {
-					revisionAfterMutation = this.stateRevision;
-					throw error;
-				}
-				revisionAfterMutation = this.stateRevision;
-				if (this.writeSequence !== sequenceBefore + 1) {
-					throw new Error("Settings mutation must schedule exactly one save");
-				}
-				const throughSequence = this.writeSequence;
-				await this.writeQueue;
-				const failedIndex = this.writeFailures.findIndex(
-					({ sequence }) => sequence > sequenceBefore && sequence <= throughSequence,
-				);
-				if (failedIndex !== -1) {
-					const [{ error }] = this.writeFailures.splice(failedIndex, 1);
-					throw error;
-				}
-			} catch (error) {
-				if (this.stateRevision === revisionAfterMutation) {
-					this.globalSettings = snapshot.globalSettings;
-					this.projectSettings = snapshot.projectSettings;
-					this.settings = snapshot.settings;
-					this.runtimeOverrides = snapshot.runtimeOverrides;
-					this.modifiedFields = snapshot.modifiedFields;
-					this.modifiedNestedFields = snapshot.modifiedNestedFields;
-					this.modifiedProjectFields = snapshot.modifiedProjectFields;
-					this.modifiedProjectNestedFields = snapshot.modifiedProjectNestedFields;
-					this.stateRevision++;
-				}
-				throw error;
-			}
-		});
-		this.mutationQueue = operation.catch(() => {});
-		return operation;
+		await this.commitTail;
 	}
 
 	drainErrors(): SettingsError[] {
@@ -584,10 +595,8 @@ export class SettingsManager {
 		return this.settings.lastChangelogVersion;
 	}
 
-	setLastChangelogVersion(version: string): void {
-		this.globalSettings.lastChangelogVersion = version;
-		this.markModified("lastChangelogVersion");
-		this.save();
+	setLastChangelogVersion(version: string): Promise<void> {
+		return this.commitSetting("global", "lastChangelogVersion", version);
 	}
 
 	getSessionDir(): string | undefined {
@@ -603,58 +612,32 @@ export class SettingsManager {
 		return this.settings.defaultModel;
 	}
 
-	setDefaultProvider(provider: string): void {
-		this.globalSettings.defaultProvider = provider;
-		this.markModified("defaultProvider");
-		this.save();
-	}
-
-	setDefaultModel(modelId: string): void {
-		this.globalSettings.defaultModel = modelId;
-		this.markModified("defaultModel");
-		this.save();
-	}
-
-	setDefaultModelAndProvider(provider: string, modelId: string): void {
-		this.globalSettings.defaultProvider = provider;
-		this.globalSettings.defaultModel = modelId;
-		this.markModified("defaultProvider");
-		this.markModified("defaultModel");
-		this.save();
+	setDefaultModelAndProvider(provider: string, modelId: string): Promise<void> {
+		return this.commitDefaultModelAndProvider(provider, modelId);
 	}
 
 	getScopedModels(): ScopedModelRef[] | undefined {
 		return this.globalSettings.scopedModels?.map((model) => ({ ...model }));
 	}
 
-	setScopedModels(models: ScopedModelRef[] | undefined): void {
-		if (models === undefined) {
-			delete this.globalSettings.scopedModels;
-		} else {
-			this.globalSettings.scopedModels = models.map((model) => ({ ...model }));
-		}
-		this.markModified("scopedModels");
-		this.save();
+	setScopedModels(models: ScopedModelRef[] | undefined): Promise<void> {
+		return this.commitSetting("global", "scopedModels", models);
 	}
 
 	getSteeringMode(): "all" | "one-at-a-time" {
 		return this.settings.steeringMode || "one-at-a-time";
 	}
 
-	setSteeringMode(mode: "all" | "one-at-a-time"): void {
-		this.globalSettings.steeringMode = mode;
-		this.markModified("steeringMode");
-		this.save();
+	setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		return this.commitSetting("global", "steeringMode", mode);
 	}
 
 	getFollowUpMode(): "all" | "one-at-a-time" {
 		return this.settings.followUpMode || "one-at-a-time";
 	}
 
-	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
-		this.globalSettings.followUpMode = mode;
-		this.markModified("followUpMode");
-		this.save();
+	setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		return this.commitSetting("global", "followUpMode", mode);
 	}
 
 	getThemeSetting(): string | undefined {
@@ -668,20 +651,16 @@ export class SettingsManager {
 		return theme?.includes("/") ? undefined : theme;
 	}
 
-	setTheme(theme: string): void {
-		this.globalSettings.theme = theme;
-		this.markModified("theme");
-		this.save();
+	setTheme(theme: string): Promise<void> {
+		return this.commitSetting("global", "theme", theme);
 	}
 
 	getDefaultThinkingLevel(): ThinkingLevel | undefined {
 		return this.settings.defaultThinkingLevel;
 	}
 
-	setDefaultThinkingLevel(level: ThinkingLevel): void {
-		this.globalSettings.defaultThinkingLevel = level;
-		this.markModified("defaultThinkingLevel");
-		this.save();
+	setDefaultThinkingLevel(level: ThinkingLevel): Promise<void> {
+		return this.commitSetting("global", "defaultThinkingLevel", level);
 	}
 
 	getModelThinkingLevel(provider: string, modelId: string): ThinkingLevel | undefined {
@@ -713,46 +692,28 @@ export class SettingsManager {
 		return { ...(this.settings.modelThinkingLevels ?? {}) };
 	}
 
-	setModelThinkingLevel(provider: string, modelId: string, level: ThinkingLevel): void {
-		if (!this.globalSettings.modelThinkingLevels) {
-			this.globalSettings.modelThinkingLevels = {};
-		}
-		this.globalSettings.modelThinkingLevels[`${provider}/${modelId}`] = level;
-		this.markModified("modelThinkingLevels");
-		this.save();
+	setModelThinkingLevel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
+		return this.commitModelThinkingLevel(provider, modelId, level);
 	}
 
-	removeModelThinkingLevel(provider: string, modelId: string): void {
-		if (!this.globalSettings.modelThinkingLevels) return;
-		delete this.globalSettings.modelThinkingLevels[`${provider}/${modelId}`];
-		if (Object.keys(this.globalSettings.modelThinkingLevels).length === 0) {
-			delete this.globalSettings.modelThinkingLevels;
-		}
-		this.markModified("modelThinkingLevels");
-		this.save();
+	removeModelThinkingLevel(provider: string, modelId: string): Promise<void> {
+		return this.commitModelThinkingLevel(provider, modelId, undefined);
 	}
 
 	getTransport(): TransportSetting {
 		return this.settings.transport ?? "auto";
 	}
 
-	setTransport(transport: TransportSetting): void {
-		this.globalSettings.transport = transport;
-		this.markModified("transport");
-		this.save();
+	setTransport(transport: TransportSetting): Promise<void> {
+		return this.commitSetting("global", "transport", transport);
 	}
 
 	getCompactionEnabled(): boolean {
 		return this.settings.compaction?.enabled ?? true;
 	}
 
-	setCompactionEnabled(enabled: boolean): void {
-		if (!this.globalSettings.compaction) {
-			this.globalSettings.compaction = {};
-		}
-		this.globalSettings.compaction.enabled = enabled;
-		this.markModified("compaction", "enabled");
-		this.save();
+	setCompactionEnabled(enabled: boolean): Promise<void> {
+		return this.commitNestedSetting("global", "compaction", "enabled", enabled);
 	}
 
 	private getCompactionTokenSetting(
@@ -826,25 +787,8 @@ export class SettingsManager {
 		modelId: string,
 		field: keyof CompactionModelOverride,
 		value: number | undefined,
-	): void {
-		if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
-			throw new Error(
-				`Invalid compaction.modelOverrides.${field} setting: ${String(value)}. Expected a non-negative safe integer.`,
-			);
-		}
-		const key = `${provider}/${modelId}`;
-		this.globalSettings.compaction ??= {};
-		const compaction = this.globalSettings.compaction;
-		compaction.modelOverrides ??= {};
-		const modelOverrides = compaction.modelOverrides;
-		const entry = { ...(modelOverrides[key] ?? {}) };
-		if (value === undefined) delete entry[field];
-		else entry[field] = value;
-		if (Object.keys(entry).length === 0) delete modelOverrides[key];
-		else modelOverrides[key] = entry;
-		if (Object.keys(modelOverrides).length === 0) delete compaction.modelOverrides;
-		this.markModified("compaction", "modelOverrides");
-		this.save();
+	): Promise<void> {
+		return this.commitModelCompactionOverride(provider, modelId, field, value);
 	}
 
 	/** Resolve each token setting through model override, ordinary setting, then built-in default. */
@@ -875,13 +819,8 @@ export class SettingsManager {
 		return this.settings.retry?.enabled ?? true;
 	}
 
-	setRetryEnabled(enabled: boolean): void {
-		if (!this.globalSettings.retry) {
-			this.globalSettings.retry = {};
-		}
-		this.globalSettings.retry.enabled = enabled;
-		this.markModified("retry", "enabled");
-		this.save();
+	setRetryEnabled(enabled: boolean): Promise<void> {
+		return this.commitNestedSetting("global", "retry", "enabled", enabled);
 	}
 
 	getRetrySettings(): { enabled: boolean; maxRetries: number; baseDelayMs: number; maxAgentDelayMs: number } {
@@ -897,13 +836,10 @@ export class SettingsManager {
 		return parseTimeoutSetting(this.settings.httpIdleTimeoutMs, "httpIdleTimeoutMs") ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS;
 	}
 
-	setHttpIdleTimeoutMs(timeoutMs: number): void {
-		if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+	setHttpIdleTimeoutMs(timeoutMs: number): Promise<void> {
+		if (!Number.isFinite(timeoutMs) || timeoutMs < 0)
 			throw new Error(`Invalid httpIdleTimeoutMs setting: ${String(timeoutMs)}`);
-		}
-		this.globalSettings.httpIdleTimeoutMs = Math.floor(timeoutMs);
-		this.markModified("httpIdleTimeoutMs");
-		this.save();
+		return this.commitSetting("global", "httpIdleTimeoutMs", Math.floor(timeoutMs));
 	}
 
 	/** Read from global settings only because warming costs money. */
@@ -912,10 +848,8 @@ export class SettingsManager {
 		return mode !== undefined && CACHE_WARMING_MODES.includes(mode) ? mode : "streaming";
 	}
 
-	setCacheWarmingMode(mode: CacheWarmingMode): void {
-		this.globalSettings.cacheWarming = mode;
-		this.markModified("cacheWarming");
-		this.save();
+	setCacheWarmingMode(mode: CacheWarmingMode): Promise<void> {
+		return this.commitSetting("global", "cacheWarming", mode);
 	}
 
 	getProviderRetrySettings(): { timeoutMs?: number; maxRetries?: number; maxRetryDelayMs: number } {
@@ -942,20 +876,16 @@ export class SettingsManager {
 		return this.settings.uiAnimations ?? true;
 	}
 
-	setUiAnimations(enabled: boolean): void {
-		this.globalSettings.uiAnimations = enabled;
-		this.markModified("uiAnimations");
-		this.save();
+	setUiAnimations(enabled: boolean): Promise<void> {
+		return this.commitSetting("global", "uiAnimations", enabled);
 	}
 
 	getAnimationIntensity(): AnimationIntensity {
 		return this.settings.animationIntensity ?? "moderate";
 	}
 
-	setAnimationIntensity(intensity: AnimationIntensity): void {
-		this.globalSettings.animationIntensity = intensity;
-		this.markModified("animationIntensity");
-		this.save();
+	setAnimationIntensity(intensity: AnimationIntensity): Promise<void> {
+		return this.commitSetting("global", "animationIntensity", intensity);
 	}
 
 	getExternalEditorCommand(): string {
@@ -970,16 +900,12 @@ export class SettingsManager {
 		return process.platform === "win32" ? "notepad" : "nano";
 	}
 
-	setHideThinkingBlock(hide: boolean): void {
-		this.globalSettings.hideThinkingBlock = hide;
-		this.markModified("hideThinkingBlock");
-		this.save();
+	setHideThinkingBlock(hide: boolean): Promise<void> {
+		return this.commitSetting("global", "hideThinkingBlock", hide);
 	}
 
-	setShowCacheMissNotices(show: boolean): void {
-		this.globalSettings.showCacheMissNotices = show;
-		this.markModified("showCacheMissNotices");
-		this.save();
+	setShowCacheMissNotices(show: boolean): Promise<void> {
+		return this.commitSetting("global", "showCacheMissNotices", show);
 	}
 
 	getShellPath(): string | undefined {
@@ -987,20 +913,16 @@ export class SettingsManager {
 		return shellPath ? normalizePath(shellPath) : shellPath;
 	}
 
-	setShellPath(path: string | undefined): void {
-		this.globalSettings.shellPath = path;
-		this.markModified("shellPath");
-		this.save();
+	setShellPath(path: string | undefined): Promise<void> {
+		return this.commitSetting("global", "shellPath", path);
 	}
 
 	getQuietStartup(): boolean {
 		return this.settings.quietStartup ?? false;
 	}
 
-	setQuietStartup(quiet: boolean): void {
-		this.globalSettings.quietStartup = quiet;
-		this.markModified("quietStartup");
-		this.save();
+	setQuietStartup(quiet: boolean): Promise<void> {
+		return this.commitSetting("global", "quietStartup", quiet);
 	}
 
 	getDefaultProjectTrust(): DefaultProjectTrust {
@@ -1008,159 +930,108 @@ export class SettingsManager {
 		return value === "always" || value === "never" ? value : "ask";
 	}
 
-	setDefaultProjectTrust(defaultProjectTrust: DefaultProjectTrust): void {
-		this.globalSettings.defaultProjectTrust = defaultProjectTrust;
-		this.markModified("defaultProjectTrust");
-		this.save();
+	setDefaultProjectTrust(defaultProjectTrust: DefaultProjectTrust): Promise<void> {
+		return this.commitSetting("global", "defaultProjectTrust", defaultProjectTrust);
 	}
 
 	getShellCommandPrefix(): string | undefined {
 		return this.settings.shellCommandPrefix;
 	}
 
-	setShellCommandPrefix(prefix: string | undefined): void {
-		this.globalSettings.shellCommandPrefix = prefix;
-		this.markModified("shellCommandPrefix");
-		this.save();
+	setShellCommandPrefix(prefix: string | undefined): Promise<void> {
+		return this.commitSetting("global", "shellCommandPrefix", prefix);
 	}
 
 	getNpmCommand(): string[] | undefined {
 		return this.settings.npmCommand ? [...this.settings.npmCommand] : undefined;
 	}
 
-	setNpmCommand(command: string[] | undefined): void {
-		this.globalSettings.npmCommand = command ? [...command] : undefined;
-		this.markModified("npmCommand");
-		this.save();
+	setNpmCommand(command: string[] | undefined): Promise<void> {
+		return this.commitSetting("global", "npmCommand", command);
 	}
 
 	getCollapseChangelog(): boolean {
 		return this.settings.collapseChangelog ?? true;
 	}
 
-	setCollapseChangelog(collapse: boolean): void {
-		this.globalSettings.collapseChangelog = collapse;
-		this.markModified("collapseChangelog");
-		this.save();
+	setCollapseChangelog(collapse: boolean): Promise<void> {
+		return this.commitSetting("global", "collapseChangelog", collapse);
 	}
 
 	getEnableInstallTelemetry(): boolean {
 		return this.settings.enableInstallTelemetry ?? true;
 	}
 
-	setEnableInstallTelemetry(enabled: boolean): void {
-		this.globalSettings.enableInstallTelemetry = enabled;
-		this.markModified("enableInstallTelemetry");
-		this.save();
-	}
-
-	getEnableAnalytics(): boolean {
-		return this.settings.enableAnalytics ?? false;
-	}
-
-	getTrackingId(): string | undefined {
-		return this.settings.trackingId;
-	}
-
-	/** Set the analytics opt-in preference; generates a tracking identifier on first opt-in */
-	setEnableAnalytics(enabled: boolean): void {
-		this.globalSettings.enableAnalytics = enabled;
-		this.markModified("enableAnalytics");
-		if (enabled && !this.globalSettings.trackingId) {
-			this.globalSettings.trackingId = randomUUID();
-			this.markModified("trackingId");
-		}
-		this.save();
+	setEnableInstallTelemetry(enabled: boolean): Promise<void> {
+		return this.commitSetting("global", "enableInstallTelemetry", enabled);
 	}
 
 	getPackages(): PackageSource[] {
 		return [...(this.settings.packages ?? [])];
 	}
 
-	setPackages(packages: PackageSource[]): void {
-		this.globalSettings.packages = packages;
-		this.markModified("packages");
-		this.save();
+	setPackages(packages: PackageSource[]): Promise<void> {
+		return this.commitSetting("global", "packages", packages);
 	}
 
-	setProjectPackages(packages: PackageSource[]): void {
-		this.updateProjectSettings("packages", (settings) => {
-			settings.packages = packages;
-		});
+	setProjectPackages(packages: PackageSource[]): Promise<void> {
+		return this.commitSetting("project", "packages", packages);
 	}
 
 	getExtensionPaths(): string[] {
 		return [...(this.settings.extensions ?? [])];
 	}
 
-	setExtensionPaths(paths: string[]): void {
-		this.globalSettings.extensions = paths;
-		this.markModified("extensions");
-		this.save();
+	setExtensionPaths(paths: string[]): Promise<void> {
+		return this.commitSetting("global", "extensions", paths);
 	}
 
-	setProjectExtensionPaths(paths: string[]): void {
-		this.updateProjectSettings("extensions", (settings) => {
-			settings.extensions = paths;
-		});
+	setProjectExtensionPaths(paths: string[]): Promise<void> {
+		return this.commitSetting("project", "extensions", paths);
 	}
 
 	getSkillPaths(): string[] {
 		return [...(this.settings.skills ?? [])];
 	}
 
-	setSkillPaths(paths: string[]): void {
-		this.globalSettings.skills = paths;
-		this.markModified("skills");
-		this.save();
+	setSkillPaths(paths: string[]): Promise<void> {
+		return this.commitSetting("global", "skills", paths);
 	}
 
-	setProjectSkillPaths(paths: string[]): void {
-		this.updateProjectSettings("skills", (settings) => {
-			settings.skills = paths;
-		});
+	setProjectSkillPaths(paths: string[]): Promise<void> {
+		return this.commitSetting("project", "skills", paths);
 	}
 
 	getPromptTemplatePaths(): string[] {
 		return [...(this.settings.prompts ?? [])];
 	}
 
-	setPromptTemplatePaths(paths: string[]): void {
-		this.globalSettings.prompts = paths;
-		this.markModified("prompts");
-		this.save();
+	setPromptTemplatePaths(paths: string[]): Promise<void> {
+		return this.commitSetting("global", "prompts", paths);
 	}
 
-	setProjectPromptTemplatePaths(paths: string[]): void {
-		this.updateProjectSettings("prompts", (settings) => {
-			settings.prompts = paths;
-		});
+	setProjectPromptTemplatePaths(paths: string[]): Promise<void> {
+		return this.commitSetting("project", "prompts", paths);
 	}
 
 	getThemePaths(): string[] {
 		return [...(this.settings.themes ?? [])];
 	}
 
-	setThemePaths(paths: string[]): void {
-		this.globalSettings.themes = paths;
-		this.markModified("themes");
-		this.save();
+	setThemePaths(paths: string[]): Promise<void> {
+		return this.commitSetting("global", "themes", paths);
 	}
 
-	setProjectThemePaths(paths: string[]): void {
-		this.updateProjectSettings("themes", (settings) => {
-			settings.themes = paths;
-		});
+	setProjectThemePaths(paths: string[]): Promise<void> {
+		return this.commitSetting("project", "themes", paths);
 	}
 
 	getEnableSkillCommands(): boolean {
 		return this.settings.enableSkillCommands ?? true;
 	}
 
-	setEnableSkillCommands(enabled: boolean): void {
-		this.globalSettings.enableSkillCommands = enabled;
-		this.markModified("enableSkillCommands");
-		this.save();
+	setEnableSkillCommands(enabled: boolean): Promise<void> {
+		return this.commitSetting("global", "enableSkillCommands", enabled);
 	}
 
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
@@ -1181,13 +1052,8 @@ export class SettingsManager {
 		return this.settings.terminal?.showImages ?? true;
 	}
 
-	setShowImages(show: boolean): void {
-		if (!this.globalSettings.terminal) {
-			this.globalSettings.terminal = {};
-		}
-		this.globalSettings.terminal.showImages = show;
-		this.markModified("terminal", "showImages");
-		this.save();
+	setShowImages(show: boolean): Promise<void> {
+		return this.commitTerminalSetting("showImages", show);
 	}
 
 	getImageWidthCells(): number {
@@ -1198,13 +1064,8 @@ export class SettingsManager {
 		return Math.max(1, Math.floor(width));
 	}
 
-	setImageWidthCells(width: number): void {
-		if (!this.globalSettings.terminal) {
-			this.globalSettings.terminal = {};
-		}
-		this.globalSettings.terminal.imageWidthCells = Math.max(1, Math.floor(width));
-		this.markModified("terminal", "imageWidthCells");
-		this.save();
+	setImageWidthCells(width: number): Promise<void> {
+		return this.commitTerminalSetting("imageWidthCells", Math.max(1, Math.floor(width)));
 	}
 
 	getClearOnShrink(): boolean {
@@ -1215,36 +1076,24 @@ export class SettingsManager {
 		return process.env.CANDY_CLEAR_ON_SHRINK === "1";
 	}
 
-	setClearOnShrink(enabled: boolean): void {
-		if (!this.globalSettings.terminal) {
-			this.globalSettings.terminal = {};
-		}
-		this.globalSettings.terminal.clearOnShrink = enabled;
-		this.markModified("terminal", "clearOnShrink");
-		this.save();
+	setClearOnShrink(enabled: boolean): Promise<void> {
+		return this.commitTerminalSetting("clearOnShrink", enabled);
 	}
 
 	getShowTerminalProgress(): boolean {
 		return this.settings.terminal?.showTerminalProgress ?? false;
 	}
 
-	setShowTerminalProgress(enabled: boolean): void {
-		if (!this.globalSettings.terminal) {
-			this.globalSettings.terminal = {};
-		}
-		this.globalSettings.terminal.showTerminalProgress = enabled;
-		this.markModified("terminal", "showTerminalProgress");
-		this.save();
+	setShowTerminalProgress(enabled: boolean): Promise<void> {
+		return this.commitTerminalSetting("showTerminalProgress", enabled);
 	}
 
 	getFullscreenExitOutput(): FullscreenExitOutput {
 		return this.settings.fullscreenExitOutput === "resume-hint" ? "resume-hint" : "transcript";
 	}
 
-	setFullscreenExitOutput(output: FullscreenExitOutput): void {
-		this.globalSettings.fullscreenExitOutput = output;
-		this.markModified("fullscreenExitOutput");
-		this.save();
+	setFullscreenExitOutput(output: FullscreenExitOutput): Promise<void> {
+		return this.commitSetting("global", "fullscreenExitOutput", output);
 	}
 
 	getFullscreenScrollbar(): ScrollViewScrollbar {
@@ -1252,46 +1101,32 @@ export class SettingsManager {
 		return mode === "always" || mode === "hidden" ? mode : "auto";
 	}
 
-	setFullscreenScrollbar(mode: ScrollViewScrollbar): void {
-		this.globalSettings.fullscreenScrollbar = mode;
-		this.markModified("fullscreenScrollbar");
-		this.save();
+	setFullscreenScrollbar(mode: ScrollViewScrollbar): Promise<void> {
+		return this.commitSetting("global", "fullscreenScrollbar", mode);
 	}
 
 	getFullscreenCopyOnSelect(): boolean {
 		return this.settings.fullscreenCopyOnSelect ?? true;
 	}
 
-	setFullscreenCopyOnSelect(enabled: boolean): void {
-		this.globalSettings.fullscreenCopyOnSelect = enabled;
-		this.markModified("fullscreenCopyOnSelect");
-		this.save();
+	setFullscreenCopyOnSelect(enabled: boolean): Promise<void> {
+		return this.commitSetting("global", "fullscreenCopyOnSelect", enabled);
 	}
 
 	getImageAutoResize(): boolean {
 		return this.settings.images?.autoResize ?? true;
 	}
 
-	setImageAutoResize(enabled: boolean): void {
-		if (!this.globalSettings.images) {
-			this.globalSettings.images = {};
-		}
-		this.globalSettings.images.autoResize = enabled;
-		this.markModified("images", "autoResize");
-		this.save();
+	setImageAutoResize(enabled: boolean): Promise<void> {
+		return this.commitImageSetting("autoResize", enabled);
 	}
 
 	getBlockImages(): boolean {
 		return this.settings.images?.blockImages ?? false;
 	}
 
-	setBlockImages(blocked: boolean): void {
-		if (!this.globalSettings.images) {
-			this.globalSettings.images = {};
-		}
-		this.globalSettings.images.blockImages = blocked;
-		this.markModified("images", "blockImages");
-		this.save();
+	setBlockImages(blocked: boolean): Promise<void> {
+		return this.commitImageSetting("blockImages", blocked);
 	}
 
 	getDefaultTools(): string[] | undefined {
@@ -1299,11 +1134,8 @@ export class SettingsManager {
 		return tools ? [...tools] : undefined;
 	}
 
-	setDefaultTools(tools: string[] | undefined): void {
-		if (tools === undefined) delete this.globalSettings.defaultTools;
-		else this.globalSettings.defaultTools = [...tools];
-		this.markModified("defaultTools");
-		this.save();
+	setDefaultTools(tools: string[] | undefined): Promise<void> {
+		return this.commitSetting("global", "defaultTools", tools);
 	}
 
 	getToolPreviewLines(): 5 | 10 | 20 {
@@ -1311,20 +1143,16 @@ export class SettingsManager {
 		return lines === 10 || lines === 20 ? lines : 5;
 	}
 
-	setToolPreviewLines(lines: 5 | 10 | 20): void {
-		this.globalSettings.toolPreviewLines = lines;
-		this.markModified("toolPreviewLines");
-		this.save();
+	setToolPreviewLines(lines: 5 | 10 | 20): Promise<void> {
+		return this.commitSetting("global", "toolPreviewLines", lines);
 	}
 
 	getDoubleEscapeAction(): "fork" | "tree" | "none" {
 		return this.settings.doubleEscapeAction ?? "tree";
 	}
 
-	setDoubleEscapeAction(action: "fork" | "tree" | "none"): void {
-		this.globalSettings.doubleEscapeAction = action;
-		this.markModified("doubleEscapeAction");
-		this.save();
+	setDoubleEscapeAction(action: "fork" | "tree" | "none"): Promise<void> {
+		return this.commitSetting("global", "doubleEscapeAction", action);
 	}
 
 	getTreeFilterMode(): "default" | "no-tools" | "user-only" | "labeled-only" | "all" {
@@ -1333,50 +1161,40 @@ export class SettingsManager {
 		return mode && valid.includes(mode) ? mode : "default";
 	}
 
-	setTreeFilterMode(mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all"): void {
-		this.globalSettings.treeFilterMode = mode;
-		this.markModified("treeFilterMode");
-		this.save();
+	setTreeFilterMode(mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all"): Promise<void> {
+		return this.commitSetting("global", "treeFilterMode", mode);
 	}
 
 	getShowHardwareCursor(): boolean {
 		return this.settings.showHardwareCursor ?? process.env.CANDY_HARDWARE_CURSOR === "1";
 	}
 
-	setShowHardwareCursor(enabled: boolean): void {
-		this.globalSettings.showHardwareCursor = enabled;
-		this.markModified("showHardwareCursor");
-		this.save();
+	setShowHardwareCursor(enabled: boolean): Promise<void> {
+		return this.commitSetting("global", "showHardwareCursor", enabled);
 	}
 
 	getEditorPaddingX(): number {
 		return this.settings.editorPaddingX ?? 0;
 	}
 
-	setEditorPaddingX(padding: number): void {
-		this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
-		this.markModified("editorPaddingX");
-		this.save();
+	setEditorPaddingX(padding: number): Promise<void> {
+		return this.commitSetting("global", "editorPaddingX", Math.max(0, Math.min(3, Math.floor(padding))));
 	}
 
 	getOutputPad(): 0 | 1 {
 		return this.settings.outputPad === 0 ? 0 : 1;
 	}
 
-	setOutputPad(padding: 0 | 1): void {
-		this.globalSettings.outputPad = padding;
-		this.markModified("outputPad");
-		this.save();
+	setOutputPad(padding: 0 | 1): Promise<void> {
+		return this.commitSetting("global", "outputPad", padding);
 	}
 
 	getAutocompleteMaxVisible(): number {
 		return this.settings.autocompleteMaxVisible ?? 5;
 	}
 
-	setAutocompleteMaxVisible(maxVisible: number): void {
-		this.globalSettings.autocompleteMaxVisible = Math.max(3, Math.min(20, Math.floor(maxVisible)));
-		this.markModified("autocompleteMaxVisible");
-		this.save();
+	setAutocompleteMaxVisible(maxVisible: number): Promise<void> {
+		return this.commitSetting("global", "autocompleteMaxVisible", Math.max(3, Math.min(20, Math.floor(maxVisible))));
 	}
 
 	getCodeBlockIndent(): string {
@@ -1388,20 +1206,15 @@ export class SettingsManager {
 		return mode === "off" || mode === "streaming" ? mode : "final";
 	}
 
-	setMermaidRenderingMode(mode: MermaidRenderingMode): void {
-		this.globalSettings.markdown ??= {};
-		this.globalSettings.markdown.mermaid = mode;
-		this.markModified("markdown", "mermaid");
-		this.save();
+	setMermaidRenderingMode(mode: MermaidRenderingMode): Promise<void> {
+		return this.commitNestedSetting("global", "markdown", "mermaid", mode);
 	}
 
 	getWarnings(): WarningSettings {
 		return { ...(this.settings.warnings ?? {}) };
 	}
 
-	setWarnings(warnings: WarningSettings): void {
-		this.globalSettings.warnings = { ...warnings };
-		this.markModified("warnings");
-		this.save();
+	setWarnings(warnings: WarningSettings): Promise<void> {
+		return this.commitSetting("global", "warnings", warnings);
 	}
 }

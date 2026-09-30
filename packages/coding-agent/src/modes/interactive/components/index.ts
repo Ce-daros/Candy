@@ -25,7 +25,7 @@ export {
 	createSettingsDefinition,
 	cycleSetting,
 	type SettingsCallbacks,
-	type SettingsConfig,
+	type SettingsContext,
 } from "./settings-definition.ts";
 export { ShowImagesSelectorComponent } from "./show-images-selector.ts";
 export { SkillInvocationMessageComponent } from "./skill-invocation-message.ts";

@@ -3,6 +3,7 @@
  */
 
 import { ProcessTerminal, type TUI, TuiMainScreen } from "@candy/tui";
+import type { ResourceConfiguration } from "../core/resource-configuration.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { ConfigSelectorComponent, type ScopedResolvedPaths } from "../modes/interactive/components/config-selector.ts";
 import { initTheme, stopThemeWatcher } from "../modes/interactive/theme/theme.ts";
@@ -14,6 +15,7 @@ export interface ConfigSelectorOptions {
 	agentDir: string;
 	writeScope: "global" | "project";
 	projectModeAvailable: boolean;
+	resourceConfiguration: ResourceConfiguration;
 }
 
 /** Show TUI config selector and return when closed */
@@ -53,6 +55,7 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 			options.writeScope,
 			options.projectModeAvailable,
 			() => Math.floor(ui.terminal.rows * 0.8),
+			{ resourceConfiguration: options.resourceConfiguration },
 		);
 
 		ui.addChild(selector);

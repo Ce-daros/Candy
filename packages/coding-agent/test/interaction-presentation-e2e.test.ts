@@ -12,7 +12,7 @@ type InteractiveState = {
 		getHighlightedModel(): { id: string } | undefined;
 	};
 	defaultEditor: { getText(): string; setText(text: string): void };
-	pendingUserInputs: string[];
+	pendingUserInputs: Array<{ text: string }>;
 };
 
 const tipMarkers = [
@@ -26,15 +26,18 @@ const tipMarkers = [
 	"shell magic",
 	"model shortlist",
 	"fresh page",
+	"still working?",
 	"shell output just for you?",
 	"take the other path, babe",
 	"another life",
 	"big draft energy?",
 	"Terraria!",
+	"the cake can wait.",
 	"have some Candy",
 	"take a little Candy",
 	"stay determined, cutie",
 	"one more day on the farm",
+	"one more turn?",
 ];
 
 function plainText(terminal: VirtualTerminal): string {
@@ -87,7 +90,7 @@ describe("interactive presentation from terminal input", () => {
 		expect(state.inputMode).toBe("normal");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
-		expect(state.pendingUserInputs).toContain("/tree");
+		expect(state.pendingUserInputs).toContainEqual({ text: "/tree" });
 	});
 
 	it("opens Help from a standalone question mark and keeps pasted questions literal", async () => {

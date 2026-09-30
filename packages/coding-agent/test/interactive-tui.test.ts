@@ -82,7 +82,7 @@ describe("createInteractiveTui", () => {
 			await terminal.waitForRender();
 			terminal.sendInput("\x1b[<64;1;1M");
 			await terminal.waitForRender();
-			expect(terminal.getViewport()[3]).toContain("↓ Jump to latest message · Ctrl+J");
+			expect(terminal.getViewport()[3]).toContain("↓ Jump to latest message · <Ctrl+J>");
 		} finally {
 			ui.stop();
 			setKeybindings(previousKeybindings);
@@ -151,8 +151,7 @@ describe("InteractiveMode right-click paste", () => {
 		const target = { render: () => [], invalidate: () => {}, handleInput } satisfies Component;
 		const requestRender = vi.fn();
 		const context = {
-			renderer: { getFocusedComponent: () => target },
-			ui: { requestRender },
+			renderer: { getFocusedComponent: () => target, requestRender },
 		};
 		const prototype = InteractiveMode.prototype as unknown as {
 			handleRightClickPaste(this: typeof context): Promise<void>;
@@ -167,7 +166,7 @@ describe("InteractiveMode right-click paste", () => {
 
 type CopyCommandContext = {
 	session: { getLastAssistantText: () => string | undefined };
-	ui: ReturnType<typeof createInteractiveTui>;
+	renderer: ReturnType<typeof createInteractiveTui>;
 	showStatus: (message: string) => void;
 	showError: (message: string) => void;
 };
@@ -199,7 +198,7 @@ describe("InteractiveMode copy confirmation", () => {
 		const showError = vi.fn();
 		const context: CopyCommandContext = {
 			session: { getLastAssistantText },
-			ui,
+			renderer: ui,
 			showStatus,
 			showError,
 		};
@@ -240,7 +239,7 @@ describe("InteractiveMode copy confirmation", () => {
 		const showError = vi.fn();
 		const context: CopyCommandContext = {
 			session: { getLastAssistantText },
-			ui,
+			renderer: ui,
 			showStatus,
 			showError,
 		};
@@ -280,7 +279,7 @@ describe("InteractiveMode copy confirmation", () => {
 		const showError = vi.fn();
 		const context: CopyCommandContext = {
 			session: { getLastAssistantText: () => "assistant response" },
-			ui,
+			renderer: ui,
 			showStatus,
 			showError,
 		};

@@ -1,14 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@candy/ai/providers/faux";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
+	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
@@ -42,7 +42,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 	async function createRuntimeForTest(
 		extensionFactory: ExtensionFactory,
-		options?: { cwd?: string; bootstrapModel?: boolean; bootstrapThinkingLevel?: boolean },
+		options?: { cwd?: string; bootstrapModel?: boolean },
 	) {
 		const tempDir =
 			options?.cwd ?? join(tmpdir(), `pi-runtime-suite-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -61,9 +61,8 @@ describe("AgentSessionRuntime characterization", () => {
 
 		const runtimeOptions = {
 			agentDir: tempDir,
-			authStorage,
+			modelRuntimeOptions: { credentials: authStorage },
 			model: options?.bootstrapModel === false ? undefined : faux.getModel(),
-			thinkingLevel: options?.bootstrapThinkingLevel === false ? undefined : undefined,
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
@@ -82,28 +81,27 @@ describe("AgentSessionRuntime characterization", () => {
 				failNextRuntimeCreation = false;
 				throw new Error("runtime factory failed");
 			}
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				...runtimeOptions,
 				cwd,
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
 					model: runtimeOptions.model,
-					thinkingLevel: runtimeOptions.thinkingLevel,
 				})),
 				services,
 				diagnostics: services.diagnostics,
 			};
 		};
-		const runtime = await createAgentSessionRuntime(createRuntime, {
+		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(tempDir),
+			sessionManager: SessionManager.create(tempDir, join(tempDir, "sessions")),
 		});
 		await runtime.session.bindExtensions({});
 
@@ -138,6 +136,17 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session).toBe(originalSession);
 		expect(originalSession.isDisposed).toBe(false);
 		expect(rebound).toEqual([]);
+	});
+
+	it("disposes cwd-owned model runtime after a committed session replacement", async () => {
+		const { runtime } = await createRuntimeForTest(() => {});
+		const outgoingModelRuntime = runtime.services.modelRuntime;
+
+		await runtime.newSession();
+
+		expect(runtime.session.isDisposed).toBe(false);
+		expect(() => outgoingModelRuntime.refresh()).toThrow("Model runtime is disposed");
+		await expect(runtime.services.modelRuntime.refresh()).resolves.toMatchObject({ aborted: false });
 	});
 
 	it("preserves the current session when resume runtime creation fails", async () => {
@@ -183,6 +192,57 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session).toBe(originalSession);
 		expect(originalSession.isDisposed).toBe(false);
 		expect(rebound).toEqual([]);
+	});
+
+	it("removes a candidate log written by a failed new-session setup", async () => {
+		const { runtime } = await createRuntimeForTest(() => {});
+		const original = runtime.session;
+		let candidateFile: string | undefined;
+		await expect(
+			runtime.newSession({
+				setup: async (candidate) => {
+					candidateFile = candidate.getSessionFile();
+					candidate.appendMessage({ role: "user", content: "candidate", timestamp: Date.now() });
+					throw new Error("setup rejected");
+				},
+			}),
+		).rejects.toThrow("setup rejected");
+		expect(candidateFile).toBeDefined();
+		expect(existsSync(candidateFile!)).toBe(false);
+		expect(runtime.session).toBe(original);
+		expect(original.isDisposed).toBe(false);
+	});
+
+	it("removes a prepared fork log when candidate construction fails", async () => {
+		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
+		await runtime.session.prompt("source");
+		const original = runtime.session;
+		const directory = original.sessionManager.getSessionDir();
+		const files = readdirSync(directory);
+		const user = original.getUserMessagesForForking()[0]!;
+		failNextRuntimeCreation();
+		await expect(runtime.fork(user.entryId, { position: "at" })).rejects.toThrow("runtime factory failed");
+		expect(readdirSync(directory)).toEqual(files);
+		expect(runtime.session).toBe(original);
+		expect(original.isDisposed).toBe(false);
+	});
+
+	it("removes only the imported copy when candidate construction fails", async () => {
+		const { runtime, tempDir, failNextRuntimeCreation } = await createRuntimeForTest(() => {});
+		await runtime.session.prompt("current");
+		const original = runtime.session;
+		const directory = original.sessionManager.getSessionDir();
+		const files = readdirSync(directory);
+		const source = SessionManager.create(tempDir, join(tempDir, "import-source"));
+		source.appendMessage({ role: "user", content: "imported", timestamp: Date.now() });
+		const sourcePath = source.getSessionFile()!;
+		const contents = readFileSync(sourcePath, "utf8");
+		failNextRuntimeCreation();
+		await expect(runtime.importFromJsonl(sourcePath)).rejects.toThrow("runtime factory failed");
+		expect(readdirSync(directory)).toEqual(files);
+		expect(readFileSync(sourcePath, "utf8")).toBe(contents);
+		expect(runtime.session).toBe(original);
+		expect(original.isDisposed).toBe(false);
 	});
 
 	it("persists message_end assistant replacements to the session manager", async () => {
@@ -357,7 +417,7 @@ describe("AgentSessionRuntime characterization", () => {
 	it("honors session_before_switch cancellation for new and resume", async () => {
 		const events: RecordedSessionEvent[] = [];
 		let cancelReason: "new" | "resume" | undefined;
-		const { runtime } = await createRuntimeForTest((candy: ExtensionAPI) => {
+		const { runtime, tempDir } = await createRuntimeForTest((candy: ExtensionAPI) => {
 			candy.on("session_before_switch", (event) => {
 				events.push(event);
 				if (event.reason === cancelReason) {
@@ -386,9 +446,9 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session.sessionFile).toBe(originalSessionFile);
 
 		events.length = 0;
-		const otherDir = join(tmpdir(), `pi-runtime-other-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const otherDir = join(tempDir, "other-project");
 		mkdirSync(otherDir, { recursive: true });
-		const otherSession = SessionManager.create(otherDir);
+		const otherSession = SessionManager.create(otherDir, join(tempDir, "other-sessions"));
 		otherSession.appendMessage({ role: "user", content: [{ type: "text", text: "other" }], timestamp: Date.now() });
 		const otherSessionFile = otherSession.getSessionFile();
 		cancelReason = "resume";
@@ -459,7 +519,7 @@ describe("AgentSessionRuntime characterization", () => {
 		);
 	});
 
-	it("duplicates the current active branch when forking at the current position", async () => {
+	it("clones the current active branch into a persisted session", async () => {
 		const { runtime } = await createRuntimeForTest(() => {});
 		await runtime.session.prompt("hello");
 		await runtime.session.prompt("again");
@@ -477,11 +537,8 @@ describe("AgentSessionRuntime characterization", () => {
 					: undefined,
 		}));
 		const previousSessionFile = runtime.session.sessionFile;
-		const leafId = runtime.session.sessionManager.getLeafId();
-		expect(leafId).toBeTruthy();
-
-		const result = await runtime.fork(leafId!, { position: "at" });
-		expect(result).toEqual({ cancelled: false, selectedText: undefined });
+		const result = await runtime.clone();
+		expect(result).toEqual({ cancelled: false });
 		expect(runtime.session.sessionFile).not.toBe(previousSessionFile);
 		expect(
 			runtime.session.messages.map((message) => ({
@@ -499,7 +556,7 @@ describe("AgentSessionRuntime characterization", () => {
 		).toEqual(beforeMessages);
 	});
 
-	it("duplicates the current active branch in-memory when forking at the current position", async () => {
+	it("clones the current active branch in memory", async () => {
 		const tempDir = join(tmpdir(), `pi-runtime-suite-in-memory-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 
@@ -516,7 +573,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 		const runtimeOptions = {
 			agentDir: tempDir,
-			authStorage,
+			modelRuntimeOptions: { credentials: authStorage },
 			model: faux.getModel(),
 			resourceLoaderOptions: {
 				extensionFactories: [
@@ -530,14 +587,14 @@ describe("AgentSessionRuntime characterization", () => {
 			},
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				...runtimeOptions,
 				cwd,
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -547,7 +604,7 @@ describe("AgentSessionRuntime characterization", () => {
 				diagnostics: services.diagnostics,
 			};
 		};
-		const runtime = await createAgentSessionRuntime(createRuntime, {
+		const runtime = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.inMemory(tempDir),
@@ -575,12 +632,10 @@ describe("AgentSessionRuntime characterization", () => {
 								.join("")
 					: undefined,
 		}));
-		const leafId = runtime.session.sessionManager.getLeafId();
-		expect(leafId).toBeTruthy();
 		expect(runtime.session.sessionFile).toBeUndefined();
 
-		const result = await runtime.fork(leafId!, { position: "at" });
-		expect(result).toEqual({ cancelled: false, selectedText: undefined });
+		const result = await runtime.clone();
+		expect(result).toEqual({ cancelled: false });
 		expect(runtime.session.sessionFile).toBeUndefined();
 		expect(
 			runtime.session.messages.map((message) => ({
@@ -603,6 +658,24 @@ describe("AgentSessionRuntime characterization", () => {
 		await expect(runtime.fork("missing-entry")).rejects.toThrow("Invalid entry ID for forking");
 	});
 
+	it("keeps the current session when an extension cancels cloning", async () => {
+		const events: SessionBeforeForkEvent[] = [];
+		const { runtime } = await createRuntimeForTest((candy) => {
+			candy.on("session_before_fork", (event) => {
+				events.push(event);
+				return { cancel: true };
+			});
+		});
+		await runtime.session.prompt("hello");
+		const original = runtime.session;
+		const leafId = original.sessionManager.getLeafId();
+
+		expect(await runtime.clone()).toEqual({ cancelled: true });
+		expect(events).toEqual([{ type: "session_before_fork", entryId: leafId, position: "at" }]);
+		expect(runtime.session).toBe(original);
+		expect(original.isDisposed).toBe(false);
+	});
+
 	it("updates the runtime session cwd on cross-cwd session replacement", async () => {
 		const firstDir = join(tmpdir(), `pi-runtime-cwd-a-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		const secondDir = join(tmpdir(), `pi-runtime-cwd-b-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -613,7 +686,7 @@ describe("AgentSessionRuntime characterization", () => {
 		await otherAuthStorage.modify(faux.getModel().provider, async () => ({ type: "api_key", key: "faux-key" }));
 		const otherRuntimeOptions = {
 			agentDir: tempDir,
-			authStorage: otherAuthStorage,
+			modelRuntimeOptions: { credentials: otherAuthStorage },
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
@@ -630,14 +703,14 @@ describe("AgentSessionRuntime characterization", () => {
 			sessionManager,
 			sessionStartEvent,
 		}) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				...otherRuntimeOptions,
 				cwd,
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -646,10 +719,10 @@ describe("AgentSessionRuntime characterization", () => {
 				diagnostics: services.diagnostics,
 			};
 		};
-		const otherRuntime = await createAgentSessionRuntime(createOtherRuntime, {
+		const otherRuntime = await createRuntimeFromFactory(createOtherRuntime, {
 			cwd: secondDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(secondDir),
+			sessionManager: SessionManager.create(secondDir, join(tempDir, "second-sessions")),
 		});
 		cleanups.push(async () => {
 			await otherRuntime.dispose();
@@ -666,7 +739,6 @@ describe("AgentSessionRuntime characterization", () => {
 	it("restores model and thinking state from the destination session", async () => {
 		const { runtime, faux, tempDir } = await createRuntimeForTest(() => {}, {
 			bootstrapModel: false,
-			bootstrapThinkingLevel: false,
 		});
 		const otherDir = join(tempDir, "other");
 		mkdirSync(otherDir, { recursive: true });
@@ -674,7 +746,7 @@ describe("AgentSessionRuntime characterization", () => {
 		await otherAuthStorage.modify(faux.getModel().provider, async () => ({ type: "api_key", key: "faux-key" }));
 		const otherRuntimeOptions = {
 			agentDir: tempDir,
-			authStorage: otherAuthStorage,
+			modelRuntimeOptions: { credentials: otherAuthStorage },
 			resourceLoaderOptions: {
 				extensionFactories: [
 					(candy: ExtensionAPI) => {
@@ -691,14 +763,14 @@ describe("AgentSessionRuntime characterization", () => {
 			sessionManager,
 			sessionStartEvent,
 		}) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				...otherRuntimeOptions,
 				cwd,
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -707,10 +779,10 @@ describe("AgentSessionRuntime characterization", () => {
 				diagnostics: services.diagnostics,
 			};
 		};
-		const otherRuntime = await createAgentSessionRuntime(createOtherRuntime, {
+		const otherRuntime = await createRuntimeFromFactory(createOtherRuntime, {
 			cwd: otherDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(otherDir),
+			sessionManager: SessionManager.create(otherDir, join(tempDir, "other-sessions")),
 		});
 		cleanups.push(async () => {
 			await otherRuntime.dispose();

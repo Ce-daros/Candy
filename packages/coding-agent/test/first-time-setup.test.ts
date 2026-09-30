@@ -4,7 +4,6 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { shouldRunFirstTimeSetup } from "../src/cli/startup-ui.ts";
 import { ENV_AGENT_DIR } from "../src/config.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
 import { FirstTimeSetupComponent } from "../src/modes/interactive/components/first-time-setup.ts";
 import { SplashLogoComponent } from "../src/modes/interactive/components/splash.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -21,25 +20,26 @@ describe("first-time setup viewport", () => {
 		expect(stripAnsi(compact[0]).length).toBeLessThan(stripAnsi(full[0]).length);
 	});
 
-	it("keeps both steps visible at 80 by 24 and grows the logo after a resize", () => {
+	it("keeps theme choices visible at 80 by 24 and grows the logo after a resize", () => {
 		initTheme("dark");
 		let height = 24;
+		let submitted: { theme: string } | undefined;
 		const setup = new FirstTimeSetupComponent({
 			detectedTheme: "dark",
 			getAvailableHeight: () => height,
 			onThemePreview: () => {},
-			onSubmit: () => {},
+			onSubmit: (result) => {
+				submitted = result;
+			},
 			onCancel: () => {},
 		});
 		const compact = setup.render(80);
 		expect(compact.length).toBeLessThanOrEqual(height);
 		expect(stripAnsi(compact.join("\n"))).toContain("Light");
 		setup.handleInput("\n");
-		const dataSharing = setup.render(80);
-		expect(dataSharing.length).toBeLessThanOrEqual(height);
-		expect(stripAnsi(dataSharing.join("\n"))).toContain("Don't share");
+		expect(submitted).toEqual({ theme: "dark" });
 		height = 45;
-		expect(setup.render(160).length).toBeGreaterThan(dataSharing.length);
+		expect(setup.render(160).length).toBeGreaterThan(compact.length);
 	});
 });
 
@@ -77,43 +77,5 @@ describe("shouldRunFirstTimeSetup", () => {
 		writeFileSync(settingsPath, "{}", "utf-8");
 
 		expect(shouldRunFirstTimeSetup(settingsPath)).toBe(false);
-	});
-});
-
-describe("analytics settings", () => {
-	it("defaults to disabled with no tracking identifier", () => {
-		const manager = SettingsManager.inMemory();
-
-		expect(manager.getEnableAnalytics()).toBe(false);
-		expect(manager.getTrackingId()).toBeUndefined();
-	});
-
-	it("generates a tracking identifier on opt-in", () => {
-		const manager = SettingsManager.inMemory();
-
-		manager.setEnableAnalytics(true);
-
-		expect(manager.getEnableAnalytics()).toBe(true);
-		expect(manager.getTrackingId()).toMatch(/^[0-9a-f-]{36}$/);
-	});
-
-	it("does not generate a tracking identifier on opt-out", () => {
-		const manager = SettingsManager.inMemory();
-
-		manager.setEnableAnalytics(false);
-
-		expect(manager.getEnableAnalytics()).toBe(false);
-		expect(manager.getTrackingId()).toBeUndefined();
-	});
-
-	it("keeps the tracking identifier when toggling analytics", () => {
-		const manager = SettingsManager.inMemory();
-
-		manager.setEnableAnalytics(true);
-		const trackingId = manager.getTrackingId();
-		manager.setEnableAnalytics(false);
-		manager.setEnableAnalytics(true);
-
-		expect(manager.getTrackingId()).toBe(trackingId);
 	});
 });

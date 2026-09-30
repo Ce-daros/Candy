@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
+import { type CreateAgentSessionRuntimeFactory, createRuntimeFromFactory } from "../src/core/agent-session-runtime.ts";
 import { getMissingSessionCwdIssue, MissingSessionCwdError } from "../src/core/session-cwd.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 
@@ -80,7 +80,7 @@ describe("session cwd handling", () => {
 		};
 
 		await expect(
-			createAgentSessionRuntime(createRuntime, {
+			createRuntimeFromFactory(createRuntime, {
 				cwd: fallbackCwd,
 				agentDir: fallbackCwd,
 				sessionManager,

@@ -12,8 +12,8 @@ import {
 	type TuiMouseEvent,
 	truncateToWidth,
 } from "@candy/tui";
+import type { Theme } from "../../../contracts/theme.ts";
 import type { ToolDefinition, ToolRenderContext, ToolRenderResultOptions } from "../../../core/extensions/types.ts";
-import type { Theme } from "../theme/theme.ts";
 
 /**
  * What this component needs from a tool: how to draw it. It neither executes tools nor reads their

@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { fauxAssistantMessage, fauxProvider } from "@candy/ai/providers/faux";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	assembleAgentSessionFromServices,
+	assembleAgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
+	createRuntimeFromFactory,
 } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRuntime } from "../src/core/model-runtime.ts";
@@ -65,14 +65,14 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 			},
 		};
 		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-			const services = await createAgentSessionServices({
+			const services = await assembleAgentSessionServices({
 				extensionModules: extensionHostModules,
 				themeAdapter: resourceThemeAdapter,
 				...runtimeOptions,
 				cwd,
 			});
 			return {
-				...(await createAgentSessionFromServices({
+				...(await assembleAgentSessionFromServices({
 					services,
 					sessionManager,
 					sessionStartEvent,
@@ -82,7 +82,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 				diagnostics: services.diagnostics,
 			};
 		};
-		const runtimeHost = await createAgentSessionRuntime(createRuntime, {
+		const runtimeHost = await createRuntimeFromFactory(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.create(tempDir),
@@ -91,13 +91,13 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		cleanups.push(async () => {
 			await runtimeHost.dispose();
-			modelRuntime.unregisterProvider(faux.provider.id);
+			await modelRuntime.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
 		});
 
-		return { runtimeHost, faux };
+		return { runtimeHost, faux, modelRuntime };
 	}
 
 	it("emits session_before_switch and session_start for new and resume flows", async () => {
@@ -144,6 +144,13 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		]);
 	});
 
+	it("leaves injected ModelRuntime ownership with its caller", async () => {
+		const { runtimeHost, modelRuntime } = await createRuntimeHost(() => {});
+
+		await runtimeHost.dispose();
+		await expect(modelRuntime.refresh()).resolves.toMatchObject({ aborted: false });
+	});
+
 	it("honors session_before_switch cancellation", async () => {
 		const events: RecordedSessionEvent[] = [];
 		const { runtimeHost } = await createRuntimeHost((candy) => {
@@ -188,7 +195,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		expect(phases).toEqual(["session_shutdown", "beforeSessionInvalidate", "rebindSession"]);
 		expect(() => oldSession.extensionRunner.createContext().cwd).toThrow(
-			"This extension ctx is stale after session replacement or reload. Do not use a captured candy or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+			"This extension ctx is stale after session replacement or reload.",
 		);
 		runtimeHost.setBeforeSessionInvalidate(undefined);
 		runtimeHost.setRebindSession(undefined);

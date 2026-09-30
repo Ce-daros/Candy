@@ -1,20 +1,17 @@
 import { join } from "node:path";
-import { Agent } from "@candy/agent-core";
 import { fauxAssistantMessage } from "@candy/ai";
 import type { Terminal } from "@candy/tui";
 import tpsExtension from "../../../../.candy/extensions/tps.ts";
-import { AgentSession } from "../../src/core/agent-session.ts";
+import { assembleAgentSession } from "../../src/core/agent-session-factory.ts";
 import {
 	type AgentSessionRuntime,
 	type AgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionRuntime,
+	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
-import { convertToLlm } from "../../src/core/messages.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
-import { streamBuiltinSimple as streamSimple } from "../ai.ts";
 import { createHarness, type Harness } from "../suite/harness.ts";
 import { userMsg } from "../utilities.ts";
 
@@ -50,7 +47,7 @@ export async function createInteractiveSmoke(
 		],
 		settings: { uiAnimations: options.animations ?? true, quietStartup: true, theme: options.theme ?? "dark" },
 	});
-	harness.settingsManager.setScopedModels(
+	await harness.settingsManager.setScopedModels(
 		harness.models.map((model) => ({ provider: model.provider, modelId: model.id })),
 	);
 	harness.setResponses(
@@ -60,12 +57,18 @@ export async function createInteractiveSmoke(
 					? [
 							{
 								type: "thinking",
-								thinking: "Checking the first idea.\n思考内容保持灰色，等待正文。\n第三行。\n第四行。",
+								thinking:
+									"Checking the first idea.\n思考内容保持灰色，等待正文。\n第三行。\n第四行。" +
+									"\n" +
+									"Thinking continues beyond the fold budget. ".repeat(8),
 							},
 							{ type: "text", text: "First reply. 中文正文与符号对齐。" },
 							{
 								type: "thinking",
-								thinking: "Checking a second idea after the reply.\n第二行。\n第三行。\n第四行。",
+								thinking:
+									"Checking a second idea after the reply.\n第二行。\n第三行。\n第四行。" +
+									"\n" +
+									"The second thought also continues beyond the fold budget. ".repeat(5),
 							},
 							{ type: "text", text: "Final reply. Click the star to inspect usage." },
 						]
@@ -95,24 +98,16 @@ export async function createInteractiveSmoke(
 		settingsManager: harness.settingsManager,
 		resourceLoader: harness.session.resourceLoader,
 		diagnostics: [],
+		dispose: async () => {},
 	};
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-		const agent = new Agent({
-			getApiKey: () => "faux-key",
-			streamFn: streamSimple,
-			initialState: {
-				model: harness.getModel(),
-				systemPrompt: "",
-				tools: [],
-				messages: sessionManager.buildSessionContext().messages,
-			},
-			convertToLlm,
-		});
-		const session = new AgentSession({
-			agent,
+		const { session } = await assembleAgentSession({
 			sessionManager,
 			settingsManager: harness.settingsManager,
 			cwd,
+			agentDir: harness.tempDir,
+			model: harness.getModel(),
+			noTools: "all",
 			modelRuntime: harness.session.modelRuntime,
 			resourceLoader: harness.session.resourceLoader,
 			sessionStartEvent,
@@ -124,7 +119,7 @@ export async function createInteractiveSmoke(
 			diagnostics: [],
 		};
 	};
-	const runtime = await createAgentSessionRuntime(createRuntime, {
+	const runtime = await createRuntimeFromFactory(createRuntime, {
 		cwd: harness.tempDir,
 		agentDir: harness.tempDir,
 		sessionManager,
@@ -137,7 +132,7 @@ export async function createInteractiveSmoke(
 		async cleanup() {
 			mode.stop();
 			await runtime.dispose();
-			harness.cleanup();
+			await harness.cleanup();
 		},
 	};
 }

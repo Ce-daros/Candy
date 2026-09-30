@@ -1,4 +1,4 @@
-import { Container, Spacer, Text } from "@candy/tui";
+import { Container, moveSelection, Spacer, Text } from "@candy/tui";
 import { APP_NAME, CONFIG_DIR_NAME } from "../../../config.ts";
 import {
 	getProjectTrustOptions,
@@ -156,11 +156,11 @@ export class TrustSelectorComponent extends Container {
 	handleInput(keyData: string): void {
 		switch (readListAction(keyData, { vim: true })) {
 			case "up":
-				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.trustOptions.length, -1);
 				this.updateList();
 				break;
 			case "down":
-				this.selectedIndex = Math.min(this.trustOptions.length - 1, this.selectedIndex + 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.trustOptions.length, 1);
 				this.updateList();
 				break;
 			case "confirm": {

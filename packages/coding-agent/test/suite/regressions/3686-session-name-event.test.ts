@@ -5,9 +5,9 @@ import { createHarness, type Harness } from "../harness.ts";
 describe("regression #3686: session name changes emit an event", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

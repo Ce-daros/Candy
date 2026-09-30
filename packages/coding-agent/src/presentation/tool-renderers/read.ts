@@ -10,12 +10,13 @@ import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } 
 import type { ImageContent, TextContent } from "@candy/ai";
 import { Text } from "@candy/tui";
 import { getReadmePath } from "../../config.ts";
+import type { Theme } from "../../contracts/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../core/extensions/types.ts";
 import { resolveToCwd } from "../../core/tools/path-utils.ts";
 import type { ReadToolDetails } from "../../core/tools/read.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../core/tools/truncate.ts";
 import { keyText } from "../../modes/interactive/components/keybinding-hints.ts";
-import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
+import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
 import { getTextOutput, renderToolPath, replaceTabs, str } from "../tool-render-utils.ts";
 

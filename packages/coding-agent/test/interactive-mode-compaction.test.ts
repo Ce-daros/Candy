@@ -15,20 +15,20 @@ describe("InteractiveMode compaction events", () => {
 		let percent = 41.2;
 		const context = {
 			session: { getContextUsage: () => ({ percent }) },
-			ui: { requestRender: vi.fn() },
+			renderer: { requestRender: vi.fn() },
 			lastContextPercent: undefined as number | null | undefined,
 		};
 		const refresh = Reflect.get(InteractiveMode.prototype, "refreshContextLine") as (this: typeof context) => void;
 
 		refresh.call(context);
-		expect(context.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(context.renderer.requestRender).toHaveBeenCalledTimes(1);
 		percent = 41.4;
 		refresh.call(context);
-		expect(context.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(context.renderer.requestRender).toHaveBeenCalledTimes(1);
 
 		percent = 42;
 		refresh.call(context);
-		expect(context.ui.requestRender).toHaveBeenCalledTimes(2);
+		expect(context.renderer.requestRender).toHaveBeenCalledTimes(2);
 	});
 
 	test("uses the cache miss notice setting for compaction and branch summary costs", () => {
@@ -179,7 +179,7 @@ describe("InteractiveMode compaction events", () => {
 			showStatus: vi.fn(),
 			clearStatusIndicator: vi.fn(),
 			settingsManager: { getShowTerminalProgress: () => false },
-			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
+			renderer: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 		};
 
 		const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
@@ -233,7 +233,7 @@ describe("InteractiveMode compaction events", () => {
 			showWorkingStatusIndicator: vi.fn(),
 			clearStatusIndicator: vi.fn(),
 			settingsManager: { getShowTerminalProgress: () => true },
-			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
+			renderer: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 		};
 		const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
 			this: typeof fakeThis,
@@ -242,17 +242,17 @@ describe("InteractiveMode compaction events", () => {
 
 		await handleEvent.call(fakeThis, { type: "turn_start" });
 
-		expect(fakeThis.ui.terminal.setProgress).toHaveBeenCalledWith(true);
+		expect(fakeThis.renderer.terminal.setProgress).toHaveBeenCalledWith(true);
 		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.clearStatusIndicator).not.toHaveBeenCalled();
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+		expect(fakeThis.renderer.requestRender).toHaveBeenCalledTimes(1);
 
 		fakeThis.workingVisible = false;
 		await handleEvent.call(fakeThis, { type: "turn_start" });
 
 		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.clearStatusIndicator).toHaveBeenCalledTimes(1);
-		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(2);
+		expect(fakeThis.renderer.requestRender).toHaveBeenCalledTimes(2);
 	});
 
 	// Regression test for #9340.

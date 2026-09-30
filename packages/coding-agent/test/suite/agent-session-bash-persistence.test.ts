@@ -31,9 +31,9 @@ function createControlledBashOperations(invocations: ControlledBashInvocation[])
 describe("AgentSession bash and persistence characterization", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 
@@ -196,6 +196,30 @@ describe("AgentSession bash and persistence characterization", () => {
 		expect(harness.session.isBashRunning).toBe(false);
 	});
 
+	it("waits for active bash work before session disposal resolves", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		let started = () => {};
+		const operationStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const bash = harness.session.executeBash("sleep", undefined, {
+			operations: {
+				exec: async (_command, _cwd, options) => {
+					started();
+					return await new Promise<{ exitCode: number | null }>((resolve) => {
+						options.signal?.addEventListener("abort", () => resolve({ exitCode: null }), { once: true });
+					});
+				},
+			},
+		});
+		await operationStarted;
+
+		await harness.session.dispose();
+		await bash;
+		expect(harness.session.isBashRunning).toBe(false);
+	});
+
 	it("persists user, assistant, toolResult, and custom messages in order", async () => {
 		const echoTool: AgentTool = {
 			name: "echo",
@@ -223,8 +247,9 @@ describe("AgentSession bash and persistence characterization", () => {
 		await harness.session.prompt("start");
 
 		const entries = harness.sessionManager.getEntries();
-		// The prompt is declared by the first request, after the queued custom message.
 		expect(entries.map((entry) => entry.type)).toEqual([
+			"model_change",
+			"thinking_level_change",
 			"custom_message",
 			"message",
 			"message",

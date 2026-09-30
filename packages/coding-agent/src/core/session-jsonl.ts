@@ -16,6 +16,20 @@ import type { FileEntry, SessionHeader } from "./session-manager.ts";
 const SESSION_READ_BUFFER_SIZE = 1024 * 1024;
 const SESSION_HEADER_READ_BUFFER_SIZE = 4096;
 const MAX_SESSION_HEADER_SCAN_BYTES = 1024 * 1024;
+const SESSION_ENTRY_TYPES = new Set([
+	"session",
+	"message",
+	"thinking_level_change",
+	"model_change",
+	"usage",
+	"compaction",
+	"branch_summary",
+	"custom",
+	"custom_message",
+	"context_edit",
+	"label",
+	"session_info",
+]);
 
 export class SessionHeaderScanLimitError extends Error {
 	constructor(filePath: string) {
@@ -35,17 +49,42 @@ export function serializeSessionEntry(entry: unknown): string {
 
 /** Write entries to a new file, or overwrite one, without touching other files. */
 export function writeSessionFile(filePath: string, entries: Iterable<unknown>, options: { flag: "w" | "wx" }): void {
+	const contents = Array.from(entries, serializeSessionEntry).join("");
 	const fd = openSync(filePath, options.flag);
+	let failure: unknown;
 	try {
-		for (const entry of entries) writeFileSync(fd, serializeSessionEntry(entry));
+		writeFileSync(fd, contents);
+	} catch (error) {
+		failure = error;
 	} finally {
-		closeSync(fd);
+		try {
+			closeSync(fd);
+		} catch (error) {
+			failure =
+				failure === undefined ? error : new AggregateError([failure, error], "Session write and close failed");
+		}
+	}
+	if (failure !== undefined) {
+		if (options.flag === "wx") {
+			try {
+				unlinkSync(filePath);
+			} catch (error) {
+				throw new AggregateError([failure, error], "Session write and cleanup failed");
+			}
+		}
+		throw failure;
 	}
 }
 
 /** Append one entry to an existing session file. */
 export function appendSessionEntry(filePath: string, entry: unknown): void {
 	appendFileSync(filePath, serializeSessionEntry(entry));
+}
+
+/** Append a related sequence of entries in one filesystem write. */
+export function appendSessionEntries(filePath: string, entries: readonly unknown[]): void {
+	const contents = entries.map(serializeSessionEntry).join("");
+	appendFileSync(filePath, contents);
 }
 
 /** Replace a session file with the current entries, atomically and without partial reads. */
@@ -55,7 +94,11 @@ export function rewriteSessionFile(filePath: string, entries: Iterable<unknown>)
 	try {
 		renameSync(temporaryFile, filePath);
 	} catch (error) {
-		unlinkSync(temporaryFile);
+		try {
+			unlinkSync(temporaryFile);
+		} catch (cleanupError) {
+			throw new AggregateError([error, cleanupError], "Session replacement and cleanup failed");
+		}
 		throw error;
 	}
 }
@@ -71,6 +114,8 @@ export function parseSessionEntryLine(line: string, filePath: string, lineNumber
 	if (typeof entry !== "object" || entry === null || !("type" in entry) || typeof entry.type !== "string") {
 		throw new Error(`Invalid session entry at ${filePath}:${lineNumber}`);
 	}
+	if (!SESSION_ENTRY_TYPES.has(entry.type))
+		throw new Error(`Unknown session entry type "${entry.type}" at ${filePath}:${lineNumber}`);
 	return entry as FileEntry;
 }
 

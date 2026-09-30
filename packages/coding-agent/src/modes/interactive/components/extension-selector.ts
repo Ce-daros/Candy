@@ -3,7 +3,7 @@
  * Displays a list of string options with keyboard navigation.
  */
 
-import { Container, getKeybindings, Spacer, Text, type TUI, visibleWindow } from "@candy/tui";
+import { Container, getKeybindings, moveSelection, Spacer, Text, type TUI, visibleWindow } from "@candy/tui";
 import {
 	dialogBody,
 	dialogTitle,
@@ -146,11 +146,11 @@ export class ExtensionSelectorComponent extends Container {
 		}
 		switch (readListAction(keyData, { horizontal: this.horizontal })) {
 			case "up":
-				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.options.length, -1);
 				this.updateList();
 				break;
 			case "down":
-				this.selectedIndex = Math.min(this.options.length - 1, this.selectedIndex + 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.options.length, 1);
 				this.updateList();
 				break;
 			case "confirm": {

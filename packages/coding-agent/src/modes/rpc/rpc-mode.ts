@@ -1,3 +1,4 @@
+import { createSessionCommandActions } from "../../core/session-command-actions.ts";
 /**
  * RPC mode: Headless operation with JSON stdin/stdout protocol.
  *
@@ -24,6 +25,9 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import type { ResourceType } from "../../core/resource-configuration.ts";
+import type { SettingsScope } from "../../core/settings-manager.ts";
+import { commitInteractiveSetting, isInteractiveSettingId } from "../../core/settings-operations.ts";
 import { exportSessionHtml } from "../../presentation/session-html-export.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
@@ -35,7 +39,18 @@ import type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSettingsCommitEvent,
 } from "./rpc-types.ts";
+
+const RESOURCE_TYPES = ["extensions", "skills", "prompts", "themes"] as const satisfies readonly ResourceType[];
+
+function isSettingsScope(value: unknown): value is SettingsScope {
+	return value === "global" || value === "project";
+}
+
+function isResourceType(value: unknown): value is ResourceType {
+	return typeof value === "string" && RESOURCE_TYPES.includes(value as ResourceType);
+}
 
 // Re-export types for consumers
 export type {
@@ -44,6 +59,7 @@ export type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSettingsCommitEvent,
 } from "./rpc-types.ts";
 
 /**
@@ -54,6 +70,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	takeOverStdout();
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
+	let unsubscribeSettings: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
@@ -286,7 +303,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			return undefined;
 		},
 
-		setTheme(_theme: string | Theme) {
+		async setTheme(_theme: string | Theme) {
 			// Theme switching not supported in RPC mode
 			return { success: false, error: "Theme switching not supported in RPC mode" };
 		},
@@ -310,29 +327,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
-			commandContextActions: {
-				waitForIdle: () => session.waitForIdle(),
-				newSession: async (options) => runtimeHost.newSession(options),
-				fork: async (entryId, forkOptions) => {
-					const result = await runtimeHost.fork(entryId, forkOptions);
-					return { cancelled: result.cancelled };
-				},
-				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, {
-						summarize: options?.summarize,
-						customInstructions: options?.customInstructions,
-						replaceInstructions: options?.replaceInstructions,
-						label: options?.label,
-					});
-					return { cancelled: result.cancelled };
-				},
-				switchSession: async (sessionPath, options) => {
-					return runtimeHost.switchSession(sessionPath, options);
-				},
-				reload: async () => {
-					await session.reload();
-				},
-			},
+			commandContextActions: createSessionCommandActions(runtimeHost),
 			shutdownHandler: () => {
 				shutdownRequested = true;
 			},
@@ -342,6 +337,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		});
 
 		unsubscribe?.();
+		unsubscribeSettings?.();
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			output(toJsonEvent(event));
@@ -349,8 +345,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				void checkShutdownRequested();
 			}
 		});
-		unsubscribeBackpressure = session.agent.subscribe(async () => {
+		unsubscribeBackpressure = session.subscribeExecution(async () => {
 			await waitForRawStdoutBackpressure();
+		});
+		unsubscribeSettings = session.settingsManager.subscribe((event) => {
+			const settingsEvent: RpcSettingsCommitEvent = {
+				type: "settings_commit",
+				scope: event.scope,
+				fields: [...event.fields],
+			};
+			output(settingsEvent);
 		});
 	};
 
@@ -472,6 +476,129 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					pendingMessageCount: session.pendingMessageCount,
 				};
 				return success(id, "get_state", state);
+			}
+
+			case "get_settings": {
+				return success(id, "get_settings", {
+					global: session.settingsManager.getGlobalSettings(),
+					project: session.settingsManager.getProjectSettings(),
+					projectTrusted: session.settingsManager.isProjectTrusted(),
+				});
+			}
+
+			case "commit_setting": {
+				if (!isSettingsScope(command.scope))
+					return error(id, command.type, `Invalid settings scope: ${String(command.scope)}`);
+				if (!isInteractiveSettingId(command.settingId))
+					return error(id, command.type, `Unknown setting: ${String(command.settingId)}`);
+				if (command.clear !== undefined && typeof command.clear !== "boolean") {
+					return error(id, command.type, "clear must be a boolean");
+				}
+				const clear = command.clear === true;
+				const hasValue = Object.hasOwn(command, "value");
+				if (clear === hasValue) {
+					return error(id, command.type, "Provide exactly one of value or clear: true");
+				}
+				await commitInteractiveSetting(session.settingsManager, command.scope, command.settingId, command.value, {
+					clear,
+				});
+				return success(id, command.type, { scope: command.scope, settingId: command.settingId, cleared: clear });
+			}
+
+			case "save_default_model": {
+				if (
+					typeof command.provider !== "string" ||
+					typeof command.modelId !== "string" ||
+					!command.provider.trim() ||
+					!command.modelId.trim()
+				) {
+					return error(id, command.type, "Provider and model ID must not be empty");
+				}
+				await session.settingsManager.setDefaultModelAndProvider(command.provider, command.modelId);
+				return success(id, command.type);
+			}
+
+			case "get_resources": {
+				return success(id, command.type, session.resources.getInventory());
+			}
+
+			case "get_resource_configuration": {
+				if (!isSettingsScope(command.scope))
+					return error(id, command.type, `Invalid settings scope: ${String(command.scope)}`);
+				const { paths } = await session.resources.getConfiguration(command.scope);
+				const items = (["extensions", "skills", "prompts", "themes"] as const).flatMap((resourceType) =>
+					paths[command.scope][resourceType].map((item) => ({ ...item, resourceType })),
+				);
+				return success(id, command.type, { scope: command.scope, paths, items });
+			}
+
+			case "toggle_resource": {
+				if (!isSettingsScope(command.scope))
+					return error(id, command.type, `Invalid settings scope: ${String(command.scope)}`);
+				if (!isResourceType(command.resourceType))
+					return error(id, command.type, `Unknown resource type: ${String(command.resourceType)}`);
+				if (typeof command.path !== "string") return error(id, command.type, "path must be a string");
+				const { paths, operations } = await session.resources.getConfiguration(command.scope);
+				const item = paths[command.scope][command.resourceType].find(
+					(candidate) => candidate.path === command.path,
+				);
+				if (!item)
+					return error(id, command.type, `Resource not found in ${command.scope} configuration: ${command.path}`);
+				const enabled = await operations.toggleResource({ ...item, resourceType: command.resourceType });
+				return success(id, command.type, { enabled: enabled ?? null });
+			}
+
+			case "active_tools": {
+				if (command.action === "set") {
+					if (!Array.isArray(command.names) || command.names.some((name) => typeof name !== "string")) {
+						return error(id, command.type, "names must be an array of tool names");
+					}
+					session.resources.setActiveTools(command.names);
+				}
+				return success(id, command.type, { names: session.getActiveToolNames() });
+			}
+
+			case "default_tools": {
+				if (command.action === "save") {
+					const clear = command.clear === true;
+					if (command.clear !== undefined && typeof command.clear !== "boolean") {
+						return error(id, command.type, "clear must be a boolean");
+					}
+					if (clear === Object.hasOwn(command, "names")) {
+						return error(id, command.type, "Provide exactly one of names or clear: true");
+					}
+					if (
+						!clear &&
+						(!Array.isArray(command.names) || command.names.some((name) => typeof name !== "string"))
+					) {
+						return error(id, command.type, "names must be an array of tool names");
+					}
+					await session.resources.saveDefaultTools(clear ? undefined : command.names);
+				}
+				return success(id, command.type, { names: session.settingsManager.getDefaultTools() ?? null });
+			}
+
+			case "read_instruction": {
+				if (typeof command.path !== "string") return error(id, command.type, "path must be a string");
+				const content = await session.resources.readInstruction(command.path);
+				return success(id, command.type, { content });
+			}
+
+			case "save_instruction": {
+				if (typeof command.path !== "string" || typeof command.content !== "string") {
+					return error(id, command.type, "path and content must be strings");
+				}
+				const result = await session.resources.saveInstruction(command.path, command.content);
+				return success(id, command.type, {
+					saved: result.saved,
+					reloaded: result.reloaded,
+					...(!result.reloaded ? { error: result.error.message } : {}),
+				});
+			}
+
+			case "reload_resources": {
+				await session.resources.reload();
+				return success(id, command.type);
 			}
 
 			// =================================================================
@@ -611,6 +738,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "switch_session", result);
 			}
 
+			case "import_session": {
+				const result = await runtimeHost.importFromJsonl(command.inputPath, command.cwdOverride);
+				if (!result.cancelled) await rebindSession();
+				return success(id, "import_session", result);
+			}
+
 			case "fork": {
 				const result = await runtimeHost.fork(command.entryId);
 				if (!result.cancelled) {
@@ -620,11 +753,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "clone": {
-				const leafId = session.sessionManager.getLeafId();
-				if (!leafId) {
-					return error(id, "clone", "Cannot clone session: no current entry selected");
-				}
-				const result = await runtimeHost.fork(leafId, { position: "at" });
+				const result = await runtimeHost.clone();
 				if (!result.cancelled) {
 					await rebindSession();
 				}

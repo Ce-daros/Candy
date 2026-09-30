@@ -24,9 +24,9 @@ function normalizeEventOrder(events: Harness["events"]): string[] {
 describe("AgentSession retry and event characterization", () => {
 	const harnesses: Harness[] = [];
 
-	afterEach(() => {
+	afterEach(async () => {
 		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
+			await harnesses.pop()?.cleanup();
 		}
 	});
 

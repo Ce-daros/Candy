@@ -1,25 +1,17 @@
 # Examples
 
-Example code for the coding-agent SDK and process integration.
+Examples for the coding-agent runtime, extension system, and process integrations.
 
-## CLI integration
+## SDK
 
-[`rpc-client.ts`](rpc-client.ts) uses the typed `RpcClient` to run candy in a child process, stream events, and wait for the run to settle.
+[`sdk/`](sdk/) contains checked TypeScript examples using `createAgentSessionRuntime()`. Each runtime exposes the active session through `.session` and must be disposed with `await runtime.dispose()`.
 
-Build the coding-agent package before running it from a repository checkout:
+## RPC client
+
+[`rpc-client.ts`](rpc-client.ts) imports `RpcClient` from `@candy/coding-agent/rpc`, starts Candy as a child process, streams events, waits for the run to settle, and stops the child. Build the coding-agent package before running it from a repository checkout:
 
 ```bash
 node examples/rpc-client.ts "Explain this repository"
 ```
 
-## Directories
-
-### [sdk/](sdk/)
-Programmatic usage via `createAgentSession()`. Shows how to customize models, prompts, tools, extensions, and session management.
-
-## Documentation
-
-- [SDK Examples](sdk/README.md)
-- [CLI Integration](../docs/cli-integration.md)
-- [Extensions Documentation](../docs/extensions.md)
-- [Skills Documentation](../docs/skills.md)
+See [SDK](../docs/sdk.md), [RPC](../docs/rpc.md), [CLI integration](../docs/cli-integration.md), and [Extensions](../docs/extensions.md) for the public interfaces.

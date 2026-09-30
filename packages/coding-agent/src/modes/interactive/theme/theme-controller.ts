@@ -1,4 +1,5 @@
 import type { RgbColor, TUI } from "@candy/tui";
+import type { Theme } from "../../../contracts/theme.ts";
 import type { SettingsManager } from "../../../core/settings-manager.ts";
 import {
 	detectTerminalBackgroundFromEnv,
@@ -11,7 +12,6 @@ import {
 	setTheme,
 	setThemeInstance,
 	type TerminalTheme,
-	type Theme,
 } from "./theme.ts";
 
 type ThemeResult = { success: boolean; error?: string };
@@ -90,8 +90,7 @@ export class InteractiveThemeController {
 		this.terminalTheme = detection.theme;
 		if (!this.applyThemeName(detection.theme).success) return;
 		if (detection.confidence === "high") {
-			settingsManager.setTheme(detection.theme);
-			await settingsManager.flush();
+			await settingsManager.commitSetting("global", "theme", detection.theme);
 		}
 	}
 

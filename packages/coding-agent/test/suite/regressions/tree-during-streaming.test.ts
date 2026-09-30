@@ -29,7 +29,7 @@ describe("tree navigation during an active response", () => {
 			);
 			expect(leafUnchanged).toBe(true);
 		} finally {
-			harness.cleanup();
+			await harness.cleanup();
 		}
 	});
 });

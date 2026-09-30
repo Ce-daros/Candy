@@ -1,12 +1,10 @@
-import { resourceThemeAdapter } from "@candy/coding-agent";
-import { extensionHostModules } from "@candy/coding-agent/extension-host-modules";
 /**
  * Custom Model Selection
  *
  * Shows how to select a specific model and thinking level.
  */
 
-import { createAgentSession, ModelRuntime } from "@candy/coding-agent";
+import { createAgentSessionRuntime, ModelRuntime } from "@candy/coding-agent";
 
 const modelRuntime = await ModelRuntime.create();
 
@@ -30,14 +28,13 @@ console.log(
 );
 
 if (available.length > 0) {
-	const { session } = await createAgentSession({
-		extensionModules: extensionHostModules,
-		themeAdapter: resourceThemeAdapter,
+	const sessionRuntime = await createAgentSessionRuntime({
 		model: available[0],
 		thinkingLevel: "medium", // off, low, medium, high
 		modelRuntime,
 	});
 
+	const session = sessionRuntime.session;
 	try {
 		session.subscribe((event) => {
 			if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
@@ -48,6 +45,6 @@ if (available.length > 0) {
 		await session.prompt("Say hello in one sentence.");
 		console.log();
 	} finally {
-		session.dispose();
+		await sessionRuntime.dispose();
 	}
 }
