@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPublicWorkspacePackages } from "./package-workspaces.mjs";
 
@@ -11,9 +11,14 @@ const codingAgentName = "@candy/coding-agent";
 
 function run(command, args, options = {}) {
 	console.log(`$ ${[command, ...args].join(" ")}`);
-	const result = spawnSync(command, args, {
+	const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+	if (process.platform === "win32" && command === "npm" && !existsSync(npmCli)) {
+		throw new Error(`npm CLI not found beside Node: ${npmCli}`);
+	}
+	const executable = process.platform === "win32" && command === "npm" ? process.execPath : command;
+	const commandArgs = executable === process.execPath && command === "npm" ? [npmCli, ...args] : args;
+	const result = spawnSync(executable, commandArgs, {
 		encoding: "utf8",
-		shell: process.platform === "win32" && command === "npm",
 		timeout: 300_000,
 		...options,
 	});
@@ -73,6 +78,7 @@ export function smokeTestCodingAgentConsumer(directory, runtime = process.execPa
 		XDG_CONFIG_HOME: home,
 		XDG_CACHE_HOME: home,
 		CANDY_CODING_AGENT_DIR: join(home, ".candy", "agent"),
+		CANDY_CODING_AGENT_SESSION_DIR: join(home, ".candy", "sessions"),
 		CANDY_OFFLINE: "1",
 		CANDY_TELEMETRY: "0",
 	};
@@ -81,19 +87,42 @@ export function smokeTestCodingAgentConsumer(directory, runtime = process.execPa
 	}
 	try {
 		writeFileSync(entry, `import assert from "node:assert/strict";
-import { createAgentSession, SessionManager, ModelRuntime } from "${codingAgentName}";
-assert.equal(typeof createAgentSession, "function");
-assert.equal(typeof SessionManager.inMemory, "function");
-assert.equal(typeof ModelRuntime.create, "function");
-for (const subpath of ["/client", "/experimental/plugin"]) {
+import { createAgentSessionRuntime } from "${codingAgentName}";
+assert.equal(typeof createAgentSessionRuntime, "function");
+for (const subpath of ["/core/runtime-factory", "/modes/interactive/interactive-mode"]) {
   assert.throws(() => import.meta.resolve("${codingAgentName}" + subpath), /not exported|not defined|Cannot find|cannot find/);
 }
+const runtime = await createAgentSessionRuntime({ cwd: process.cwd(), agentDir: process.env.CANDY_CODING_AGENT_DIR, noTools: "all" });
+assert.equal(typeof runtime.session.prompt, "function");
+assert.equal(runtime.session.isDisposed, false);
+await runtime.dispose();
+assert.equal(runtime.session.isDisposed, true);
 `);
 		run(runtime, [entry], { cwd: directory, env, timeout: 30_000 });
 		for (const cli of new Set([manifest.bin.candy, "dist/cli.js"])) {
 			const output = run(runtime, [join(packageDir, cli), "--version"], { cwd: directory, env, timeout: 30_000 });
 			if (output.trim() !== manifest.version) throw new Error(`Unexpected version from ${cli}: ${output}`);
 		}
+		const fauxExtension = join(directory, "faux-provider.mjs");
+		writeFileSync(
+			fauxExtension,
+			`import { fauxAssistantMessage, fauxProvider } from "@candy/ai";\nconst faux = fauxProvider({ provider: "release-faux", api: "release-faux", models: [{ id: "faux-1", name: "Release Faux", reasoning: false }] });\nfaux.setResponses([fauxAssistantMessage("PUBLISHED_FAUX_REPLY_OK")]);\nexport default (candy) => candy.registerProvider(faux.provider);\n`,
+		);
+		const reply = run(
+			runtime,
+			[
+				join(packageDir, manifest.bin.candy),
+				"--extension",
+				fauxExtension,
+				"--model",
+				"release-faux/faux-1",
+				"--print",
+				"Reply with the configured faux response.",
+			],
+			{ cwd: directory, env, timeout: 30_000 },
+		);
+		if (!reply.includes("PUBLISHED_FAUX_REPLY_OK")) throw new Error("Published CLI did not return the faux response");
+		rmSync(fauxExtension, { force: true });
 	} finally {
 		rmSync(entry, { force: true });
 		rmSync(home, { recursive: true, force: true });

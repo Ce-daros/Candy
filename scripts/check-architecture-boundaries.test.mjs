@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import test from "node:test";
 import { checkArchitecture, findRuntimeCycles, normalizeWorkspacePath } from "./check-architecture-boundaries.mjs";
+import { collectTypeSpecifiers, createWorkspaceResolver } from "./lib/source-graphs.mjs";
 
 test("normalizes Windows and POSIX workspace separators identically", () => {
 	assert.equal(normalizeWorkspacePath("packages\\agent\\src\\index.ts"), "packages/agent/src/index.ts");
@@ -45,5 +47,32 @@ test("keeps terminal presentation and TUI out of the core runtime", () => {
 	const tui = resolve("packages/tui/src/index.ts");
 	const graph = new Map([[runtime, new Set([interactiveMode, theme, renderer, tui])]]);
 
-	assert.equal(checkArchitecture(graph).filter((failure) => failure.includes("imports presentation module")).length, 4);
+	assert.equal(checkArchitecture(graph, createWorkspaceResolver(), []).filter((failure) => failure.includes("imports presentation module")).length, 4);
+});
+
+test("checks type-only imports from core against presentation implementations", () => {
+	const directory = mkdtempSync(resolve("packages/coding-agent/src/core", ".architecture-test-"));
+	try {
+		const source = resolve(directory, "type-boundary.ts");
+		writeFileSync(source, `import type { KeybindingsConfig } from "../../presentation/keybindings.ts";\nimport { type ThemeColor } from "../../contracts/theme.ts";\n`);
+		assert.deepEqual(collectTypeSpecifiers(source), ["../../presentation/keybindings.ts", "../../contracts/theme.ts"]);
+		const resolver = createWorkspaceResolver();
+		const failures = checkArchitecture(new Map([[source, new Set()]]), resolver, [source]);
+		assert.equal(failures.length, 1);
+		assert.match(failures[0], /type dependency on presentation module/);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("resolves public workspace package exports to their source modules", () => {
+	const resolver = createWorkspaceResolver();
+	assert.equal(
+		relative(process.cwd(), resolver.resolveImport("@candy/coding-agent/ui", resolve("packages/ai/src/index.ts"))).replaceAll("\\", "/"),
+		"packages/coding-agent/src/ui.ts",
+	);
+	assert.equal(
+		relative(process.cwd(), resolver.resolveImport("@candy/ai/providers/all", resolve("packages/coding-agent/src/index.ts"))).replaceAll("\\", "/"),
+		"packages/ai/src/providers/all.ts",
+	);
 });

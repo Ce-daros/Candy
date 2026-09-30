@@ -5,27 +5,62 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"@candy/telemetry": ["./packages/telemetry/src/index.ts"],
-			"@candy/telemetry/testing": ["./packages/telemetry/src/testing/index.ts"],
-			"@candy/ai": ["./packages/ai/src/index.ts"],
-			"@candy/ai/oauth": ["./packages/ai/src/oauth.ts"],
-			"@candy/ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
-			"@candy/ai/dist/*": ["./packages/ai/src/*"],
-			"@candy/agent-core": ["./packages/agent/src/index.ts"],
+			"@candy/telemetry": [
+				"./packages/telemetry/src/index.ts"
+			],
+			"@candy/telemetry/testing": [
+				"./packages/telemetry/src/testing/index.ts"
+			],
+			"@candy/ai": [
+				"./packages/ai/src/index.ts"
+			],
+			"@candy/ai/oauth": [
+				"./packages/ai/src/oauth.ts"
+			],
+			"@candy/ai/*": [
+				"./packages/ai/src/*.ts",
+				"./packages/ai/src/providers/*.ts"
+			],
+			"@candy/agent-core": [
+				"./packages/agent/src/index.ts"
+			],
 			"@candy/agent-core/*": [
 				"./packages/agent/src/*.ts",
 				"./packages/agent/src/*/index.ts",
 				"./packages/agent/src/*"
 			],
-			"@candy/coding-agent": ["./packages/coding-agent/src/index.ts"],
-			"@candy/coding-agent/extension-host-modules": ["./packages/coding-agent/src/presentation/extensions/virtual-modules.ts"],
-			"@candy/coding-agent/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
-			"@candy/coding-agent/*": ["./packages/coding-agent/src/*"],
-			"typebox": ["./node_modules/typebox"],
-			"@candy/tui": ["./packages/tui/src/index.ts"],
-			"@candy/tui/*": ["./packages/tui/src/*"]
+			"@candy/coding-agent": [
+				"./packages/coding-agent/src/index.ts"
+			],
+			"@candy/coding-agent/extension-host-modules": [
+				"./packages/coding-agent/src/presentation/extensions/virtual-modules.ts"
+			],
+			"@candy/coding-agent/*": [
+				"./packages/coding-agent/src/*"
+			],
+			"typebox": [
+				"./node_modules/typebox"
+			],
+			"@candy/tui": [
+				"./packages/tui/src/index.ts"
+			],
+			"@candy/tui/*": [
+				"./packages/tui/src/*"
+			],
+			"@candy/coding-agent/ui": [
+				"./packages/coding-agent/src/ui.ts"
+			],
+			"@candy/coding-agent/rpc": [
+				"./packages/coding-agent/src/rpc.ts"
+			]
 		}
 	},
-	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
-	"exclude": ["**/dist/**"]
+	"include": [
+		"packages/*/src/**/*",
+		"packages/*/test/**/*",
+		"packages/coding-agent/examples/**/*"
+	],
+	"exclude": [
+		"**/dist/**"
+	]
 }

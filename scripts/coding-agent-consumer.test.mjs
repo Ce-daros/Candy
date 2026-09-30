@@ -24,9 +24,9 @@ function createFixture(t, { importMissing = false, includeExperimental = false }
 	};
 	const files = {
 		"package.json": JSON.stringify(manifest),
-		"dist/index.js": `${importMissing ? 'import "@candy/missing";\n' : ""}export function createAgentSession() {}\nexport class SessionManager { static inMemory() {} }\nexport class ModelRuntime { static create() {} }\n`,
+		"dist/index.js": `${importMissing ? 'import "@candy/missing";\n' : ""}export async function createAgentSessionRuntime() { let disposed = false; return { session: { prompt() {}, get isDisposed() { return disposed; } }, async dispose() { disposed = true; } }; }\n`,
 		"dist/cli.js": 'console.log("1.0.0");',
-		"dist/bundle/cli.js": 'console.log("1.0.0");',
+		"dist/bundle/cli.js": 'console.log(process.argv.includes("--version") ? "1.0.0" : "PUBLISHED_FAUX_REPLY_OK");',
 	};
 	if (includeExperimental) files["dist/experimental/obsolete.js"] = "export {};";
 	for (const [path, content] of Object.entries(files)) {
@@ -44,7 +44,7 @@ test("installs and runs the SDK and CLI from the published package", (t) => {
 	const manifest = JSON.parse(readFileSync(join(directory, "node_modules", codingAgentName, "package.json"), "utf8"));
 	assert.deepEqual(Object.keys(manifest.dependencies ?? {}), []);
 	smokeTestCodingAgentConsumer(directory);
-	for (const subpath of ["/client", "/experimental/plugin"]) {
+	for (const subpath of ["/core/runtime-factory", "/modes/interactive/interactive-mode"]) {
 		assert.throws(() => import.meta.resolve(`${codingAgentName}${subpath}`), /not exported|not defined/);
 	}
 });

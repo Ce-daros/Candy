@@ -64,7 +64,7 @@ test_env=(
 )
 
 # Native Windows needs these inherited values to launch child processes.
-for name in SystemRoot SYSTEMROOT WINDIR COMSPEC PATHEXT; do
+for name in SystemRoot SYSTEMROOT WINDIR COMSPEC PATHEXT PUBLIC; do
 	value="${!name-}"
 	[[ -z "$value" ]] || test_env+=("$name=$value")
 done

@@ -32,3 +32,5 @@ tmux kill-session -t candy-smoke
 ```
 
 Repeat without `--no-animations` to inspect transitions. For release smoke tests, start the release binary in a separate tmux session outside the checkout, test Node and Bun binaries separately, submit a prompt, and wait for the model reply; startup alone is insufficient.
+
+Record the runtime version, compile target, reply, and exit code. On Linux x64 machines without AVX2, Bun 1.3.14 requires the `bun-linux-x64-baseline` compile target; check CPU flags before choosing the target. Keep packaged Node assets under the package root's `dist/` directory and Bun assets next to the executable.
