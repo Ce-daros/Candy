@@ -1,6 +1,6 @@
 # Working on Candy
 
-Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated individually and cherry-picked when they serve this product. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development philosophy and [DESIGN.md](DESIGN.md) for product design.
+Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated individually and cherry-picked when they serve this product. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance and [DESIGN.md](DESIGN.md) for product design.
 
 ## Working style
 
@@ -31,7 +31,7 @@ Candy began as a fork of pi and is developed independently. Useful upstream chan
 - Keep shortcuts configurable through `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`.
 - Never hand-edit `packages/ai/src/models.generated.ts`. Update the generator and regenerate; resulting catalog changes may be included.
 - Fix outdated dependencies rather than deleting working behavior to satisfy their types. Pin direct external dependencies to exact versions and review dependency and lockfile diffs.
-- Use `npm install --ignore-scripts` or `npm ci --ignore-scripts`; run lifecycle scripts only when authorized. Follow the [dependency maintenance notes](CONTRIBUTING.md#dependency-maintenance).
+- Use `npm install --ignore-scripts` or `npm ci --ignore-scripts`; run lifecycle scripts only when authorized. Follow the [dependency maintenance notes](#dependency-maintenance).
 - Write ad-hoc scripts to temporary files, run them, and remove them afterward.
 
 ## Validation and delivery
@@ -44,7 +44,7 @@ Candy began as a fork of pi and is developed independently. Useful upstream chan
 - At the end of code changes, run `npm run check`, retain its full output, and fix errors, warnings, and infos. It does not run tests. Avoid rerunning it after every small step.
 - Once relevant tests and required checks pass, finish the task. Expand or repeat verification only for new changes, failures, or concrete unresolved concerns.
 - For terminal input, focus, layout, or motion changes, follow the [interactive testing guide](.candy/skills/interactive-testing.md), including Windows PTY and Linux/tmux as appropriate to the affected behavior. Report what was actually exercised.
-- Documentation-only changes need a factual, link, and diff review. Update affected package Unreleased entries using the [changelog notes](CONTRIBUTING.md#changelogs).
+- Documentation-only changes need a factual, link, and diff review. Update affected package Unreleased entries using the [changelog notes](#changelogs).
 - Report the result, relevant validation, and material limitations. Never claim a behavior was verified without evidence.
 
 ## Workspace safety
@@ -63,3 +63,16 @@ Candy began as a fork of pi and is developed independently. Useful upstream chan
 - Put business state and operations in runtime modules; keep terminal presentation and input handling in the interactive layer. Depend on narrow interfaces between these boundaries.
 - Preserve user configuration and session data. Any persistence-format change must include an explicit migration and focused coverage.
 - Optimize for useful behavior, performance, and a clear codebase. Split modules by real ownership and behavior, not by arbitrary file length.
+
+## Dependency maintenance
+
+- When upgrading `undici`, read the target release notes and check their effect on existing behavior.
+- After dependency metadata changes, refresh the root lockfile with `npm install --package-lock-only --ignore-scripts`.
+- Regenerate the coding-agent shrinkwrap with `node scripts/generate-coding-agent-shrinkwrap.mjs`; verify with `--check` or `npm run check`.
+- A new dependency lifecycle script needs review and explicit authorization before adding it to the shrinkwrap generator's allowlist.
+
+## Changelogs
+
+- Record changes in the affected package's `CHANGELOG.md`, under `## [Unreleased]`. Read the existing section, reuse its `Breaking Changes`, `Added`, `Changed`, `Fixed`, and `Removed` headings, and describe the resulting behavior. Include migration instructions for breaking APIs.
+- Do not duplicate entries or modify released sections. Add entries on `main` or a pull-request branch.
+- Link related issues or pull requests when available and credit external contributors. Use the current repository for new links; preserve historical attribution.

@@ -2,7 +2,7 @@
 
 Candy should feel compact, responsive, and alive. The conversation stays readable, controls stay close to the work, and color and motion give the interface a recognizable character.
 
-This document records the current product model and the rules used to extend it. State ownership and runtime boundaries live in [ARCHITECTURE.md](ARCHITECTURE.md); engineering principles live in [CONTRIBUTING.md](CONTRIBUTING.md); implementation rules live in [AGENTS.md](AGENTS.md).
+This document records the current product model and the rules used to extend it. Development guidance lives in [CONTRIBUTING.md](CONTRIBUTING.md); implementation rules and architecture direction live in [AGENTS.md](AGENTS.md).
 
 ## Character
 

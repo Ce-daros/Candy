@@ -64,7 +64,7 @@ npm run example:rpc
 npm run probe:codex-cache
 ```
 
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for development philosophy and contribution expectations, [DESIGN.md](../../DESIGN.md) for product and interaction design, and [AGENTS.md](../../AGENTS.md) for implementation, testing, dependency, and release rules.
+Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for development guidance, [DESIGN.md](../../DESIGN.md) for product and interaction design, and [AGENTS.md](../../AGENTS.md) for implementation, testing, dependency, and changelog rules.
 
 ## License
 
