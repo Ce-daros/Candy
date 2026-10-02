@@ -3,12 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
-import { checkEntryGraphFailures, findUnreachableSources } from "./check-entry-graphs.mjs";
+import { findUnreachableSources } from "./check-entry-graphs.mjs";
 import { createWorkspaceResolver } from "./lib/source-graphs.mjs";
-
-test("package export boundaries, dynamic roots, and packaged assets resolve", () => {
-	assert.deepEqual(checkEntryGraphFailures(), []);
-});
 
 test("reachability retains type contracts and workers while identifying unused implementations", () => {
 	const directory = mkdtempSync(resolve(tmpdir(), "candy-entry-graph-"));

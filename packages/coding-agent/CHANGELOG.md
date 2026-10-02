@@ -110,6 +110,8 @@
 
 ### Removed
 
+- Removed duplicate TUI utility, loaded-resource, migration, and package-entrypoint tests, trivial RPC forwarding and presentation assertions, and live forking and compaction tests covered by offline session suites.
+
 - Removed classifier support from `ModelRuntime` and the extension provider API: `classify()`, the `classifiers` provider field, and `ProviderClassifierModelConfig`.
 - Removed the Amazon Bedrock and Azure OpenAI Responses providers, their login hints, and their environment-variable documentation.
 - Removed `docs/containerization.md` and the `packages/evals` container runner (`docker/`, `src/docker.ts`, `src/cli.ts`, and the `*.docs.eval.ts` suites).
@@ -122,7 +124,7 @@
 
 ### Tests
 
-- Moved credential-backed AgentSession and compaction integration tests into the opt-in `npm run test:e2e` suite; the default Vitest suite remains offline and deterministic.
+- Credential-backed tree-navigation integration tests remain opt-in through `npm run test:e2e`; the default Vitest suite remains offline and deterministic.
 
 ## [0.87.1] - 2026-09-22
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Removed duplicate image-line, content-shrink, and short-content overlay tests; retained their rendering and protocol coverage in the main TUI suites.
+
 ### Breaking Changes
 
 - Vertical `SelectList` and `SettingsList` navigation stops at the first and last selectable rows for arrows, wheel input, and paging. Settings value cycling continues to wrap.
