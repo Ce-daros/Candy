@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"clean": "shx rm -rf .eval",
+		"clean": "node -e \"require('node:fs').rmSync('.eval', { recursive: true, force: true })\"",
 		"eval": "npm run eval:host",
 		"eval:host": "vitest run --config vitest.evals.config.ts --project host",
 		"test": "vitest run --config vitest.test.config.ts"
@@ -12,11 +12,7 @@
 	"devDependencies": {
 		"@candy/ai": "^0.87.1",
 		"@candy/coding-agent": "^0.87.1",
-		"@types/node": "22.19.19",
 		"@vitest-evals/core": "0.15.0",
-		"autoevals": "0.3.0",
-		"shx": "0.4.0",
-		"vitest": "4.1.9",
 		"vitest-evals": "0.15.0"
 	}
 }

@@ -14,6 +14,7 @@ import type {
 	TranscriptContext,
 } from "../types.ts";
 import { getCandyUserAgent } from "../utils/candy-user-agent.ts";
+import { MAX_PROVIDER_ERROR_BODY_CHARS, safeJsonStringify, truncateErrorText } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
@@ -26,7 +27,6 @@ import { buildBaseOptions } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 const MISTRAL_TOOL_CALL_ID_LENGTH = 9;
-const MAX_MISTRAL_ERROR_BODY_CHARS = 4000;
 
 /**
  * Provider-specific options for the Mistral API.
@@ -267,26 +267,12 @@ function formatMistralError(error: unknown): string {
 		const statusCode = typeof httpError.statusCode === "number" ? httpError.statusCode : undefined;
 		const bodyText = typeof httpError.body === "string" ? httpError.body.trim() : undefined;
 		if (statusCode !== undefined && bodyText) {
-			return `Mistral API error (${statusCode}): ${truncateErrorText(bodyText, MAX_MISTRAL_ERROR_BODY_CHARS)}`;
+			return `Mistral API error (${statusCode}): ${truncateErrorText(bodyText, MAX_PROVIDER_ERROR_BODY_CHARS)}`;
 		}
 		if (statusCode !== undefined) return `Mistral API error (${statusCode}): ${error.message}`;
 		return error.message;
 	}
 	return safeJsonStringify(error);
-}
-
-function truncateErrorText(text: string, maxChars: number): string {
-	if (text.length <= maxChars) return text;
-	return `${text.slice(0, maxChars)}... [truncated ${text.length - maxChars} chars]`;
-}
-
-function safeJsonStringify(value: unknown): string {
-	try {
-		const serialized = JSON.stringify(value);
-		return serialized === undefined ? String(value) : serialized;
-	} catch {
-		return String(value);
-	}
 }
 
 async function requestMistralStream(

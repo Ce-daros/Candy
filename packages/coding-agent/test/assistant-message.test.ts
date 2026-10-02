@@ -66,7 +66,7 @@ describe("AssistantMessageComponent", () => {
 
 	test("breathes while streaming and releases timers when completed or removed", () => {
 		initTheme("dark");
-		vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval"] });
+		vi.useFakeTimers();
 		const component = new AssistantMessageComponent();
 		component.setAnimationOptions(true, "moderate", vi.fn());
 		const message = createAssistantMessage([{ type: "thinking", thinking: "checking" }]);
@@ -92,7 +92,7 @@ describe("AssistantMessageComponent", () => {
 
 	test("disabling animation settles the entrance and leaves a static active marker", () => {
 		initTheme("dark");
-		vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval"] });
+		vi.useFakeTimers();
 		const component = new AssistantMessageComponent();
 		component.setAnimationOptions(true, "moderate", vi.fn());
 		component.updateContent(createAssistantMessage([{ type: "text", text: "streaming" }]), true);

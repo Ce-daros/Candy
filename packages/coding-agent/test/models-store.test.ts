@@ -53,6 +53,15 @@ describe("FileModelsStore", () => {
 		expect((await reloaded.read("two"))?.models.map((entry) => entry.id)).toEqual(["m2"]);
 	});
 
+	it.skipIf(process.platform === "win32")("creates new models files with owner-only permissions", async () => {
+		const managedModelsPath = join(sharedTempDir, "new-mode.json");
+		const store = new FileModelsStore(managedModelsPath);
+
+		await store.write("one", { models: [model("one", "m1")], checkedAt: 100 });
+
+		expect(statSync(managedModelsPath).mode & 0o777).toBe(0o600);
+	});
+
 	it.skipIf(process.platform === "win32")("preserves the mode of an existing models file", async () => {
 		const managedModelsPath = join(sharedTempDir, "managed-mode.json");
 		writeFileSync(managedModelsPath, "{}");
@@ -125,6 +134,18 @@ describe("FileModelsStore", () => {
 		await expect(second).resolves.toMatchObject({ models: [{ id: "stored" }] });
 		expect(lockSpy).toHaveBeenCalledTimes(1);
 		expect(release).toHaveBeenCalledTimes(1);
+	});
+
+	it("reports an invalid external file and reloads again after it is corrected", async () => {
+		const path = join(sharedTempDir, "invalid-read.json");
+		const store = new FileModelsStore(path);
+		await store.write("one", { models: [model("one", "stored")] });
+		await expect(store.read("one")).resolves.toMatchObject({ models: [{ id: "stored" }] });
+		writeFileSync(path, "{invalid-json", "utf8");
+
+		await expect(store.read("one")).rejects.toThrow("Invalid JSON");
+		writeFileSync(path, JSON.stringify({ one: { models: [model("one", "corrected")] } }));
+		await expect(store.read("one")).resolves.toMatchObject({ models: [{ id: "corrected" }] });
 	});
 
 	it("cancels a catalog write waiting for a held file lock without writing later", async () => {

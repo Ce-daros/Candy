@@ -1,5 +1,5 @@
 import { getKeybindings } from "../keybindings.ts";
-import { moveSelection } from "../selection.ts";
+import { moveSelection, visibleWindow } from "../selection.ts";
 import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth } from "../utils.ts";
 
@@ -68,12 +68,12 @@ export class SelectList implements Component {
 		this.maxVisible = maxVisible;
 		this.theme = theme;
 		this.layout = layout;
+		this.selectedIndex = this.findSelectable(0, 1);
 	}
 
 	setFilter(filter: string): void {
 		this.filteredItems = this.items.filter((item) => item.value.toLowerCase().startsWith(filter.toLowerCase()));
-		// Reset selection when filter changes
-		this.selectedIndex = 0;
+		this.selectedIndex = this.findSelectable(0, 1);
 	}
 
 	setSelectedIndex(index: number): void {
@@ -157,7 +157,7 @@ export class SelectList implements Component {
 		if (itemIndex < startIndex || itemIndex >= endIndex) return undefined;
 
 		if (event.type === "press") {
-			if (this.filteredItems[itemIndex]?.selectable === false) return { handled: true };
+			if (!this.isSelectable(itemIndex)) return { handled: true };
 			this.mousePressedIndex = itemIndex;
 			if (this.selectedIndex !== itemIndex) {
 				this.selectedIndex = itemIndex;
@@ -168,7 +168,7 @@ export class SelectList implements Component {
 		if (event.type === "click") {
 			const clickedIndex = this.mousePressedIndex ?? itemIndex;
 			this.mousePressedIndex = undefined;
-			if (this.filteredItems[clickedIndex]?.selectable === false) return { handled: true };
+			if (!this.isSelectable(clickedIndex)) return { handled: true };
 			const changed = this.selectedIndex !== clickedIndex;
 			this.selectedIndex = clickedIndex;
 			if (changed) this.notifySelectionChange();
@@ -181,20 +181,25 @@ export class SelectList implements Component {
 
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
-		// Up arrow - wrap to bottom when at top
 		if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = this.findSelectable(moveSelection(this.selectedIndex, this.filteredItems.length, -1), -1);
+			this.selectedIndex = this.findSelectable(
+				moveSelection(this.selectedIndex, this.filteredItems.length, -1, true),
+				-1,
+				true,
+			);
 			this.notifySelectionChange();
-		}
-		// Down arrow - wrap to top when at bottom
-		else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = this.findSelectable(moveSelection(this.selectedIndex, this.filteredItems.length, 1), 1);
+		} else if (kb.matches(keyData, "tui.select.down")) {
+			this.selectedIndex = this.findSelectable(
+				moveSelection(this.selectedIndex, this.filteredItems.length, 1, true),
+				1,
+				true,
+			);
 			this.notifySelectionChange();
 		}
 		// Enter
 		else if (kb.matches(keyData, "tui.select.confirm")) {
 			const selectedItem = this.filteredItems[this.selectedIndex];
-			if (selectedItem && this.onSelect) {
+			if (this.isSelectable(this.selectedIndex) && selectedItem && this.onSelect) {
 				this.onSelect(selectedItem);
 			}
 		}
@@ -207,21 +212,24 @@ export class SelectList implements Component {
 	}
 
 	private getVisibleRange(): { startIndex: number; endIndex: number } {
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
-		);
-		return {
-			startIndex,
-			endIndex: Math.min(startIndex + this.maxVisible, this.filteredItems.length),
-		};
+		const { start, end } = visibleWindow(this.selectedIndex, this.filteredItems.length, this.maxVisible);
+		return { startIndex: start, endIndex: end };
 	}
 
-	private findSelectable(start: number, direction: 1 | -1): number {
-		for (let index = start; index >= 0 && index < this.filteredItems.length; index += direction) {
-			if (this.filteredItems[index]?.selectable !== false) return index;
+	private isSelectable(index: number): boolean {
+		const item = this.filteredItems[index];
+		return item !== undefined && !item.header && item.selectable !== false;
+	}
+
+	private findSelectable(start: number, direction: 1 | -1, wrap = false): number {
+		let index = start;
+		for (let visited = 0; visited < this.filteredItems.length; visited++) {
+			if (this.isSelectable(index)) return index;
+			const next = moveSelection(index, this.filteredItems.length, direction, wrap);
+			if (next === index) break;
+			index = next;
 		}
-		return this.selectedIndex;
+		return moveSelection(this.selectedIndex, this.filteredItems.length, 0);
 	}
 
 	private itemCheckbox(item: SelectItem): string {
@@ -353,14 +361,14 @@ export class SelectList implements Component {
 
 	private notifySelectionChange(): void {
 		const selectedItem = this.filteredItems[this.selectedIndex];
-		if (selectedItem && this.onSelectionChange) {
+		if (this.isSelectable(this.selectedIndex) && selectedItem && this.onSelectionChange) {
 			this.onSelectionChange(selectedItem);
 		}
 	}
 
 	getSelectedItem(): SelectItem | null {
 		const item = this.filteredItems[this.selectedIndex];
-		return item || null;
+		return this.isSelectable(this.selectedIndex) ? item : null;
 	}
 
 	getSelectedRow(): number {

@@ -39,11 +39,6 @@ const builtInToolRenderers: Record<ToolName, ToolRenderers> = {
 	ls: lsRenderers,
 };
 
-/** Renderers for every built-in tool, keyed by tool name. */
-export function createAllToolRenderers(): Record<ToolName, ToolRenderers> {
-	return builtInToolRenderers;
-}
-
 export function getBuiltInToolRenderers(toolName: string): ToolRenderers | undefined {
 	return Object.hasOwn(builtInToolRenderers, toolName) ? builtInToolRenderers[toolName as ToolName] : undefined;
 }

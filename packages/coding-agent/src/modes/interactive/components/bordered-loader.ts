@@ -1,25 +1,28 @@
 import { CancellableLoader, Container, Loader, Spacer, Text, type TUI } from "@candy/tui";
-import type { Theme } from "../theme/theme.ts";
+import type { Theme } from "../../../contracts/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 /** Loader wrapped with borders for extension UI */
 export class BorderedLoader extends Container {
-	private loader: CancellableLoader | Loader;
-	private cancellable: boolean;
-	private signalController?: AbortController;
+	private readonly loader: Loader;
+	private readonly cancellableLoader?: CancellableLoader;
+	readonly signal: AbortSignal;
 
-	constructor(tui: TUI, theme: Theme, message: string, options?: { cancellable?: boolean }) {
+	constructor(tui: TUI, theme: Pick<Theme, "fg">, message: string, options?: { cancellable?: boolean }) {
 		super();
-		this.cancellable = options?.cancellable ?? true;
-		if (this.cancellable) {
-			this.loader = new CancellableLoader(
+		const cancellable = options?.cancellable ?? true;
+		if (cancellable) {
+			const loader = new CancellableLoader(
 				tui,
 				(s) => theme.fg("accent", s),
 				(s) => theme.fg("muted", s),
 				message,
 			);
+			this.loader = loader;
+			this.cancellableLoader = loader;
+			this.signal = loader.signal;
 		} else {
-			this.signalController = new AbortController();
+			this.signal = new AbortController().signal;
 			this.loader = new Loader(
 				tui,
 				(s) => theme.fg("accent", s),
@@ -28,36 +31,23 @@ export class BorderedLoader extends Container {
 			);
 		}
 		this.addChild(this.loader);
-		if (this.cancellable) {
+		if (cancellable) {
 			this.addChild(new Spacer(1));
 			this.addChild(new Text(keyHint("tui.select.cancel", "cancel"), 1, 0));
 		}
 	}
 
-	get signal(): AbortSignal {
-		if (this.cancellable) {
-			return (this.loader as CancellableLoader).signal;
-		}
-		return this.signalController?.signal ?? new AbortController().signal;
-	}
-
 	set onAbort(fn: (() => void) | undefined) {
-		if (this.cancellable) {
-			(this.loader as CancellableLoader).onAbort = fn;
+		if (this.cancellableLoader) {
+			this.cancellableLoader.onAbort = fn;
 		}
 	}
 
 	handleInput(data: string): void {
-		if (this.cancellable) {
-			(this.loader as CancellableLoader).handleInput(data);
-		}
+		this.cancellableLoader?.handleInput(data);
 	}
 
 	dispose(): void {
-		if ("dispose" in this.loader && typeof this.loader.dispose === "function") {
-			this.loader.dispose();
-		} else if ("stop" in this.loader && typeof this.loader.stop === "function") {
-			this.loader.stop();
-		}
+		this.loader.stop();
 	}
 }

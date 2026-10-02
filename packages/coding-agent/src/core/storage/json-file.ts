@@ -8,7 +8,16 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import lockfile from "proper-lockfile";
@@ -87,8 +96,11 @@ function ensureFile(path: string, options: JsonFileOptions): void {
 
 function writeAtomically(path: string, content: string, mode?: number): void {
 	const temporaryPath = join(dirname(path), `.${randomUUID()}.tmp`);
+	const existingMode = process.platform === "win32" || !existsSync(path) ? undefined : statSync(path).mode & 0o7777;
 	try {
 		writeFileSync(temporaryPath, content, { encoding: "utf-8", mode });
+		// Apply the saved mode after creation so the process umask cannot narrow it.
+		if (existingMode !== undefined) chmodSync(temporaryPath, existingMode);
 		renameSync(temporaryPath, path);
 	} finally {
 		if (existsSync(temporaryPath)) unlinkSync(temporaryPath);

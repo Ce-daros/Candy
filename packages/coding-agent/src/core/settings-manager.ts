@@ -32,6 +32,12 @@ function isMergeableObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parseSettings(content: string): Settings {
+	const settings: unknown = JSON.parse(stripBom(content));
+	if (!isMergeableObject(settings)) throw new Error("Settings must be a JSON object");
+	return settings as Settings;
+}
+
 function deepMergeObjects(base: Record<string, unknown>, overrides: Record<string, unknown>): Record<string, unknown> {
 	const result = { ...base };
 
@@ -184,7 +190,7 @@ export class SettingsManager {
 	/** Create an in-memory SettingsManager (no file I/O) */
 	static inMemory(settings: Partial<Settings> = {}, options: SettingsManagerCreateOptions = {}): SettingsManager {
 		const storage = new InMemorySettingsStorage();
-		const initialSettings = SettingsManager.migrateSettings(structuredClone(settings) as Record<string, unknown>);
+		const initialSettings = structuredClone(settings);
 		storage.withLock("global", () => JSON.stringify(initialSettings, null, 2));
 		return SettingsManager.fromStorage(storage, options);
 	}
@@ -203,8 +209,7 @@ export class SettingsManager {
 		if (!content) {
 			return {};
 		}
-		const settings = JSON.parse(stripBom(content));
-		return SettingsManager.migrateSettings(settings);
+		return parseSettings(content);
 	}
 
 	private static tryLoadFromStorage(
@@ -217,71 +222,6 @@ export class SettingsManager {
 		} catch (error) {
 			return { settings: {}, error: error as Error };
 		}
-	}
-
-	/** Migrate old settings format to new format */
-	private static migrateSettings(settings: Record<string, unknown>): Settings {
-		delete settings.enabledModels;
-		delete settings.doubleEscapeAction;
-
-		// Migrate queueMode -> steeringMode
-		if ("queueMode" in settings && !("steeringMode" in settings)) {
-			settings.steeringMode = settings.queueMode;
-			delete settings.queueMode;
-		}
-
-		// Migrate legacy websockets boolean -> transport enum
-		if (!("transport" in settings) && typeof settings.websockets === "boolean") {
-			settings.transport = settings.websockets ? "websocket" : "sse";
-			delete settings.websockets;
-		}
-
-		// Migrate old skills object format to new array format
-		if (
-			"skills" in settings &&
-			typeof settings.skills === "object" &&
-			settings.skills !== null &&
-			!Array.isArray(settings.skills)
-		) {
-			const skillsSettings = settings.skills as {
-				enableSkillCommands?: boolean;
-				customDirectories?: unknown;
-			};
-			if (skillsSettings.enableSkillCommands !== undefined && settings.enableSkillCommands === undefined) {
-				settings.enableSkillCommands = skillsSettings.enableSkillCommands;
-			}
-			if (Array.isArray(skillsSettings.customDirectories) && skillsSettings.customDirectories.length > 0) {
-				settings.skills = skillsSettings.customDirectories;
-			} else {
-				delete settings.skills;
-			}
-		}
-
-		// Migrate retry.maxDelayMs -> retry.provider.maxRetryDelayMs
-		if (
-			"retry" in settings &&
-			typeof settings.retry === "object" &&
-			settings.retry !== null &&
-			!Array.isArray(settings.retry)
-		) {
-			const retrySettings = settings.retry as Record<string, unknown>;
-			const providerSettings =
-				typeof retrySettings.provider === "object" && retrySettings.provider !== null
-					? (retrySettings.provider as Record<string, unknown>)
-					: undefined;
-			if (
-				typeof retrySettings.maxDelayMs === "number" &&
-				(providerSettings?.maxRetryDelayMs === undefined || providerSettings?.maxRetryDelayMs === null)
-			) {
-				retrySettings.provider = {
-					...(providerSettings ?? {}),
-					maxRetryDelayMs: retrySettings.maxDelayMs,
-				};
-			}
-			delete retrySettings.maxDelayMs;
-		}
-
-		return settings as Settings;
 	}
 
 	getGlobalSettings(): Settings {
@@ -406,9 +346,7 @@ export class SettingsManager {
 		if (loadError) throw loadError;
 		let committed: Settings | undefined;
 		this.storage.withLock(scope, (current) => {
-			const disk = current
-				? SettingsManager.migrateSettings(JSON.parse(stripBom(current)) as Record<string, unknown>)
-				: {};
+			const disk = current ? parseSettings(current) : {};
 			committed = transform(disk);
 			return JSON.stringify(committed, null, 2);
 		});
@@ -581,10 +519,6 @@ export class SettingsManager {
 	}
 
 	async flush(): Promise<void> {
-		await this.commitTail;
-	}
-
-	async flushOrThrow(): Promise<void> {
 		await this.commitTail;
 	}
 

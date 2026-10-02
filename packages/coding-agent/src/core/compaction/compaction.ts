@@ -895,7 +895,7 @@ export async function compact(
 	summary += formatFileOperations(readFiles, modifiedFiles);
 
 	if (!firstKeptEntryId) {
-		throw new Error("First kept entry has no UUID - session may need migration");
+		throw new Error("First kept entry has no id");
 	}
 
 	return {

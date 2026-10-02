@@ -2,8 +2,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Container, type Terminal, Text, type TUI, TuiMainScreen } from "@candy/tui";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createEditToolDefinition } from "../src/core/tools/edit.ts";
+import * as editDiff from "../src/core/tools/edit-diff.ts";
 import { computeEditsDiff, type Edit } from "../src/core/tools/edit-diff.ts";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -74,7 +75,25 @@ describe("edit tool TUI rendering", () => {
 	});
 
 	afterEach(async () => {
+		vi.restoreAllMocks();
 		await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+	});
+
+	it("does not read a file for legacy top-level replacement arguments", () => {
+		const preview = vi.spyOn(editDiff, "computeEditsDiff");
+		const tui: TUI = new TuiMainScreen(new FakeTerminal());
+		const component = new ToolExecutionComponent(
+			"edit",
+			"legacy-edit",
+			{ path: "legacy.txt", oldText: "before", newText: "after" },
+			{},
+			{ ...createEditToolDefinition(process.cwd()), ...editRenderers },
+			tui,
+			process.cwd(),
+		);
+		component.setArgsComplete();
+		expect(component.render(80).join("\n")).toContain("legacy.txt");
+		expect(preview).not.toHaveBeenCalled();
 	});
 
 	it("renders the large diff in the call preview and does not full-redraw when the result settles", async () => {

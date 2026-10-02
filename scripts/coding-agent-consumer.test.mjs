@@ -3,7 +3,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { installCodingAgentConsumer, packReleasePackages, smokeTestCodingAgentConsumer } from "./coding-agent-consumer.mjs";
+import {
+	installCodingAgentConsumer,
+	packReleasePackages,
+	smokeTestCodingAgentConsumer,
+} from "./coding-agent-consumer.mjs";
 
 const codingAgentName = "@candy/coding-agent";
 
@@ -24,7 +28,7 @@ function createFixture(t, { importMissing = false, includeExperimental = false }
 	};
 	const files = {
 		"package.json": JSON.stringify(manifest),
-		"dist/index.js": `${importMissing ? 'import "@candy/missing";\n' : ""}export async function createAgentSessionRuntime() { let disposed = false; return { session: { prompt() {}, get isDisposed() { return disposed; } }, async dispose() { disposed = true; } }; }\n`,
+		"dist/index.js": `${importMissing ? 'import "@candy/missing";\n' : ""}export async function createAgentSessionRuntime() { let disposed = false; return { session: { execution: { prompt() {}, get isDisposed() { return disposed; } } }, async dispose() { disposed = true; } }; }\n`,
 		"dist/cli.js": 'console.log("1.0.0");',
 		"dist/bundle/cli.js": 'console.log(process.argv.includes("--version") ? "1.0.0" : "PUBLISHED_FAUX_REPLY_OK");',
 	};
@@ -33,7 +37,10 @@ function createFixture(t, { importMissing = false, includeExperimental = false }
 		mkdirSync(dirname(join(packageDirectory, path)), { recursive: true });
 		writeFileSync(join(packageDirectory, path), content);
 	}
-	const tarballs = packReleasePackages([{ directory: packageDirectory, name: codingAgentName }], join(root, "tarballs"));
+	const tarballs = packReleasePackages(
+		[{ directory: packageDirectory, name: codingAgentName }],
+		join(root, "tarballs"),
+	);
 	const directory = join(root, "consumer");
 	installCodingAgentConsumer(directory, tarballs);
 	return directory;

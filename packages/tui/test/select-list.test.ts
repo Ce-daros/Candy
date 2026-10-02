@@ -190,7 +190,7 @@ describe("SelectList", () => {
 		assert.equal(list.getSelectedItem()?.value, "second");
 	});
 
-	it("stops keyboard and wheel navigation at selectable boundaries", () => {
+	it("wraps keyboard navigation across disabled rows while the wheel stops at boundaries", () => {
 		const list = new SelectList(
 			[
 				{ value: "group", label: "Connection", selectable: false },
@@ -203,9 +203,9 @@ describe("SelectList", () => {
 		);
 		list.setSelectedIndex(1);
 		list.handleInput("\x1b[A");
-		assert.equal(list.getSelectedItem()?.value, "first");
-		list.handleInput("\x1b[B");
 		assert.equal(list.getSelectedItem()?.value, "second");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.value, "first");
 		list.handleInput("\x1b[B");
 		assert.equal(list.getSelectedItem()?.value, "second");
 
@@ -225,6 +225,53 @@ describe("SelectList", () => {
 		};
 		list.handleMouse(wheel);
 		assert.equal(list.getSelectedItem()?.value, "second");
+	});
+
+	it("skips headers and reports each keyboard selection before confirmation", () => {
+		const list = new SelectList(
+			[
+				{ value: "heading", label: "Heading", header: true },
+				{ value: "first", label: "First" },
+				{ value: "disabled", label: "Disabled", selectable: false },
+				{ value: "last", label: "Last" },
+				{ value: "footer", label: "Footer", header: true },
+			],
+			3,
+			testTheme,
+		);
+		const events: string[] = [];
+		list.onSelectionChange = (item) => events.push(`change:${item.value}`);
+		list.onSelect = (item) => events.push(`select:${item.value}`);
+		assert.equal(list.getSelectedItem()?.value, "first");
+		list.handleInput("\x1b[A");
+		assert.equal(list.getSelectedItem()?.value, "last");
+		assert.equal(list.getSelectedRow(), 1);
+		list.handleInput("\x1b[B");
+		list.handleInput("\r");
+		assert.deepEqual(events, ["change:last", "change:first", "select:first"]);
+	});
+
+	it("handles empty, single and entirely unselectable results", () => {
+		for (const items of [
+			[],
+			[{ value: "header", label: "Header", header: true }],
+			[{ value: "disabled", label: "Disabled", selectable: false }],
+		]) {
+			const list = new SelectList(items, 3, testTheme);
+			let calls = 0;
+			list.onSelectionChange = () => calls++;
+			list.onSelect = () => calls++;
+			for (const key of ["\x1b[A", "\x1b[B", "\r"]) list.handleInput(key);
+			assert.equal(list.getSelectedItem(), null);
+			assert.equal(calls, 0);
+			list.render(80);
+		}
+		const single = new SelectList([{ value: "one", label: "One" }], 3, testTheme);
+		const changes: string[] = [];
+		single.onSelectionChange = (item) => changes.push(item.value);
+		single.handleInput("\x1b[A");
+		single.handleInput("\x1b[B");
+		assert.deepEqual(changes, ["one", "one"]);
 	});
 
 	it("renders headers flush-left while selectable items keep a two-space indent", () => {

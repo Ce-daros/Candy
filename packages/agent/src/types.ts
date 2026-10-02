@@ -157,7 +157,7 @@ export type AgentTurnDecision = { action: "continue" } | { action: "end" };
 export type FinishTurn = (
 	turn: AgentTurnContext,
 	signal?: AbortSignal,
-) => AgentTurnDecision | undefined | Promise<AgentTurnDecision | undefined | undefined>;
+) => AgentTurnDecision | undefined | Promise<AgentTurnDecision | undefined>;
 
 /** Replacement runtime state used by the agent loop before starting another provider request. */
 export interface AgentLoopTurnUpdate {
@@ -188,7 +188,7 @@ export type AgentRequestUpdate = Omit<AgentLoopTurnUpdate, "messages">;
 export type PrepareRequest = (
 	request: PrepareRequestContext,
 	signal?: AbortSignal,
-) => AgentRequestUpdate | undefined | Promise<AgentRequestUpdate | undefined | undefined>;
+) => AgentRequestUpdate | undefined | Promise<AgentRequestUpdate | undefined>;
 
 export interface PrepareNextTurnContext extends AgentTurnContext {}
 

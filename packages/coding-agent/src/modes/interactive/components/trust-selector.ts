@@ -187,11 +187,11 @@ export class TrustSelectorComponent extends Container {
 	handleInput(keyData: string): void {
 		switch (readListAction(keyData, { vim: true })) {
 			case "up":
-				this.selectedIndex = moveSelection(this.selectedIndex, this.trustOptions.length, -1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.trustOptions.length, -1, true);
 				this.updateList();
 				break;
 			case "down":
-				this.selectedIndex = moveSelection(this.selectedIndex, this.trustOptions.length, 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.trustOptions.length, 1, true);
 				this.updateList();
 				break;
 			case "confirm": {

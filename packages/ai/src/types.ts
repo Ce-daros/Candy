@@ -1,4 +1,3 @@
-import type { TelemetryContext } from "@candy/telemetry";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
 import type { GoogleOptions } from "./api/google-generative-ai.ts";
 import type { GoogleVertexOptions } from "./api/google-vertex.ts";
@@ -120,8 +119,6 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 	signal?: AbortSignal;
 	/** Opaque runtime identity used to scope provider-owned resources. */
 	resourceOwner?: object;
-	/** Explicit parent context for telemetry produced by this logical request. */
-	telemetryContext?: TelemetryContext;
 	apiKey?: string;
 	/**
 	 * Optional fetch implementation for provider HTTP requests.

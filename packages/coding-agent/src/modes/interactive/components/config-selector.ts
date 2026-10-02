@@ -331,15 +331,15 @@ class ResourceList implements Component, Focusable {
 		if (this.selectedIndex < 0) this.selectedIndex = 0;
 	}
 
-	private findNextItem(fromIndex: number, direction: 1 | -1): number {
-		let idx = moveSelection(fromIndex, this.filteredItems.length, direction);
-		while (idx !== fromIndex) {
+	private findNextItem(fromIndex: number, direction: 1 | -1, wrap = false): number {
+		let idx = fromIndex;
+		for (let visited = 0; visited < this.filteredItems.length; visited++) {
+			const next = moveSelection(idx, this.filteredItems.length, direction, wrap);
+			if (next === idx) return fromIndex;
+			idx = next;
 			if (this.filteredItems[idx].type === "item") {
 				return idx;
 			}
-			const next = moveSelection(idx, this.filteredItems.length, direction);
-			if (next === idx) return fromIndex;
-			idx = next;
 		}
 		return fromIndex;
 	}
@@ -599,7 +599,7 @@ class ResourceList implements Component, Focusable {
 		}
 		if (this.region === "categories" && (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down"))) {
 			const delta = kb.matches(data, "tui.select.down") ? 1 : -1;
-			this.selectedTypeIndex = moveSelection(this.selectedTypeIndex, this.resourceTypes.length, delta);
+			this.selectedTypeIndex = moveSelection(this.selectedTypeIndex, this.resourceTypes.length, delta, true);
 			this.buildFlatList();
 			this.filterItems(this.searchInput.getValue());
 			return;
@@ -610,11 +610,11 @@ class ResourceList implements Component, Focusable {
 		}
 
 		if (kb.matches(data, "tui.select.up")) {
-			this.selectedIndex = this.findNextItem(this.selectedIndex, -1);
+			this.selectedIndex = this.findNextItem(this.selectedIndex, -1, true);
 			return;
 		}
 		if (kb.matches(data, "tui.select.down")) {
-			this.selectedIndex = this.findNextItem(this.selectedIndex, 1);
+			this.selectedIndex = this.findNextItem(this.selectedIndex, 1, true);
 			return;
 		}
 		if (kb.matches(data, "tui.select.pageUp")) {

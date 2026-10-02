@@ -2,12 +2,11 @@ import { uuidv7 } from "@candy/ai";
 import { randomUUID } from "crypto";
 import { parseSessionEntryLine } from "./session-jsonl.ts";
 
-import type {
-	CompactionEntry,
-	FileEntry,
-	SessionEntry,
-	SessionHeader,
-	SessionMessageEntry,
+import {
+	CURRENT_SESSION_VERSION,
+	type FileEntry,
+	type SessionEntry,
+	type SessionMessageEntry,
 } from "./session-records.ts";
 export function createSessionId(): string {
 	return uuidv7();
@@ -29,118 +28,6 @@ export function generateId(byId: { has(id: string): boolean }): string {
 	}
 	// Fallback to full UUID if somehow we have collisions
 	return randomUUID();
-}
-
-/** Migrate v1 → v2: add id/parentId tree structure. Mutates in place. */
-function migrateV1ToV2(entries: FileEntry[]): void {
-	const ids = new Set<string>();
-	let prevId: string | null = null;
-
-	for (const entry of entries) {
-		if (entry.type === "session") {
-			entry.version = 2;
-			continue;
-		}
-
-		entry.id = generateId(ids);
-		entry.parentId = prevId;
-		prevId = entry.id;
-
-		// Convert firstKeptEntryIndex to firstKeptEntryId for compaction
-		if (entry.type === "compaction") {
-			const comp = entry as CompactionEntry & { firstKeptEntryIndex?: number };
-			if (typeof comp.firstKeptEntryIndex === "number") {
-				const targetEntry = entries[comp.firstKeptEntryIndex];
-				if (targetEntry && targetEntry.type !== "session") {
-					comp.firstKeptEntryId = targetEntry.id;
-				}
-				delete comp.firstKeptEntryIndex;
-			}
-		}
-	}
-}
-
-/** Migrate v2 → v3: rename hookMessage role to custom. Mutates in place. */
-function migrateV2ToV3(entries: FileEntry[]): void {
-	for (const entry of entries) {
-		if (entry.type === "session") {
-			entry.version = 3;
-			continue;
-		}
-
-		// Update message entries with hookMessage role
-		if (entry.type === "message") {
-			const msgEntry = entry as SessionMessageEntry;
-			if (msgEntry.message && (msgEntry.message as { role: string }).role === "hookMessage") {
-				(msgEntry.message as { role: string }).role = "custom";
-			}
-		}
-	}
-}
-
-function migrateUsageTotal(usage: unknown): boolean {
-	if (!isRecord(usage) || usage.totalTokens !== undefined) return false;
-	const parts = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite];
-	if (!parts.every((part) => typeof part === "number" && Number.isFinite(part))) return false;
-	usage.totalTokens = parts.reduce<number>((sum, part) => sum + (part as number), 0);
-	return true;
-}
-
-/**
- * Run all necessary migrations to bring entries to current version.
- * Mutates entries in place. Returns true if any migration was applied.
- */
-export function migrateToCurrentVersion(entries: FileEntry[]): boolean {
-	const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
-	const version = header?.version ?? 1;
-	let migrated = false;
-
-	if (version < 2) {
-		migrateV1ToV2(entries);
-		migrated = true;
-	}
-	if (version < 3) {
-		migrateV2ToV3(entries);
-		migrated = true;
-	}
-	for (const entry of entries) {
-		if (entry.type === "message") {
-			const message = entry.message as unknown as Record<string, unknown>;
-			if (!isRecord(message)) throw new Error(`Session message ${entry.id} has no valid message object`);
-			if (migrateUsageTotal(message.usage)) migrated = true;
-			if (
-				message.content == null &&
-				message.role !== "bashExecution" &&
-				message.role !== "branchSummary" &&
-				message.role !== "compactionSummary"
-			) {
-				if (message.role === "system") message.content = "";
-				else if (
-					message.role === "user" ||
-					message.role === "assistant" ||
-					message.role === "toolResult" ||
-					message.role === "custom"
-				) {
-					message.content = [];
-				} else {
-					throw new Error(`Session entry ${entry.id} has unsupported message role "${String(message.role)}"`);
-				}
-				migrated = true;
-			}
-		}
-		if (
-			(entry.type === "usage" || entry.type === "compaction" || entry.type === "branch_summary") &&
-			migrateUsageTotal(entry.usage)
-		) {
-			migrated = true;
-		}
-		if (entry.type === "custom_message" && entry.content == null) {
-			entry.content = [];
-			migrated = true;
-		}
-	}
-
-	return migrated;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -211,7 +98,7 @@ function validateStoredMessage(entry: SessionMessageEntry): void {
 		throw new Error(`Session message ${entry.id} has unsupported message role "${role}"`);
 	}
 	if (message.content === null || message.content === undefined) {
-		throw new Error(`Session message ${entry.id} (${role}) has no content after history migration`);
+		throw new Error(`Session message ${entry.id} (${role}) has no content`);
 	}
 	if (typeof message.content === "string" && !["system", "user", "custom"].includes(role)) {
 		throw new Error(`Session message ${entry.id} (${role}) requires content blocks`);
@@ -456,9 +343,12 @@ export function validateSessionEntries(entries: FileEntry[]): void {
 		header.id.length === 0 ||
 		typeof header.cwd !== "string" ||
 		typeof header.timestamp !== "string" ||
-		(header.version !== undefined && typeof header.version !== "number")
+		typeof header.version !== "number"
 	)
 		throw new Error("Session history must begin with a valid session header");
+	if (header.version !== CURRENT_SESSION_VERSION) {
+		throw new Error(`Unsupported session version ${header.version}; expected ${CURRENT_SESSION_VERSION}`);
+	}
 	const byId = new Map<string, SessionEntry>();
 	for (const [index, entry] of entries.entries()) {
 		if (index === 0) continue;
@@ -475,11 +365,6 @@ export function validateSessionEntries(entries: FileEntry[]): void {
 	for (const entry of byId.values()) validateEntryReferences(entry, has, get);
 }
 
-/** Exported for testing */
-export function migrateSessionEntries(entries: FileEntry[]): void {
-	migrateToCurrentVersion(entries);
-}
-
 /** Exported for compaction.test.ts */
 export function parseSessionEntries(content: string): FileEntry[] {
 	const entries: FileEntry[] = [];
@@ -489,7 +374,6 @@ export function parseSessionEntries(content: string): FileEntry[] {
 		const entry = parseSessionEntryLine(line, "session content", index + 1);
 		if (entry) entries.push(entry);
 	}
-	migrateToCurrentVersion(entries);
 	validateSessionEntries(entries);
 
 	return entries;

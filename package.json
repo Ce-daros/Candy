@@ -8,16 +8,16 @@
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "npm --prefix packages/tui run build && npm --prefix packages/telemetry run build && npm --prefix packages/ai run build && npm --prefix packages/agent run build && npm --prefix packages/coding-agent run build",
-		"check": "biome check --error-on-warnings . && npm run check:pinned-deps && npm run check:runtime-deps && npm run check:ts-imports && npm run check:entry-graphs && npm run check:architecture && npm run check:shrinkwrap && tsc --noEmit",
+		"build": "npm --prefix packages/tui run build && npm --prefix packages/ai run build && npm --prefix packages/agent run build && npm --prefix packages/coding-agent run build",
+		"check": "biome check --error-on-warnings . && npm run check:pinned-deps && npm run check:runtime-deps && npm run check:ts-imports && npm run check:source-graphs && npm run check:shrinkwrap && tsc --noEmit",
 		"format": "biome format --write .",
 		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",
 		"check:runtime-deps": "node scripts/check-runtime-deps.mjs",
 		"check:package-install": "node scripts/coding-agent-consumer.mjs",
 		"check:shrinkwrap": "node scripts/generate-coding-agent-shrinkwrap.mjs --check",
 		"check:ts-imports": "node scripts/check-ts-relative-imports.mjs",
-		"check:entry-graphs": "node scripts/check-entry-graphs.mjs",
-		"check:architecture": "node scripts/check-architecture-boundaries.mjs",
+		"check:entry-graphs": "node scripts/check-source-graphs.mjs --rule entry-graphs",
+		"check:architecture": "node scripts/check-source-graphs.mjs --rule architecture",
 		"generate:models": "npm --prefix packages/ai run generate-models",
 		"hydrate:model-data": "npm --prefix packages/ai run hydrate-model-data",
 		"check:model-data": "npm --prefix packages/ai run check:model-data",
@@ -27,7 +27,8 @@
 		"test": "npm run test:scripts && npm run test --workspaces --if-present",
 		"test:e2e": "npm --prefix packages/ai run test:e2e",
 		"test:scripts": "node --test scripts/*.test.mjs",
-		"prepare": "husky"
+		"prepare": "husky",
+		"check:source-graphs": "node scripts/check-source-graphs.mjs"
 	},
 	"devDependencies": {
 		"@anthropic-ai/sandbox-runtime": "0.0.26",
@@ -35,8 +36,8 @@
 		"@types/node": "22.19.19",
 		"esbuild": "0.28.2",
 		"husky": "9.1.7",
-		"shx": "0.4.0",
-		"typescript": "7.0.2"
+		"typescript": "7.0.2",
+		"vitest": "4.1.9"
 	},
 	"engines": {
 		"node": ">=22.19.0"

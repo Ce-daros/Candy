@@ -1,4 +1,6 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
+
+import baseConfig from "../../vitest.base.ts";
 
 /**
  * Live provider verification. These tests call real provider endpoints with
@@ -7,13 +9,13 @@ import { defineConfig } from "vitest/config";
  * Run explicitly with `npm run test:e2e`. Providers without credentials stay
  * skipped. This config is not used by `npm test` and must not be wired into CI.
  */
-export default defineConfig({
-	test: {
-		globals: true,
-		environment: "node",
-		include: ["test/e2e/**/*.test.ts"],
-		testTimeout: 180000,
-		hookTimeout: 60000,
-		reporters: ["dot"],
-	},
-});
+export default mergeConfig(
+	baseConfig,
+	defineConfig({
+		test: {
+			include: ["test/e2e/**/*.test.ts"],
+			testTimeout: 180000,
+			hookTimeout: 60000,
+		},
+	}),
+);

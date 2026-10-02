@@ -146,11 +146,21 @@ export class ExtensionSelectorComponent extends Container {
 		}
 		switch (readListAction(keyData, { horizontal: this.horizontal })) {
 			case "up":
-				this.selectedIndex = moveSelection(this.selectedIndex, this.options.length, -1);
+				this.selectedIndex = moveSelection(
+					this.selectedIndex,
+					this.options.length,
+					-1,
+					getKeybindings().matches(keyData, "tui.select.up"),
+				);
 				this.updateList();
 				break;
 			case "down":
-				this.selectedIndex = moveSelection(this.selectedIndex, this.options.length, 1);
+				this.selectedIndex = moveSelection(
+					this.selectedIndex,
+					this.options.length,
+					1,
+					getKeybindings().matches(keyData, "tui.select.down"),
+				);
 				this.updateList();
 				break;
 			case "confirm": {

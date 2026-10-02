@@ -4,14 +4,13 @@ import { getBuiltinModel as getModel } from "@candy/ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { compact, DEFAULT_COMPACTION_SETTINGS, prepareCompaction } from "../../src/core/compaction/index.ts";
 import type { CompactionEntry, SessionEntry } from "../../src/core/session-history.ts";
-import { buildSessionContext, migrateSessionEntries, parseSessionEntries } from "../../src/core/session-history.ts";
+import { buildSessionContext, parseSessionEntries } from "../../src/core/session-history.ts";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
 function loadLargeSessionEntries(): SessionEntry[] {
 	const sessionPath = join(__dirname, "../fixtures/large-session.jsonl");
 	const entries = parseSessionEntries(readFileSync(sessionPath, "utf-8"));
-	migrateSessionEntries(entries);
 	return entries.filter((entry): entry is SessionEntry => entry.type !== "session");
 }
 

@@ -202,26 +202,6 @@ describe("SessionHistory.inMemory with preloaded entries", () => {
 		expect(session.getHeader()!.cwd).toBe("/stored");
 	});
 
-	it("migrates entries restored with an older header", () => {
-		const entries: FileEntry[] = [
-			{ type: "session", version: 2, id: "v2-session", timestamp: "2026-01-01T00:00:00Z", cwd: "/project" },
-			{
-				type: "message",
-				id: "abc12345",
-				parentId: null,
-				timestamp: "2026-01-01T00:00:01Z",
-				message: { role: "hookMessage", customType: "legacy", content: "from a hook", display: true, timestamp: 1 },
-			} as unknown as SessionMessageEntry,
-		];
-
-		const session = SessionHistory.inMemory("/project", undefined, entries);
-		const restored = session.getEntries()[0] as SessionMessageEntry;
-
-		expect(session.getHeader()!.version).toBe(3);
-		expect(restored.message.role).toBe("custom");
-		expect(restored.id).toBe("abc12345");
-	});
-
 	it("rejects unsupported roles in current headerless entries", () => {
 		const entries: SessionEntry[] = [
 			{

@@ -1,6 +1,6 @@
 import { fuzzyFilter } from "../fuzzy.ts";
 import { getKeybindings } from "../keybindings.ts";
-import { moveSelection } from "../selection.ts";
+import { moveSelection, visibleWindow } from "../selection.ts";
 import { type Component, type Focusable, isFocusable, type TuiMouseEvent, type TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 import { Input } from "./input.ts";
@@ -282,9 +282,9 @@ export class SettingsList implements Component, Focusable {
 		const kb = getKeybindings();
 		const displayItems = this.getDisplayItems();
 		if (kb.matches(data, "tui.select.up")) {
-			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, -1);
+			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, -1, true);
 		} else if (kb.matches(data, "tui.select.down")) {
-			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, 1);
+			this.selectedIndex = moveSelection(this.selectedIndex, displayItems.length, 1, true);
 		} else if (
 			kb.matches(data, "tui.select.confirm") ||
 			(data === " " && (!this.searchEnabled || this.searchInput?.getValue().length === 0))
@@ -303,11 +303,8 @@ export class SettingsList implements Component, Focusable {
 	}
 
 	private getVisibleRange(displayItems: readonly SettingItem[]): { startIndex: number; endIndex: number } {
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), displayItems.length - this.maxVisible),
-		);
-		return { startIndex, endIndex: Math.min(startIndex + this.maxVisible, displayItems.length) };
+		const { start, end } = visibleWindow(this.selectedIndex, displayItems.length, this.maxVisible);
+		return { startIndex: start, endIndex: end };
 	}
 
 	private activateItem(): void {

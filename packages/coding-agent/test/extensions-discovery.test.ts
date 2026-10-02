@@ -121,24 +121,6 @@ describe("extensions discovery", () => {
 		expect(result.warnings).toEqual([]);
 	});
 
-	it("keeps the type-only pi-ai OAuth compatibility barrel resolvable", async () => {
-		fs.writeFileSync(
-			path.join(extensionsDir, "oauth-import.ts"),
-			`
-				import * as oauth from "@candy/ai/oauth";
-				void oauth;
-				export default function(candy) {
-					candy.registerCommand("test", { handler: async () => {} });
-				}
-			`,
-		);
-
-		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-
-		expect(result.errors).toEqual([]);
-		expect(result.extensions).toHaveLength(1);
-	});
-
 	it("discovers direct .js files in extensions/", async () => {
 		fs.writeFileSync(path.join(extensionsDir, "foo.js"), extensionCode);
 

@@ -4,7 +4,11 @@
 
 ### Breaking Changes
 
-- Removed `doubleEscapeAction` and the `app.powerbar.next`, `app.powerbar.up`, and `app.powerbar.down` bindings. Double Escape in an empty editor always opens Actions; Tree and Fork are selected there. Old `doubleEscapeAction` values are removed on the next settings save. Remove retired powerbar bindings from custom keybinding files.
+- Session history accepts current v3 records only. Removed historical settings, credentials, keybinding, session and resource-directory migrations, global npm directory fallback, and startup migration notices.
+- Removed `SettingsManager.flushOrThrow()`, the public `SessionHistory._persist()` method, `migrateSessionEntries`, the old OAuth compatibility entrypoint, and unused `RenderDiffOptions`. `renderDiff()` takes only the diff text.
+- The edit tool accepts replacements under `edits`; legacy top-level `oldText` and `newText` arguments are no longer converted. String-encoded and single-object `edits` from models still normalize to an array.
+- Vertical choice lists wrap on single-step up/down navigation, including filtered session, tree, resource and message lists. Horizontal selection, paging, wheel input and detail scrolling retain their existing boundaries.
+- Removed `doubleEscapeAction` and the `app.powerbar.next`, `app.powerbar.up`, and `app.powerbar.down` bindings. Double Escape in an empty editor always opens Actions; Tree and Fork are selected there.
 
 - Runtime disposal is awaitable and settles model-catalog, credential, shell, execution, and retry work. Internally created `ModelRuntime` instances belong to runtime services; injected instances remain caller-owned.
 - The SDK session facade is split into `execution`, `history`, `selection`, and `resources`. Move run operations to `session.execution`, committed records and session metadata to `session.history`, model and thinking state to `session.selection`, and discovered resources to `session.resources`. Mutable `agent` internals and per-setting forwarding methods are no longer exposed.
@@ -28,7 +32,7 @@
 - `AgentSession.clearQueue()` and RPC `clear_queue` return queued text with its image attachments so clients can restore complete input. Resource commands must be submitted explicitly; text beginning with `/` or `skill:` remains ordinary text.
 - Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package publishes a headless SDK root, separate UI and RPC subpaths, the extension-host module map, and the RPC launcher.
 - First-time setup now runs for the official distribution whenever the default agent directory has no settings file; `CANDY_EXPERIMENTAL` no longer gates setup.
-- Session reads report malformed JSONL records with their file and line number and do not modify files. Legacy records and missing final newlines are rewritten atomically on the next save.
+- Session reads report malformed JSONL records with their file and line number and do not modify files. Files with missing final newlines are rewritten atomically on the next save.
 - Removed pi.dev self-update, version checks, install-report pings, and the remote catalog overlay. Upgrade with your package manager. Model refresh uses bundled data and locally configured providers.
 - `candy update` no longer updates candy itself. It handles `--extensions`, `--extension <source>`, and `--models` only; running it without a target, `--self`, `self`, or `candy` prints the manual upgrade instruction, and `--all`/`--force` were removed.
 - Removed the `CANDY_SKIP_VERSION_CHECK` and `CANDY_TELEMETRY` environment variables. The `enableInstallTelemetry` setting now only controls provider attribution headers.
@@ -61,6 +65,9 @@
 
 ### Changed
 
+- Credential and model stores share revision caching and cancellable file reloads. Session replacement and exit share the same ordered cleanup path and retain their existing error reporting.
+- The UI entrypoint exports components directly. Removed unused single-edit diff and renderer-map wrappers; edit previews use the current `edits` input and no longer retain redundant error state.
+
 - Merged History and Agent into Actions, with Current Model and Sources entries. Ctrl+L only selects models; Up, Down, and Tab have no action there. Thinking-cycle shortcuts work during model preview. Returning from Sources applies edited model scope before restoring Actions; failures keep Sources open for retry.
 
 - Opening another panel and returning between panels replay the same frame expansion and content reveal used when opening Actions. Rename, parameter editing, filtering, and other changes within the same panel update immediately. Startup pages share the same entrance timing and reveal stages. Thinking borders have stronger effort-dependent brightness and wider working trails, with visible idle breathing for active effort levels.
@@ -83,6 +90,8 @@
 
 ### Fixed
 
+- Atomic JSON saves preserve existing POSIX file permissions, including when the process uses a restrictive umask. New credential and model-store files remain owner-only.
+
 - Fixed missing transitions when entering and returning from open panels, including History session details and nested Agent, model, configuration, and login pages.
 - Fixed History rename shifting other rows' descriptions, duplicate input cursors, and focus loss in settings and resource selectors.
 - Closing panels render saved frames rather than disposed components; rapid navigation cancels obsolete completion callbacks. Session rename reports save failures and ignores completion after cancellation or disposal. Empty tree and fork selectors remain open until cancelled.
@@ -90,7 +99,7 @@
 - Home tips keep their dim text color after highlighted shortcuts; nested theme colors and backgrounds restore the enclosing style throughout the UI.
 - Added `terminal.images: "sixel"` so Windows Terminal can render the original home logo when `WT_SESSION` and `WT_PROFILE_ID` are absent.
 - Migrated the project's prompt URL widget to the current history and plain-text widget APIs; startup and session reload restore links from the active branch without accessing removed extension APIs.
-- In-app changelog links, the extension migration guide, the extensions documentation link, and theme `$schema` URLs now resolve to this repository instead of the upstream project. Absolute historical upstream links are left untouched, so old entries keep pointing at the commits and issues they describe.
+- In-app changelog links and theme `$schema` URLs resolve to this repository instead of the upstream project. Historical upstream links keep pointing at the commits and issues they describe.
 - Resource filter patterns written by the config selector (`+`/`-` entries in settings package extensions/skills/prompts/themes arrays) now use `/` separators on Windows, so project settings stay portable across operating systems; previously stored backslash entries keep matching and are replaced on the next toggle.
 - Render the home and first-time setup logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals. Removed character-logo rendering and sprite generation; hide the logo when Sixel is unavailable or the complete image cannot fit the available width and height.
 - Project TPS statistics are hidden by default, expand when clicking a completed reply’s star, and remain available after session reload.

@@ -11,6 +11,23 @@ const flush = async () => {
 };
 
 describe("CommandPanel", () => {
+	it("wraps command selection across group headers before executing", async () => {
+		const first = vi.fn(async () => {});
+		const last = vi.fn(async () => {});
+		const panel = new CommandPanel(
+			[
+				{ id: "first", name: "First", group: "Start", argumentMode: "none", execute: first },
+				{ id: "last", name: "Last", group: "End", argumentMode: "none", execute: last },
+			],
+			{ onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		panel.handleInput("\x1b[A");
+		panel.handleInput("\r");
+		await flush();
+		expect(last).toHaveBeenCalledOnce();
+		expect(first).not.toHaveBeenCalled();
+		panel.dispose();
+	});
 	it.each([24, 40, 76, 116])("keeps other descriptions fixed while renaming at width %s", (width) => {
 		const panel = new CommandPanel(
 			[

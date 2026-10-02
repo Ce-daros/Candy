@@ -6,7 +6,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { workspacePackages } from "./lib/workspace-paths.mjs";
+import { workspaceSourceAliases } from "./lib/workspace-paths.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = join(root, "node_modules", ".cache");
@@ -29,29 +29,14 @@ for (const directory of [isolatedHome, isolatedWorkspace, isolatedTemp]) mkdirSy
 mkdirSync(join(isolatedWorkspace, ".git"));
 mkdirSync(join(isolatedTemp, ".git"));
 const packageDir = join(root, "packages", "coding-agent");
-const workspaceSources = workspacePackages();
-const source = (name, file) => {
-	const sourceRoot = workspaceSources.get(name);
-	if (!sourceRoot) throw new Error(`Unknown workspace package ${name}`);
-	return join(root, sourceRoot, file);
-};
-const aliases = new Map([
-	["@candy/telemetry", source("@candy/telemetry", "index.ts")],
-	["@candy/ai", source("@candy/ai", "index.ts")],
-	["@candy/ai/oauth", source("@candy/ai", "oauth.ts")],
-	["@candy/agent-core", source("@candy/agent-core", "index.ts")],
-	["@candy/agent-core/node", source("@candy/agent-core", "node.ts")],
-	["@candy/tui", source("@candy/tui", "index.ts")],
-]);
+const aliases = workspaceSourceAliases();
 
 const aliasesPlugin = {
 	name: "workspace-source-aliases",
 	setup(builder) {
 		builder.onResolve({ filter: /^@candy\// }, ({ path }) => {
-			const exact = aliases.get(path);
-			if (exact) return { path: exact };
-			const aiSubpath = /^@candy\/ai\/(api|providers|utils)\/(.+)$/.exec(path);
-			if (aiSubpath) return { path: source("@candy/ai", `${aiSubpath[1]}/${aiSubpath[2]}.ts`) };
+			const alias = aliases.find(({ find }) => find.test(path));
+			if (alias) return { path: path.replace(alias.find, alias.replacement) };
 			throw new Error(`Missing smoke alias for ${path}`);
 		});
 	},
@@ -68,7 +53,9 @@ try {
 		target: "node22.19",
 		packages: "external",
 		plugins: [aliasesPlugin],
-		banner: { js: 'import { createRequire as __candyCreateRequire } from "node:module"; const require = __candyCreateRequire(import.meta.url);' },
+		banner: {
+			js: 'import { createRequire as __candyCreateRequire } from "node:module"; const require = __candyCreateRequire(import.meta.url);',
+		},
 		logLevel: "error",
 	});
 	const childEnv = { ...process.env };

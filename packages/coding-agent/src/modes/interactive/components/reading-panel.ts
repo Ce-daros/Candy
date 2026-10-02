@@ -208,7 +208,13 @@ export class ReadingPanelComponent implements Focusable {
 					: kb.matches(data, "tui.select.pageUp")
 						? -this.visibleRows
 						: this.visibleRows;
-			if (this.rows) this.selectedIndex = moveSelection(this.selectedIndex, this.filteredRows.length, delta);
+			if (this.rows)
+				this.selectedIndex = moveSelection(
+					this.selectedIndex,
+					this.filteredRows.length,
+					delta,
+					kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down"),
+				);
 			else this.offset = moveViewport(this.offset, this.markdownLineCount, this.visibleRows, delta);
 			return;
 		}

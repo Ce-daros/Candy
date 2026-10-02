@@ -98,7 +98,7 @@ export class FirstTimeSetupComponent extends Container {
 	}
 
 	private moveSelection(delta: number): void {
-		const next = moveSelection(this.themeIndex, THEME_OPTIONS.length, delta);
+		const next = moveSelection(this.themeIndex, THEME_OPTIONS.length, delta, true);
 		if (next !== this.themeIndex) {
 			this.themeIndex = next;
 			this.options.onThemePreview(THEME_OPTIONS[this.themeIndex].value);

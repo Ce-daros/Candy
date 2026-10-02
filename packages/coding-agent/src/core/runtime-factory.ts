@@ -1,6 +1,5 @@
 import * as agentCore from "@candy/agent-core";
 import * as ai from "@candy/ai";
-import * as oauth from "@candy/ai/oauth";
 import * as providers from "@candy/ai/providers/all";
 import * as typebox from "typebox";
 import * as typeboxCompile from "typebox/compile";
@@ -159,7 +158,6 @@ export async function createAgentSessionRuntime(
 		"typebox/value": typeboxValue,
 		"@candy/agent-core": agentCore,
 		"@candy/ai": ai,
-		"@candy/ai/oauth": oauth,
 		"@candy/ai/providers/all": providers,
 		"@candy/coding-agent": { ...extensionApi, createAgentSessionRuntime },
 	};

@@ -145,7 +145,7 @@ Resource paths in user settings resolve from the agent directory. Paths in proje
 
 Resource arrays support glob exclusions with `!pattern`, exact inclusion with `+path`, and exact exclusion with `-path`. candy loads resources listed in both user-level and project settings.
 
-## Updates, telemetry, and warnings
+## Update notes, attribution, and warnings
 
 | Setting | Type | Default | Description |
 |---|---|---|---|

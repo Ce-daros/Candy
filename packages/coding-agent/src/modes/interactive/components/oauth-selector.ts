@@ -211,12 +211,12 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		switch (readListAction(keyData)) {
 			case "up":
 				if (this.filteredProviders.length === 0) return;
-				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredProviders.length, -1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredProviders.length, -1, true);
 				this.updateList();
 				break;
 			case "down":
 				if (this.filteredProviders.length === 0) return;
-				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredProviders.length, 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredProviders.length, 1, true);
 				this.updateList();
 				break;
 			case "confirm": {

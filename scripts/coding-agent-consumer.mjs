@@ -23,7 +23,9 @@ function run(command, args, options = {}) {
 		...options,
 	});
 	if (result.status !== 0) {
-		throw new Error(`Command failed: ${command} ${args.join(" ")}\n${result.stdout ?? ""}${result.stderr ?? ""}${result.error?.message ?? ""}`);
+		throw new Error(
+			`Command failed: ${command} ${args.join(" ")}\n${result.stdout ?? ""}${result.stderr ?? ""}${result.error?.message ?? ""}`,
+		);
 	}
 	return result.stdout;
 }
@@ -34,7 +36,9 @@ export function packReleasePackages(packages, tarballDirectory) {
 	for (const pkg of packages) {
 		const manifest = JSON.parse(readFileSync(join(pkg.directory, "package.json"), "utf8"));
 		if (manifest.name !== pkg.name) throw new Error(`Unexpected package name in ${pkg.directory}`);
-		const output = run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", tarballDirectory], { cwd: pkg.directory });
+		const output = run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", tarballDirectory], {
+			cwd: pkg.directory,
+		});
 		// npm <11.6 returns an array; newer npm can return an object keyed by package name.
 		const parsed = JSON.parse(output);
 		const packed = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
@@ -45,9 +49,9 @@ export function packReleasePackages(packages, tarballDirectory) {
 
 export function installCodingAgentConsumer(directory, tarballs, packageManager = "npm") {
 	mkdirSync(directory, { recursive: true });
-	const overrides = Object.fromEntries([...tarballs].map(([name, path]) => [
-		name, `file:./${relative(directory, path).replaceAll("\\", "/")}`,
-	]));
+	const overrides = Object.fromEntries(
+		[...tarballs].map(([name, path]) => [name, `file:./${relative(directory, path).replaceAll("\\", "/")}`]),
+	);
 	if (!overrides[codingAgentName]) throw new Error("Missing coding-agent tarball");
 	// Only coding-agent is a direct dependency. Overrides select local artifacts
 	// for declared transitive dependencies without installing undeclared packages.
@@ -64,8 +68,15 @@ export function installCodingAgentConsumer(directory, tarballs, packageManager =
 export function smokeTestCodingAgentConsumer(directory, runtime = process.execPath) {
 	const packageDir = join(directory, "node_modules", codingAgentName);
 	const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-	for (const path of ["dist/client", "dist/experimental", "dist/cli/experimental", "dist/bundle/client.js", "dist/bundle/coordinator.js"]) {
-		if (existsSync(join(packageDir, path))) throw new Error(`Published package contains development-only code: ${path}`);
+	for (const path of [
+		"dist/client",
+		"dist/experimental",
+		"dist/cli/experimental",
+		"dist/bundle/client.js",
+		"dist/bundle/coordinator.js",
+	]) {
+		if (existsSync(join(packageDir, path)))
+			throw new Error(`Published package contains development-only code: ${path}`);
 	}
 	const home = mkdtempSync(join(directory, "smoke-home-"));
 	const entry = join(directory, "smoke-sdk.mjs");
@@ -80,24 +91,26 @@ export function smokeTestCodingAgentConsumer(directory, runtime = process.execPa
 		CANDY_CODING_AGENT_DIR: join(home, ".candy", "agent"),
 		CANDY_CODING_AGENT_SESSION_DIR: join(home, ".candy", "sessions"),
 		CANDY_OFFLINE: "1",
-		CANDY_TELEMETRY: "0",
 	};
 	for (const name of ["SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"]) {
 		if (process.env[name]) env[name] = process.env[name];
 	}
 	try {
-		writeFileSync(entry, `import assert from "node:assert/strict";
+		writeFileSync(
+			entry,
+			`import assert from "node:assert/strict";
 import { createAgentSessionRuntime } from "${codingAgentName}";
 assert.equal(typeof createAgentSessionRuntime, "function");
 for (const subpath of ["/core/runtime-factory", "/modes/interactive/interactive-mode"]) {
   assert.throws(() => import.meta.resolve("${codingAgentName}" + subpath), /not exported|not defined|Cannot find|cannot find/);
 }
 const runtime = await createAgentSessionRuntime({ cwd: process.cwd(), agentDir: process.env.CANDY_CODING_AGENT_DIR, noTools: "all" });
-assert.equal(typeof runtime.session.prompt, "function");
-assert.equal(runtime.session.isDisposed, false);
+assert.equal(typeof runtime.session.execution.prompt, "function");
+assert.equal(runtime.session.execution.isDisposed, false);
 await runtime.dispose();
-assert.equal(runtime.session.isDisposed, true);
-`);
+assert.equal(runtime.session.execution.isDisposed, true);
+`,
+		);
 		run(runtime, [entry], { cwd: directory, env, timeout: 30_000 });
 		for (const cli of new Set([manifest.bin.candy, "dist/cli.js"])) {
 			const output = run(runtime, [join(packageDir, cli), "--version"], { cwd: directory, env, timeout: 30_000 });

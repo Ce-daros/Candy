@@ -11,7 +11,7 @@ import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("editor frame motion", () => {
 	it.each(["minimal", "low", "medium", "high", "xhigh", "max"] as const)(
-		"animates idle %s effort without changing geometry",
+		"animates idle %s effort in true color without changing geometry",
 		(level) => {
 			motion.beginFrame();
 			vi.advanceTimersByTime(520);
@@ -45,6 +45,7 @@ describe("editor frame motion", () => {
 
 	beforeEach(() => {
 		vi.useFakeTimers();
+		setCapabilityOverrides({ trueColor: true });
 		initTheme(undefined, false);
 		motion = new FrameMotion({ requestRender: () => {} } as TUI);
 		motion.setGeometry(60, 4, 4, 30);

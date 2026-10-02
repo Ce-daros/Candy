@@ -7,7 +7,6 @@ import { openaiCodexOAuth } from "../src/auth/oauth/openai-codex.ts";
 import { openRouterOAuth } from "../src/auth/oauth/openrouter.ts";
 import { xaiOAuth } from "../src/auth/oauth/xai.ts";
 import { createModels } from "../src/models.ts";
-import * as extensionOAuthCompatibility from "../src/oauth.ts";
 import { anthropicProvider } from "../src/providers/anthropic.ts";
 import { githubCopilotProvider } from "../src/providers/github-copilot.ts";
 
@@ -18,11 +17,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe.sequential("OAuthAuth adapters", () => {
-	it("keeps the extension OAuth barrel free of built-in flow implementations", () => {
-		expect(extensionOAuthCompatibility).not.toHaveProperty("loginAnthropic");
-		expect(extensionOAuthCompatibility).not.toHaveProperty("anthropicOAuth");
-	});
-
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});

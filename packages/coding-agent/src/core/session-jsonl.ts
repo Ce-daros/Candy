@@ -76,11 +76,6 @@ export function writeSessionFile(filePath: string, entries: Iterable<unknown>, o
 	}
 }
 
-/** Append one entry to an existing session file. */
-export function appendSessionEntry(filePath: string, entry: unknown): void {
-	appendFileSync(filePath, serializeSessionEntry(entry));
-}
-
 /** Append a related sequence of entries in one filesystem write. */
 export function appendSessionEntries(filePath: string, entries: readonly unknown[]): void {
 	const contents = entries.map(serializeSessionEntry).join("");

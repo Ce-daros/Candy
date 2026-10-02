@@ -113,7 +113,8 @@ describe("status indicators", () => {
 			const frames = new Set<string>();
 			const colors = new Set<string>();
 			const callsBeforeMotion = requestRender.mock.calls.length;
-			for (let elapsed = 0; elapsed < 900; elapsed += 90) {
+			const mediumBreathingPeriod = Math.ceil(2 * Math.PI * (1700 - 3 * 100));
+			for (let elapsed = 0; elapsed < mediumBreathingPeriod; elapsed += 90) {
 				const lines = editor.render(80);
 				const border = lines.join("\n");
 				frames.add(border);

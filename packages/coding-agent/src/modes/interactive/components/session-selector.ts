@@ -705,7 +705,7 @@ class SessionList implements Component, Focusable {
 		if (kb.matches(keyData, "tui.select.up")) {
 			if (this.region === "detail") this.detailOffset = Math.max(0, this.detailOffset - 1);
 			else {
-				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredSessions.length, -1, true);
 				this.detailOffset = 0;
 			}
 		}
@@ -714,17 +714,17 @@ class SessionList implements Component, Focusable {
 			if (this.region === "detail")
 				this.detailOffset = Math.min(Math.max(0, this.detailLineCount - 3), this.detailOffset + 1);
 			else {
-				this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.filteredSessions.length, 1, true);
 				this.detailOffset = 0;
 			}
 		}
 		// Page up - jump up by maxVisible items
 		else if (kb.matches(keyData, "tui.select.pageUp")) {
-			this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisible);
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredSessions.length, -this.maxVisible);
 		}
 		// Page down - jump down by maxVisible items
 		else if (kb.matches(keyData, "tui.select.pageDown")) {
-			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + this.maxVisible);
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredSessions.length, this.maxVisible);
 		}
 		// Enter
 		else if (kb.matches(keyData, "tui.select.confirm")) {

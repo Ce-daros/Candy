@@ -24,7 +24,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { gt, maxSatisfying, rcompare, satisfies } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
-import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
+import { spawnProcess } from "../utils/child-process.ts";
 import type { GitSource } from "../utils/git.ts";
 import { canonicalizePath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
@@ -182,8 +182,6 @@ export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
 	private settingsManager: SettingsManager;
-	private globalNpmRoot: string | undefined;
-	private globalNpmRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
 	private readonly npmOperations: NpmPackageOperations;
 	private readonly gitOperations: GitPackageOperations;
@@ -264,7 +262,7 @@ export class DefaultPackageManager implements PackageManager {
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined {
 		const parsed = parsePackageSource(source);
 		if (parsed.type === "npm") {
-			const path = this.getNpmInstallPath(parsed, scope);
+			const path = this.paths.getManagedNpmInstallPath(parsed.name, scope);
 			return existsSync(path) ? path : undefined;
 		}
 		if (parsed.type === "git") {
@@ -597,7 +595,7 @@ export class DefaultPackageManager implements PackageManager {
 				}
 
 				if (parsed.type === "npm") {
-					const installedPath = this.getNpmInstallPath(parsed, entry.scope);
+					const installedPath = this.paths.getManagedNpmInstallPath(parsed.name, entry.scope);
 					if (!existsSync(installedPath)) {
 						return undefined;
 					}
@@ -667,13 +665,13 @@ export class DefaultPackageManager implements PackageManager {
 			};
 
 			if (parsed.type === "npm") {
-				let installedPath = this.getNpmInstallPath(parsed, resolvedScope);
+				let installedPath = this.paths.getManagedNpmInstallPath(parsed.name, resolvedScope);
 				const needsInstall =
 					!existsSync(installedPath) || !(await this.installedNpmMatchesConfiguredVersion(parsed, installedPath));
 				if (needsInstall) {
 					const installed = await installMissing();
 					if (!installed) continue;
-					installedPath = this.getNpmInstallPath(parsed, resolvedScope);
+					installedPath = this.paths.getManagedNpmInstallPath(parsed.name, resolvedScope);
 				}
 				metadata.baseDir = installedPath;
 				metadata.packageRoot = installedPath;
@@ -980,11 +978,6 @@ export class DefaultPackageManager implements PackageManager {
 		await this.runCommand(npmCommand.command, [...npmCommand.args, ...args], options);
 	}
 
-	private runNpmCommandSync(args: string[]): string {
-		const npmCommand = this.getNpmCommand();
-		return this.runCommandSync(npmCommand.command, [...npmCommand.args, ...args]);
-	}
-
 	private ensureNpmProject(installRoot: string): void {
 		if (!existsSync(installRoot)) {
 			mkdirSync(installRoot, { recursive: true });
@@ -1006,53 +999,6 @@ export class DefaultPackageManager implements PackageManager {
 		if (!existsSync(ignorePath)) {
 			writeFileSync(ignorePath, "*\n!.gitignore\n", "utf-8");
 		}
-	}
-
-	private getGlobalNpmRoot(): string {
-		const npmCommand = this.getNpmCommand();
-		const commandKey = [npmCommand.command, ...npmCommand.args].join("\0");
-		if (this.globalNpmRoot && this.globalNpmRootCommandKey === commandKey) {
-			return this.globalNpmRoot;
-		}
-		if (this.getPackageManagerName() === "bun") {
-			const binDir = this.runNpmCommandSync(["pm", "bin", "-g"]).trim();
-			this.globalNpmRoot = join(dirname(binDir), "install", "global", "node_modules");
-		} else {
-			this.globalNpmRoot = this.runNpmCommandSync(["root", "-g"]).trim();
-		}
-		this.globalNpmRootCommandKey = commandKey;
-		return this.globalNpmRoot;
-	}
-
-	private getPnpmGlobalPackagePath(packageName: string): string | undefined {
-		if (this.getPackageManagerName() !== "pnpm") {
-			return undefined;
-		}
-
-		const output = this.runNpmCommandSync(["list", "-g", "--depth", "0", "--json"]);
-		const entries = JSON.parse(output) as Array<{ dependencies?: Record<string, { path?: string }> }>;
-		for (const entry of entries) {
-			const path = entry.dependencies?.[packageName]?.path;
-			if (path) return path;
-		}
-		return undefined;
-	}
-
-	private getLegacyGlobalNpmInstallPath(source: NpmSource): string | undefined {
-		try {
-			return this.getPnpmGlobalPackagePath(source.name) ?? join(this.getGlobalNpmRoot(), source.name);
-		} catch {
-			return undefined;
-		}
-	}
-
-	private getNpmInstallPath(source: NpmSource, scope: SourceScope): string {
-		const managedPath = this.paths.getManagedNpmInstallPath(source.name, scope);
-		if (scope !== "user" || existsSync(managedPath)) {
-			return managedPath;
-		}
-		const legacyPath = this.getLegacyGlobalNpmInstallPath(source);
-		return legacyPath && existsSync(legacyPath) ? legacyPath : managedPath;
 	}
 
 	private collectPackageResources(
@@ -1585,20 +1531,5 @@ export class DefaultPackageManager implements PackageManager {
 				}
 			});
 		});
-	}
-
-	private runCommandSync(command: string, args: string[]): string {
-		const env = getEnv();
-		const result = spawnProcessSync(command, args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			encoding: "utf-8",
-			env,
-		});
-		if (result.error || result.status !== 0) {
-			throw new Error(
-				`Failed to run ${command} ${args.join(" ")}: ${result.error?.message || result.stderr || result.stdout}`,
-			);
-		}
-		return (result.stdout || result.stderr || "").trim();
 	}
 }

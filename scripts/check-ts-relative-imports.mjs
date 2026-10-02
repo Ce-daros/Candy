@@ -1,5 +1,4 @@
-import { readdirSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { SyntaxKind } from "typescript/unstable/ast";
 import {
 	isCallExpression,
@@ -11,24 +10,10 @@ import {
 	isStringLiteral,
 } from "typescript/unstable/ast/is";
 import { API } from "typescript/unstable/sync";
+import { walkFiles } from "./lib/files.mjs";
 
 const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
-const files = [];
-
-function collectTypescriptFiles(directory) {
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		if (entry.isDirectory()) {
-			if (!ignoredDirectories.has(entry.name)) {
-				collectTypescriptFiles(join(directory, entry.name));
-			}
-			continue;
-		}
-
-		if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
-			files.push(join(directory, entry.name));
-		}
-	}
-}
+const files = [...walkFiles(".", ignoredDirectories)].filter((file) => file.endsWith(".ts") && !file.endsWith(".d.ts"));
 
 function isStringLiteralLike(node) {
 	return node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node));
@@ -45,8 +30,6 @@ function getImportTypeSpecifier(node) {
 }
 
 const failures = [];
-
-collectTypescriptFiles(".");
 
 // Parse every file through one synthetic project. noResolve keeps the program to exactly these files.
 const configPath = resolve("tsconfig.check-ts-relative-imports.json");

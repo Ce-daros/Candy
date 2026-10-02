@@ -39,6 +39,7 @@ interface PackageManagerInternals {
 	runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void>;
 	getPackageManagerName(): string;
 	paths: {
+		getManagedNpmInstallPath(packageName: string, scope: "user" | "project" | "temporary"): string;
 		getGitInstallPath(
 			host: string,
 			repositoryPath: string,
@@ -60,10 +61,6 @@ interface PackageManagerInternals {
 		args: string[],
 		options?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
 	): Promise<string>;
-	getNpmInstallPath(
-		source: { type: "npm"; spec: string; name: string; pinned: boolean },
-		scope: "user" | "project" | "temporary",
-	): string;
 }
 
 // Helper to check if a resource is enabled
@@ -718,16 +715,16 @@ Content`,
 	describe("command spawning", () => {
 		it("should preserve argv entries containing spaces", async () => {
 			const managerWithInternals = packageManager as unknown as {
-				runCommandSync(command: string, args: string[]): string;
+				runCommandCapture(command: string, args: string[]): Promise<string>;
 			};
 			const valueWithSpace = "C:\\Users\\A B\\.candy\\npm";
-			const output = managerWithInternals.runCommandSync(process.execPath, [
+			const output = await managerWithInternals.runCommandCapture(process.execPath, [
 				"-e",
 				"console.log(process.argv[1])",
 				valueWithSpace,
 			]);
 
-			expect(output).toBe(valueWithSpace);
+			expect(output.trim()).toBe(valueWithSpace);
 		});
 	});
 
@@ -1145,46 +1142,7 @@ Content`,
 			);
 		});
 
-		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", async () => {
-			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
-			});
-			packageManager = new DefaultPackageManager({
-				cwd: tempDir,
-				agentDir,
-				settingsManager,
-			});
-
-			const root20 = join(tempDir, "node20", "lib", "node_modules");
-			const root22 = join(tempDir, "node22", "lib", "node_modules");
-			mkdirSync(join(root20, "@scope", "pkg"), { recursive: true });
-
-			const runCommandSyncSpy = vi
-				.spyOn(packageManager as any, "runCommandSync")
-				.mockImplementation((...callArgs: unknown[]) => {
-					const [command, args] = callArgs as [string, string[]];
-					if (command !== "mise") {
-						throw new Error(`unexpected command ${command}`);
-					}
-					if (args[1] === "node@20") {
-						return root20;
-					}
-					if (args[1] === "node@22") {
-						return root22;
-					}
-					throw new Error(`unexpected args ${args.join(" ")}`);
-				});
-
-			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBe(join(root20, "@scope", "pkg"));
-			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(1, "mise", ["exec", "node@20", "--", "npm", "root", "-g"]);
-
-			await settingsManager.setNpmCommand(["mise", "exec", "node@22", "--", "npm"]);
-
-			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBeUndefined();
-			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(2, "mise", ["exec", "node@22", "--", "npm", "root", "-g"]);
-		});
-
-		it("should install user npm packages into the pi-managed npm root", async () => {
+		it("should install user npm packages into the managed npm root", async () => {
 			settingsManager = SettingsManager.inMemory({
 				npmCommand: ["pnpm"],
 				packages: ["npm:pnpm-pkg"],
@@ -1196,9 +1154,6 @@ Content`,
 			});
 
 			const packagePath = join(agentDir, "npm", "node_modules", "pnpm-pkg");
-			vi.spyOn(packageManager as any, "runCommandSync").mockImplementation(() => {
-				throw new Error("legacy lookup unavailable");
-			});
 			const runCommandSpy = vi
 				.spyOn(packageManager as any, "runCommand")
 				.mockImplementation(async (...callArgs: unknown[]) => {
@@ -1229,90 +1184,6 @@ Content`,
 			).toBe(true);
 			expect(runCommandSpy).toHaveBeenCalledTimes(1);
 			expect(packageManager.getInstalledPath("npm:pnpm-pkg", "user")).toBe(packagePath);
-		});
-
-		it("should load legacy pnpm global package paths from pnpm list output", async () => {
-			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["pnpm"],
-				packages: ["npm:pnpm-pkg"],
-			});
-			packageManager = new DefaultPackageManager({
-				cwd: tempDir,
-				agentDir,
-				settingsManager,
-			});
-
-			const pnpmRoot = join(tempDir, "pnpm", "global", "v11");
-			const packagePath = join(pnpmRoot, "20-hash", "node_modules", "pnpm-pkg");
-			mkdirSync(join(packagePath, "extensions"), { recursive: true });
-			writeFileSync(join(packagePath, "package.json"), JSON.stringify({ name: "pnpm-pkg", version: "1.0.0" }));
-			writeFileSync(join(packagePath, "extensions", "index.ts"), "export default function() {};");
-
-			vi.spyOn(packageManager as any, "runCommandSync").mockImplementation((...callArgs: unknown[]) => {
-				const [command, args] = callArgs as [string, string[]];
-				if (command !== "pnpm") {
-					throw new Error(`unexpected command ${command}`);
-				}
-				if (args.join(" ") === "list -g --depth 0 --json") {
-					return JSON.stringify([
-						{
-							path: pnpmRoot,
-							dependencies: { "pnpm-pkg": { version: "1.0.0", path: packagePath } },
-						},
-					]);
-				}
-				throw new Error(`unexpected args ${args.join(" ")}`);
-			});
-			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
-
-			const result = await packageManager.resolve();
-
-			expect(
-				result.extensions.some((r) => r.path === join(packagePath, "extensions", "index.ts") && r.enabled),
-			).toBe(true);
-			expect(runCommandSpy).not.toHaveBeenCalled();
-			expect(packageManager.getInstalledPath("npm:pnpm-pkg", "user")).toBe(packagePath);
-		});
-
-		it("should resolve wrapped pnpm global package paths from pnpm list output", async () => {
-			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["mise", "exec", "node@20", "--", "pnpm"],
-			});
-			packageManager = new DefaultPackageManager({
-				cwd: tempDir,
-				agentDir,
-				settingsManager,
-			});
-
-			const pnpmRoot = join(tempDir, "pnpm", "global", "v11");
-			const packagePath = join(pnpmRoot, "20-hash", "node_modules", "pnpm-pkg");
-			mkdirSync(packagePath, { recursive: true });
-
-			vi.spyOn(packageManager as any, "runCommandSync").mockImplementation((...callArgs: unknown[]) => {
-				const [command, args] = callArgs as [string, string[]];
-				expect(command).toBe("mise");
-				if (args.join(" ") === "exec node@20 -- pnpm list -g --depth 0 --json") {
-					return JSON.stringify([{ path: pnpmRoot, dependencies: { "pnpm-pkg": { path: packagePath } } }]);
-				}
-				throw new Error(`unexpected args ${args.join(" ")}`);
-			});
-
-			expect(packageManager.getInstalledPath("npm:pnpm-pkg", "user")).toBe(packagePath);
-		});
-
-		it("should ignore malformed legacy pnpm global package lists", async () => {
-			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["pnpm"],
-			});
-			packageManager = new DefaultPackageManager({
-				cwd: tempDir,
-				agentDir,
-				settingsManager,
-			});
-
-			vi.spyOn(packageManager as any, "runCommandSync").mockReturnValue("not json");
-
-			expect(packageManager.getInstalledPath("npm:pnpm-pkg", "user")).toBeUndefined();
 		});
 	});
 
@@ -1412,7 +1283,7 @@ Content`,
 				throw new Error("Expected npm source");
 			}
 
-			const installPath = managerWithInternals.getNpmInstallPath(source, "temporary");
+			const installPath = managerWithInternals.paths.getManagedNpmInstallPath(source.name, "temporary");
 			const tempRoot = join(agentDir, "tmp", "extensions");
 
 			expect(pathEndsWith(installPath, "node_modules/left-pad")).toBe(true);
@@ -2446,44 +2317,6 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
 			);
 			expect(runCommandSpy).not.toHaveBeenCalled();
-		});
-
-		it("should migrate legacy user npm installs into the managed npm root during update", async () => {
-			const legacyRoot = join(tempDir, "legacy-global", "node_modules");
-			const legacyPath = join(legacyRoot, "legacy-pkg");
-			const managedPath = join(agentDir, "npm", "node_modules", "legacy-pkg");
-			mkdirSync(legacyPath, { recursive: true });
-			writeFileSync(join(legacyPath, "package.json"), JSON.stringify({ name: "legacy-pkg", version: "1.0.0" }));
-			await settingsManager.setPackages(["npm:legacy-pkg"]);
-
-			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(legacyRoot);
-			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.0.0"');
-			const runCommandSpy = vi
-				.spyOn(packageManager as any, "runCommand")
-				.mockImplementation(async (...callArgs: unknown[]) => {
-					const [command, args] = callArgs as [string, string[]];
-					expect(command).toBe("npm");
-					expect(args).toEqual([
-						"install",
-						"legacy-pkg@latest",
-						"--prefix",
-						join(agentDir, "npm"),
-						"--legacy-peer-deps",
-					]);
-					mkdirSync(managedPath, { recursive: true });
-					writeFileSync(
-						join(managedPath, "package.json"),
-						JSON.stringify({ name: "legacy-pkg", version: "1.0.0" }),
-					);
-				});
-
-			expect(packageManager.getInstalledPath("npm:legacy-pkg", "user")).toBe(legacyPath);
-
-			await packageManager.update("npm:legacy-pkg");
-
-			expect(runCommandCaptureSpy).not.toHaveBeenCalled();
-			expect(runCommandSpy).toHaveBeenCalledTimes(1);
-			expect(packageManager.getInstalledPath("npm:legacy-pkg", "user")).toBe(managedPath);
 		});
 
 		it("should batch npm updates per scope and run git updates in parallel while skipping pinned npm and current packages", async () => {

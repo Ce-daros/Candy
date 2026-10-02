@@ -117,7 +117,7 @@ describe("AuthStorage", () => {
 	test("keeps a coalesced reload alive while another credential reader is waiting", async () => {
 		writeAuthJson({ anthropic: { type: "api_key", key: "old" } });
 		const storage = AuthStorage.create(authJsonPath);
-		writeAuthJson({ anthropic: { type: "api_key", key: "new" } });
+		writeAuthJson({ anthropic: { type: "api_key", key: "refreshed" } });
 		let grantLock: (() => void) | undefined;
 		const lockGranted = new Promise<void>((resolve) => {
 			grantLock = resolve;
@@ -135,14 +135,16 @@ describe("AuthStorage", () => {
 		firstController.abort();
 		await expect(first).rejects.toMatchObject({ name: "AbortError" });
 		grantLock?.();
-		await expect(second).resolves.toEqual({ type: "api_key", key: "new" });
+		await expect(second).resolves.toEqual({ type: "api_key", key: "refreshed" });
 		expect(lockSpy).toHaveBeenCalledTimes(1);
 		expect(release).toHaveBeenCalledTimes(1);
 	});
 
-	test.skipIf(process.platform === "win32")("creates new auth files with owner-only permissions", () => {
-		AuthStorage.create(authJsonPath);
+	test.skipIf(process.platform === "win32")("creates new auth files with owner-only permissions", async () => {
+		const storage = AuthStorage.create(authJsonPath);
 
+		expect(statSync(authJsonPath).mode & 0o777).toBe(0o600);
+		await storage.modify("anthropic", async () => ({ type: "api_key", key: "new" }));
 		expect(statSync(authJsonPath).mode & 0o777).toBe(0o600);
 	});
 
@@ -580,6 +582,16 @@ describe("AuthStorage", () => {
 
 		await expect(models.getAuth(providerId)).rejects.toMatchObject({ code: "auth" });
 		await expect(models.getAuth(providerId)).resolves.toMatchObject({ auth: { apiKey: "refreshed-access" } });
+	});
+
+	test("preserves its cached credential only for unsignalled reads when the file becomes invalid", async () => {
+		writeAuthJson({ anthropic: { type: "api_key", key: "stored" } });
+		const storage = AuthStorage.create(authJsonPath);
+		writeFileSync(authJsonPath, "{invalid-json", "utf8");
+
+		await expect(storage.read("anthropic")).resolves.toEqual({ type: "api_key", key: "stored" });
+		await expect(storage.read("anthropic", { signal: new AbortController().signal })).rejects.toThrow("Invalid JSON");
+		expect(readFileSync(authJsonPath, "utf8")).toBe("{invalid-json");
 	});
 
 	test("does not overwrite malformed auth files", async () => {

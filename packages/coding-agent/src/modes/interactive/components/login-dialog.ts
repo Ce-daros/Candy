@@ -1,4 +1,4 @@
-import type { AuthInfoLink, OAuthDeviceCodeInfo } from "@candy/ai";
+import type { AuthEvent, AuthInfoLink } from "@candy/ai";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@candy/tui";
 import { openBrowser } from "../../../utils/open-browser.ts";
 import { dialogTitle, theme } from "../theme/theme.ts";
@@ -128,10 +128,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.tui.requestRender();
 	}
 
-	/**
-	 * Called by onDeviceCode callback - show URL and user code.
-	 */
-	showDeviceCode(info: OAuthDeviceCodeInfo): void {
+	showDeviceCode(info: Extract<AuthEvent, { type: "device_code" }>): void {
 		this.setPhase("Device code");
 		this.contentContainer.clear();
 		this.stageContainer.clear();

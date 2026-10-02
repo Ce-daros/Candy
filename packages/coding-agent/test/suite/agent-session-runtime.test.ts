@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@candy/ai/providers/faux";
 import { Type } from "typebox";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	assembleAgentSessionFromServices,
 	assembleAgentSessionServices,
@@ -38,6 +38,7 @@ describe("AgentSessionRuntime characterization", () => {
 		while (cleanups.length > 0) {
 			await cleanups.pop()?.();
 		}
+		vi.restoreAllMocks();
 	});
 
 	async function createRuntimeForTest(
@@ -121,6 +122,69 @@ describe("AgentSessionRuntime characterization", () => {
 			},
 		};
 	}
+
+	it("runs every disposal step in order and reports their errors in one flat list", async () => {
+		const phases: string[] = [];
+		const { runtime, tempDir } = await createRuntimeForTest((candy) => {
+			candy.on("session_shutdown", (event) => {
+				expect(event).toStrictEqual({ type: "session_shutdown", reason: "quit" });
+				phases.push("shutdown");
+			});
+		});
+		cleanups.pop();
+		cleanups.push(() => rmSync(tempDir, { recursive: true, force: true }));
+		const abortError = new Error("abort failed");
+		const invalidationError = new Error("invalidation failed");
+		const executionError = new Error("execution disposal failed");
+		const servicesError = new Error("services disposal failed");
+		const execution = runtime.session.execution;
+		const abort = execution.abort.bind(execution);
+		const disposeExecution = execution.dispose.bind(execution);
+		const disposeServices = runtime.services.dispose.bind(runtime.services);
+		vi.spyOn(execution, "abort").mockImplementation(async () => {
+			phases.push("abort");
+			await abort();
+			throw abortError;
+		});
+		runtime.setBeforeSessionInvalidate(() => {
+			phases.push("invalidate");
+			throw invalidationError;
+		});
+		vi.spyOn(execution, "dispose").mockImplementation(async () => {
+			phases.push("execution");
+			await disposeExecution();
+			throw executionError;
+		});
+		vi.spyOn(runtime.services, "dispose").mockImplementation(async () => {
+			phases.push("services");
+			await disposeServices();
+			throw servicesError;
+		});
+
+		const disposal = runtime.dispose();
+		await expect(disposal).rejects.toMatchObject({
+			message: "Session runtime disposal failed",
+			errors: [abortError, invalidationError, executionError, servicesError],
+		});
+		expect(phases).toEqual(["abort", "shutdown", "invalidate", "execution", "services"]);
+		expect(runtime.dispose()).toBe(disposal);
+	});
+
+	it("reports outgoing cleanup errors without replacing the session", async () => {
+		const { runtime } = await createRuntimeForTest(() => {});
+		const session = runtime.session;
+		const error = new Error("invalidation failed");
+		runtime.setBeforeSessionInvalidate(() => {
+			throw error;
+		});
+
+		await expect(runtime.newSession()).rejects.toMatchObject({
+			message: "Outgoing session cleanup failed",
+			errors: [error],
+		});
+		expect(runtime.session).toBe(session);
+		runtime.setBeforeSessionInvalidate(undefined);
+	});
 
 	it("preserves the current session when replacement creation fails", async () => {
 		const { runtime, failNextRuntimeCreation } = await createRuntimeForTest(() => {});

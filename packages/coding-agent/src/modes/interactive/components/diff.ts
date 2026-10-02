@@ -65,18 +65,13 @@ function renderIntraLineDiff(oldContent: string, newContent: string): { removedL
 	return { removedLine, addedLine };
 }
 
-export interface RenderDiffOptions {
-	/** File path (unused, kept for API compatibility) */
-	filePath?: string;
-}
-
 /**
  * Render a diff string with colored lines and intra-line change highlighting.
  * - Context lines: dim/gray
  * - Removed lines: red, with inverse on changed tokens
  * - Added lines: green, with inverse on changed tokens
  */
-export function renderDiff(diffText: string, _options: RenderDiffOptions = {}): string {
+export function renderDiff(diffText: string): string {
 	const lines = diffText.split("\n");
 	const result: string[] = [];
 

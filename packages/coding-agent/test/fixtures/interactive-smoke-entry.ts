@@ -50,7 +50,11 @@ if (process.argv.includes("--probe-isolation")) {
 			const dialog = new LoginDialogComponent(ui, "faux", () => {});
 			const close = mountStartupContent(ui, settings, dialog);
 			startStartupTui(ui, settings);
-			dialog.showDeviceCode({ verificationUri: "https://example.test/activate", userCode: "ABCD-1234" });
+			dialog.showDeviceCode({
+				type: "device_code",
+				verificationUri: "https://example.test/activate",
+				userCode: "ABCD-1234",
+			});
 			const submitted = await dialog.showPrompt("API key", undefined, true);
 			if (submitted !== "fake-key") throw new Error("Expected the fixture's fake key");
 			dialog.showWaiting("Checking credentials…");

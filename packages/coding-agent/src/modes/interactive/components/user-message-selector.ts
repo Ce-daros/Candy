@@ -6,6 +6,7 @@ import {
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	truncateToWidth,
+	visibleWindow,
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import { selectedRowLabel, selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
@@ -48,14 +49,11 @@ class UserMessageList implements Component {
 		const previewHeight = Math.max(2, Math.min(8, Math.floor(this.availableHeight / 3)));
 		const listHeight = this.availableHeight - previewHeight - 4;
 		const visibleCount = Math.max(1, Math.floor(listHeight / 2));
-		const start = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(visibleCount / 2), this.messages.length - visibleCount),
-		);
+		const { start, end } = visibleWindow(this.selectedIndex, this.messages.length, visibleCount);
 		this.visibleStart = start;
-		this.visibleCount = visibleCount;
+		this.visibleCount = end - start;
 		const lines: string[] = [];
-		for (let i = start; i < Math.min(start + visibleCount, this.messages.length); i++) {
+		for (let i = start; i < end; i++) {
 			const message = this.messages[i];
 			const selected = i === this.selectedIndex;
 			const summary = wrapTextWithAnsi(message.text.replace(/\s+/g, " ").trim(), Math.max(10, width - 7)).slice(
@@ -140,7 +138,7 @@ class UserMessageList implements Component {
 			if (this.region === "preview")
 				this.previewOffset = moveViewport(this.previewOffset, this.previewLineCount, this.previewHeight, delta);
 			else {
-				this.selectedIndex = moveSelection(this.selectedIndex, this.messages.length, delta);
+				this.selectedIndex = moveSelection(this.selectedIndex, this.messages.length, delta, true);
 				this.previewOffset = 0;
 			}
 		} else if (kb.matches(data, "tui.select.confirm")) {

@@ -1,26 +1,18 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { globSync, readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 
-const SKIPPED_DIRECTORIES = new Set(["dist", "node_modules"]);
-
-export function findPackageDirectories(root = "packages") {
-	const packageDirectories = [];
-
-	function visit(directory) {
-		if (existsSync(join(directory, "package.json"))) {
-			packageDirectories.push(directory);
-		}
-
-		for (const entry of readdirSync(directory, { withFileTypes: true })) {
-			if (!entry.isDirectory() || SKIPPED_DIRECTORIES.has(entry.name)) {
-				continue;
-			}
-			visit(join(directory, entry.name));
-		}
-	}
-
-	visit(root);
-	return packageDirectories.sort();
+export function findPackageDirectories(root = process.cwd()) {
+	const { workspaces } = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+	return [
+		...new Set(
+			globSync(
+				workspaces.map((pattern) => `${pattern}/package.json`),
+				{ cwd: root },
+			),
+		),
+	]
+		.map((manifest) => relative(process.cwd(), resolve(root, manifest, "..")))
+		.sort();
 }
 
 export function getPublicWorkspacePackages() {
@@ -29,6 +21,5 @@ export function getPublicWorkspacePackages() {
 			directory,
 			...JSON.parse(readFileSync(join(directory, "package.json"), "utf8")),
 		}))
-		.filter((pkg) => pkg.private !== true)
-		.map(({ directory, name, version }) => ({ directory, name, version }));
+		.filter((pkg) => pkg.private !== true);
 }

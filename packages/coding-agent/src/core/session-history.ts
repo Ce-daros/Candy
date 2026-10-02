@@ -14,7 +14,6 @@ import {
 import { exportSessionToJsonl } from "./session-export.ts";
 import {
 	appendSessionEntries,
-	appendSessionEntry,
 	loadEntriesFromFile,
 	readSessionHeader,
 	rewriteSessionFile,
@@ -53,7 +52,6 @@ import {
 	assertValidSessionId,
 	createSessionId,
 	generateId,
-	migrateToCurrentVersion,
 	validateNewEntries,
 	validateSessionEntries,
 } from "./session-validation.ts";
@@ -73,7 +71,7 @@ export {
 	sessionEntryToContextMessages,
 } from "./session-projection.ts";
 export * from "./session-records.ts";
-export { assertValidSessionId, migrateSessionEntries, parseSessionEntries } from "./session-validation.ts";
+export { assertValidSessionId, parseSessionEntries } from "./session-validation.ts";
 export class SessionHistory {
 	private sessionId: string = "";
 	private sessionFile: string | undefined;
@@ -195,8 +193,6 @@ export class SessionHistory {
 		if (header) {
 			this.fileEntries = entries;
 			this.sessionId = header.id;
-
-			if (migrateToCurrentVersion(this.fileEntries)) this.pendingFileRewrite = true;
 		} else {
 			this.newSession(options);
 			this.fileEntries = this.fileEntries.concat(entries);
@@ -262,28 +258,7 @@ export class SessionHistory {
 		return this.sessionFile;
 	}
 
-	_persist(entry: SessionEntry, candidateEntries: FileEntry[] = this.fileEntries): void {
-		if (!this.persist || !this.sessionFile) return;
-
-		if (!this.flushed) {
-			const hasConversation = candidateEntries.some(
-				(candidate) =>
-					candidate.type === "message" &&
-					(candidate.message.role === "user" || candidate.message.role === "assistant"),
-			);
-			if (!hasConversation) return;
-			writeSessionFile(this.sessionFile, candidateEntries, { flag: this.emptyExistingFile ? "w" : "wx" });
-			this.flushed = true;
-			this.emptyExistingFile = false;
-		} else if (this.pendingFileRewrite) {
-			rewriteSessionFile(this.sessionFile, candidateEntries);
-			this.pendingFileRewrite = false;
-		} else {
-			appendSessionEntry(this.sessionFile, entry);
-		}
-	}
-
-	private _persistEntries(entries: readonly SessionEntry[], candidateEntries: FileEntry[]): void {
+	private _persist(entries: readonly SessionEntry[], candidateEntries: FileEntry[]): void {
 		if (!this.persist || !this.sessionFile) return;
 
 		if (!this.flushed) {
@@ -307,7 +282,7 @@ export class SessionHistory {
 	private _appendEntry(entry: SessionEntry): void {
 		const candidateEntries = [...this.fileEntries, entry];
 		validateNewEntries([entry], this.byId);
-		this._persist(entry, candidateEntries);
+		this._persist([entry], candidateEntries);
 		this.fileEntries = candidateEntries;
 		this.byId.set(entry.id, entry);
 		this.leafId = entry.id;
@@ -391,7 +366,7 @@ export class SessionHistory {
 		}
 		const candidateEntries = [...this.fileEntries, ...entries];
 		validateNewEntries(entries, this.byId);
-		this._persistEntries(entries, candidateEntries);
+		this._persist(entries, candidateEntries);
 		this.fileEntries = candidateEntries;
 		for (const entry of entries) this.byId.set(entry.id, entry);
 		this.leafId = entries.at(-1)!.id;
@@ -979,7 +954,7 @@ export class SessionHistory {
 			} catch (error) {
 				if (!(error instanceof SessionHeaderScanLimitError)) throw error;
 				// The bounded scan is only a discovery optimization. A full load remains
-				// authoritative for legacy files with very large headers or prefixes.
+				// authoritative for files with very large headers or prefixes.
 				preloadedFileEntries = loadEntriesFromFile(resolvedPath);
 				const firstEntry = preloadedFileEntries[0];
 				header = firstEntry?.type === "session" ? firstEntry : null;

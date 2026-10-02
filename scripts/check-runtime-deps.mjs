@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { isBuiltin } from "node:module";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { SyntaxKind } from "typescript/unstable/ast";
 import {
 	isCallExpression,
@@ -23,23 +23,20 @@ const fallbackConfigName = "tsconfig.runtime-deps-fallback.json";
 const fallbackConfig = JSON.stringify({ include: ["src/**/*"] });
 const failures = [];
 
-function checkSource(source, manifest) {
+function checkSource(source, packageName, declared) {
 	const file = source.fileName;
-	const declared = new Set([
-		manifest.name,
-		...Object.keys(manifest.dependencies ?? {}),
-		...Object.keys(manifest.optionalDependencies ?? {}),
-		...Object.keys(manifest.peerDependencies ?? {}),
-	]);
 
 	function checkSpecifier(node) {
 		if (!node || !(isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node))) return;
 		const specifier = node.text;
 		if (specifier.startsWith(".") || specifier.startsWith("/") || isBuiltin(specifier)) return;
-		const name = specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/");
+		const name = specifier
+			.split("/")
+			.slice(0, specifier.startsWith("@") ? 2 : 1)
+			.join("/");
 		if (declared.has(name)) return;
 		const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-		failures.push(`${file}:${line + 1}: ${specifier} is not declared in ${manifest.name}'s runtime dependencies`);
+		failures.push(`${file}:${line + 1}: ${specifier} is not declared in ${packageName}'s runtime dependencies`);
 	}
 
 	function visit(node) {
@@ -80,17 +77,18 @@ function checkSource(source, manifest) {
 	visit(source);
 }
 
-const packages = getPublicWorkspacePackages()
-	.map(({ directory }) => ({ directory, sourceDirectory: resolve(directory, "src") }))
-	.filter(({ sourceDirectory }) => existsSync(sourceDirectory))
-	.map(({ directory, sourceDirectory }) => {
-		const configPath = resolve(directory, "tsconfig.build.json");
-		return {
+const packages = getPublicWorkspacePackages().flatMap(({ directory, ...manifest }) => {
+	const sourceDirectory = resolve(directory, "src");
+	if (!existsSync(sourceDirectory)) return [];
+	const configPath = resolve(directory, "tsconfig.build.json");
+	return [
+		{
 			sourceDirectory,
-			manifest: JSON.parse(readFileSync(join(directory, "package.json"), "utf8")),
+			manifest,
 			configPath: existsSync(configPath) ? configPath : resolve(directory, fallbackConfigName),
-		};
-	});
+		},
+	];
+});
 
 const fallbackConfigs = new Set(
 	packages.map(({ configPath }) => configPath).filter((path) => path.endsWith(fallbackConfigName)),
@@ -109,6 +107,12 @@ try {
 		const diagnostics = project.program.getConfigFileParsingDiagnostics();
 		if (diagnostics.length > 0) throw new Error(diagnostics.map((diagnostic) => diagnostic.text).join("\n"));
 		const roots = new Set(project.rootFiles.map((file) => resolve(file)));
+		const declared = new Set([
+			manifest.name,
+			...Object.keys(manifest.dependencies ?? {}),
+			...Object.keys(manifest.optionalDependencies ?? {}),
+			...Object.keys(manifest.peerDependencies ?? {}),
+		]);
 		for (const fileName of project.program.getSourceFileNames()) {
 			if (fileName.endsWith(".d.ts") || fileName.endsWith(".json")) continue;
 			const path = relative(sourceDirectory, resolve(fileName));
@@ -118,7 +122,7 @@ try {
 			if (!roots.has(resolve(fileName))) {
 				failures.push(`${fileName} is excluded from ${manifest.name}'s build but imported by it`);
 			}
-			checkSource(project.program.getSourceFile(fileName), manifest);
+			checkSource(project.program.getSourceFile(fileName), manifest.name, declared);
 		}
 	}
 } finally {

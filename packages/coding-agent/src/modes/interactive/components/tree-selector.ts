@@ -10,6 +10,7 @@ import {
 	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
+	visibleWindow,
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import type { SessionTreeNode } from "../../../core/session-history.ts";
@@ -536,14 +537,11 @@ class TreeList implements Component {
 			return lines;
 		}
 
-		const startIndex = Math.max(
-			0,
-			Math.min(
-				this.selectedIndex - Math.floor(this.maxVisibleLines / 2),
-				this.filteredNodes.length - this.maxVisibleLines,
-			),
+		const { start: startIndex, end: endIndex } = visibleWindow(
+			this.selectedIndex,
+			this.filteredNodes.length,
+			this.maxVisibleLines,
 		);
-		const endIndex = Math.min(startIndex + this.maxVisibleLines, this.filteredNodes.length);
 		this.lastVisibleStart = startIndex;
 		this.lastVisibleCount = endIndex - startIndex;
 
@@ -914,10 +912,10 @@ class TreeList implements Component {
 		} else if (this.region === "detail" && kb.matches(keyData, "tui.select.down")) {
 			this.detailOffset = Math.min(Math.max(0, this.detailLineCount - this.detailHeight), this.detailOffset + 1);
 		} else if (kb.matches(keyData, "tui.select.up")) {
-			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, -1);
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, -1, true);
 			this.detailOffset = 0;
 		} else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, 1);
+			this.selectedIndex = moveSelection(this.selectedIndex, this.filteredNodes.length, 1, true);
 			this.detailOffset = 0;
 		} else if (kb.matches(keyData, "app.tree.foldOrUp")) {
 			const currentId = this.filteredNodes[this.selectedIndex]?.node.entry.id;

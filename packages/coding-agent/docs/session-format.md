@@ -21,13 +21,7 @@ candy also supports deleting sessions interactively from **Actions → Resume / 
 
 ## Session Version
 
-Sessions have a version field in the header:
-
-- **Version 1**: Linear entry sequence (legacy, auto-migrated on load)
-- **Version 2**: Tree structure with `id`/`parentId` linking
-- **Version 3**: Renamed `hookMessage` role to `custom` (extensions unification)
-
-Existing sessions are automatically migrated to the current version (v3) when loaded.
+The session header requires `version: 3`. Loading validates every stored entry against the current format.
 
 ## Source Files
 

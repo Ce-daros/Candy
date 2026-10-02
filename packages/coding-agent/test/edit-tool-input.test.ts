@@ -8,7 +8,7 @@ import { createEditToolDefinition } from "../src/core/tools/edit.ts";
 const tempDirs: string[] = [];
 
 async function createTempDir(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "pi-edit-legacy-input-"));
+	const dir = await mkdtemp(join(tmpdir(), "candy-edit-input-"));
 	tempDirs.push(dir);
 	return dir;
 }
@@ -18,42 +18,6 @@ afterEach(async () => {
 });
 
 describe("edit tool prepareArguments", () => {
-	it("keeps legacy fields out of the public schema", () => {
-		const definition = createEditToolDefinition(process.cwd());
-		expect(definition.parameters.properties).not.toHaveProperty("oldText");
-		expect(definition.parameters.properties).not.toHaveProperty("newText");
-	});
-
-	it("folds top-level oldText/newText into edits", () => {
-		const definition = createEditToolDefinition(process.cwd());
-		const prepared = definition.prepareArguments!({
-			path: "file.txt",
-			oldText: "before",
-			newText: "after",
-		});
-		expect(prepared).toEqual({
-			path: "file.txt",
-			edits: [{ oldText: "before", newText: "after" }],
-		});
-	});
-
-	it("appends legacy replacement to existing edits", () => {
-		const definition = createEditToolDefinition(process.cwd());
-		const prepared = definition.prepareArguments!({
-			path: "file.txt",
-			edits: [{ oldText: "a", newText: "b" }],
-			oldText: "c",
-			newText: "d",
-		});
-		expect(prepared).toEqual({
-			path: "file.txt",
-			edits: [
-				{ oldText: "a", newText: "b" },
-				{ oldText: "c", newText: "d" },
-			],
-		});
-	});
-
 	it("passes through valid input unchanged", () => {
 		const definition = createEditToolDefinition(process.cwd());
 		const input = {
@@ -73,18 +37,17 @@ describe("edit tool prepareArguments", () => {
 
 	it("prepared args execute correctly", async () => {
 		const dir = await createTempDir();
-		const filePath = join(dir, "legacy.txt");
+		const filePath = join(dir, "edit.txt");
 		await writeFile(filePath, "before\n", "utf8");
 
 		const definition = createEditToolDefinition(dir);
 		const prepared = definition.prepareArguments!({
-			path: "legacy.txt",
-			oldText: "before",
-			newText: "after",
+			path: "edit.txt",
+			edits: [{ oldText: "before", newText: "after" }],
 		});
 
 		const result = await definition.execute("tool-1", prepared, undefined, undefined, {} as ExtensionContext);
-		expect(result.content).toEqual([{ type: "text", text: "Successfully replaced 1 block(s) in legacy.txt." }]);
+		expect(result.content).toEqual([{ type: "text", text: "Successfully replaced 1 block(s) in edit.txt." }]);
 		expect(await readFile(filePath, "utf8")).toBe("after\n");
 	});
 });
@@ -101,6 +64,17 @@ describe("edit tool stringified edits", () => {
 			edits: [{ oldText: "a", newText: "b" }],
 		});
 	});
+
+	it.each([{ oldText: "a", newText: "b" }, JSON.stringify({ oldText: "a", newText: "b" })])(
+		"accepts a single replacement object in edits",
+		(edits) => {
+			const definition = createEditToolDefinition(process.cwd());
+			expect(definition.prepareArguments!({ path: "file.txt", edits })).toEqual({
+				path: "file.txt",
+				edits: [{ oldText: "a", newText: "b" }],
+			});
+		},
+	);
 
 	it("leaves edits alone when the string is not valid JSON", () => {
 		const definition = createEditToolDefinition(process.cwd());

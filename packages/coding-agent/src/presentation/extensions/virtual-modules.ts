@@ -1,6 +1,5 @@
 import * as bundledCandyAgentCore from "@candy/agent-core";
 import * as bundledCandyAi from "@candy/ai";
-import * as bundledCandyAiOauth from "@candy/ai/oauth";
 import * as bundledCandyAiProviders from "@candy/ai/providers/all";
 import * as bundledCandyTui from "@candy/tui";
 import * as bundledTypebox from "typebox";
@@ -18,7 +17,6 @@ export const extensionHostModules: Record<string, unknown> = {
 	"@candy/agent-core": bundledCandyAgentCore,
 	"@candy/tui": bundledCandyTui,
 	"@candy/ai": bundledCandyAi,
-	"@candy/ai/oauth": bundledCandyAiOauth,
 	"@candy/ai/providers/all": bundledCandyAiProviders,
 	"@candy/coding-agent": bundledCandyCodingAgent,
 	"@candy/coding-agent/ui": bundledCandyCodingAgentUi,

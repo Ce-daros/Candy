@@ -119,6 +119,15 @@ describe("composer redesign", () => {
 		expect(rendered).toHaveLength(4);
 		expect(rendered.map(stripAnsi).join("\n")).toContain("Model");
 		panel.show({ render: () => Array.from({ length: 100 }, (_, index) => `Row ${index}`), invalidate: () => {} });
+		const entering = panel.render(80);
+		expect(entering).toHaveLength(4);
+		expect(entering.every((line) => visibleWidth(line) === 80)).toBe(true);
+		vi.advanceTimersByTime(240);
+		const growing = panel.render(80);
+		expect(growing.length).toBeGreaterThan(entering.length);
+		expect(growing.length).toBeLessThan(19);
+		expect(growing.every((line) => visibleWidth(line) === 80)).toBe(true);
+		vi.advanceTimersByTime(560);
 		const expanded = panel.render(80);
 		expect(expanded).toHaveLength(19);
 		expect(expanded.map(stripAnsi).join("\n")).toContain("Row 16");

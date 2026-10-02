@@ -71,7 +71,6 @@
 			"license": "MIT",
 			"dependencies": {
 				"@candy/ai": "^0.87.1",
-				"@candy/telemetry": "^0.87.1",
 				"typebox": "1.3.27"
 			},
 			"engines": {
@@ -84,10 +83,7 @@
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.124.0",
-				"@candy/telemetry": "^0.87.1",
 				"@google/genai": "2.21.0",
-				"http-proxy-agent": "9.1.0",
-				"https-proxy-agent": "9.1.0",
 				"openai": "7.23.0",
 				"partial-json": "0.1.7",
 				"typebox": "1.3.27"
@@ -97,29 +93,6 @@
 			},
 			"engines": {
 				"node": ">=22.19.0"
-			}
-		},
-		"node_modules/@candy/ai/node_modules/agent-base": {
-			"version": "9.0.0",
-			"resolved": "https://registry.npmjs.org/agent-base/-/agent-base-9.0.0.tgz",
-			"integrity": "sha512-TQf59BsZnytt8GdJKLPfUZ54g/iaUL2OWDSFCCvMOhsHduDQxO8xC4PNeyIkVcA5KwL2phPSv0douC0fgWzmnA==",
-			"license": "MIT",
-			"engines": {
-				"node": ">= 20"
-			}
-		},
-		"node_modules/@candy/ai/node_modules/https-proxy-agent": {
-			"version": "9.1.0",
-			"resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-9.1.0.tgz",
-			"integrity": "sha512-ag87y7cJJ9/3+GxFr8Oy4O5faDsGRGnBGsJj/YjOSsSx/5eadKLYTMPlzuR6obgoCDDm0abAAZitXXQkMOPSpA==",
-			"license": "MIT",
-			"dependencies": {
-				"agent-base": "9.0.0",
-				"debug": "^4.3.4",
-				"proxy-agent-negotiate": "1.1.0"
-			},
-			"engines": {
-				"node": ">= 20"
 			}
 		},
 		"node_modules/@candy/ai/node_modules/openai": {
@@ -157,14 +130,6 @@
 			},
 			"engines": {
 				"node": ">=22.0.0"
-			}
-		},
-		"node_modules/@candy/telemetry": {
-			"version": "0.87.1",
-			"resolved": "https://registry.npmjs.org/@candy/telemetry/-/telemetry-0.87.1.tgz",
-			"license": "MIT",
-			"engines": {
-				"node": ">=22.19.0"
 			}
 		},
 		"node_modules/@candy/tui": {
@@ -565,29 +530,6 @@
 				"node": "^20.17.0 || >=22.9.0"
 			}
 		},
-		"node_modules/http-proxy-agent": {
-			"version": "9.1.0",
-			"resolved": "https://registry.npmjs.org/http-proxy-agent/-/http-proxy-agent-9.1.0.tgz",
-			"integrity": "sha512-2NxoveTT58mjYT4n3RPTEfCZGLMbidoO8XEieXfpSYxu+PQJ1qpx4ypwH6N+uF9twBPIvRRgvkvW5HUTYWENig==",
-			"license": "MIT",
-			"dependencies": {
-				"agent-base": "9.0.0",
-				"debug": "^4.3.4",
-				"proxy-agent-negotiate": "1.1.0"
-			},
-			"engines": {
-				"node": ">= 20"
-			}
-		},
-		"node_modules/http-proxy-agent/node_modules/agent-base": {
-			"version": "9.0.0",
-			"resolved": "https://registry.npmjs.org/agent-base/-/agent-base-9.0.0.tgz",
-			"integrity": "sha512-TQf59BsZnytt8GdJKLPfUZ54g/iaUL2OWDSFCCvMOhsHduDQxO8xC4PNeyIkVcA5KwL2phPSv0douC0fgWzmnA==",
-			"license": "MIT",
-			"engines": {
-				"node": ">= 20"
-			}
-		},
 		"node_modules/https-proxy-agent": {
 			"version": "7.0.6",
 			"resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-7.0.6.tgz",
@@ -830,23 +772,6 @@
 				"node": ">=12.0.0"
 			},
 			"hasInstallScript": true
-		},
-		"node_modules/proxy-agent-negotiate": {
-			"version": "1.1.0",
-			"resolved": "https://registry.npmjs.org/proxy-agent-negotiate/-/proxy-agent-negotiate-1.1.0.tgz",
-			"integrity": "sha512-N8IBcM3UgCVzz2L2Lqv8DVntDnnC8/hiV4nEDUPkqq72TPUgYWjQc+bdZlBPZK9LzPAvOY//gAt0S0DApoOXWQ==",
-			"license": "MIT",
-			"peerDependencies": {
-				"kerberos": "^2.0.0"
-			},
-			"peerDependenciesMeta": {
-				"kerberos": {
-					"optional": true
-				}
-			},
-			"engines": {
-				"node": ">= 20"
-			}
 		},
 		"node_modules/retry": {
 			"version": "0.13.1",

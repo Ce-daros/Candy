@@ -20,7 +20,7 @@ export interface ApiKeyCredential {
 	env?: ProviderEnv;
 }
 
-/** OAuth token data returned by extension compatibility flows. */
+/** OAuth token data shared by stored provider credentials. */
 export interface OAuthCredentials {
 	refresh: string;
 	access: string;

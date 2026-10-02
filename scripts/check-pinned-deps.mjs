@@ -1,25 +1,11 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { walkFiles } from "./lib/files.mjs";
 
 const dependencySections = ["dependencies", "devDependencies", "optionalDependencies"];
 const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const ignoredDirectories = new Set([".git", "dist", "node_modules"]);
-const packageJsonFiles = [];
-
-function collectPackageJsonFiles(directory) {
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		if (entry.isDirectory()) {
-			if (!ignoredDirectories.has(entry.name)) {
-				collectPackageJsonFiles(join(directory, entry.name));
-			}
-			continue;
-		}
-
-		if (entry.isFile() && entry.name === "package.json") {
-			packageJsonFiles.push(join(directory, entry.name));
-		}
-	}
-}
+const packageJsonFiles = [...walkFiles(".", ignoredDirectories)].filter((file) => basename(file) === "package.json");
 
 function isInternalWorkspaceDependency(name) {
 	return name.startsWith("@candy/");
@@ -38,8 +24,6 @@ function getVersionSpecifier(specifier) {
 }
 
 const failures = [];
-
-collectPackageJsonFiles(".");
 
 for (const file of packageJsonFiles.sort()) {
 	const packageJson = JSON.parse(readFileSync(file, "utf8"));

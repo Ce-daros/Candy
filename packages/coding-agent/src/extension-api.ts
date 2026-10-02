@@ -201,7 +201,6 @@ export {
 	type FileEntry,
 	getLatestCompactionEntry,
 	type ModelChangeEntry,
-	migrateSessionEntries,
 	type NewSessionOptions,
 	type ProjectedSessionEntry,
 	parseSessionEntries,

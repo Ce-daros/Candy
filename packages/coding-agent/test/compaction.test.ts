@@ -18,7 +18,6 @@ import {
 	type CompactionEntry,
 	type CustomMessageEntry,
 	type ModelChangeEntry,
-	migrateSessionEntries,
 	parseSessionEntries,
 	type SessionEntry,
 	type SessionMessageEntry,
@@ -34,7 +33,6 @@ function loadLargeSessionEntries(): SessionEntry[] {
 	const sessionPath = join(__dirname, "fixtures/large-session.jsonl");
 	const content = readFileSync(sessionPath, "utf-8");
 	const entries = parseSessionEntries(content);
-	migrateSessionEntries(entries); // Add id/parentId for v1 fixtures
 	return entries.filter((e): e is SessionEntry => e.type !== "session");
 }
 

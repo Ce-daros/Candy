@@ -26,45 +26,6 @@ describe("SettingsManager", () => {
 	});
 
 	describe("preserves externally added settings", () => {
-		it.each(["tree", "fork", "none"])(
-			"removes doubleEscapeAction=%s from both settings scopes on the next save",
-			async (doubleEscapeAction) => {
-				for (const scope of ["global", "project"] as const) {
-					const settingsPath =
-						scope === "global" ? join(agentDir, "settings.json") : join(projectDir, ".candy", "settings.json");
-					writeFileSync(
-						settingsPath,
-						JSON.stringify({ doubleEscapeAction, defaultModel: "saved-model", customSetting: "keep" }),
-					);
-					const manager = SettingsManager.create(projectDir, agentDir);
-					const loaded = scope === "global" ? manager.getGlobalSettings() : manager.getProjectSettings();
-					expect(loaded).not.toHaveProperty("doubleEscapeAction");
-					expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toHaveProperty(
-						"doubleEscapeAction",
-						doubleEscapeAction,
-					);
-					await manager.commitSetting(scope, "theme", "light");
-					expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({
-						defaultModel: "saved-model",
-						customSetting: "keep",
-						theme: "light",
-					});
-				}
-			},
-		);
-
-		it("drops the removed enabledModels setting on load", async () => {
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(settingsPath, JSON.stringify({ enabledModels: ["gpt-4o"] }));
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getGlobalSettings()).not.toHaveProperty("enabledModels");
-			await manager.setDefaultThinkingLevel("high");
-			await manager.flush();
-
-			expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).not.toHaveProperty("enabledModels");
-		});
-
 		it("should preserve custom settings when changing theme", async () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(
@@ -119,7 +80,7 @@ describe("SettingsManager", () => {
 		});
 	});
 
-	describe("packages migration", () => {
+	describe("package settings", () => {
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(
@@ -226,6 +187,23 @@ describe("SettingsManager", () => {
 	});
 
 	describe("error tracking", () => {
+		it.each([null, [], "invalid", 42])("reports a non-object settings root %j", async (root) => {
+			const settingsPath = join(agentDir, "settings.json");
+			const content = JSON.stringify(root);
+			writeFileSync(settingsPath, content);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.drainErrors()).toMatchObject([
+				{
+					scope: "global",
+					path: settingsPath,
+					error: { message: "Settings must be a JSON object" },
+				},
+			]);
+			await expect(manager.setTheme("light")).rejects.toThrow("Settings must be a JSON object");
+			expect(readFileSync(settingsPath, "utf-8")).toBe(content);
+		});
+
 		it("should collect and clear load errors via drainErrors", () => {
 			const globalSettingsPath = join(agentDir, "settings.json");
 			const projectSettingsPath = join(projectDir, ".candy", "settings.json");

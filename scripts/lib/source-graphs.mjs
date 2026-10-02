@@ -1,27 +1,25 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, extname, relative, resolve } from "node:path";
 import { transformSync } from "esbuild";
+import { walkFiles } from "./files.mjs";
 import { repositoryRoot, workspacePackages } from "./workspace-paths.mjs";
 
 const SOURCE_EXTENSIONS = [".ts", ".mts", ".cts"];
 
 export function normalizePath(path) {
-	return path.split(sep).join("/").replaceAll("\\", "/").replace(/\/{2,}/g, "/");
+	return path.replaceAll("\\", "/").replace(/\/{2,}/g, "/");
 }
 
-export function collectTypeScriptFiles(directory) {
-	const files = [];
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		const path = resolve(directory, entry.name);
-		if (entry.isDirectory()) files.push(...collectTypeScriptFiles(path));
-		else if (entry.isFile() && SOURCE_EXTENSIONS.includes(extname(entry.name)) && !entry.name.endsWith(".d.ts")) files.push(path);
-	}
-	return files;
+function collectTypeScriptFiles(directory) {
+	return [...walkFiles(directory)].filter(
+		(file) => SOURCE_EXTENSIONS.includes(extname(file)) && !file.endsWith(".d.ts"),
+	);
 }
 
-export function collectValueSpecifiers(file) {
-	const { code } = transformSync(readFileSync(file, "utf8"), {
-		loader: extname(file).slice(1),
+function collectValueSpecifiers(file, source) {
+	const { code } = transformSync(source, {
+		loader: SOURCE_EXTENSIONS.includes(extname(file)) ? "ts" : extname(file).slice(1),
+		sourcefile: file,
 		format: "esm",
 		legalComments: "none",
 	});
@@ -30,17 +28,14 @@ export function collectValueSpecifiers(file) {
 	const dynamicImports = /\bimport\(\s*["']([^"']+)["']\s*\)/g;
 	for (const match of code.matchAll(staticImports)) specifiers.push(match[1]);
 	for (const match of code.matchAll(dynamicImports)) specifiers.push(match[1]);
-	const source = readFileSync(file, "utf8");
-	const relativeAssets = /["'](\.\.?\/[^"']+\.(?:ts|js))["']/g;
-	for (const match of source.matchAll(relativeAssets)) {
-		const context = source.slice(Math.max(0, match.index - 100), match.index + 300);
-		if (context.includes("new URL(") && context.includes("import.meta.url")) specifiers.push(match[1]);
+	const relativeUrls = /\bnew\s+URL\s*\(([^;]*?),\s*import\s*\.\s*meta\s*\.\s*url\s*\)/g;
+	for (const url of code.matchAll(relativeUrls)) {
+		for (const match of url[1].matchAll(/["'](\.\.?\/[^"']+\.(?:ts|js))["']/g)) specifiers.push(match[1]);
 	}
 	return specifiers;
 }
 
-export function collectTypeSpecifiers(file) {
-	const source = readFileSync(file, "utf8");
+function collectTypeSpecifiers(source) {
 	const specifiers = [];
 	const declarations = /(?:^|\n)\s*(import|export)\s+(type\s+)?([^'";]*?\sfrom\s*)["']([^"']+)["']/g;
 	for (const match of source.matchAll(declarations)) {
@@ -51,22 +46,52 @@ export function collectTypeSpecifiers(file) {
 	return specifiers;
 }
 
+export function createSourceScanner(resolver, sourceRoots = []) {
+	const files = sourceRoots.flatMap(collectTypeScriptFiles);
+	const edges = new Map();
+	function dependencies(file) {
+		if (!edges.has(file)) {
+			const source = readFileSync(file, "utf8");
+			const values = collectValueSpecifiers(file, source);
+			const types = collectTypeSpecifiers(source);
+			const resolved = new Map(
+				[...new Set([...values, ...types])].map((specifier) => [
+					specifier,
+					resolver.resolveImport(specifier, file),
+				]),
+			);
+			const targets = (specifiers) =>
+				new Set(specifiers.map((specifier) => resolved.get(specifier)).filter((target) => target !== undefined));
+			edges.set(file, { values: targets(values), types: targets(types) });
+		}
+		return edges.get(file);
+	}
+	return { files, dependencies };
+}
+
+export function packageExportTarget(value) {
+	return typeof value === "string" ? value : (value.import ?? value.default ?? value.require);
+}
+
 function sourceForExport(packageRoot, target) {
 	if (typeof target !== "string") return undefined;
-	const sourceRelative = target.replace(/^\.\/dist\//, "").replace(/\.d?\.ts$/, ".ts").replace(/\.js$/, ".ts");
+	const sourceRelative = target
+		.replace(/^\.\/dist\//, "")
+		.replace(/\.d?\.ts$/, ".ts")
+		.replace(/\.js$/, ".ts");
 	const sourcePath = resolve(packageRoot, "src", sourceRelative);
 	return existsSync(sourcePath) && statSync(sourcePath).isFile() ? sourcePath : undefined;
 }
 
 function exportTarget(exports, subpath) {
 	const exact = exports?.[subpath];
-	if (exact) return typeof exact === "string" ? exact : exact.import ?? exact.default ?? exact.require;
+	if (exact) return packageExportTarget(exact);
 	for (const [pattern, value] of Object.entries(exports ?? {})) {
 		if (!pattern.includes("*")) continue;
 		const [prefix, suffix] = pattern.split("*");
 		if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) continue;
 		const capture = subpath.slice(prefix.length, subpath.length - suffix.length);
-		const target = typeof value === "string" ? value : value.import ?? value.default ?? value.require;
+		const target = packageExportTarget(value);
 		return target?.replaceAll("*", capture);
 	}
 	return undefined;
@@ -77,12 +102,21 @@ export function createWorkspaceResolver(root = repositoryRoot) {
 	for (const [name, sourceRoot] of workspacePackages(root)) {
 		const packageRoot = resolve(root, dirname(sourceRoot));
 		const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
-		packageRoots.set(name, { packageRoot, sourceRoot: resolve(root, sourceRoot), exports: manifest.exports });
+		packageRoots.set(name, {
+			packageRoot,
+			sourceRoot: resolve(root, sourceRoot),
+			exports: manifest.exports,
+			manifest,
+		});
 	}
 
 	function resolveSourcePath(basePath) {
 		const normalizedBase = basePath.replace(/\.js$/, ".ts");
-		for (const candidate of [normalizedBase, ...SOURCE_EXTENSIONS.map((extension) => `${normalizedBase}${extension}`), ...SOURCE_EXTENSIONS.map((extension) => resolve(normalizedBase, `index${extension}`))]) {
+		for (const candidate of [
+			normalizedBase,
+			...SOURCE_EXTENSIONS.map((extension) => `${normalizedBase}${extension}`),
+			...SOURCE_EXTENSIONS.map((extension) => resolve(normalizedBase, `index${extension}`)),
+		]) {
 			if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
 		}
 	}
@@ -104,32 +138,32 @@ export function createWorkspaceResolver(root = repositoryRoot) {
 
 	function packageName(file) {
 		const normalized = normalizePath(relative(root, file));
-		return [...packageRoots].find(([, entry]) => normalized.startsWith(`${normalizePath(relative(root, entry.sourceRoot))}/`))?.[0];
+		return [...packageRoots].find(([, entry]) =>
+			normalized.startsWith(`${normalizePath(relative(root, entry.sourceRoot))}/`),
+		)?.[0];
 	}
 
 	return { packageRoots, resolveImport, packageName };
 }
 
-export function buildValueGraph(roots, resolver, { includeUnresolved = false, includeTypes = false } = {}) {
+export function buildValueGraph(
+	roots,
+	resolver,
+	{ includeTypes = false, scanner = createSourceScanner(resolver) } = {},
+) {
 	const graph = new Map();
 	const queue = [...roots];
 	while (queue.length) {
 		const file = queue.pop();
 		if (graph.has(file)) continue;
-		const targets = new Set();
-		const specifiers = collectValueSpecifiers(file);
-		if (includeTypes) specifiers.push(...collectTypeSpecifiers(file));
-		for (const specifier of specifiers) {
-			const target = resolver.resolveImport(specifier, file);
-			if (target) targets.add(target);
-			else if (includeUnresolved) targets.add(specifier);
-		}
+		const edges = scanner.dependencies(file);
+		const targets = includeTypes ? new Set([...edges.values, ...edges.types]) : edges.values;
 		graph.set(file, targets);
-		queue.push(...[...targets].filter((target) => !graph.has(target) && isAbsolute(target)));
+		queue.push(...[...targets].filter((target) => !graph.has(target)));
 	}
 	return graph;
 }
 
-export function reachableFiles(roots, resolver) {
-	return new Set(buildValueGraph(roots, resolver).keys());
+export function reachableFiles(roots, resolver, scanner) {
+	return new Set(buildValueGraph(roots, resolver, { scanner }).keys());
 }

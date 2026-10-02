@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Removed `@candy/telemetry`, the `telemetryContext` request option, and the legacy `@candy/ai/oauth` entrypoint and OAuth callback types. Provider authentication uses `AuthInteraction` and `AuthEvent`.
 - Provider resource cleanup is keyed by a runtime-owned object. Pass the same `resourceOwner` object to stream options and `cleanupSessionResources()`; a conversation `sessionId` no longer identifies pooled runtime resources.
 - Removed the classifier model surface: `ClassifierApi`/`ClassifierModel`/`ClassifierContext`/`ClassifierOptions`/`ClassifierResult` types, `Models.classify()`, the `classifiers` provider map, the TypeSafe provider, and the `typesafe-system-one`/`cloudflare-workers-ai-system-one` APIs.
 - Removed the Amazon Bedrock provider: `amazon-bedrock.ts`, `bedrock-converse-stream.ts`, the `./bedrock-provider` entrypoint, `BedrockOptions`/`BedrockCompat`, the `@aws-sdk/client-bedrock-runtime` and `@smithy/node-http-handler` dependencies, and AWS credential detection.
@@ -32,6 +33,9 @@
 
 ### Changed
 
+- Mistral errors use the shared response-body limit and serialization helpers, preserving their existing status and body display.
+
+- Removed unused direct HTTP proxy agent dependencies; Google authentication retains its required proxy support.
 - Removed tests that pinned catalog membership, prices, limits, and copied generator policies; thinking-level tests now cover metadata behavior with explicit fixtures.
 
 - Updated the OpenAI SDK to 7.23.0 and provider regression fixtures for current OpenCode Go and Zen catalogs.

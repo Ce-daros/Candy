@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Vertical `SelectList` and `SettingsList` navigation stops at the first and last selectable rows for arrows, wheel input, and paging. Settings value cycling continues to wrap.
+- Vertical `SelectList` and `SettingsList` arrow navigation wraps between the first and last selectable rows. Mouse wheel input remains bounded; headers and disabled rows are skipped during selection.
 - Removed the unused `KeyEventType` export and `isPunctuationChar` helper.
 - Removed slash-command and `skill:` autocomplete from the generic editor. Applications can provide command navigation separately; editor text beginning with `/` is submitted literally.
 - `SettingsListTheme` now requires a `keycap` renderer for shortcut hints.

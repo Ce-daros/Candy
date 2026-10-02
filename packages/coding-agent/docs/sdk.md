@@ -141,7 +141,7 @@ await runtime.settings.commitNestedSetting("global", "markdown", "mermaid", "off
 
 `SettingsManager.inMemory(initialSettings)` is useful for tests and hosts that do not want a Candy settings file. `applyOverrides()` supplies process-local runtime overrides; it does not save defaults. Use a scope-aware commit when the host intends to change persisted global or project defaults.
 
-## Public entrypoints and migration
+## Public entrypoints
 
 The package exposes separate entrypoints for separate responsibilities:
 
@@ -153,7 +153,7 @@ The package exposes separate entrypoints for separate responsibilities:
 | `@candy/coding-agent/extension-host-modules` | Module map for dynamically loaded extensions |
 | `@candy/coding-agent/rpc-entry` | RPC process launcher |
 
-Migrate direct session construction to `createAgentSessionRuntime()`. Move conversation calls to `runtime.session.execution`, committed entry reads to `runtime.session.history`, and model changes to `runtime.session.selection`. Use runtime operations for session replacement and await `runtime.dispose()` when the host is finished. Move UI imports to `./ui` and RPC imports to `./rpc`. Settings changes return promises; await each persisted operation instead of calling `mutateAndPersist()` or using `flush()` as a substitute for awaiting the operation.
+Create a runtime with `createAgentSessionRuntime()`. Conversation operations belong to `runtime.session.execution`, committed entry reads to `runtime.session.history`, and model changes to `runtime.session.selection`. Use runtime operations for session replacement and await `runtime.dispose()` when the host is finished. Settings changes return promises; await each persisted operation to observe its success or failure.
 
 Provider extensions register native `Provider` implementations and own their authentication, discovery, refresh, request conversion, and streaming. Use `models.json` for compatible endpoints and model configuration; see [Custom Providers](custom-provider.md).
 

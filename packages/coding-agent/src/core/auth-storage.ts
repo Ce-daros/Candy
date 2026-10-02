@@ -11,26 +11,15 @@ import { getAgentDir } from "../config.ts";
 import { getFileRevision, normalizePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { isCommandConfigValue, resolveConfigValue } from "./resolve-config-value.ts";
+import { FileReadCache } from "./storage/file-read-cache.ts";
 import { type JsonFileOptions, JsonFileStorage, type LockedJsonUpdate, parseJsonFile } from "./storage/json-file.ts";
 
 type AuthStorageData = Record<string, Credential>;
 
-// The mode applies only on creation so administrator-managed modes and ACLs remain intact.
+// POSIX files start with owner-only permissions and retain their existing mode on updates.
 const AUTH_FILE_OPTIONS: JsonFileOptions = { mode: 0o600, dirMode: 0o700, ensureFile: true };
 
-type AuthFileReload = {
-	controller: AbortController;
-	promise: Promise<AuthStorageData>;
-	readers: number;
-};
-
-type AuthFileReadState = {
-	data: AuthStorageData;
-	revision?: string;
-	reload?: AuthFileReload;
-};
-
-let sharedAuthFileReadState: { authPath: string; readState: AuthFileReadState } | undefined;
+let sharedAuthFileReadState: { authPath: string; readState: FileReadCache<AuthStorageData> } | undefined;
 
 export interface AuthStorageBackend {
 	withLock<T>(fn: (current: string | undefined) => LockedJsonUpdate<T>): T;
@@ -169,13 +158,15 @@ export class InMemoryAuthStorageBackend implements AuthStorageBackend {
 export class AuthStorage implements CredentialStore {
 	private storage: AuthStorageBackend;
 	private authPath: string | undefined;
-	private readState: AuthFileReadState;
+	private readState: FileReadCache<AuthStorageData>;
 
 	private constructor(storage: AuthStorageBackend, authPath?: string) {
 		this.storage = storage;
 		this.authPath = authPath;
 		this.readState =
-			authPath && sharedAuthFileReadState?.authPath === authPath ? sharedAuthFileReadState.readState : { data: {} };
+			authPath && sharedAuthFileReadState?.authPath === authPath
+				? sharedAuthFileReadState.readState
+				: new FileReadCache<AuthStorageData>({});
 		if (authPath && !sharedAuthFileReadState) {
 			sharedAuthFileReadState = { authPath, readState: this.readState };
 		}
@@ -205,11 +196,6 @@ export class AuthStorage implements CredentialStore {
 		return parseJsonFile(content, this.authPath ?? "auth.json", () => ({}));
 	}
 
-	private updateReadState(data: AuthStorageData, revision?: string): void {
-		this.readState.data = data;
-		this.readState.revision = revision;
-	}
-
 	/**
 	 * Reload credentials from storage.
 	 */
@@ -222,7 +208,7 @@ export class AuthStorage implements CredentialStore {
 				revision = this.authPath ? getFileRevision(this.authPath) : undefined;
 				return { result: undefined };
 			});
-			this.updateReadState(this.parseStorageData(content), revision);
+			this.readState.update(this.parseStorageData(content), revision);
 		} catch {
 			// Preserve the last valid in-memory snapshot.
 		}
@@ -232,7 +218,7 @@ export class AuthStorage implements CredentialStore {
 		return this.storage.withLockAsync(async (content) => {
 			const currentData = this.parseStorageData(content);
 			const revision = this.authPath ? getFileRevision(this.authPath) : undefined;
-			this.updateReadState(currentData, revision);
+			this.readState.update(currentData, revision);
 			return { result: currentData };
 		}, options);
 	}
@@ -243,38 +229,12 @@ export class AuthStorage implements CredentialStore {
 			const reload = this.reloadFromStorageAsync(options);
 			return options?.signal ? reload : reload.catch(() => this.readState.data);
 		}
-		const revision = getFileRevision(this.authPath);
-		if (revision !== undefined && revision === this.readState.revision) return this.readState.data;
-		if (!this.readState.reload) {
-			const controller = new AbortController();
-			const reload: AuthFileReload = {
-				controller,
-				promise: this.reloadFromStorageAsync({ signal: controller.signal }),
-				readers: 0,
-			};
-			this.readState.reload = reload;
-			void reload.promise.then(
-				() => {
-					if (this.readState.reload === reload) this.readState.reload = undefined;
-				},
-				() => {
-					if (this.readState.reload === reload) this.readState.reload = undefined;
-				},
-			);
-		}
-
-		const reload = this.readState.reload;
-		reload.readers++;
-		try {
-			const result = raceWithAbortSignal(reload.promise, options?.signal);
-			return options?.signal ? await result : await result.catch(() => this.readState.data);
-		} finally {
-			reload.readers--;
-			if (reload.readers === 0 && this.readState.reload === reload) {
-				this.readState.reload = undefined;
-				reload.controller.abort();
-			}
-		}
+		const reload = this.readState.read(
+			getFileRevision(this.authPath),
+			(signal) => this.reloadFromStorageAsync({ signal }),
+			options?.signal,
+		);
+		return options?.signal ? reload : reload.catch(() => this.readState.data);
 	}
 
 	async read(provider: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
@@ -308,7 +268,7 @@ export class AuthStorage implements CredentialStore {
 			latestData = merged;
 			return { result: next, next: JSON.stringify(merged, null, 2) };
 		}, options);
-		this.updateReadState(latestData, revision);
+		this.readState.update(latestData, revision);
 		return result;
 	}
 
@@ -320,7 +280,7 @@ export class AuthStorage implements CredentialStore {
 			latestData = currentData;
 			return { result: undefined, next: JSON.stringify(currentData, null, 2) };
 		}, options);
-		this.updateReadState(latestData);
+		this.readState.update(latestData);
 	}
 
 	/** List credential metadata without resolving configured key values. */

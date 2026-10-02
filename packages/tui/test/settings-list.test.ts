@@ -22,6 +22,44 @@ const items = [
 ];
 
 describe("SettingsList", () => {
+	it("wraps keyboard selection over filtered settings and bounds wheel selection", () => {
+		const list = new SettingsList(
+			[
+				{ id: "first", label: "Matching first", currentValue: "on" },
+				{ id: "other", label: "Other", currentValue: "on" },
+				{ id: "last", label: "Matching last", currentValue: "on" },
+			],
+			2,
+			testTheme,
+			() => {},
+			() => {},
+			{ enableSearch: true },
+		);
+		for (const letter of "Matching") list.handleInput(letter);
+		list.handleInput("\x1b[A");
+		assert.equal(list.getSelectedItem()?.id, "last");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.id, "first");
+		list.handleInput("\x1b[B");
+		list.handleMouse({ type: "wheel", wheelDelta: 1 } as TuiMouseEvent);
+		assert.equal(list.getSelectedItem()?.id, "last");
+	});
+
+	it("keeps empty settings inert and a single setting selected", () => {
+		for (const entries of [[], items]) {
+			const list = new SettingsList(
+				entries,
+				2,
+				testTheme,
+				() => {},
+				() => {},
+			);
+			list.handleInput("\x1b[A");
+			list.handleInput("\x1b[B");
+			assert.equal(list.getSelectedItem()?.id, entries[0]?.id);
+			list.render(80);
+		}
+	});
 	it("passes focus to a submenu and restores search on return", () => {
 		let close!: () => void;
 		const submenu = {
@@ -97,7 +135,7 @@ describe("SettingsList", () => {
 		assert.deepStrictEqual(changes, [{ id: "tui-mode", value: "fullscreen" }]);
 	});
 
-	it("stops keyboard and wheel navigation at the first and last settings", () => {
+	it("wraps keyboard selection and stops wheel movement at the last setting", () => {
 		const list = new SettingsList(
 			[
 				{ id: "first", label: "First", currentValue: "off", values: ["off", "on"] },
@@ -109,9 +147,9 @@ describe("SettingsList", () => {
 			() => {},
 		);
 		list.handleInput("\x1b[A");
-		assert.equal(list.getSelectedItem()?.id, "first");
-		list.handleInput("\x1b[B");
 		assert.equal(list.getSelectedItem()?.id, "second");
+		list.handleInput("\x1b[B");
+		assert.equal(list.getSelectedItem()?.id, "first");
 		list.handleInput("\x1b[B");
 		assert.equal(list.getSelectedItem()?.id, "second");
 

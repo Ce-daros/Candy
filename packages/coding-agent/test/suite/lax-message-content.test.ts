@@ -1,4 +1,4 @@
-/** Boundary checks for extension-produced messages and migrated session history. */
+/** Boundary checks for extension-produced messages and session history. */
 
 import type { AgentToolResult } from "@candy/agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";

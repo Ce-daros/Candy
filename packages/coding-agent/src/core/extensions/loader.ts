@@ -73,7 +73,6 @@ function getAliases(): Record<string, string> {
 	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@candy/agent-core");
 	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@candy/tui");
 	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@candy/ai");
-	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@candy/ai/oauth");
 	const piAiProvidersEntry = resolveWorkspaceOrImport("ai/dist/providers/all.js", "@candy/ai/providers/all");
 
 	_aliases = {
@@ -83,7 +82,6 @@ function getAliases(): Record<string, string> {
 		"@candy/agent-core": piAgentCoreEntry,
 		"@candy/tui": piTuiEntry,
 		"@candy/ai/providers/all": piAiProvidersEntry,
-		"@candy/ai/oauth": piAiOauthEntry,
 		"@candy/ai": piAiEntry,
 		typebox: typeboxEntry,
 		"typebox/compile": typeboxCompileEntry,

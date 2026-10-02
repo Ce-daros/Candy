@@ -1,4 +1,3 @@
-import type { OAuthDeviceCodeInfo } from "@candy/ai";
 import type { TUI } from "@candy/tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { LoginDialogComponent } from "../src/modes/interactive/components/login-dialog.ts";
@@ -11,9 +10,10 @@ describe("LoginDialogComponent", () => {
 	it("keeps device instructions visible while masking and submitting an API key", async () => {
 		const dialog = new LoginDialogComponent({ requestRender: vi.fn() } as unknown as TUI, "example", vi.fn());
 		dialog.showDeviceCode({
+			type: "device_code",
 			verificationUri: "https://example.test/activate",
 			userCode: "ABCD-1234",
-		} as OAuthDeviceCodeInfo);
+		});
 		const submitted = dialog.showPrompt("API key", undefined, true);
 		for (const character of "secret-value") dialog.handleInput(character);
 		let rendered = stripAnsi(dialog.render(100).join("\n"));

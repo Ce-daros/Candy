@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@candy/telemetry": ["../telemetry/dist/index.d.ts"],
 			"@candy/ai": ["../ai/dist/index.d.ts"],
 			"@candy/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"]
 		},

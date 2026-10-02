@@ -5,6 +5,7 @@
  * load the execution path or its typebox parameter schema.
  */
 
+import type { AgentToolResult } from "@candy/agent-core";
 import { Box, Container, Text } from "@candy/tui";
 import type { Theme } from "../../contracts/theme.ts";
 import type { EditToolDetails } from "../../core/tools/edit.ts";
@@ -21,27 +22,12 @@ type RenderableEditArgs = {
 	path?: string;
 	file_path?: string;
 	edits?: Edit[];
-	oldText?: string;
-	newText?: string;
-};
-type EditToolResultLike = {
-	content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-	details?: EditToolDetails;
 };
 type EditCallRenderComponent = Box & {
 	preview?: EditPreview;
 	previewArgsKey?: string;
 	previewPending?: boolean;
-	settledError?: boolean;
 };
-function createEditCallRenderComponent(): EditCallRenderComponent {
-	return Object.assign(new Box(0, 0), {
-		preview: undefined as EditPreview | undefined,
-		previewArgsKey: undefined as string | undefined,
-		previewPending: false,
-		settledError: false,
-	});
-}
 function getEditCallRenderComponent(state: EditRenderState, lastComponent: unknown): EditCallRenderComponent {
 	if (lastComponent instanceof Box) {
 		const component = lastComponent as EditCallRenderComponent;
@@ -51,7 +37,7 @@ function getEditCallRenderComponent(state: EditRenderState, lastComponent: unkno
 	if (state.callComponent) {
 		return state.callComponent;
 	}
-	const component = createEditCallRenderComponent();
+	const component: EditCallRenderComponent = new Box(0, 0);
 	state.callComponent = component;
 	return component;
 }
@@ -73,10 +59,6 @@ function getRenderablePreviewInput(args: RenderableEditArgs | undefined): { path
 		return { path, edits: args.edits };
 	}
 
-	if (typeof args.oldText === "string" && typeof args.newText === "string") {
-		return { path, edits: [{ oldText: args.oldText, newText: args.newText }] };
-	}
-
 	return null;
 }
 function formatEditCall(args: RenderableEditArgs | undefined, theme: Theme, cwd: string): string {
@@ -84,13 +66,11 @@ function formatEditCall(args: RenderableEditArgs | undefined, theme: Theme, cwd:
 	return `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 }
 function formatEditResult(
-	args: RenderableEditArgs | undefined,
 	preview: EditPreview | undefined,
-	result: EditToolResultLike,
+	result: AgentToolResult<EditToolDetails>,
 	theme: Theme,
 	isError: boolean,
 ): string | undefined {
-	const rawPath = str(args?.file_path ?? args?.path);
 	const previewDiff = preview && !("error" in preview) ? preview.diff : undefined;
 	const previewError = preview && "error" in preview ? preview.error : undefined;
 	if (isError) {
@@ -106,7 +86,7 @@ function formatEditResult(
 
 	const resultDiff = result.details?.diff;
 	if (resultDiff && resultDiff !== previewDiff) {
-		return renderDiff(resultDiff, { filePath: rawPath ?? undefined });
+		return renderDiff(resultDiff);
 	}
 
 	return undefined;
@@ -155,17 +135,16 @@ function setEditPreview(
 	return changed;
 }
 
-export const editRenderers: ToolRenderers<any, EditToolDetails, EditRenderState> = {
+export const editRenderers: ToolRenderers<RenderableEditArgs | undefined, EditToolDetails, EditRenderState> = {
 	renderCall(args, theme, context) {
 		const component = getEditCallRenderComponent(context.state, context.lastComponent);
-		const previewInput = getRenderablePreviewInput(args as RenderableEditArgs | undefined);
+		const previewInput = getRenderablePreviewInput(args);
 		const argsKey = previewInput ? JSON.stringify({ path: previewInput.path, edits: previewInput.edits }) : undefined;
 
 		if (component.previewArgsKey !== argsKey) {
 			component.preview = undefined;
 			component.previewArgsKey = argsKey;
 			component.previewPending = false;
-			component.settledError = false;
 		}
 
 		if (context.argsComplete && previewInput && !component.preview && !component.previewPending) {
@@ -179,40 +158,29 @@ export const editRenderers: ToolRenderers<any, EditToolDetails, EditRenderState>
 			});
 		}
 
-		return buildEditCallComponent(component, args as RenderableEditArgs | undefined, theme, context.cwd);
+		return buildEditCallComponent(component, args, theme, context.cwd);
 	},
 	renderResult(result, _options, theme, context) {
 		const callComponent = context.state.callComponent;
-		const previewInput = getRenderablePreviewInput(context.args as RenderableEditArgs | undefined);
+		const previewInput = getRenderablePreviewInput(context.args);
 		const argsKey = previewInput ? JSON.stringify({ path: previewInput.path, edits: previewInput.edits }) : undefined;
-		const typedResult = result as EditToolResultLike;
-		const resultDiff = !context.isError ? typedResult.details?.diff : undefined;
+		const resultDiff = !context.isError ? result.details?.diff : undefined;
 		let changed = false;
 		if (callComponent) {
 			if (typeof resultDiff === "string") {
 				changed =
 					setEditPreview(
 						callComponent,
-						{ diff: resultDiff, firstChangedLine: typedResult.details?.firstChangedLine },
+						{ diff: resultDiff, firstChangedLine: result.details?.firstChangedLine },
 						argsKey,
 					) || changed;
 			}
-			if (callComponent.settledError !== context.isError) {
-				callComponent.settledError = context.isError;
-				changed = true;
-			}
 			if (changed) {
-				buildEditCallComponent(callComponent, context.args as RenderableEditArgs | undefined, theme, context.cwd);
+				buildEditCallComponent(callComponent, context.args, theme, context.cwd);
 			}
 		}
 
-		const output = formatEditResult(
-			context.args as RenderableEditArgs | undefined,
-			callComponent?.preview,
-			typedResult,
-			theme,
-			context.isError,
-		);
+		const output = formatEditResult(callComponent?.preview, result, theme, context.isError);
 		const component = (context.lastComponent as Container | undefined) ?? new Container();
 		component.clear();
 		if (!output) {

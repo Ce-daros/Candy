@@ -191,7 +191,7 @@ export class AgentSessionRuntime {
 		return { cancelled: result?.cancel === true };
 	}
 
-	private async teardownCurrent(reason: SessionShutdownEvent["reason"], targetSessionFile?: string): Promise<void> {
+	private async teardownCurrent(event: SessionShutdownEvent): Promise<unknown[]> {
 		// Settle any active response first so the aborted turn (including tool
 		// results) is persisted to the outgoing session before it is replaced.
 		const errors: unknown[] = [];
@@ -201,11 +201,7 @@ export class AgentSessionRuntime {
 			errors.push(error);
 		}
 		try {
-			await emitSessionShutdownEvent(this.session.execution.extensionRunner, {
-				type: "session_shutdown",
-				reason,
-				targetSessionFile,
-			});
+			await emitSessionShutdownEvent(this.session.execution.extensionRunner, event);
 		} catch (error) {
 			errors.push(error);
 		}
@@ -219,7 +215,7 @@ export class AgentSessionRuntime {
 		} catch (error) {
 			errors.push(error);
 		}
-		if (errors.length) throw new AggregateError(errors, "Outgoing session cleanup failed");
+		return errors;
 	}
 
 	private async discardCandidate(
@@ -286,7 +282,8 @@ export class AgentSessionRuntime {
 		}
 		const outgoingServices = this.services;
 		try {
-			await this.teardownCurrent(reason, targetSessionFile);
+			const errors = await this.teardownCurrent({ type: "session_shutdown", reason, targetSessionFile });
+			if (errors.length) throw new AggregateError(errors, "Outgoing session cleanup failed");
 		} catch (error) {
 			return this.discardCandidate(error, replacement.session, replacement.services, ownedFile);
 		}
@@ -572,30 +569,7 @@ export class AgentSessionRuntime {
 	dispose(): Promise<void> {
 		this.disposePromise ??= this.enqueueReplacement(async () => {
 			this.disposed = true;
-			const errors: unknown[] = [];
-			try {
-				await this.session.execution.abort();
-			} catch (error) {
-				errors.push(error);
-			}
-			try {
-				await emitSessionShutdownEvent(this.session.execution.extensionRunner, {
-					type: "session_shutdown",
-					reason: "quit",
-				});
-			} catch (error) {
-				errors.push(error);
-			}
-			try {
-				this.beforeSessionInvalidate?.();
-			} catch (error) {
-				errors.push(error);
-			}
-			try {
-				await this.session.execution.dispose();
-			} catch (error) {
-				errors.push(error);
-			}
+			const errors = await this.teardownCurrent({ type: "session_shutdown", reason: "quit" });
 			try {
 				await this.services.dispose();
 			} catch (error) {
