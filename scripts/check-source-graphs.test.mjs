@@ -12,10 +12,6 @@ import {
 } from "./check-source-graphs.mjs";
 import { buildValueGraph, createSourceScanner, createWorkspaceResolver, normalizePath } from "./lib/source-graphs.mjs";
 
-test("package export boundaries, dynamic roots, and packaged assets resolve", () => {
-	assert.deepEqual(checkSourceGraphFailures(), []);
-});
-
 test("reachability retains type contracts and workers while identifying unused implementations", () => {
 	const directory = mkdtempSync(resolve(tmpdir(), "candy-entry-graph-"));
 	try {

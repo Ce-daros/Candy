@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Removed duplicate image-line, content-shrink, and short-content overlay tests; retained their rendering and protocol coverage in the main TUI suites.
+
 ### Breaking Changes
 
 - Vertical `SelectList` and `SettingsList` arrow navigation wraps between the first and last selectable rows. Mouse wheel input remains bounded; headers and disabled rows are skipped during selection.

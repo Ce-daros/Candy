@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "../src/api/openai-responses.ts";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { getSupportedThinkingLevels } from "../src/models.ts";
 import { XAI_MODELS } from "../src/providers/xai.models.ts";
 import { xaiProvider } from "../src/providers/xai.ts";
 import type { Context, Model } from "../src/types.ts";
@@ -111,54 +110,6 @@ async function captureRequest(
 describe("xAI Responses provider", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
-	});
-
-	it("excludes retired and redundant models from the built-in catalog", () => {
-		for (const modelId of [
-			"grok-3",
-			"grok-3-fast",
-			"grok-4.20-0309-non-reasoning",
-			"grok-4.20-0309-reasoning",
-			"grok-build-0.1",
-			"grok-code-fast-1",
-		]) {
-			expect(Object.keys(XAI_MODELS)).not.toContain(modelId);
-		}
-	});
-
-	it("routes every built-in xAI model through Responses", () => {
-		for (const model of Object.values(XAI_MODELS)) {
-			expect(model.api, model.id).toBe("openai-responses");
-		}
-		expect(getSupportedThinkingLevels(XAI_MODELS["grok-4.5"])).toEqual(["low", "medium", "high"]);
-		expect(getSupportedThinkingLevels(XAI_MODELS["grok-4.6"])).toEqual(["low", "medium", "high", "xhigh"]);
-		expect(getSupportedThinkingLevels(XAI_MODELS["grok-4.7"])).toEqual(["low", "medium", "high", "xhigh"]);
-		expect(getSupportedThinkingLevels(XAI_MODELS["grok-4.3"])).toEqual(["off", "low", "medium", "high"]);
-	});
-
-	it("includes Grok 4.7 capabilities and long-context pricing", () => {
-		expect(XAI_MODELS["grok-4.7"]).toMatchObject({
-			api: "openai-responses",
-			reasoning: true,
-			input: ["text", "image"],
-			contextWindow: 500000,
-			maxTokens: 500000,
-			cost: {
-				input: 2,
-				output: 6,
-				cacheRead: 0.5,
-				cacheWrite: 0,
-				tiers: [
-					{
-						inputTokensAbove: 200000,
-						input: 4,
-						output: 12,
-						cacheRead: 1,
-						cacheWrite: 0,
-					},
-				],
-			},
-		});
 	});
 
 	it("uses /responses with bearer auth and xAI-compatible request fields", async () => {

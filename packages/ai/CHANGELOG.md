@@ -52,6 +52,8 @@
 
 ### Removed
 
+- Removed duplicate catalog and API-wrapper assertions, text-helper microtests, and redundant live model smoke tests. Provider transport, authentication, stream, cache accounting, and public type coverage remain in the focused suites.
+
 - Removed `test/empty.test.ts`: its four assertions per provider accepted either an error or a defined content field, and were duplicated across 25 providers without a real behavior contract. Live provider behavior is covered by the remaining `test/e2e/` matrix.
 
 ## [0.87.1] - 2026-09-22
