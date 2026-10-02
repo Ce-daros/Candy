@@ -14,7 +14,7 @@ Candy began as a fork of pi and is developed independently. Useful upstream chan
 
 ## Product and architecture
 
-- Finish the whole workflow: discovery, input, selection, applying, cancelling, returning, and failure recovery. Follow the spatial model and visual rules in [DESIGN.md](DESIGN.md).
+- Finish the whole workflow: discovery, input, selection, applying, cancelling, returning, and failure recovery. Follow the design philosophy in [DESIGN.md](DESIGN.md).
 - Give product behavior a clear owner. Presentation owns navigation and focus; runtime owns business operations; shared TUI components own reusable rendering and input behavior.
 - Reuse mature behavior and extract shared mechanisms when real callers need them. Avoid parallel implementations, speculative frameworks, and universal registries for a small set of concrete flows.
 - Keep preview, active state, and saved defaults distinct. Preserve drafts, search, selection, and position; tie async callbacks and resources to their page and session lifetime.

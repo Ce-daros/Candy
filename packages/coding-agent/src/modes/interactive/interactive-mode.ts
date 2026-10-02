@@ -7,7 +7,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
+import type { AgentMessage } from "@candy/agent-core";
 import type { AssistantMessage, ImageContent, Message, Model } from "@candy/ai";
 import type * as TuiLayouts from "@candy/tui";
 import type { AutocompleteItem, AutocompleteProvider, Keybinding, KeyId, MarkdownTheme } from "@candy/tui";
@@ -45,7 +45,6 @@ import {
 	detectCacheMiss,
 } from "../../core/cache-stats.ts";
 import { formatCacheWarmingStatus, formatCacheWarmingUsage } from "../../core/cache-warmer.ts";
-import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
 import type {
 	ExtensionCommandContext,
 	ExtensionRunner,
@@ -104,7 +103,7 @@ import { HelpPanel } from "./components/help-panel.ts";
 import { keycap, keyDisplayText, keyHint } from "./components/keybinding-hints.ts";
 import { type LoadedResourceSection, LoadedResourcesComponent } from "./components/loaded-resources.ts";
 import { createMermaidCodeBlockView } from "./components/mermaid.ts";
-import type { PowerbarHost, PowerbarModelEntry, PowerbarSnapshot } from "./components/powerbar.ts";
+import type { PowerbarHost, PowerbarModelEntry } from "./components/powerbar.ts";
 import { QueuedMessagesComponent } from "./components/queued-messages.ts";
 import { ReadingPanelComponent, type ReadingPanelRow } from "./components/reading-panel.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
@@ -132,7 +131,7 @@ import { editInExternalEditor } from "./external-editor.ts";
 import { InteractiveAuthFlow } from "./interactive-auth-flow.ts";
 import { InteractiveFlowStack } from "./interactive-flow-stack.ts";
 import { InteractivePageController } from "./interactive-page-controller.ts";
-import { InteractivePresentation, type PresentationSurface } from "./interactive-presentation.ts";
+import { InteractivePresentation } from "./interactive-presentation.ts";
 import {
 	type CompactionCostNotice,
 	isCompactionCostNotice,
@@ -307,7 +306,7 @@ export class InteractiveMode {
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
 	private lastSigintTime = 0;
-	private lastEscapeTime = 0;
+	private lastEscapeTime: number | undefined;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
 	private anthropicSubscriptionWarningShown = false;
@@ -339,7 +338,6 @@ export class InteractiveMode {
 	private inputMode: InputMode = "normal";
 	private readonly flows = new InteractiveFlowStack();
 	private readonly presentation: InteractivePresentation;
-	private powerbarReturn: PowerbarSnapshot | undefined;
 	private readonly authFlow: InteractiveAuthFlow;
 
 	// Track current bash execution component
@@ -546,19 +544,11 @@ export class InteractiveMode {
 		);
 	}
 
-	private openPresentation(surface: PresentationSurface, model?: Model<any>): void {
+	private openPresentation(surface: "actions" | "command"): void {
 		this.cancelActiveLogin();
 		this.pageController.disposeActiveSelector();
-		if (surface === "command") {
-			this.setInputMode("command");
-		} else {
-			if (this.footer.isPowerbarIdle()) {
-				if (surface === "history" || surface === "agent") this.footer.openPowerbarThinking();
-				else this.footer.openPowerbarModelBrowse();
-			}
-			this.powerbarReturn = this.footer.suspendPowerbar();
-		}
-		this.presentation.open(surface, model);
+		if (surface === "command") this.setInputMode("command");
+		this.presentation.open(surface);
 	}
 
 	private createPresentation(): InteractivePresentation {
@@ -567,15 +557,11 @@ export class InteractiveMode {
 				session: () => this.session,
 				settings: () => this.settingsManager,
 				models: () => this.runtimeHost.models,
-				mount: (panel) => this.pageController.mountPresentationPanel(panel),
+				mount: (panel, navigation) => this.pageController.mountPresentationPanel(panel, 0.8, navigation),
 				exit: () => {
 					this.pageController.disposeActiveSelector();
 					this.setInputMode("normal");
 					this.pageController.closePanel();
-					if (this.powerbarReturn) {
-						this.footer.restorePowerbar(this.powerbarReturn);
-						this.powerbarReturn = undefined;
-					}
 				},
 				render: () => this.renderer.requestRender(),
 				read: (title, content, onEdit) => this.showReader(title, content, undefined, onEdit),
@@ -628,9 +614,9 @@ export class InteractiveMode {
 					];
 				},
 				localCommands: () => this.getLocalCommandActions(),
-				historyCommands: () => this.getHistoryCommandActions(),
+				sessionCommands: () => this.getSessionCommandActions(),
 				completeArguments: (input, signal, force) => this.completeCommandArguments(input, signal, force),
-				historyAction: async (action, args) => {
+				sessionAction: async (action, args) => {
 					switch (action) {
 						case "compact":
 							await this.handleCompactCommand(args || undefined);
@@ -660,7 +646,7 @@ export class InteractiveMode {
 		);
 	}
 
-	private getHistoryCommandActions(): CommandPanelAction[] {
+	private getSessionCommandActions(): CommandPanelAction[] {
 		const resolveArgument = (args: string): string | undefined => {
 			const parsed = parsePathCommandArgument(args);
 			return parsed === undefined ? undefined : resolvePath(parsed, this.sessionManager.getCwd());
@@ -2161,21 +2147,12 @@ export class InteractiveMode {
 			} else if (this.session.execution.isStreaming) {
 				this.restoreQueuedMessagesToEditor({ abort: true });
 			} else if (!this.editor.getText().trim()) {
-				// Double Escape opens the configured History view.
-				const action = this.settingsManager.read("double-escape-action");
-				if (action !== "none") {
-					const now = Date.now();
-					if (now - this.lastEscapeTime < 500) {
-						this.openPresentation("history");
-						if (action === "tree") {
-							this.showTreeSelector();
-						} else {
-							this.showUserMessageSelector();
-						}
-						this.lastEscapeTime = 0;
-					} else {
-						this.lastEscapeTime = now;
-					}
+				const now = Date.now();
+				if (this.lastEscapeTime !== undefined && now - this.lastEscapeTime < 500) {
+					this.openPresentation("actions");
+					this.lastEscapeTime = undefined;
+				} else {
+					this.lastEscapeTime = now;
 				}
 			}
 		};
@@ -2192,6 +2169,7 @@ export class InteractiveMode {
 		this.defaultEditor.modeInputHandler = (data) => this.handleModeInput(data);
 		this.defaultEditor.onBottomBorderClick = (x) => this.footer.handleBottomBorderClick(x);
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
 		this.defaultEditor.onAction("app.reload", () => void this.handleReloadCommand());
@@ -2203,15 +2181,15 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
 		this.defaultEditor.onAction("app.session.tree", () => {
-			this.openPresentation("history");
+			this.openPresentation("actions");
 			this.showTreeSelector();
 		});
 		this.defaultEditor.onAction("app.session.fork", () => {
-			this.openPresentation("history");
+			this.openPresentation("actions");
 			this.showUserMessageSelector();
 		});
 		this.defaultEditor.onAction("app.session.resume", () => {
-			this.openPresentation("history");
+			this.openPresentation("actions");
 			this.showSessionSelector();
 		});
 
@@ -2271,6 +2249,7 @@ export class InteractiveMode {
 	}
 
 	private handleModeInput(data: string): boolean {
+		if (!this.keybindings.matches(data, "app.interrupt")) this.lastEscapeTime = undefined;
 		if (this.editor !== this.defaultEditor) return false;
 		if (this.inputMode === "help") {
 			if (this.keybindings.matches(data, "tui.input.newLine")) return true;
@@ -3905,23 +3884,21 @@ export class InteractiveMode {
 		return definition;
 	}
 
-	private selectThinkingLevel(level: ThinkingLevel): void {
-		try {
-			this.session.selection.setThinkingLevel(level);
-			this.footer.invalidate();
-			this.updateEditorBorderColor();
-			this.showStatus(`Thinking level: ${level}`);
-		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
+	private cycleThinkingLevel(): void {
+		const level = this.session.selection.cycleThinkingLevel();
+		if (level === undefined) {
+			this.showStatus("Current model does not support thinking");
+			return;
 		}
+		this.footer.invalidate();
+		this.updateEditorBorderColor();
+		this.showStatus(`Thinking level: ${level}`);
 	}
 
 	/** Powerbar dependencies: selectors read live session state through these callbacks. */
 	private buildPowerbarHost(): PowerbarHost {
 		return {
 			requestRender: () => this.renderer.requestRender(),
-			getThinkingLevels: () => this.session.selection.getAvailableThinkingLevels(),
-			getThinkingLevel: () => this.session.selection.thinkingLevel || DEFAULT_THINKING_LEVEL,
 			getModels: () => this.getPowerbarModels(),
 			getCurrentModelIndex: () => {
 				const models = this.getPowerbarModels();
@@ -3931,7 +3908,6 @@ export class InteractiveMode {
 				);
 				return index === -1 ? 0 : index;
 			},
-			applyThinking: (level) => this.selectThinkingLevel(level),
 			applyModel: (model) => void this.applyPowerbarModel(model),
 		};
 	}
@@ -3942,29 +3918,19 @@ export class InteractiveMode {
 
 	private async applyQuickSelection(signal: AbortSignal): Promise<void> {
 		const session = this.session;
-		try {
-			const result = await reconcileQuickSelection(session, signal);
-			if (signal.aborted || this.session !== session) return;
-			if (result !== "unchanged") {
-				this.powerbarReturn = undefined;
-				if (result === "empty") {
-					const scope = this.settingsManager.getScopedModels();
-					this.showError(
-						"Open Sources to select a model",
-						scope?.length === 0 ? "No models selected" : "No selected models available",
-					);
-				}
-			}
-		} catch (error) {
-			if (signal.aborted || this.session !== session) return;
-			this.powerbarReturn = undefined;
-			this.showError(error instanceof Error ? error.message : String(error), "Model selection failed");
-		}
+		const result = await reconcileQuickSelection(session, signal);
 		if (signal.aborted || this.session !== session) return;
+		if (result === "empty") {
+			const scope = this.settingsManager.getScopedModels();
+			this.showError(
+				"Open Actions → Sources to select a model",
+				scope?.length === 0 ? "No models selected" : "No selected models available",
+			);
+		}
 		this.footer.invalidate();
 		this.refreshContextLine();
 		this.updateEditorBorderColor();
-		await this.updateAvailableProviderCount();
+		this.updateAvailableProviderCount();
 	}
 
 	private async applyPowerbarModel(model: Model<any>): Promise<void> {
@@ -3987,24 +3953,13 @@ export class InteractiveMode {
 	private handlePowerbarKey(data: string): boolean {
 		if (this.footer.isPowerbarIdle()) return false;
 		const kb = this.keybindings;
-		if (kb.matches(data, "app.powerbar.next")) {
-			this.footer.switchPowerbar();
-			return true;
-		}
+		if (kb.matches(data, "app.thinking.cycle")) return false;
 		if (kb.matches(data, "tui.select.cancel")) {
 			this.footer.cancelPowerbar();
 			return true;
 		}
 		if (kb.matches(data, "tui.select.confirm")) {
 			this.footer.confirmPowerbar();
-			return true;
-		}
-		if (kb.matches(data, "app.powerbar.up") || kb.matches(data, "app.powerbar.down")) {
-			const up = kb.matches(data, "app.powerbar.up");
-			const selector = this.footer.getPowerbarSelector();
-			const model = this.footer.getHighlightedModel();
-			if (selector === "model" && !up && !model) return true;
-			this.openPresentation(selector === "model" ? (up ? "sources" : "details") : up ? "history" : "agent", model);
 			return true;
 		}
 		if (kb.matches(data, "app.powerbar.left")) {
@@ -4375,7 +4330,7 @@ export class InteractiveMode {
 
 				this.sessionManager.getSessionFile(),
 			);
-			return { component: selector, focus: selector };
+			return { component: selector, focus: selector, dispose: () => selector.dispose() };
 		});
 	}
 
@@ -4768,7 +4723,9 @@ export class InteractiveMode {
 			message: "Messages",
 			clipboard: "Clipboard",
 		};
-		const rows: ReadingPanelRow[] = [];
+		const rows: ReadingPanelRow[] = [
+			{ category: "General", label: "Open Actions when the editor is empty", value: keycap("Esc Esc") },
+		];
 		for (const action of Object.keys(KEYBINDINGS) as Keybinding[]) {
 			const keys = this.keybindings.getKeys(action);
 			if (!keys.length) continue;

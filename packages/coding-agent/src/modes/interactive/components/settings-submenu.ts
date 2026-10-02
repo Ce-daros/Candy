@@ -1,5 +1,6 @@
 import {
 	Container,
+	type Focusable,
 	fuzzyFilter,
 	getKeybindings,
 	Input,
@@ -29,7 +30,17 @@ export interface SelectSubmenuOptions {
  * Single-step submenu that shows a titled select list.
  * With `searchable: true`, typing filters the list using fuzzy matching.
  */
-export class SelectSubmenu extends Container {
+export class SelectSubmenu extends Container implements Focusable {
+	private focusedValue = false;
+
+	get focused(): boolean {
+		return this.focusedValue;
+	}
+
+	set focused(value: boolean) {
+		this.focusedValue = value;
+		if (this.searchInput) this.searchInput.focused = value;
+	}
 	private selectList: SelectList;
 	private listChildIndex: number;
 	private allOptions: SelectItem[];

@@ -22,6 +22,38 @@ const items = [
 ];
 
 describe("SettingsList", () => {
+	it("passes focus to a submenu and restores search on return", () => {
+		let close!: () => void;
+		const submenu = {
+			focused: false,
+			invalidate() {},
+			render: () => ["submenu"],
+		};
+		const list = new SettingsList(
+			[
+				{
+					id: "theme",
+					label: "Theme",
+					currentValue: "dark",
+					submenu: (_value, done) => {
+						close = done;
+						return submenu;
+					},
+				},
+			],
+			5,
+			testTheme,
+			() => {},
+			() => {},
+			{ enableSearch: true },
+		);
+		list.focused = true;
+		list.handleInput("\r");
+		assert.equal(submenu.focused, true);
+		close();
+		assert.equal(submenu.focused, false);
+		assert.ok(list.render(80).join("\n").includes("Theme"));
+	});
 	it("includes spaces in an active search instead of changing the selected setting", () => {
 		const changes: Array<{ id: string; value: string }> = [];
 		const list = new SettingsList(

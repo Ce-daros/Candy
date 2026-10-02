@@ -1,12 +1,9 @@
-
 # Candy
 
-Candy is an independent coding agent for daily work in the terminal, with direct controls for models, sessions, and commands.
+Candy is a personal coding-agent project for daily work in the terminal. It began as a fork of pi and is developed independently.
 
-Candy began as a fork of pi and is developed independently. Useful upstream changes are evaluated individually and cherry-picked when they serve this product.
-
-- [Development guide](CONTRIBUTING.md)
-- [Product and interaction design](DESIGN.md)
-- [Development rules](AGENTS.md)
+- [Install and start](packages/coding-agent/docs/quickstart.md)
 - [Terminal guide](packages/coding-agent/docs/usage.md)
-- [Coding agent](packages/coding-agent/README.md)
+- [Documentation](packages/coding-agent/docs/index.md)
+
+For development, read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [DESIGN.md](DESIGN.md).

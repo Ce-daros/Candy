@@ -39,7 +39,7 @@ The home screen shows the Candy logo and current controls. Your conversation app
 
 A **model** generates candy's responses. A **provider** is the service or account candy uses to access that model.
 
-Press `Ctrl+L` to open Model, then `Up` for Sources. Choose a provider and connect a subscription or store an API key. Return to Model and use `Left` or `Right` to choose an available model.
+Press Escape twice in an empty editor to open Actions, then choose Sources. Choose a provider and connect a subscription or store an API key. Close Actions, press `Ctrl+L`, and use `Left` or `Right` to choose an available model.
 
 See [Choose a model and provider](models.md) for supported providers, environment-variable authentication, local models, and custom endpoints.
 
@@ -71,7 +71,7 @@ candy saves sessions automatically. Exit candy, then resume the most recent sess
 candy --continue
 ```
 
-Open Thinking → History → Resume / Switch session to choose another saved session. See [Continue or branch a session](sessions.md) for session naming, branching, compaction, and export.
+Open Actions → Resume / Switch session to choose another saved session. See [Continue or branch a session](sessions.md) for session naming, branching, compaction, and export.
 
 ## Next steps
 
@@ -101,4 +101,4 @@ If you installed candy with npm, run:
 npm uninstall -g @candy/coding-agent
 ```
 
-Neither method removes configuration, credentials, sessions, or installed candy packages from `~/.candy/agent/`.
+Uninstalling does not remove configuration, credentials, sessions, or installed candy packages from `~/.candy/agent/`.

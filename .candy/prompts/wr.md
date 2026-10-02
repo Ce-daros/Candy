@@ -10,7 +10,6 @@ Determine context from the conversation history first.
 
 Rules for context detection:
 - If the conversation already mentions a GitHub issue or PR, use that existing context.
-- Use issue or pull request context already established in the conversation.
 - If there is no GitHub issue or PR in the conversation history, treat this as non-GitHub work.
 
 Unless I explicitly override something in this request, do the following in order:

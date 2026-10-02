@@ -10,15 +10,13 @@
 - Removed the Azure OpenAI Responses provider: `azure-openai-responses.ts`, `AzureOpenAIResponsesOptions`, and the `AZURE_OPENAI_*` credential mapping.
 - Removed the unused `mapStopReasonString`, `getBuiltinModelDataGeneratedAt`, `FauxProviderRegistration`, and `getOverflowPatterns` exports.
 - Model data JSON under `src/providers/data/` is now tracked in the repository, so fresh checkouts build offline. `npm run build` validates the tracked data instead of regenerating it from the models.dev API; run `npm run generate-models` (or `hydrate-model-data`) explicitly when refreshing the catalog.
-- Model data manifests keep only the schema version; redundant generation timestamps and SHA-256 hashes were removed.
-
 - Removed the unused deprecated `image-models.ts` catalog wrapper. Use the typed `getBuiltinImageModel()` and related accessors from `@candy/ai/providers/all`.
 - Removed the deprecated `@candy/ai/compat` entrypoint and its global stream/provider registry aliases. Use explicit provider factories with `Models`, or import a specific API implementation from `@candy/ai/api/*`.
 - Removed deprecated provider-specific `stream*` and `streamSimple*` aliases. Use the matching API implementation or a `Models` provider collection.
 - Removed the built-in Ant Ling, Baseten, and Radius providers, including Radius OAuth and model-catalog loading. The generic `pi-messages` API remains available to custom providers.
-- Unified image models into the regular `Provider`/`Models` surface. The separate `ImagesModels` collection is removed: `createImagesModels()`, `createImagesProvider()`, `ImagesProvider`, `openrouterImagesProvider()`, `builtinImagesProviders()`, and `builtinImagesModels()` are gone. Use `builtinModels()`, `models.getModelOfType("image", ...)`, `models.generateImages()`, and `createProvider({ models, images })` instead. Existing unqualified reads remain chat-only.
+- Unified image models into the regular `Provider`/`Models` surface. The separate `ImagesModels` collection is removed: `createImagesModels()`, `createImagesProvider()`, `ImagesProvider`, `openrouterImagesProvider()`, `builtinImagesProviders()`, and `builtinImagesModels()` are gone. Use `builtinModels()`, `models.getModelOfType("image", ...)`, `models.generateImages()`, and `createProvider({ models, images })` instead. Existing unqualified reads remain chat-only. The legacy global image dispatcher/registry is removed.
 - Image models are now `ImageModel` with a required `type: "image"` and share `BaseModel` with chat models. The old plural image type names (`ImagesModel`, `ImagesApi`, `KnownImagesApi`, `KnownImagesProvider`, and `ImagesProviderId`) are removed. `generateImages()` accepts only image models. Output modalities (`output`) remain on image models only.
-- Generated model data schema is now version 6: every entry carries `type`, operation-specific catalogs include chat and image models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate:model-data`.
+- Generated model data schema is now version 6: every entry carries `type`, operation-specific catalogs include chat and image models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate-model-data`. Manifests keep the schema version without timestamps or hashes.
 - Renamed `@earendil-works/pi-ai` to `@candy/ai` and `pi-ai` to `candy-ai`. Update imports and use `CANDY_CACHE_RETENTION` and `CANDY_OAUTH_CALLBACK_HOST` for the renamed environment settings.
 
 ### Added
@@ -26,15 +24,19 @@
 - Added `createModels({ decorateAuth })` for configured request headers and `Models.getAvailability()` for one provider authentication pass shared by availability, credential status, and errors.
 - Added `isAbortError()` and `abortReason()` to `@candy/ai/utils/abort`, and made `raceWithAbortSignal()` accept an optional signal. `sleep()` now accepts an optional signal and rejects with the signal's own reason instead of a fixed message.
 - The context estimator in `@candy/ai/utils/estimate` now counts the agent-level transcript messages hosts add (bash executions, extension messages, and branch/compaction summaries), so one implementation serves both the runtime estimate and compaction decisions.
-
 - Added `ToolResultMessage.cancelled` as optional transcript metadata for agent-aborted tools. Provider requests continue to use the existing result content and error flag.
-- Added `Models.generateImages()` with provider-resolved auth, `Provider.generateImages?`, and `createProvider({ images })` keyed by `model.api`. `createProvider()` `models` and `fetchModels` accept models of every type, and `api` is optional when `images` is given.
-- Added an optional model `type` (`"chat"` or `"image"`). Chat models may omit it, so existing chat models, providers, and stores keep working unchanged. Narrow mixed lists with the new `isModelType()` guard or read the effective type with `getModelType()`.
 - Added `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()` on `Models`; optional `Provider.getAllModels()` and `Provider.filterAllModels()`; corresponding generated-catalog accessors; and the `AnyModel` and `ModelTypeMap` types. `hasApi()`, `calculateCost()`, and `modelsAreEqual()` accept `AnyModel`.
-- Added support for models of every type in `ModelsStoreEntry.models`. Stored and fetched models of unknown types are dropped instead of failing a refresh.
-- Added a runtime chat-model check to the `Models` stream entry points so non-chat models fail with a clear `ModelsError` instead of a missing-api stream error.
 - Added array-based `models.all.json` and `providers/{id}.all.json` variants to the generated and published JSON catalog, allowing the same upstream ID once per model type; the existing keyed `models.json` and `providers/{id}.json` stay chat-only for released clients.
 - Added `onProviderStreamEvent` to observe parsed provider stream events before normalization, including provider-specific fields not retained in assistant messages ([#9784](https://github.com/earendil-works/pi/issues/9784)).
+- Mixed chat/image catalogs work in provider factories, generated accessors, and model stores. Chat may omit `type`; image requires `type: "image"`. Unknown stored model types are discarded; chat stream entry points reject non-chat models.
+
+### Changed
+
+- Removed tests that pinned catalog membership, prices, limits, and copied generator policies; thinking-level tests now cover metadata behavior with explicit fixtures.
+
+- Updated the OpenAI SDK to 7.23.0 and provider regression fixtures for current OpenCode Go and Zen catalogs.
+- Live provider verification now lives in `test/e2e/`, is excluded from the default `vitest` collection, and runs explicitly with `npm run test:e2e`. The default run no longer imports those files and therefore no longer reads or refreshes `~/.candy/agent/auth.json` at collection time. The four credential-gated `cache-retention.test.ts` payload assertions run offline in the default suite with a fixed test key.
+- Shortened the README and separated streaming/tool, model/authentication, provider, and image references.
 
 ### Fixed
 
@@ -44,15 +46,8 @@
 - Fixed OpenAI Fast mode requests being priced at the standard rate when the response reports `service_tier: "fast"`, as GPT-6 models do ([#10034](https://github.com/earendil-works/pi/issues/10034)).
 - Fixed GitHub Copilot Claude Opus 5.5 reasoning-effort handling when upstream model metadata is incomplete.
 
-### Changed
-
-- Updated the OpenAI SDK to 7.23.0 and provider regression fixtures for current OpenCode Go and Zen catalogs.
-- Live provider verification now lives in `test/e2e/`, is excluded from the default `vitest` collection, and runs explicitly with `npm run test:e2e`. The default run no longer imports those files and therefore no longer reads or refreshes `~/.candy/agent/auth.json` at collection time. The four credential-gated `cache-retention.test.ts` payload assertions run offline in the default suite with a fixed test key.
-
 ### Removed
 
-- Removed the legacy global image dispatcher and registry. Image requests use `Models.generateImages()` and the provider image implementation.
-- Removed the Amazon Bedrock and Azure OpenAI Responses adapters, providers, generated catalogs, and test suites, plus the classifier (System One) adapters, models, and provider configuration.
 - Removed `test/empty.test.ts`: its four assertions per provider accepted either an error or a defined content field, and were duplicated across 25 providers without a real behavior contract. Live provider behavior is covered by the remaining `test/e2e/` matrix.
 
 ## [0.87.1] - 2026-09-22

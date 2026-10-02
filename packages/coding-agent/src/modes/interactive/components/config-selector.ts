@@ -550,11 +550,14 @@ class ResourceList implements Component, Focusable {
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type === "wheel" && event.wheelDelta) {
 			this.selectedIndex = this.findNextItem(this.selectedIndex, event.wheelDelta < 0 ? -1 : 1);
+			this.region = "list";
+			this.focused = this._focused;
 			return { handled: true, render: true };
 		}
 		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
 		if (event.y === this.lastSearchRow) {
 			this.region = "search";
+			this.focused = this._focused;
 			return this.searchInput.handleMouse?.({ ...event, y: 0 });
 		}
 		if (
@@ -565,6 +568,7 @@ class ResourceList implements Component, Focusable {
 		) {
 			this.selectedTypeIndex = event.y;
 			this.region = "categories";
+			this.focused = this._focused;
 			this.buildFlatList();
 			this.filterItems(this.searchInput.getValue());
 			return { handled: true, focus: true, render: true };
@@ -576,6 +580,7 @@ class ResourceList implements Component, Focusable {
 			if (this.filteredItems[index]?.type !== "item") return undefined;
 			this.selectedIndex = index;
 			this.region = "list";
+			this.focused = this._focused;
 			if (event.type === "click") void this.toggleSelected();
 			return { handled: true, focus: true, render: true };
 		}

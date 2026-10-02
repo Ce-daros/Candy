@@ -122,7 +122,7 @@ try {
 }
 ```
 
-Without a theme adapter, the default resource loader disables theme discovery. A host that needs resource themes can provide `themeAdapter` from `@candy/coding-agent/ui`. A custom `resourceLoaderFactory({ cwd, agentDir })` is available when the host owns resource loading; return a loader prepared for the supplied working directory.
+Without a theme adapter, the default resource loader disables theme discovery. A host that needs resource themes can pass `resourceThemeAdapter` as `themeAdapter` from `@candy/coding-agent/ui`. A custom `resourceLoaderFactory({ cwd, agentDir })` is available when the host owns resource loading; return a loader prepared for the supplied working directory.
 
 Resource settings use the same runtime operations exposed to other hosts. `await runtime.resources.getConfiguration("global")` or `getConfiguration("project")` returns resolved global/project paths and a `ResourceConfiguration` operation object. Use its `toggleResource(item)` and `setWriteScope(scope)` methods to change enabled state and choose where overrides are saved. Use `runtime.resources.getInventory()` to read the active discovered resources and diagnostics.
 

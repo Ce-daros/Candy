@@ -26,7 +26,9 @@ export function keycap(key: string): string {
 }
 
 export function keyHint(keybinding: Keybinding, description: string): string {
-	return keycap(keyText(keybinding)) + theme.fg("muted", ` ${description}`);
+	const keys = keyText(keybinding);
+	if (!keys) return "";
+	return keycap(keys) + theme.fg("muted", ` ${description}`);
 }
 
 export function rawKeyHint(key: string, description: string): string {

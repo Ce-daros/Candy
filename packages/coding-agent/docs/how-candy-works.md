@@ -20,7 +20,7 @@ candy builds the system prompt from its base instructions and discovered context
 
 Full skill instructions are loaded on demand. Extensions can add instructions or transform context.
 
-Prompt templates expand editor input before it becomes a user message. Selected files, images, pasted text, and shell output can become message content.
+Explicit prompt-template commands expand their arguments into a user message. Selected files, images, pasted text, and shell output can become message content.
 
 ## Sessions
 

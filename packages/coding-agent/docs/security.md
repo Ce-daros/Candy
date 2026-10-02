@@ -67,7 +67,7 @@ Saved decisions use canonical directory paths and live in:
 ~/.candy/agent/trust.json
 ```
 
-Use `/trust` to save a decision for future candy processes.
+Open Command and choose Project trust under Privacy & Trust to save a decision for future Candy processes.
 
 ### Project trust without an interactive prompt
 

@@ -35,6 +35,20 @@ describe("Input component", () => {
 	});
 
 	describe("render", () => {
+		it("removes the rendered cursor on blur without moving text or changing width", () => {
+			const input = new Input({ placeholder: "Search" });
+			for (const value of ["", "中文名称🌸"]) {
+				input.setValue(value, value.length);
+				input.focused = true;
+				const focused = input.render(24)[0];
+				input.focused = false;
+				const blurred = input.render(24)[0];
+				assert.ok(focused.includes("\x1b[7m"));
+				assert.ok(!blurred.includes("\x1b[7m"));
+				assert.equal(stripTerminalSequences(focused), stripTerminalSequences(blurred));
+				assert.equal(visibleWidth(blurred), 24);
+			}
+		});
 		it("supports a custom prompt and styled placeholder", () => {
 			const input = new Input({
 				prompt: "",

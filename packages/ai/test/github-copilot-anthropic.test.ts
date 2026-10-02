@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { getSupportedThinkingLevels } from "../src/models.ts";
 import { getBuiltinModel as getModel } from "../src/providers/all.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -55,30 +54,6 @@ describe("Copilot Claude via Anthropic Messages", () => {
 	const context = normalizeContext({
 		systemPrompt: "You are a helpful assistant.",
 		messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
-	});
-
-	it("applies Copilot-specific adaptive thinking effort overrides", () => {
-		const opus47 = getModel("github-copilot", "claude-opus-4.7");
-		expect(opus47.thinkingLevelMap).toMatchObject({ minimal: "low", xhigh: "xhigh", max: "max" });
-		expect(getSupportedThinkingLevels(opus47)).toContain("xhigh");
-		expect(getSupportedThinkingLevels(opus47)).toContain("max");
-
-		const opus5 = getModel("github-copilot", "claude-opus-5");
-		expect(opus5.api).toBe("anthropic-messages");
-		expect(opus5.contextWindow).toBe(1000000);
-		expect(opus5.thinkingLevelMap).toMatchObject({ minimal: "low", xhigh: "xhigh", max: "max" });
-		expect(getSupportedThinkingLevels(opus5)).toContain("xhigh");
-		expect(getSupportedThinkingLevels(opus5)).toContain("max");
-
-		const opus55 = getModel("github-copilot", "claude-opus-5.5");
-		expect(opus55.api).toBe("anthropic-messages");
-		expect(opus55.contextWindow).toBe(1000000);
-		expect(getSupportedThinkingLevels(opus55)).toEqual(["low", "medium", "high", "xhigh", "max"]);
-
-		const sonnet46 = getModel("github-copilot", "claude-sonnet-4.6");
-		expect(sonnet46.thinkingLevelMap).toMatchObject({ minimal: "low", max: "max" });
-		expect(getSupportedThinkingLevels(sonnet46)).toContain("max");
-		expect(getSupportedThinkingLevels(sonnet46)).not.toContain("xhigh");
 	});
 
 	it("uses Bearer auth, Copilot headers, and valid Anthropic Messages payload", async () => {

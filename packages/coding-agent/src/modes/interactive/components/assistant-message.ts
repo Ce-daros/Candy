@@ -5,6 +5,7 @@ import {
 	colorToOklch,
 	Markdown,
 	type MarkdownTheme,
+	MotionClock,
 	MouseRegion,
 	oklchColor,
 	Spacer,
@@ -80,7 +81,7 @@ export class AssistantMessageComponent extends Container {
 	private animations = false;
 	private intensity: AnimationIntensity = "moderate";
 	private requestRender: (() => void) | undefined;
-	private breathingTimer: NodeJS.Timeout | undefined;
+	private readonly breathingClock = new MotionClock();
 	private completedBlocks = new Set<number>();
 	private entrances = new Map<number, PanelTransition>();
 	private seenTextBlocks = new Set<number>();
@@ -101,16 +102,13 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	private syncBreathing(): void {
-		if (this.breathingTimer) clearInterval(this.breathingTimer);
-		this.breathingTimer = undefined;
+		this.breathingClock.stop();
 		if (!this.animations || !this.isStreaming) return;
-		this.breathingTimer = setInterval(() => this.requestRender?.(), 40);
-		this.breathingTimer.unref();
+		this.breathingClock.start(40, () => this.requestRender?.());
 	}
 
 	dispose(): void {
-		if (this.breathingTimer) clearInterval(this.breathingTimer);
-		this.breathingTimer = undefined;
+		this.breathingClock.stop();
 		for (const transition of this.entrances.values()) transition.dispose();
 		this.entrances.clear();
 	}

@@ -1,40 +1,44 @@
-import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
+import { createTemplateRenderer } from "./export-html-template.ts";
 
-describe("export HTML skill block rendering", () => {
-	const templateJs = readFileSync(new URL("../src/presentation/export-html/template.js", import.meta.url), "utf-8");
-
-	it("strips skill wrapper XML from user message rendering", () => {
-		// Skill commands store a structural wrapper in the raw user message:
-		//   <skill name="..." location="...">\n...\n</skill>\n\nactual prompt
-		// The export renderer must detect that wrapper and render only the user-visible prompt,
-		// not the Pi-generated <skill>...</skill> XML tags.
-		expect(templateJs).toMatch(/parseSkillBlock/);
-		expect(templateJs).toMatch(/skillBlock\.userMessage/);
+describe("export HTML skill blocks", () => {
+	it("renders the skill markdown and user prompt as separate blocks", () => {
+		const entry = {
+			id: "skill",
+			type: "message",
+			message: {
+				role: "user",
+				content:
+					'<skill name="review" location="/skills/review/SKILL.md">\n**Review rules**\n</skill>\n\nCheck this change',
+			},
+		};
+		const renderer = createTemplateRenderer();
+		const html = renderer.renderEntry(entry);
+		expect(html).toContain("<strong>Review rules</strong>");
+		expect(html).toMatch(/<\/div>\s*<\/div><div class="user-message">/);
+		expect(html).toContain("Check this change");
+		expect(html).not.toContain("&lt;skill");
+		const tree = renderer.getTreeNodeDisplayHtml(entry);
+		expect(tree).toContain("review");
+		expect(tree).toContain("Check this change");
 	});
 
-	it("renders skill invocation and user message as separate sibling blocks", () => {
-		// The skill block and user message should render as separate entry-level elements,
-		// matching the TUI layout where SkillInvocationMessageComponent and
-		// UserMessageComponent are siblings, not nested.
-		expect(templateJs).toMatch(/skill-invocation/);
-
-		// When a skill block has a userMessage, the user-message div must be emitted
-		// as a separate block after the skill-invocation div, containing the user-authored text.
-		// Verify the code checks hasUserContent so the user-message div is only omitted
-		// when the skill block has no user prompt and no images.
-		expect(templateJs).toMatch(/hasUserContent/);
-	});
-
-	it("renders skill content as markdown, not raw text", () => {
-		// The skill block body is markdown (from the SKILL.md file).
-		// It should be rendered through safeMarkedParse, not escaped as raw text.
-		expect(templateJs).toMatch(/safeMarkedParse\(skillBlock\.content\)/);
-	});
-
-	it("shows skill name and user message in the sidebar tree", () => {
-		// The sidebar tree should display both the skill name and the user prompt,
-		// not just one or the other.
-		expect(templateJs).toMatch(/tree-role-skill/);
+	it("omits an empty user prompt but retains attached images", () => {
+		const content = '<skill name="review" location="/skills/review/SKILL.md">\nRules\n</skill>';
+		const renderer = createTemplateRenderer();
+		const entry = { id: "skill", type: "message", message: { role: "user", content } };
+		expect(renderer.renderEntry(entry)).not.toContain('class="user-message"');
+		expect(
+			renderer.renderEntry({
+				...entry,
+				message: {
+					role: "user",
+					content: [
+						{ type: "text", text: content },
+						{ type: "image", mimeType: "image/png", data: "aGk=" },
+					],
+				},
+			}),
+		).toContain('src="data:image/png;base64,aGk="');
 	});
 });

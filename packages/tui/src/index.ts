@@ -114,6 +114,7 @@ export {
 } from "./keys.ts";
 // LaTeX rendering
 export { type RenderLatexOptions, renderLatex } from "./latex.ts";
+export { easeOutCubic, MotionClock, type MotionIntensity, MotionValue, motionDuration, smoothstep } from "./motion.ts";
 // Native platform integration
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
 export { moveSelection, moveViewport, visibleWindow } from "./selection.ts";

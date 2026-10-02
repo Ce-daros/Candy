@@ -2,7 +2,7 @@
 
 candy supports user-level and project configuration. User-level configuration lives in the agent directory, which defaults to `~/.candy/agent`. Project configuration lives in `.candy` under the working directory and loads after [project trust](security.md#understand-project-trust) is granted. Project values override user values only for settings that support project scope; `defaultProjectTrust` and `cacheWarming` are user-level only. The only setting candy reads before resolving trust is `sessionDir`, so it can locate sessions.
 
-In interactive mode, type `/` in an empty editor to open Command and change common preferences. For other options, ask candy to update the configuration or edit the relevant files directly. Choose Reload in Command after manually changing settings, keybindings, instructions, or resources.
+In interactive mode, type `/` in an empty editor to open Command and change common preferences. For other options, ask candy to update the configuration or edit the relevant files directly. Press Ctrl+R after manually changing settings, keybindings, instructions, or resources.
 
 Run `candy config` to choose which package resources load. Its panel groups extensions, skills, prompts, and themes by package and source. It shows each resource's path and whether the current scope inherits, enables, or disables it. Use `Alt+S` to switch between user and project settings.
 

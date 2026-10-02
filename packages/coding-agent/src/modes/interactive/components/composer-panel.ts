@@ -1,5 +1,6 @@
 import {
 	type Component,
+	CURSOR_MARKER,
 	type Focusable,
 	isFocusable,
 	type TUI,
@@ -12,12 +13,17 @@ import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import type { CustomEditor } from "./custom-editor.ts";
 import { PanelTransition, panelPhase, panelRowVisible } from "./panel-transition.ts";
 
-export type PanelContent = Component & { setAvailableHeight?(height: number): void };
+export type PanelContent = Component & {
+	setAvailableHeight?(height: number): void;
+};
 
 export class ComposerPanel implements Component, Focusable {
 	private readonly ui: TUI;
 	private readonly editor: CustomEditor;
 	private readonly transition: PanelTransition;
+	private displayedLines: string[] = [];
+	private closingLines: string[] | undefined;
+	private shownRows = new Set<number>();
 	private content: PanelContent | undefined;
 	private inputTarget: Component | undefined;
 	private heightRatio = 0.8;
@@ -43,6 +49,10 @@ export class ComposerPanel implements Component, Focusable {
 	}
 
 	show(content: PanelContent, heightRatio = 0.8, inputTarget: Component = content): void {
+		this.closingLines = undefined;
+		if (this.content !== content) {
+			this.transition.snap(0);
+		}
 		if (this.inputTarget && isFocusable(this.inputTarget)) this.inputTarget.focused = false;
 		this.content = content;
 		this.inputTarget = inputTarget;
@@ -52,7 +62,17 @@ export class ComposerPanel implements Component, Focusable {
 	}
 
 	close(complete: () => void): void {
-		this.transition.setOpen(false, complete);
+		this.closingLines = this.displayedLines.map((line) => line.replaceAll(CURSOR_MARKER, ""));
+		if (this.inputTarget && isFocusable(this.inputTarget)) this.inputTarget.focused = false;
+		this.content = undefined;
+		this.inputTarget = undefined;
+		this.transition.setOpen(false, () => {
+			this.content = undefined;
+			this.inputTarget = undefined;
+			this.displayedLines = [];
+			this.closingLines = undefined;
+			complete();
+		});
 	}
 
 	dispose(): void {
@@ -71,6 +91,7 @@ export class ComposerPanel implements Component, Focusable {
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.y < 1 || event.y > this.visibleRows) return;
+		if (!this.shownRows.has(event.y - 1)) return;
 		const result = this.content?.handleMouse?.({
 			...event,
 			x: event.x - 2,
@@ -82,11 +103,12 @@ export class ComposerPanel implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
-		if (!this.content) return this.editor.render(width);
+		if (!this.content && !this.closingLines) return this.editor.render(width);
 		const innerWidth = Math.max(1, width - 4);
 		const available = Math.max(3, Math.floor(this.ui.terminal.rows * this.heightRatio) - 2);
-		this.content.setAvailableHeight?.(available);
-		const lines = this.content.render(innerWidth);
+		this.content?.setAvailableHeight?.(available);
+		const targetLines = this.closingLines ?? this.content!.render(innerWidth);
+		const lines = targetLines.slice(0, available);
 		const height = Math.min(available, lines.length);
 		const progress = this.transition.value();
 		const { expanded, growth, topReveal } = panelPhase(progress);
@@ -102,9 +124,13 @@ export class ComposerPanel implements Component, Focusable {
 				0,
 			),
 		];
+		this.shownRows.clear();
+		this.displayedLines = [];
 		for (let row = 0; row < this.visibleRows; row++) {
 			const shown = panelRowVisible(progress, row, height, 0.73);
 			const text = shown ? truncateToWidth(lines[row] ?? "", innerWidth, "") : "";
+			if (shown) this.shownRows.add(row);
+			this.displayedLines.push(text);
 			result.push(
 				motion.paintBorder("│ ", 0, row + 1) +
 					text +

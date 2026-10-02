@@ -2,9 +2,6 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { type ExtensionAPI, type ExtensionContext } from "@candy/coding-agent";
-import { DynamicBorder } from "@candy/coding-agent/ui";
-
-import { Container, hyperlink, Text } from "@candy/tui";
 
 const PR_PROMPT_PATTERN = /^\s*You are given one or more GitHub PR URLs:\s*(\S+)/im;
 const ISSUE_PROMPT_PATTERN = /^\s*Analyze GitHub issue\(s\):\s*(\S+)/im;
@@ -173,27 +170,16 @@ function formatAuthor(author?: GhMetadata["author"]): string | undefined {
 
 export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 	const setWidget = (ctx: ExtensionContext, match: PromptMatch, metadata?: GhMetadata) => {
-		ctx.ui.setWidget("prompt-url", (_tui, thm) => {
-			const displayTarget = metadata?.displayUrl ?? match.target;
-			const titleText = metadata?.title
-				? thm.fg("accent", metadata.title)
-				: hyperlink(thm.fg("accent", displayTarget), displayTarget);
-			const detailText = metadata?.detail ?? formatAuthor(metadata?.author);
-			const detailLine = detailText ? thm.fg("muted", detailText) : undefined;
-			const urlLine = hyperlink(thm.fg("dim", displayTarget), displayTarget);
-
-			const lines = [titleText];
-			if (detailLine) lines.push(detailLine);
-			lines.push(urlLine);
-
-			const container = new Container();
-			container.addChild(new DynamicBorder((s: string) => thm.fg("muted", s)));
-			container.addChild(new Text(lines.join("\n"), 1, 0));
-			return container;
-		});
+		const displayTarget = metadata?.displayUrl ?? match.target;
+		const detail = metadata?.detail ?? formatAuthor(metadata?.author);
+		const lines: string[] = [];
+		if (metadata?.title) lines.push(metadata.title);
+		if (detail) lines.push(detail);
+		lines.push(displayTarget);
+		ctx.ui.setWidget("prompt-url", lines);
 	};
 
-	const applySessionName = (ctx: ExtensionContext, match: PromptMatch, metadata?: GhMetadata) => {
+	const applySessionName = (match: PromptMatch, metadata?: GhMetadata) => {
 		const label = getPromptLabel(match.kind);
 		const displayTarget = metadata?.displayUrl ?? match.target;
 		const trimmedTitle = metadata?.title?.trim();
@@ -210,13 +196,12 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		}
 	};
 
-	const updatePromptContext = (ctx: ExtensionContext, match: PromptMatch) => {
+	const updatePromptContext = async (ctx: ExtensionContext, match: PromptMatch) => {
 		setWidget(ctx, match);
-		applySessionName(ctx, match);
-		void fetchGhMetadata(pi, match.kind, match.target, ctx.cwd).then((meta) => {
-			setWidget(ctx, match, meta);
-			applySessionName(ctx, match, meta);
-		});
+		applySessionName(match);
+		const meta = await fetchGhMetadata(pi, match.kind, match.target, ctx.cwd);
+		setWidget(ctx, match, meta);
+		applySessionName(match, meta);
 	};
 
 	pi.on("before_agent_start", async (event, ctx) => {
@@ -226,11 +211,7 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 			return;
 		}
 
-		updatePromptContext(ctx, match);
-	});
-
-	pi.on("session_switch", async (_event, ctx) => {
-		rebuildFromSession(ctx);
+		await updatePromptContext(ctx, match);
 	});
 
 	const getUserText = (content: string | { type: string; text?: string }[] | undefined): string => {
@@ -244,10 +225,10 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		);
 	};
 
-	const rebuildFromSession = (ctx: ExtensionContext) => {
+	const rebuildFromSession = async (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
-		const entries = ctx.sessionManager.getEntries();
+		const entries = ctx.history.getBranch();
 		const lastMatch = [...entries].reverse().find((entry) => {
 			if (entry.type !== "message" || entry.message.role !== "user") return false;
 			const text = getUserText(entry.message.content);
@@ -263,10 +244,10 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 			return;
 		}
 
-		updatePromptContext(ctx, match);
+		await updatePromptContext(ctx, match);
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
-		rebuildFromSession(ctx);
+		await rebuildFromSession(ctx);
 	});
 }

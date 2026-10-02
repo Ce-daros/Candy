@@ -356,29 +356,40 @@ export function styleTextWithAnsi(
 	if (fgAnsi) {
 		prefix += fgAnsi;
 		suffix = "\x1b[39m";
+		text = text.replaceAll("\x1b[39m", fgAnsi);
 	}
 	if (bgAnsi) {
 		prefix += bgAnsi;
 		suffix = `\x1b[49m${suffix}`;
+		text = text.replaceAll("\x1b[49m", bgAnsi);
 	}
 	if (options.bold) prefix += "\x1b[1m";
 	if (options.dim) prefix += "\x1b[2m";
-	if (options.bold || options.dim) suffix = `\x1b[22m${suffix}`;
+	if (options.bold || options.dim) {
+		suffix = `\x1b[22m${suffix}`;
+		text = text.replaceAll("\x1b[22m", `${options.bold ? "\x1b[1m" : ""}${options.dim ? "\x1b[2m" : ""}`);
+	}
 	if (options.italic) {
 		prefix += "\x1b[3m";
 		suffix = `\x1b[23m${suffix}`;
+		text = text.replaceAll("\x1b[23m", "\x1b[3m");
 	}
 	if (options.underline) {
 		prefix += "\x1b[4m";
 		suffix = `\x1b[24m${suffix}`;
+		text = text.replaceAll("\x1b[24m", "\x1b[4m");
 	}
 	if (options.inverse) {
 		prefix += "\x1b[7m";
 		suffix = `\x1b[27m${suffix}`;
+		text = text.replaceAll("\x1b[27m", "\x1b[7m");
 	}
 	if (options.strikethrough) {
 		prefix += "\x1b[9m";
 		suffix = `\x1b[29m${suffix}`;
+		text = text.replaceAll("\x1b[29m", "\x1b[9m");
 	}
+	// Inner styles close to the enclosing style; a full reset also clears unrelated attributes.
+	text = text.replaceAll("\x1b[0m", `\x1b[0m${prefix}`).replaceAll("\x1b[m", `\x1b[m${prefix}`);
 	return `${prefix}${text}${suffix}`;
 }

@@ -2,7 +2,7 @@
 
 This reference lists user-configurable settings, their types, defaults, and purposes. Project values override agent-directory values for settings that support project scope. `defaultProjectTrust` and `cacheWarming` are global-only. Resource lists are combined. See [Configuration](configuration.md) for file locations and trust behavior.
 
-Type `/` in an empty editor to open Command and search individual settings. Simple values save immediately. The Theme picker previews changes while you move and restores the previous theme if you cancel. Model-specific settings are in Model → Details; steering, follow-up, and retry controls are in Thinking → Agent → Behavior.
+Type `/` in an empty editor to open Command and search individual settings. Simple values save immediately. The Theme picker previews changes while you move and restores the previous theme if you cancel. Model-specific settings are in Actions → Current Model; steering, follow-up, and retry controls are in Actions → Behavior.
 
 ## Model and thinking
 
@@ -18,11 +18,13 @@ Type `/` in an empty editor to open Command and search individual settings. Simp
 | `showCacheMissNotices` | boolean | `false` | Show notices for significant cache misses, successful cache warming, compaction usage, and provider recovery. |
 | `cacheWarming` | `"off" \| "streaming" \| "idle"` | `"streaming"` | Keep eligible provider prompt caches warm during active runs or, with `"idle"`, between runs. Global setting only. |
 
-Cache warming runs only when the model declares a cache lifetime and candy estimates at least $0.05 in avoided cache-miss cost. Refresh usage counts toward session totals but does not enter model context. History → Session details shows the next decision. See [Prompt Cache Lifetimes](models.md#prompt-cache-lifetimes).
+Cache warming runs only when the model declares a cache lifetime and candy estimates at least $0.05 in avoided cache-miss cost. Refresh usage counts toward session totals but does not enter model context. Actions → Session details shows the next decision. See [Prompt Cache Lifetimes](models.md#prompt-cache-lifetimes).
 
 See [Choose a Model](models.md) for model selection and thinking controls.
 
 ## Interaction
+
+Press Escape twice within 500ms in an empty editor to open Actions. This action is fixed.
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
@@ -30,8 +32,7 @@ See [Choose a Model](models.md) for model selection and thinking controls.
 | `followUpMode` | `"all" \| "one-at-a-time"` | `"one-at-a-time"` | How queued follow-up messages are delivered. |
 | `toolPreviewLines` | `5 \| 10 \| 20` | `5` | Terminal rows shown for edit, write, and shell previews before expansion. Errors show up to 12 rows. |
 | `externalEditor` | string | `$VISUAL`, `$EDITOR`, then platform default | Command opened by the external-editor keybinding. |
-| `doubleEscapeAction` | `"tree" \| "fork" \| "none"` | `"tree"` | Action for double Escape with an empty editor. |
-| `treeFilterMode` | `"default" \| "no-tools" \| "user-only" \| "labeled-only" \| "all"` | `"default"` | Initial filter used by History → Tree. |
+| `treeFilterMode` | `"default" \| "no-tools" \| "user-only" \| "labeled-only" \| "all"` | `"default"` | Initial filter used by Actions → Tree. |
 | `defaultProjectTrust` | `"ask" \| "always" \| "never"` | `"ask"` | Fallback project-trust behavior. **Can only be set in agent-directory settings.** |
 
 ## Tools
@@ -90,7 +91,7 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 | `terminal.clearOnShrink` | boolean | `false` | Clear empty rows when rendered content shrinks. |
 | `terminal.showTerminalProgress` | boolean | `false` | Show OSC 9;4 progress in the terminal tab. |
 | `terminal.hyperlinks` | `boolean \| "auto"` | `"auto"` | Override OSC 8 hyperlink detection. |
-| `terminal.images` | `"kitty" \| "iterm2" \| "auto" \| false` | `"auto"` | Override inline-image protocol detection. |
+| `terminal.images` | `"kitty" \| "iterm2" \| "sixel" \| "auto" \| false` | `"auto"` | Override inline-image protocol detection. Use `"sixel"` for Windows Terminal when its environment markers are missing. |
 | `terminal.trueColor` | `boolean \| "auto"` | `"auto"` | Override true-color detection. |
 | `images.autoResize` | boolean | `true` | Resize images to at most 2000 by 2000 pixels before sending them to a model. |
 | `images.blockImages` | boolean | `false` | Prevent images from being sent to models. |
@@ -99,16 +100,7 @@ See [Compaction Reference](compaction.md) for trigger, summarization, and valida
 
 See [Themes](themes.md) and [Terminal Setup](terminal-setup.md) for format and platform details.
 
-Set both values in Command or in `settings.json`:
-
-```json
-{
-  "uiAnimations": true,
-  "animationIntensity": "moderate"
-}
-```
-
-`conservative` updates less often and moves more slowly; `aggressive` updates more often and finishes transitions sooner. The selected thinking level changes the border color, six-step meter, and the number and brightness of moving trails. Setting `uiAnimations` to `false` immediately finishes panel and frame transitions, stops moving trails, and shows a short status word in the editor's top border. Level colors and the meter remain. Custom editors that replace the default editor control their own status rendering.
+`conservative` updates less often and moves more slowly; `aggressive` finishes transitions sooner. Disabling `uiAnimations` finishes active transitions and replaces moving activity with a status word.
 
 ## Network and retries
 

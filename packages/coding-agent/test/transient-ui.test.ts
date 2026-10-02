@@ -8,6 +8,23 @@ beforeEach(() => initTheme("dark", false));
 afterEach(() => vi.useRealTimers());
 
 describe("transient UI", () => {
+	it("stops fade ticks when motion is disabled but still expires the notification", () => {
+		vi.useFakeTimers();
+		let animations = true;
+		const render = vi.fn();
+		const notice = new TransientNotification(render, () => animations);
+		notice.show("Saved");
+		vi.advanceTimersByTime(100);
+		animations = false;
+		notice.render(80);
+		render.mockClear();
+		vi.advanceTimersByTime(3299);
+		expect(render).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1);
+		expect(notice.render(80)).toEqual([]);
+		expect(render).toHaveBeenCalledOnce();
+		expect(vi.getTimerCount()).toBe(0);
+	});
 	it("replaces a short notification and expires it without leaving a timer", () => {
 		vi.useFakeTimers();
 		const notice = new TransientNotification(

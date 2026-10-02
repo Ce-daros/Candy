@@ -198,7 +198,6 @@ export const INTERACTIVE_SETTINGS = {
 		GLOBAL_ONLY,
 		readDefaultProjectTrust,
 	),
-	"double-escape-action": direct(["tree", "fork", "none"], "tree", "doubleEscapeAction"),
 	"tree-filter-mode": direct(
 		["default", "no-tools", "user-only", "labeled-only", "all"],
 		"default",

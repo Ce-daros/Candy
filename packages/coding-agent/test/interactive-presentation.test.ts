@@ -51,8 +51,8 @@ describe("interactive presentation", () => {
 			skills: vi.fn(async () => {}),
 			settingsActions: () => [],
 			localCommands: () => [],
-			historyCommands: () => [],
-			historyAction: vi.fn(async () => {}),
+			sessionCommands: () => [],
+			sessionAction: vi.fn(async () => {}),
 		};
 		flows = new InteractiveFlowStack();
 		presentation = new InteractivePresentation(host, flows);
@@ -85,6 +85,144 @@ describe("interactive presentation", () => {
 		panel.handleInput("\r");
 		await settle();
 	}
+
+	it("opens the active model from Actions and restores its search on return", async () => {
+		presentation.open("actions");
+		const actions = panel;
+		await harness.session.selection.setModel(harness.models[1]);
+		await choose("Current Model");
+		expect(presentation.surface).toBe("details");
+		expect(stripAnsi(panel.render(100).join("\n"))).toContain(`${harness.models[1].provider} · second`);
+		panel.handleInput("\x1b");
+		expect(panel).toBe(actions);
+		expect(panel.getQuery()).toBe("Current Model");
+		expect(panel.getSelectedId()).toBe("current-model");
+	});
+
+	it("keeps Actions open with a visible error when no current model exists", async () => {
+		harness.session.selection.clearModel();
+		presentation.open("actions");
+		await choose("Current Model");
+		expect(presentation.surface).toBe("actions");
+		expect(stripAnsi(panel.render(100).join("\n"))).toContain("No model selected");
+	});
+
+	it("restores inherited Default thinking through Current Model without changing active effort", async () => {
+		const model = harness.models[0];
+		await harness.settingsManager.commitModelThinkingLevel(model.provider, model.id, "high");
+		const activeEffort = harness.session.selection.thinkingLevel;
+		presentation.open("actions");
+		await choose("Current Model");
+		expect(stripAnsi(panel.render(100).join("\n"))).toContain("high · global-model");
+		panel.handleInput("\x1b[3~");
+		await settle();
+		expect(harness.settingsManager.getModelThinkingLevel(model.provider, model.id)).toBeUndefined();
+		expect(stripAnsi(panel.render(100).join("\n"))).toContain("medium · Built-in");
+		expect(harness.session.selection.thinkingLevel).toBe(activeEffort);
+	});
+
+	it("orders model, session, file and agent actions in one searchable menu", () => {
+		host.sessionCommands = () => [
+			{ id: "local:New session", name: "New session", argumentMode: "none", execute: vi.fn(async () => {}) },
+			{ id: "local:Export", name: "Export", argumentMode: "none", execute: vi.fn(async () => {}) },
+			{ id: "local:Import", name: "Import", argumentMode: "none", execute: vi.fn(async () => {}) },
+		];
+		presentation.open("actions");
+		const expected = [
+			"current-model",
+			"sources",
+			"context",
+			"compact",
+			"details",
+			"rename",
+			"local:New session",
+			"tree",
+			"fork",
+			"clone",
+			"resume",
+			"local:Export",
+			"local:Import",
+			"instructions",
+			"skills",
+			"tools",
+			"behavior",
+		];
+		for (const id of expected) {
+			expect(panel.getSelectedId()).toBe(id);
+			panel.handleInput("\x1b[B");
+		}
+	});
+
+	it("applies an edited Sources scope before returning to Actions", async () => {
+		presentation.open("actions");
+		const actions = panel;
+		await choose("Sources");
+		await choose(harness.modelRuntime.getProvider(harness.models[0].provider)!.name);
+		await choose("First");
+		panel.handleInput("\x1b");
+		expect(host.applyQuickSelection).not.toHaveBeenCalled();
+		panel.handleInput("\x1b");
+		await settle();
+		expect(host.applyQuickSelection).toHaveBeenCalledOnce();
+		expect(harness.session.selection.model?.id).toBe("second");
+		expect(panel).toBe(actions);
+		expect(panel.getQuery()).toBe("Sources");
+		expect(panel.getSelectedId()).toBe("sources");
+		expect(host.exit).not.toHaveBeenCalled();
+	});
+
+	it("returns from browsed Sources without applying or changing the active model", async () => {
+		presentation.open("actions");
+		await choose("Sources");
+		panel.handleInput("\x1b");
+		await settle();
+		expect(host.applyQuickSelection).not.toHaveBeenCalled();
+		expect(presentation.surface).toBe("actions");
+		expect(harness.session.selection.model?.id).toBe("first");
+	});
+
+	it("keeps Sources and its selection active when reconciliation fails and allows retry", async () => {
+		presentation.open("actions");
+		await choose("Sources");
+		const sources = panel;
+		await choose("Clear quick selection");
+		const apply = vi.mocked(host.applyQuickSelection);
+		apply.mockRejectedValueOnce(new Error("Authentication failed"));
+		panel.handleInput("\x1b");
+		await settle();
+		expect(panel).toBe(sources);
+		expect(presentation.surface).toBe("sources");
+		expect(panel.getSelectedId()).toBe("none");
+		expect(host.reportError).toHaveBeenCalledWith("Authentication failed");
+		panel.handleInput("\x1b");
+		await settle();
+		expect(presentation.surface).toBe("actions");
+		expect(harness.session.selection.model).toBeUndefined();
+	});
+
+	it("does not restore a Sources page when reconciliation completes after disposal", async () => {
+		presentation.open("actions");
+		await choose("Sources");
+		await choose("Clear quick selection");
+		let finish!: () => void;
+		vi.mocked(host.applyQuickSelection).mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		panel.handleInput("\x1b");
+		const page = flows.current!;
+		presentation.dispose();
+		presentation.open("command");
+		const command = panel;
+		finish();
+		await settle();
+		expect(page.controller.signal.aborted).toBe(true);
+		expect(panel).toBe(command);
+		expect(presentation.surface).toBe("command");
+		expect(host.exit).not.toHaveBeenCalled();
+	});
 
 	it("saves the highlighted model default without changing the active session", async () => {
 		const highlighted = harness.models[1];
@@ -145,10 +283,10 @@ describe("interactive presentation", () => {
 		expect(harness.session.selection.model?.id).toBe("first");
 	});
 
-	it("resumes History at its selected action after a child closes", async () => {
-		presentation.open("history");
+	it("resumes Actions at its selected action after a child closes", async () => {
+		presentation.open("actions");
 		await choose("Tree");
-		expect(host.historyAction).toHaveBeenCalledWith("tree", "");
+		expect(host.sessionAction).toHaveBeenCalledWith("tree", "");
 		presentation.resume();
 		expect(panel.getQuery()).toBe("Tree");
 		expect(panel.getSelectedId()).toBe("tree");
@@ -191,7 +329,7 @@ describe("interactive presentation", () => {
 	});
 
 	it("changes Behavior through the session runtime", async () => {
-		presentation.open("agent");
+		presentation.open("actions");
 		await choose("Behavior");
 		const previous = harness.session.execution.steeringMode;
 		await choose("Steering");
@@ -267,7 +405,7 @@ describe("interactive presentation", () => {
 	it("clears saved default tools without altering the current session tools", async () => {
 		await harness.settingsManager.setDefaultTools([]);
 		const tools = harness.session.execution.getActiveToolNames();
-		presentation.open("agent");
+		presentation.open("actions");
 		await choose("Tools");
 		await choose("Use inherited default tools");
 		expect(harness.settingsManager.getGlobalSettings().defaultTools).toBeUndefined();
@@ -276,17 +414,17 @@ describe("interactive presentation", () => {
 
 	it("prefills Rename with the current session name", async () => {
 		harness.session.execution.setSessionName("Research notes");
-		presentation.open("history");
+		presentation.open("actions");
 		await choose("Rename");
 		expect(stripAnsi(panel.render(100).join("\n"))).toContain("> Research notes");
 	});
 
 	it("places the New session action in the Sessions group", async () => {
-		host.historyCommands = () => [
+		host.sessionCommands = () => [
 			{ id: "local:New session", name: "New session", argumentMode: "none", execute: vi.fn(async () => {}) },
 			{ id: "local:Export", name: "Export", argumentMode: "none", execute: vi.fn(async () => {}) },
 		];
-		presentation.open("history");
+		presentation.open("actions");
 		const lines = stripAnsi(panel.render(100).join("\n")).split("\n");
 		expect(lines.indexOf("Sessions")).toBeLessThan(lines.findIndex((line) => line.includes("New session")));
 		expect(lines.indexOf("Files")).toBeLessThan(lines.findIndex((line) => line.includes("Export")));

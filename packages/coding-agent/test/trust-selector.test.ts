@@ -1,5 +1,5 @@
 import { dirname, resolve } from "node:path";
-import { setKeybindings } from "@candy/tui";
+import { setKeybindings, visibleWidth } from "@candy/tui";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TrustSelectorComponent } from "../src/modes/interactive/components/trust-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -7,6 +7,24 @@ import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("TrustSelectorComponent", () => {
+	it.each([80, 120])("keeps long Chinese paths and the action hints visible at width %s", (width) => {
+		const cwd = resolve(`/${"很长的父目录/".repeat(20)}末尾项目`);
+		const selector = new TrustSelectorComponent({
+			cwd,
+			savedDecision: { path: dirname(cwd), decision: true },
+			projectTrusted: true,
+			includeSessionOnly: true,
+			onSelect: () => {},
+			onCancel: () => {},
+		});
+		const lines = selector.render(width);
+		expect(lines.length).toBeLessThanOrEqual(24);
+		expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+		expect(stripAnsi(lines[1]!)).toContain("末尾项目");
+		expect(stripAnsi(lines.at(-1)!)).toContain("save");
+		expect(stripAnsi(lines.at(-1)!)).toContain("cancel");
+		expect(stripAnsi(lines.join("\n"))).toContain("Do not trust (this session only)");
+	});
 	beforeAll(() => {
 		initTheme("dark");
 	});

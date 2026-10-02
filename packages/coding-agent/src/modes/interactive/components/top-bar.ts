@@ -1,4 +1,4 @@
-import { type Component, foregroundAnsi, mixColors, truncateToWidth, visibleWidth } from "@candy/tui";
+import { type Component, foregroundAnsi, MotionClock, mixColors, truncateToWidth, visibleWidth } from "@candy/tui";
 import { type ThemeColor, theme } from "../theme/theme.ts";
 
 export interface TopBarData {
@@ -14,7 +14,7 @@ export class TopBarComponent implements Component {
 	private percent: number | null = null;
 	private changedAt = -Infinity;
 	private animations = true;
-	private timer: NodeJS.Timeout | undefined;
+	private readonly clock = new MotionClock();
 
 	constructor(getData: () => TopBarData, requestRender?: () => void) {
 		this.getData = getData;
@@ -23,28 +23,35 @@ export class TopBarComponent implements Component {
 
 	setAnimations(enabled: boolean): void {
 		this.animations = enabled;
+		this.clock.stop();
 		this.updateTimer();
 	}
 
 	invalidate(): void {}
 
 	dispose(): void {
-		if (this.timer) clearInterval(this.timer);
-		this.timer = undefined;
+		this.clock.stop();
 	}
 
 	private updateTimer(): void {
+		const remaining = 2400 - (performance.now() - this.changedAt);
+		if (!this.animations && this.requestRender && this.percent !== null && this.percent < 30 && remaining > 0) {
+			this.clock.schedule(remaining, () => {
+				this.requestRender?.();
+			});
+			return;
+		}
 		const needsTimer =
+			this.animations &&
 			this.requestRender &&
 			this.percent !== null &&
-			((this.percent < 30 && performance.now() - this.changedAt < 2400) || (this.animations && this.percent >= 70));
+			((this.percent < 30 && remaining > 0) || this.percent >= 70);
 		if (!needsTimer) this.dispose();
-		else if (!this.timer) {
-			this.timer = setInterval(() => {
+		else if (!this.clock.active) {
+			this.clock.start(60, () => {
 				this.requestRender?.();
 				this.updateTimer();
-			}, 60);
-			this.timer.unref();
+			});
 		}
 	}
 

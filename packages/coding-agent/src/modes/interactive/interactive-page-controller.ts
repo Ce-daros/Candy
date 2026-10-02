@@ -1,10 +1,11 @@
 import type { Component } from "@candy/tui";
 import type { PanelContent } from "./components/composer-panel.ts";
+import type { PanelNavigation } from "./components/panel-transition.ts";
 import { type InteractiveFlowFrame, InteractiveFlowStack } from "./interactive-flow-stack.ts";
 
 export interface InteractivePageControllerHost {
 	closeTranscriptSearch(content: Component): void;
-	mount(content: PanelContent, heightRatio: number, inputTarget: Component): void;
+	mount(content: PanelContent, heightRatio: number, inputTarget: Component, navigation: PanelNavigation): void;
 	focusEditor(): void;
 	closeAnimation(onComplete: () => void): void;
 	restoreEditor(): void;
@@ -33,9 +34,9 @@ export class InteractivePageController {
 		if (current?.role === "panel" && current.selector) this.flows.pop(current);
 	}
 
-	mountPresentationPanel(content: PanelContent, heightRatio = 0.8): void {
+	mountPresentationPanel(content: PanelContent, heightRatio = 0.8, navigation: PanelNavigation = "enter"): void {
 		this.host.closeTranscriptSearch(content);
-		this.mount(content, heightRatio, content);
+		this.mount(content, heightRatio, content, navigation);
 	}
 
 	mountPanel(
@@ -48,10 +49,10 @@ export class InteractivePageController {
 			role: "panel",
 			kind,
 			content,
-			onResume: () => this.mount(content, heightRatio, inputTarget),
+			onResume: () => this.mount(content, heightRatio, inputTarget, "back"),
 		});
 		this.host.closeTranscriptSearch(content);
-		this.mount(content, heightRatio, inputTarget);
+		this.mount(content, heightRatio, inputTarget, "enter");
 		return frame;
 	}
 
@@ -111,17 +112,22 @@ export class InteractivePageController {
 			selector: true,
 			content: created.component,
 			dispose: created.dispose,
-			onResume: () => this.mount(created.component, heightRatio, created.focus),
+			onResume: () => this.mount(created.component, heightRatio, created.focus, "back"),
 		} as const;
 		frame =
 			previous?.role === "panel" && previous.selector ? this.flows.replace(selector) : this.flows.push(selector);
 		this.host.closeTranscriptSearch(created.component);
-		this.mount(created.component, heightRatio, created.focus);
+		this.mount(created.component, heightRatio, created.focus, previous?.selector ? "replace" : "enter");
 		return frame;
 	}
 
-	private mount(content: PanelContent, heightRatio: number, inputTarget: Component): void {
-		this.host.mount(content, heightRatio, inputTarget);
+	private mount(
+		content: PanelContent,
+		heightRatio: number,
+		inputTarget: Component,
+		navigation: PanelNavigation,
+	): void {
+		this.host.mount(content, heightRatio, inputTarget, navigation);
 		this.host.requestRender();
 	}
 

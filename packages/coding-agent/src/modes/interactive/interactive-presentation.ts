@@ -4,22 +4,22 @@ import type { AgentSession } from "../../core/agent-session.ts";
 import type { ModelRuntime } from "../../core/model-runtime.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
 import { CommandPanel, type CommandPanelAction, type CommandPanelOptions } from "./components/command-panel.ts";
+import type { PanelNavigation } from "./components/panel-transition.ts";
 import { type InteractiveFlowFrame, InteractiveFlowStack } from "./interactive-flow-stack.ts";
 import {
-	AgentController,
+	ActionsController,
 	CommandController,
 	DetailsController,
-	HistoryController,
 	SourcesController,
 } from "./interactive-presentation-features.ts";
 
-export type PresentationSurface = "sources" | "details" | "history" | "agent" | "command";
+export type PresentationSurface = "actions" | "sources" | "details" | "command";
 
 export interface PresentationHost {
 	session(): AgentSession;
 	models(): ModelRuntime;
 	settings(): SettingsManager;
-	mount(panel: CommandPanel): void;
+	mount(panel: CommandPanel, navigation: PanelNavigation): void;
 	exit(): void;
 	render(): void;
 	read(title: string, content: string, onEdit?: () => Promise<string | undefined>): void;
@@ -30,9 +30,9 @@ export interface PresentationHost {
 	skills(): Promise<void>;
 	settingsActions(): CommandPanelAction[];
 	localCommands(): CommandPanelAction[];
-	historyCommands(): CommandPanelAction[];
+	sessionCommands(): CommandPanelAction[];
 	completeArguments?(text: string, signal: AbortSignal, force?: boolean): Promise<AutocompleteItem[] | null>;
-	historyAction(
+	sessionAction(
 		action: "compact" | "details" | "rename" | "tree" | "fork" | "clone" | "resume",
 		args: string,
 	): Promise<void>;
@@ -53,8 +53,7 @@ export class InteractivePresentation {
 	private readonly flows: InteractiveFlowStack;
 	private readonly sources: SourcesController;
 	private readonly details: DetailsController;
-	private readonly history: HistoryController;
-	private readonly agent: AgentController;
+	private readonly actions: ActionsController;
 	private readonly command: CommandController;
 
 	constructor(host: PresentationHost, flows: InteractiveFlowStack = new InteractiveFlowStack()) {
@@ -70,8 +69,13 @@ export class InteractivePresentation {
 			() => this.assertScopeEditable(),
 		);
 		this.details = new DetailsController(host, page, refresh);
-		this.history = new HistoryController(host, page, refresh);
-		this.agent = new AgentController(host, page, refresh);
+		this.actions = new ActionsController(
+			host,
+			page,
+			refresh,
+			() => this.sources.openSources(),
+			(model) => this.details.openDetails(model),
+		);
 		this.command = new CommandController(
 			host,
 			page,
@@ -98,11 +102,8 @@ export class InteractivePresentation {
 			case "details":
 				if (model) this.details.openDetails(model);
 				break;
-			case "history":
-				this.history.openHistory();
-				break;
-			case "agent":
-				this.agent.openAgent();
+			case "actions":
+				this.actions.openActions();
 				break;
 			case "command":
 				this.command.openCommand();
@@ -115,7 +116,7 @@ export class InteractivePresentation {
 		if (!page || this.flows.current !== page || page.session !== this.host.session()) return false;
 		page.refresh();
 		page.panel.resume();
-		this.host.mount(page.panel);
+		this.host.mount(page.panel, "back");
 		return true;
 	}
 
@@ -131,24 +132,28 @@ export class InteractivePresentation {
 	private back(): void {
 		const page = this.flows.current as PresentationPage | undefined;
 		if (!page || page.role !== "presentation" || page.closing) return;
-		if (page.kind === "sources" && !this.hasParentPage(page) && page.scopeChanged) {
+		if (page.kind === "sources" && this.flows.parentOf(page)?.kind !== "sources" && page.scopeChanged) {
 			page.closing = true;
 			page.panel.suspend();
 			void this.host.applyQuickSelection(page.controller.signal).then(
 				() => {
 					if (!this.isLive(page)) return;
-					this.finish();
+					this.closePage(page);
 				},
 				(error: unknown) => {
 					if (!this.isLive(page)) return;
 					page.closing = false;
 					page.panel.resume();
-					this.host.mount(page.panel);
+					this.host.mount(page.panel, "replace");
 					this.host.reportError(error instanceof Error ? error.message : String(error));
 				},
 			);
 			return;
 		}
+		this.closePage(page);
+	}
+
+	private closePage(page: PresentationPage): void {
 		this.flows.pop(page);
 		if (!this.flows.last("presentation")) this.finish();
 	}
@@ -187,12 +192,12 @@ export class InteractivePresentation {
 				if (!this.isLive(page)) return;
 				page.refresh();
 				panel.resume();
-				this.host.mount(panel);
+				this.host.mount(panel, "back");
 			},
 			dispose: () => panel.dispose(),
 		}) as PresentationPage;
 		page.refresh();
-		this.host.mount(panel);
+		this.host.mount(panel, "enter");
 		return page;
 	}
 
@@ -221,10 +226,5 @@ export class InteractivePresentation {
 
 	private isLive(page: PresentationPage): boolean {
 		return !page.controller.signal.aborted && page.session === this.host.session();
-	}
-
-	private hasParentPage(page: PresentationPage): boolean {
-		const frames = this.flows.all;
-		return frames.slice(0, frames.indexOf(page)).some((frame) => frame.role === "presentation");
 	}
 }

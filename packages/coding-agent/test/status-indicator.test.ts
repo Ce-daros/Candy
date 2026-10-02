@@ -196,7 +196,7 @@ describe("status indicators", () => {
 			}
 			editor.setAnimationOptions(false, "moderate");
 			expect(stripAnsi(editor.render(120)[0]!)).toContain("Retrying");
-			expect(editor.render(120)[0]).toContain(keycap(keyText("app.interrupt")));
+			expect(stripAnsi(editor.render(120)[0]!)).toContain(stripAnsi(keycap(keyText("app.interrupt"))));
 			vi.advanceTimersByTime(1000);
 			expect(stripAnsi(editor.render(120)[0]!)).toContain("(1/3) in 2s");
 			editor.setWorkingStatusIndicator(undefined);

@@ -44,7 +44,7 @@ Copy one of the [built-in themes](../src/modes/interactive/theme) or create a ne
 3. Change values in `vars` and `colors`.
 4. Select `my-theme` through **Theme** in Command.
 
-Use the theme name as the filename. candy hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Run **Reload** in Command after adding or changing a theme from any other source.
+Use the theme name as the filename. candy hot-reloads the active user theme only from `<agent-dir>/themes/<name>.json`. Press Ctrl+R after adding or changing a theme from any other source.
 
 ## Understand the theme file
 

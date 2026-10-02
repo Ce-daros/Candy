@@ -1,14 +1,17 @@
 import { join } from "node:path";
+import { fauxAssistantMessage } from "@candy/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import { SessionDiscovery } from "../src/core/session-history.ts";
+import type { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { createInteractiveSmoke, type InteractiveSmoke } from "./fixtures/interactive-smoke.ts";
 
 type InteractiveState = {
 	inputMode: string;
+	keybindings: KeybindingsManager;
 	presentation: { surface: string | undefined };
 	footer: {
-		getPowerbarSelector(): string | undefined;
+		isPowerbarIdle(): boolean;
 		getHighlightedModel(): { id: string } | undefined;
 	};
 	defaultEditor: { getText(): string; setText(text: string): void };
@@ -17,9 +20,8 @@ type InteractiveState = {
 
 const tipMarkers = [
 	"psst, tap",
-	"in the Powerbar?",
-	"model picked?",
-	"curious about a model?",
+	"for Actions.",
+	"to change thinking effort.",
 	"command time, yayy",
 	"need a hand?",
 	"find a file. there it is.",
@@ -58,11 +60,11 @@ function homeTip(text: string): string | undefined {
 let smoke: InteractiveSmoke | undefined;
 
 async function start(
-	options: { empty?: boolean } = {},
+	options: { empty?: boolean; animations?: boolean; columns?: number; rows?: number } = {},
 ): Promise<{ state: InteractiveState; terminal: VirtualTerminal }> {
 	process.env.CANDY_OFFLINE = "1";
-	const terminal = new VirtualTerminal(80, 24);
-	smoke = await createInteractiveSmoke({ terminal, animations: false, empty: options.empty });
+	const terminal = new VirtualTerminal(options.columns ?? 80, options.rows ?? 24);
+	smoke = await createInteractiveSmoke({ terminal, animations: options.animations ?? false, empty: options.empty });
 	await smoke.mode.init();
 	await terminal.waitForRender();
 	return { state: smoke.mode as unknown as InteractiveState, terminal };
@@ -74,6 +76,203 @@ afterEach(async () => {
 });
 
 describe("interactive presentation from terminal input", () => {
+	it.each([499, 500])("opens Actions only when two Esc presses are less than 500ms apart (%sms)", async (elapsed) => {
+		const { state, terminal } = await start();
+		const time = vi.spyOn(Date, "now");
+		try {
+			time.mockReturnValue(1000);
+			terminal.sendInput("\x1b");
+			expect(state.presentation.surface).toBeUndefined();
+			time.mockReturnValue(1000 + elapsed);
+			terminal.sendInput("\x1b");
+			expect(state.presentation.surface).toBe(elapsed < 500 ? "actions" : undefined);
+		} finally {
+			time.mockRestore();
+		}
+		await terminal.waitForRender();
+	});
+
+	it("aborts the running faux response with Escape before Actions can open", async () => {
+		const { state, terminal } = await start();
+		let responseStarted = false;
+		smoke!.harness.setResponses([
+			(_context, options) =>
+				new Promise((resolve) => {
+					options!.signal!.addEventListener("abort", () => resolve(fauxAssistantMessage("cancelled")), {
+						once: true,
+					});
+					responseStarted = true;
+				}),
+		]);
+		const response = smoke!.runtime.session.execution.prompt("start response");
+		await vi.waitFor(() => expect(responseStarted).toBe(true));
+		expect(smoke!.runtime.session.execution.isStreaming).toBe(true);
+		terminal.sendInput("\x1b");
+		await response;
+		await vi.waitFor(() => expect(smoke!.runtime.session.execution.isStreaming).toBe(false));
+		expect(state.presentation.surface).toBeUndefined();
+		const last = smoke!.runtime.session.execution.messages.at(-1)!;
+		expect(last.role).toBe("assistant");
+		if (last.role === "assistant") expect(last.stopReason).toBe("aborted");
+	});
+
+	it("exits each Shell tier with Escape before opening Actions", async () => {
+		const { state, terminal } = await start();
+		terminal.sendInput("!");
+		terminal.sendInput("!");
+		expect(state.inputMode).toBe("shell-no-context");
+		terminal.sendInput("\x1b");
+		expect(state.inputMode).toBe("shell");
+		terminal.sendInput("\x1b");
+		expect(state.inputMode).toBe("normal");
+		expect(state.presentation.surface).toBeUndefined();
+		terminal.sendInput("\x1b");
+		expect(state.presentation.surface).toBeUndefined();
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("actions");
+	});
+
+	it("restores the Actions list position after returning from Behavior", async () => {
+		const { state, terminal } = await start({ columns: 80 });
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		for (let index = 0; index < 16; index++) terminal.sendInput("\x1b[B");
+		await terminal.waitForRender();
+		const before = plainText(terminal);
+		expect(before).toContain("♦ Behavior ♦");
+		expect(before).not.toContain("Current Model");
+		terminal.sendInput("\r");
+		await terminal.waitForRender();
+		expect(plainText(terminal)).toContain("Steering: one-at-a-time");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("actions");
+		expect(plainText(terminal)).toBe(before);
+	});
+
+	it("keeps a non-empty draft when Esc is pressed twice", async () => {
+		const { state, terminal } = await start();
+		terminal.sendInput("keep this draft");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBeUndefined();
+		expect(state.defaultEditor.getText()).toBe("keep this draft");
+	});
+
+	it("opens Actions immediately after cancelling an animated model preview", async () => {
+		const { state, terminal } = await start({ animations: true });
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\x1b[C");
+		terminal.sendInput("\x1b");
+		expect(state.footer.isPowerbarIdle()).toBe(true);
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		expect(state.presentation.surface).toBe("actions");
+		await vi.waitFor(() => expect(plainText(terminal)).toContain("Current Model"));
+		expect(smoke!.runtime.session.selection.model?.id).toBe("candy-reasoning");
+	});
+
+	it("accepts draft input immediately after cancelling an animated model preview", async () => {
+		const { state, terminal } = await start({ animations: true });
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("draft");
+		await terminal.waitForRender();
+		expect(state.defaultEditor.getText()).toBe("draft");
+		expect(state.presentation.surface).toBeUndefined();
+	});
+
+	it("requires consecutive Escape presses after other input", async () => {
+		const { state, terminal } = await start();
+		terminal.sendInput("\x1b");
+		terminal.sendInput("x");
+		terminal.sendInput("\x7f");
+		terminal.sendInput("\x1b");
+		expect(state.presentation.surface).toBeUndefined();
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("actions");
+	});
+
+	it.each(["tree", "fork", "resume"] as const)(
+		"opens %s through its custom shortcut and returns to Actions",
+		async (action) => {
+			const { state, terminal } = await start();
+			state.keybindings.setUserBindings({ [`app.session.${action}`]: "ctrl+e" });
+			terminal.sendInput("\x05");
+			await terminal.waitForRender();
+			expect(state.presentation.surface).toBe("actions");
+			expect(plainText(terminal)).not.toContain("Search:");
+			terminal.sendInput("\x1b");
+			await terminal.waitForRender();
+			expect(state.presentation.surface).toBe("actions");
+			expect(plainText(terminal)).toContain("Search:");
+			terminal.sendInput("\x1b");
+			await terminal.waitForRender();
+			expect(state.footer.isPowerbarIdle()).toBe(true);
+		},
+	);
+
+	it("uses a custom effort shortcut during model search without applying the preview", async () => {
+		const { state, terminal } = await start();
+		state.keybindings.setUserBindings({ "app.thinking.cycle": "ctrl+y" });
+		terminal.sendInput("\x0c");
+		for (const char of "Off") terminal.sendInput(char);
+		const previous = smoke!.runtime.session.selection.thinkingLevel;
+		terminal.sendInput("\x19");
+		await terminal.waitForRender();
+		expect(smoke!.runtime.session.selection.thinkingLevel).not.toBe(previous);
+		expect(smoke!.runtime.session.selection.model?.id).toBe("candy-reasoning");
+		expect(state.footer.getHighlightedModel()?.id).toBe("candy-off");
+		expect(plainText(terminal)).toContain("Model › Off");
+	});
+
+	it("opens Current Model after a cancelled preview and returns to an idle composer", async () => {
+		const { state, terminal } = await start();
+		terminal.sendInput("\x0c");
+		terminal.sendInput("\x1b[C");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("Current Model");
+		terminal.sendInput("\r");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("details");
+		expect(plainText(terminal)).toContain("candy-reasoning");
+		expect(plainText(terminal)).toContain("Default thinking");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("actions");
+		expect(plainText(terminal)).toContain("Search: Current Model");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBeUndefined();
+		expect(state.footer.isPowerbarIdle()).toBe(true);
+		terminal.sendInput("next draft");
+		expect(state.defaultEditor.getText()).toBe("next draft");
+	});
+
+	it.each([80, 120])(
+		"returns from animated session details with Actions search and selection intact at %s columns",
+		async (columns) => {
+			const { terminal } = await start({ animations: true, columns, rows: columns === 80 ? 24 : 36 });
+			terminal.sendInput("\x1b");
+			terminal.sendInput("\x1b");
+			await vi.waitFor(() => expect(plainText(terminal)).toContain("New session"));
+			terminal.sendInput("Session details");
+			await terminal.waitForRender();
+			terminal.sendInput("\r");
+			await vi.waitFor(() => expect(plainText(terminal)).toContain("Session Info"));
+			terminal.sendInput("\x1b");
+			await vi.waitFor(() => expect(plainText(terminal)).toContain("Search: Session details"));
+			await vi.waitFor(() => expect(plainText(terminal)).toContain("♦ Session details ♦"));
+			terminal.sendInput("\r");
+			terminal.sendInput("\x1b");
+			await vi.waitFor(() => expect(plainText(terminal)).toContain("Search: Session details"));
+		},
+	);
 	it("opens Command only from a standalone slash key and keeps pasted slash messages literal", async () => {
 		const { state, terminal } = await start();
 		terminal.sendInput("/");
@@ -104,7 +303,7 @@ describe("interactive presentation from terminal input", () => {
 		expect(help).toContain("Changelog");
 		expect(help).toMatch(/│ \? /);
 		expect(help.indexOf("Hotkeys")).toBeLessThan(help.indexOf("│ ? "));
-		terminal.sendInput("zz");
+		for (const char of "zz") terminal.sendInput(char);
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
 		expect(state.inputMode).toBe("help");
@@ -134,18 +333,17 @@ describe("interactive presentation from terminal input", () => {
 		expect(state.presentation.surface).toBeUndefined();
 	});
 
-	it("shows session actions in History and project trust in Command", async () => {
+	it("shows session actions in Actions and project trust in Command", async () => {
 		const { state, terminal } = await start();
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\t");
-		terminal.sendInput("\x1b[A");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("history");
-		const history = terminal.getViewport().join("\n");
-		expect(history).toContain("New session");
-		expect(history).toContain("Import");
-		expect(history).toContain("Export");
 		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("actions");
+		expect(plainText(terminal)).toContain("New session");
+		terminal.sendInput("port");
+		await terminal.waitForRender();
+		expect(plainText(terminal)).toContain("Import");
+		expect(plainText(terminal)).toContain("Export");
 		terminal.sendInput("\x1b");
 		terminal.sendInput("/");
 		terminal.sendInput("Project trust");
@@ -162,12 +360,11 @@ describe("interactive presentation from terminal input", () => {
 		await vi.waitFor(() => expect(terminal.getViewport().join("\n")).toContain("Reloaded keybindings"));
 	});
 
-	it("starts a new session from History and returns to the composer", async () => {
+	it("starts a new session from Actions and returns to the composer", async () => {
 		const { state, terminal } = await start();
 		const previousSession = smoke!.runtime.session.execution.sessionFile;
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\t");
-		terminal.sendInput("\x1b[A");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
 		terminal.sendInput("New session");
 		terminal.sendInput("\r");
 		await vi.waitFor(() => expect(smoke!.runtime.session.execution.sessionFile).not.toBe(previousSession));
@@ -176,55 +373,41 @@ describe("interactive presentation from terminal input", () => {
 		expect(state.defaultEditor.getText()).toBe("");
 	});
 
-	it("routes both selector directions and restores the highlighted model", async () => {
-		const { state, terminal } = await start();
-		terminal.sendInput("\x0c");
-		expect(state.footer.getPowerbarSelector()).toBe("model");
-		terminal.sendInput("\x1b[C");
-		const highlighted = state.footer.getHighlightedModel()?.id;
-		expect(highlighted).toBe("candy-off");
-		terminal.sendInput("\x1b[B");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("details");
-		terminal.sendInput("\x1b");
-		await terminal.waitForRender();
-		expect(state.footer.getPowerbarSelector()).toBe("model");
-		expect(state.footer.getHighlightedModel()?.id).toBe(highlighted);
-		terminal.sendInput("\x1b[A");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("sources");
-		terminal.sendInput("\x1b");
-		await terminal.waitForRender();
-		expect(state.footer.getPowerbarSelector()).toBe("model");
-		terminal.sendInput("\t");
-		expect(state.footer.getPowerbarSelector()).toBe("thinking");
-		terminal.sendInput("\x1b[A");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("history");
-		terminal.sendInput("\x1b");
-		await terminal.waitForRender();
-		expect(state.footer.getPowerbarSelector()).toBe("thinking");
-		terminal.sendInput("\x1b[B");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("agent");
-	});
+	it.each([80, 120])(
+		"ignores Up, Down and Tab during model search and preserves the draft at %s columns",
+		async (columns) => {
+			const { state, terminal } = await start({ columns });
+			terminal.sendInput("a draft");
+			terminal.sendInput("\x0c");
+			for (const char of "Candy") terminal.sendInput(char);
+			terminal.sendInput("\x1b[C");
+			await terminal.waitForRender();
+			const highlighted = state.footer.getHighlightedModel()?.id;
+			const active = smoke!.runtime.session.selection.model;
+			for (const key of ["\x1b[A", "\x1b[B", "\t"]) terminal.sendInput(key);
+			await terminal.waitForRender();
+			expect(state.presentation.surface).toBeUndefined();
+			expect(state.footer.isPowerbarIdle()).toBe(false);
+			expect(state.footer.getHighlightedModel()?.id).toBe(highlighted);
+			expect(smoke!.runtime.session.selection.model).toBe(active);
+			expect(state.defaultEditor.getText()).toBe("a draft");
+			expect(plainText(terminal)).toContain("Model › Candy");
+			terminal.sendInput("\x1b");
+			await terminal.waitForRender();
+			expect(state.footer.isPowerbarIdle()).toBe(true);
+			expect(state.defaultEditor.getText()).toBe("a draft");
+		},
+	);
 
-	it("does not open Details for an unmatched search and preserves the query after Sources", async () => {
+	it("keeps an unmatched model search intact when Up, Down and Tab are pressed", async () => {
 		const { state, terminal } = await start();
 		terminal.sendInput("\x0c");
-		terminal.sendInput("z");
-		terminal.sendInput("z");
+		for (const char of "zz") terminal.sendInput(char);
+		for (const key of ["\x1b[A", "\x1b[B", "\t"]) terminal.sendInput(key);
 		await terminal.waitForRender();
 		expect(state.footer.getHighlightedModel()).toBeUndefined();
-		terminal.sendInput("\x1b[B");
 		expect(state.presentation.surface).toBeUndefined();
-		terminal.sendInput("\x1b[A");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("sources");
-		terminal.sendInput("\x1b");
-		await terminal.waitForRender();
-		expect(state.footer.getHighlightedModel()).toBeUndefined();
-		expect(terminal.getViewport().join("\n")).toContain("Model › zz");
+		expect(plainText(terminal)).toContain("Model › zz");
 	});
 
 	it("replaces the runtime for a clone and a switch using persisted faux sessions", async () => {
@@ -244,43 +427,44 @@ describe("interactive presentation from terminal input", () => {
 		expect(runtime.session.execution.sessionFile).toBe(other!.path);
 	});
 
-	it("keeps History reachable from an Off-only model and ignores Shift+Tab", async () => {
+	it("cycles actual model effort during preview and keeps Actions reachable from an Off-only model", async () => {
 		const { state, terminal } = await start();
 		terminal.sendInput("\x0c");
-		terminal.sendInput("\x1b[Z");
-		expect(state.footer.getPowerbarSelector()).toBe("model");
 		terminal.sendInput("\x1b[C");
+		const previous = smoke!.runtime.session.selection.thinkingLevel;
+		terminal.sendInput("\x1b[Z");
+		await terminal.waitForRender();
+		expect(smoke!.runtime.session.selection.thinkingLevel).not.toBe(previous);
+		expect(smoke!.runtime.session.selection.model?.id).toBe("candy-reasoning");
+		expect(state.footer.getHighlightedModel()?.id).toBe("candy-off");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
 		expect(smoke!.runtime.session.selection.model?.id).toBe("candy-off");
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\t");
-		expect(state.footer.getPowerbarSelector()).toBe("thinking");
-		expect(terminal.getViewport().join("\n")).toContain("Off");
-		terminal.sendInput("\x1b[A");
+		terminal.sendInput("\x1b[Z");
 		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("history");
+		expect(plainText(terminal)).toContain("Current model does not support thinking");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		await terminal.waitForRender();
+		expect(state.presentation.surface).toBe("actions");
 	});
 
-	it("opens Skills configuration directly and returns to Agent without a command submenu", async () => {
+	it("opens Skills configuration directly and returns to Actions with its search intact", async () => {
 		const { state, terminal } = await start();
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\t");
-		terminal.sendInput("\x1b[B");
-		terminal.sendInput("\x1b[B");
-		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("agent");
-		expect(plainText(terminal)).toContain("Skills");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("Skills");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
 		expect(plainText(terminal)).not.toContain("Show in Command");
 		expect(plainText(terminal)).not.toContain("Search: Skills");
 		terminal.sendInput("\x1b");
 		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("agent");
+		expect(state.presentation.surface).toBe("actions");
+		expect(plainText(terminal)).toContain("Search: Skills");
 		terminal.sendInput("\x1b");
 		await terminal.waitForRender();
-		expect(state.footer.getPowerbarSelector()).toBe("thinking");
+		expect(state.footer.isPowerbarIdle()).toBe(true);
 	});
 
 	it("reuses the empty-session home after New session and keeps its tip stable while redrawing", async () => {
@@ -300,11 +484,10 @@ describe("interactive presentation from terminal input", () => {
 		await terminal.waitForRender();
 		expect(homeTip(plainText(terminal))).toBe(initialTip);
 
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\t");
-		terminal.sendInput("\x1b[A");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
 		await terminal.waitForRender();
-		expect(state.presentation.surface).toBe("history");
+		expect(state.presentation.surface).toBe("actions");
 		terminal.sendInput("New session");
 		terminal.sendInput("\r");
 		await vi.waitFor(() => expect(smoke!.runtime.session.execution.sessionFile).not.toBe(previousSession));
@@ -332,26 +515,27 @@ describe("interactive presentation from terminal input", () => {
 	it("clearing quick selection from Sources clears the active model on exit", async () => {
 		const { state, terminal } = await start();
 		expect(smoke!.runtime.session.selection.model).toBeDefined();
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\x1b[A");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("Sources");
+		terminal.sendInput("\r");
 		await terminal.waitForRender();
 		expect(state.presentation.surface).toBe("sources");
 		terminal.sendInput("Clear quick selection");
 		terminal.sendInput("\r");
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b");
-		await vi.waitFor(() => expect(state.presentation.surface).toBeUndefined());
+		await vi.waitFor(() => expect(state.presentation.surface).toBe("actions"));
 		expect(smoke!.runtime.session.selection.model).toBeUndefined();
 		await terminal.waitForRender();
 		expect(plainText(terminal)).toContain("No models selected");
 	});
 
-	it("returns to Thinking after switching sessions without inserting the old last user message", async () => {
+	it("returns to the composer after switching sessions without inserting the old last user message", async () => {
 		const { state, terminal } = await start();
 		expect(state.defaultEditor.getText()).toBe("");
-		terminal.sendInput("\x0c");
-		terminal.sendInput("\t");
-		terminal.sendInput("\x1b[A");
+		terminal.sendInput("\x1b");
+		terminal.sendInput("\x1b");
 		terminal.sendInput("Resume");
 		terminal.sendInput("\r");
 		await new Promise((resolve) => setTimeout(resolve, 200));
@@ -366,7 +550,7 @@ describe("interactive presentation from terminal input", () => {
 			),
 			terminal.getViewport().join("\n"),
 		).toBe(true);
-		expect(state.footer.getPowerbarSelector()).toBe("thinking");
+		expect(state.footer.isPowerbarIdle()).toBe(true);
 		expect(state.defaultEditor.getText()).toBe("");
 	});
 });

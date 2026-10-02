@@ -58,7 +58,7 @@ export class FirstTimeSetupComponent extends Container {
 		this.clear();
 		const compact = this.availableHeight <= 26;
 		if (!compact) this.addChild(new Spacer(1));
-		this.addChild(new SplashLogoComponent(this.availableHeight <= 18 ? 4 : compact ? 8 : undefined));
+		this.addChild(new SplashLogoComponent(this.availableHeight - (compact ? 8 : 10)));
 		if (!compact) this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.bold(theme.fg("accent", "Theme")), 1, 0));
 

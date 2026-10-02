@@ -22,15 +22,12 @@ describe("issue #7443 cached Powerbar models", () => {
 		const runtime = harness.session.execution.modelRuntime;
 		const host: PowerbarHost = {
 			requestRender() {},
-			getThinkingLevels: () => ["off"],
-			getThinkingLevel: () => "off",
 			getModels: () =>
 				runtime
 					.getAvailableSnapshot()
 					.filter((model) => model.id === "cached")
 					.map((model) => ({ model, label: model.name })),
 			getCurrentModelIndex: () => 0,
-			applyThinking() {},
 			applyModel() {},
 		};
 		const powerbar = new PowerbarController(host);

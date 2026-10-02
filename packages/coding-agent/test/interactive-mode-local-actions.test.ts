@@ -12,7 +12,7 @@ vi.mock("../src/presentation/session-html-export.ts", () => ({
 	exportSessionHtml: vi.fn(async (_session: unknown, outputPath?: string) => outputPath ?? "default.html"),
 }));
 
-describe("InteractiveMode local Command and History actions", () => {
+describe("InteractiveMode local Command and Actions", () => {
 	it("keeps only Debug in Command", () => {
 		const getActions = Reflect.get(InteractiveMode.prototype, "getLocalCommandActions") as () => CommandPanelAction[];
 		expect(getActions().map((action) => action.name)).toEqual(["debug"]);
@@ -41,7 +41,7 @@ describe("InteractiveMode local Command and History actions", () => {
 		expect(context.showError).not.toHaveBeenCalled();
 	});
 
-	it("renames the current session using the History argument", () => {
+	it("renames the current session using the Actions argument", () => {
 		initTheme("dark");
 		let name: string | undefined;
 		const context = {
@@ -111,7 +111,7 @@ describe("InteractiveMode local Command and History actions", () => {
 				handleExportCommand: vi.fn(async (_path?: string) => {}),
 				handleImportCommand: vi.fn(async (_path: string) => "edit" as const),
 			};
-			const getActions = Reflect.get(InteractiveMode.prototype, "getHistoryCommandActions") as (
+			const getActions = Reflect.get(InteractiveMode.prototype, "getSessionCommandActions") as (
 				this: typeof context,
 			) => CommandPanelAction[];
 			const actions = getActions.call(context);

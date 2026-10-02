@@ -1,9 +1,11 @@
 import {
 	type Component,
 	Container,
+	type Focusable,
 	foregroundAnsi,
 	getCapabilities,
 	getTerminalColorMode,
+	isFocusable,
 	parseColor,
 	type SelectItem,
 	type SettingItem,
@@ -27,6 +29,7 @@ import {
 	type TerminalTheme,
 	theme,
 } from "../theme/theme.ts";
+import type { PanelContent } from "./composer-panel.ts";
 import { keycap, keyDisplayText } from "./keybinding-hints.ts";
 import { SelectSubmenu } from "./settings-submenu.ts";
 
@@ -163,8 +166,19 @@ function defaultAutomaticThemes(
 	return { lightTheme: themeName, darkTheme: themeName };
 }
 
-class ThemeSubmenu extends Container {
-	private inputComponent: (Component & { setAvailableHeight?(height: number): void }) | undefined;
+class ThemeSubmenu extends Container implements Focusable {
+	private inputComponent: PanelContent | undefined;
+	private focusedValue = false;
+
+	get focused(): boolean {
+		return this.focusedValue;
+	}
+
+	set focused(value: boolean) {
+		this.focusedValue = value;
+		if (this.inputComponent && isFocusable(this.inputComponent)) this.inputComponent.focused = value;
+	}
+
 	private availableHeight = 20;
 	private readonly callbacks: SettingsCallbacks;
 	private readonly availableThemes: readonly string[];
@@ -218,14 +232,13 @@ class ThemeSubmenu extends Container {
 		this.inputComponent?.setAvailableHeight?.(height - (this.mode === "automatic" ? 5 : 0));
 	}
 
-	private setContent(
-		renderComponent: Component,
-		inputComponent: Component & { setAvailableHeight?(height: number): void },
-	): void {
+	private setContent(renderComponent: Component, inputComponent: PanelContent): void {
 		this.clear();
+		if (this.inputComponent && isFocusable(this.inputComponent)) this.inputComponent.focused = false;
 		this.menuComponent = renderComponent;
 		this.addChild(renderComponent);
 		this.inputComponent = inputComponent;
+		this.focused = this.focusedValue;
 		this.setAvailableHeight(this.availableHeight);
 	}
 
@@ -518,13 +531,6 @@ export function createSettingsDefinition(
 			currentValue: currentSettingValue(settings, "default-project-trust"),
 			values: getInteractiveSettingValueStrings("default-project-trust"),
 			optionLabels: DEFAULT_PROJECT_TRUST_LABELS,
-		},
-		{
-			id: "double-escape-action",
-			label: "Double-escape action",
-			description: "Action when pressing Escape twice with empty editor",
-			currentValue: currentSettingValue(settings, "double-escape-action"),
-			values: getInteractiveSettingValueStrings("double-escape-action"),
 		},
 		{
 			id: "tree-filter-mode",

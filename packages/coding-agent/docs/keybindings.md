@@ -2,7 +2,7 @@
 
 candy exposes named actions, such as `app.session.new`, that can be assigned keybindings. You can change default assignments or bind unassigned actions in candy's [user configuration](configuration.md#agent-directory).
 
-Open **Hotkeys** in Command to see the active shortcuts for the main editor and application.
+Open Help with `?` and choose **Hotkeys** to see the active shortcuts for the main editor and application.
 
 ## Assign keybindings
 
@@ -25,7 +25,7 @@ A configured value replaces the default for that action. Use an empty list to di
 }
 ```
 
-After editing the file, run **Reload** in Command to apply the changes to the active session.
+After editing the file, press `Ctrl+R` to apply the changes to the active session.
 
 ## Key syntax
 
@@ -141,20 +141,20 @@ These keys move focus between the category, list, detail, and search regions in 
 | Keybinding id | Default | Description |
 |---|---|---|
 | `app.panel.focusNext` | `tab` | Focus the next panel region |
-| `app.panel.focusPrevious` | `shift+tab` | Focus the previous panel region |
+| `app.panel.focusPrevious` | None | Focus the previous panel region |
 | `app.panel.scope` | `alt+s` | Switch directory or configuration scope |
 
 ### Sessions
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.session.new` | None | Start a new session |
-| `app.session.tree` | None | Open History → Tree |
-| `app.session.fork` | None | Open History → Fork |
-| `app.session.resume` | None | Open History → Resume / Switch session |
+| `app.session.new` | `ctrl+n` | Start a new session |
+| `app.session.tree` | None | Open Actions → Tree |
+| `app.session.fork` | None | Open Actions → Fork |
+| `app.session.resume` | None | Open Actions → Resume / Switch session |
 | `app.session.togglePath` | `ctrl+p` | Toggle path display |
 | `app.session.toggleSort` | `ctrl+s` | Toggle sort mode |
-| `app.session.toggleNamedFilter` | `ctrl+n` | Toggle named-only filter |
+| `app.session.toggleNamedFilter` | None | Toggle named-only filter |
 | `app.session.rename` | `ctrl+r` | Rename session |
 | `app.session.delete` | `ctrl+d` | Delete session |
 | `app.session.deleteNoninvasive` | `ctrl+backspace` | Delete session when query is empty |
@@ -164,12 +164,10 @@ These keys move focus between the category, list, detail, and search regions in 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
 | `app.model.select` | `ctrl+l` | Open Model in the Powerbar |
-| `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
+| `app.thinking.cycle` | `shift+tab` | Cycle the thinking level |
+| `app.thinking.toggle` | None | Collapse or expand thinking blocks |
 | `app.powerbar.left` | `left` | Move the powerbar selection left (while a selector is open) |
 | `app.powerbar.right` | `right` | Move the powerbar selection right (while a selector is open) |
-| `app.powerbar.next` | `tab` | Move between the model and thinking level selectors (wraps) |
-| `app.powerbar.up` | `up` | Open Sources from Model or History from Thinking |
-| `app.powerbar.down` | `down` | Open Details from Model or Agent from Thinking |
 
 While a powerbar selector is open, `enter` confirms the highlighted item, `escape` collapses it, and typing filters the model track. The model and thinking labels in the footer are also clickable.
 
@@ -178,7 +176,7 @@ While a powerbar selector is open, `enter` confirms the highlighted item, `escap
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
 | `app.tools.expand` | `ctrl+o` | Collapse or expand tool output |
-| `app.message.copy` | `ctrl+x` | Copy the selected message in History → Tree; in fullscreen mode, copy the active selection when `fullscreenCopyOnSelect` is `false`; otherwise copy the last assistant message |
+| `app.message.copy` | `ctrl+x` | Copy the selected message in Actions → Tree; in fullscreen mode, copy the active selection when `fullscreenCopyOnSelect` is `false`; otherwise copy the last assistant message |
 | `app.message.followUp` | `alt+enter` (`ctrl+q` on Windows and WSL) | Queue follow-up message |
 | `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | Restore queued messages to editor |
 

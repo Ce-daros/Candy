@@ -86,7 +86,7 @@ Malformed `SKILL.md` files and declared skills without descriptions are not load
 
 ## Validate and share a skill
 
-Run candy from a location where the skill is discoverable, then inspect the startup diagnostics and its entry in Agent → Skills. Choose Reload in Command after editing a skill during an active session.
+Run candy from a location where the skill is discoverable, then inspect the startup diagnostics and its entry in Actions → Skills. Press Ctrl+R after editing a skill during an active session.
 
 Use a [candy package](packages.md) to distribute one or more skills through npm or git. Keep environment setup inside the skill and declare any required runtime dependencies in the package.
 

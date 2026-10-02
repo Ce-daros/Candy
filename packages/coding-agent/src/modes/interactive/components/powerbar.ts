@@ -1,6 +1,5 @@
-import type { ThinkingLevel } from "@candy/agent-core";
-import type { Model } from "@candy/ai";
-import { fuzzyFilter, sliceByColumn, visibleWidth } from "@candy/tui";
+import type { Api, Model } from "@candy/ai";
+import { easeOutCubic, fuzzyFilter, MotionClock, motionDuration, sliceByColumn, visibleWidth } from "@candy/tui";
 import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { getModelSelectorSearchText } from "../model-search.ts";
 import { selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
@@ -41,7 +40,7 @@ const MORPH_INTERVAL_MS = 40;
 /** Columns reserved for a `‹ ` or ` ›` window edge indicator. */
 const INDICATOR_WIDTH = 2;
 
-export type PowerbarModelRef = Model<any>;
+export type PowerbarModelRef = Model<Api>;
 
 /** One selectable entry of the model track. */
 export interface PowerbarModelEntry {
@@ -54,37 +53,18 @@ export interface PowerbarModelEntry {
 export interface PowerbarHost {
 	/** Request a TUI repaint (called once per animation frame). */
 	requestRender(): void;
-	/** Thinking levels supported by the current model, in display order. */
-	getThinkingLevels(): ThinkingLevel[];
-	/** Currently active thinking level. */
-	getThinkingLevel(): ThinkingLevel;
 	/** Models available for direct selection. */
 	getModels(): readonly PowerbarModelEntry[];
 	/** Index of the current model in `getModels()`. */
 	getCurrentModelIndex(): number;
-	/** Apply a thinking level selection. Throws on failure. */
-	applyThinking(level: ThinkingLevel): void;
 	/** Apply a model selection. Errors are reported by the host. */
 	applyModel(model: PowerbarModelRef): void;
 }
 
-type PowerbarMode = "normal" | "thinking" | "model-browse" | "model-search";
-
-export type PowerbarSelector = "model" | "thinking";
-
-export interface PowerbarSnapshot {
-	readonly selector: PowerbarSelector;
-	readonly query: string;
-	readonly selectedKey: string | undefined;
-	readonly selectedIndex: number;
-	readonly windowStartKey: string | undefined;
-	readonly windowStart: number;
-}
+type PowerbarMode = "normal" | "model-browse" | "model-search";
 
 interface TrackItem {
-	readonly kind: "level" | "model";
-	readonly level?: ThinkingLevel;
-	readonly model?: PowerbarModelEntry;
+	readonly model: PowerbarModelEntry;
 	readonly label: string;
 	readonly width: number;
 }
@@ -96,8 +76,8 @@ export interface PowerbarRegion {
 	readonly itemIndex: number;
 }
 
-/** Non-interactive label rendered before the track (the model label while selecting thinking). */
-export interface PowerbarPrefixSpan {
+/** Search prefix rendered before the model track. */
+interface PowerbarPrefixSpan {
 	readonly text: string;
 	readonly width: number;
 }
@@ -141,11 +121,6 @@ type Transition =
 	  }
 	| { kind: "slide"; intervalMs: number; frames: number; tick: number; entries: SlideEntry[] };
 
-function easeOutCubic(p: number): number {
-	const t = Math.min(1, Math.max(0, p));
-	return 1 - (1 - t) * (1 - t) * (1 - t);
-}
-
 function clampIndex(value: number, size: number): number {
 	if (size === 0) return 0;
 	return Math.min(Math.max(0, value), size - 1);
@@ -182,9 +157,6 @@ function middleTruncate(label: string, maxCols: number): string {
  */
 export class PowerbarController {
 	mode: PowerbarMode = "normal";
-	onThinkingPreview?: (level: ThinkingLevel) => void;
-	onThinkingCommit?: (level: ThinkingLevel) => void;
-	paintThinking?: (text: string) => string;
 
 	private readonly host: PowerbarHost;
 	private items: TrackItem[] = [];
@@ -197,14 +169,12 @@ export class PowerbarController {
 	private windowEnd = -1;
 	private leftIndicator = false;
 	private rightIndicator = false;
-	/** Model label kept in front of the thinking track. */
-	private modelPrefix: PowerbarPrefixSpan | undefined;
 	private searchPrefixWidth = 0;
 	private query = "";
-	/** True while a collapse animation runs; interactions are ignored. */
+	/** The closing track remains visible after input returns to the editor. */
 	private collapsing = false;
 	private transition: Transition | undefined;
-	private timer: NodeJS.Timeout | undefined;
+	private readonly clock = new MotionClock();
 	private lastMaxWidth = 80;
 	private lastRegions: PowerbarRegion[] = [];
 	private animationsEnabled = true;
@@ -215,105 +185,12 @@ export class PowerbarController {
 	}
 
 	isIdle(): boolean {
-		return this.mode === "normal";
-	}
-
-	getSelector(): PowerbarSelector | undefined {
-		if (this.mode === "normal") return undefined;
-		return this.mode === "thinking" ? "thinking" : "model";
+		return this.mode === "normal" || this.collapsing;
 	}
 
 	getHighlightedModel(): PowerbarModelRef | undefined {
-		if (this.mode !== "model-browse" && this.mode !== "model-search") return undefined;
+		if (this.isIdle()) return undefined;
 		return this.items[this.selectedIndex]?.model?.model;
-	}
-
-	private itemKey(item: TrackItem | undefined): string | undefined {
-		if (item?.level !== undefined) return item.level;
-		if (item?.model) return `${item.model.model.provider}/${item.model.model.id}`;
-		return undefined;
-	}
-
-	capture(): PowerbarSnapshot | undefined {
-		if (this.mode === "normal") return undefined;
-		while (this.transition) this.snapTransition();
-		const selector = this.getSelector();
-		if (!selector) return undefined;
-		return {
-			selector,
-			query: this.query,
-			selectedKey: this.itemKey(this.items[this.selectedIndex]),
-			selectedIndex: this.selectedIndex,
-			windowStartKey: this.itemKey(this.items[this.windowStart]),
-			windowStart: this.windowStart,
-		};
-	}
-
-	suspend(): PowerbarSnapshot | undefined {
-		const snapshot = this.capture();
-		if (!snapshot) return undefined;
-		this.stopTimer();
-		this.transition = undefined;
-		if (snapshot.selector === "thinking") this.onThinkingPreview?.(this.host.getThinkingLevel());
-		this.mode = "normal";
-		this.collapsing = false;
-		this.items = [];
-		this.lastRegions = [];
-		this.host.requestRender();
-		return snapshot;
-	}
-
-	restore(
-		snapshot: PowerbarSnapshot,
-		options: {
-			modelAnchorWidth: number;
-			thinkingAnchorWidth: number;
-			thinkingPrefix: PowerbarPrefixSpan;
-			thinkingLevels?: ThinkingLevel[];
-		},
-	): void {
-		if (snapshot.selector === "thinking") {
-			this.openThinking({
-				anchorWidth: options.thinkingAnchorWidth,
-				prefix: options.thinkingPrefix,
-				levels: options.thinkingLevels,
-			});
-		} else {
-			this.openModelBrowse({ anchorWidth: options.modelAnchorWidth });
-			if (snapshot.query) {
-				this.mode = "model-search";
-				this.query = snapshot.query;
-				this.searchPrefixWidth = this.computeSearchPrefixWidth();
-				this.items = this.makeModelItems(this.filteredModels());
-				this.anchorIndex = 0;
-			}
-		}
-		this.stopTimer();
-		this.transition = undefined;
-		const selected = this.items.findIndex((item) => this.itemKey(item) === snapshot.selectedKey);
-		this.selectedIndex = selected >= 0 ? selected : clampIndex(snapshot.selectedIndex, this.items.length);
-		const start = this.items.findIndex((item) => this.itemKey(item) === snapshot.windowStartKey);
-		this.fitWindow(Math.max(0, this.selectedIndex), this.trackMaxWidth());
-		if (start >= 0 && start <= this.selectedIndex) {
-			let end = start - 1;
-			let used = 0;
-			const maxWidth = Math.max(1, this.lastMaxWidth - this.prefixReserve() - 2 * INDICATOR_WIDTH);
-			for (let index = start; index < this.items.length; index++) {
-				const width = this.slotWidth(index);
-				if (used + width > maxWidth) break;
-				used += width;
-				end = index;
-			}
-			if (end >= this.selectedIndex) {
-				this.windowStart = start;
-				this.windowEnd = end;
-				this.leftIndicator = start > 0;
-				this.rightIndicator = end < this.items.length - 1;
-			}
-		}
-		const level = this.items[this.selectedIndex]?.level;
-		if (level) this.onThinkingPreview?.(level);
-		this.host.requestRender();
 	}
 
 	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
@@ -334,39 +211,14 @@ export class PowerbarController {
 	// Opening / closing
 	// =========================================================================
 
-	/** Expand the thinking level track out of the effort label. */
-	openThinking(options: { anchorWidth: number; prefix: PowerbarPrefixSpan; levels?: ThinkingLevel[] }): void {
-		this.stopTimer();
-		this.collapsing = false;
-		this.mode = "thinking";
-		this.modelPrefix = options.prefix;
-		this.leftIndicator = false;
-		this.rightIndicator = false;
-		const levels = options.levels ?? this.host.getThinkingLevels();
-		const current = this.host.getThinkingLevel();
-		this.items = levels.map((level) => {
-			const label = level.charAt(0).toUpperCase() + level.slice(1);
-			return { kind: "level" as const, level, label, width: visibleWidth(label) };
-		});
-		this.anchorIndex = clampIndex(levels.indexOf(current), this.items.length);
-		this.selectedIndex = this.anchorIndex;
-		this.query = "";
-		this.searchPrefixWidth = 0;
-		this.buildOpenWipe(options.anchorWidth);
-		this.host.requestRender();
-	}
-
 	/** Expand the model track out of the model label. */
 	openModelBrowse(options: { anchorWidth: number }): void {
-		if (this.mode === "thinking") this.onThinkingPreview?.(this.host.getThinkingLevel());
 		this.stopTimer();
 		this.collapsing = false;
 		this.mode = "model-browse";
-		this.modelPrefix = undefined;
 		this.leftIndicator = false;
 		this.rightIndicator = false;
 		this.items = this.host.getModels().map((entry) => ({
-			kind: "model" as const,
 			model: entry,
 			label: entry.label,
 			width: visibleWidth(entry.label),
@@ -382,7 +234,6 @@ export class PowerbarController {
 	/** Collapse back to the normal labels around the current selection. */
 	collapse(): void {
 		if (this.mode === "normal" || this.collapsing) return;
-		if (this.mode === "thinking") this.onThinkingPreview?.(this.host.getThinkingLevel());
 		this.snapTransition();
 		this.selectedIndex = clampIndex(this.anchorIndex, this.items.length);
 		this.buildCollapseWipe();
@@ -422,7 +273,7 @@ export class PowerbarController {
 				label: prefix.text,
 				selected: false,
 				wFrom: prefixSpan?.width ?? prefix.width,
-				wTo: this.mode === "thinking" ? prefix.width : 0,
+				wTo: 0,
 				start: 0,
 			},
 		];
@@ -454,7 +305,6 @@ export class PowerbarController {
 			this.items = [];
 			this.query = "";
 			this.searchPrefixWidth = 0;
-			this.modelPrefix = undefined;
 			this.host.requestRender();
 		});
 	}
@@ -469,8 +319,6 @@ export class PowerbarController {
 		const next = clampIndex(this.selectedIndex + delta, this.items.length);
 		if (next === this.selectedIndex) return;
 		this.selectedIndex = next;
-		const level = this.items[next]?.level;
-		if (level !== undefined) this.onThinkingPreview?.(level);
 		if (next > this.windowEnd) {
 			this.slideWindow(1);
 		} else if (next < this.windowStart) {
@@ -488,12 +336,7 @@ export class PowerbarController {
 			return;
 		}
 		this.snapTransition();
-		if (item.kind === "level" && item.level !== undefined) {
-			this.host.applyThinking(item.level);
-			this.onThinkingCommit?.(item.level);
-		} else if (item.kind === "model" && item.model !== undefined) {
-			this.host.applyModel(item.model.model);
-		}
+		this.host.applyModel(item.model.model);
 		this.buildCollapseWipe();
 		this.host.requestRender();
 	}
@@ -528,7 +371,6 @@ export class PowerbarController {
 		this.snapTransition();
 		this.searchPrefixWidth = this.computeSearchPrefixWidth();
 		this.items = this.filteredModels().map((entry) => ({
-			kind: "model" as const,
 			model: entry,
 			label: entry.label,
 			width: visibleWidth(entry.label),
@@ -547,7 +389,6 @@ export class PowerbarController {
 
 	private makeModelItems(entries: readonly PowerbarModelEntry[]): TrackItem[] {
 		return entries.map((entry) => ({
-			kind: "model" as const,
 			model: entry,
 			label: entry.label,
 			width: visibleWidth(entry.label),
@@ -719,16 +560,11 @@ export class PowerbarController {
 		const item = this.items[index];
 		if (!item) return "";
 		const content = middleTruncate(item.label, this.slotWidth(index) - 4);
-		const label =
-			item.level === undefined
-				? theme.fg("accent", content)
-				: index === this.selectedIndex && this.paintThinking
-					? this.paintThinking(content)
-					: theme.getThinkingBorderColor(item.level)(content);
+		const label = theme.fg("accent", content);
 		if (index === this.selectedIndex) {
 			return theme.bold(`${selectionCursor(true)}${label}${selectionMarkerSuffix(true)}`);
 		}
-		return `  ${item.level === undefined ? theme.fg("muted", content) : label}`;
+		return `  ${theme.fg("muted", content)}`;
 	}
 
 	private trackLeft(): number {
@@ -749,7 +585,6 @@ export class PowerbarController {
 			const text = `${theme.fg("accent", SEARCH_PREFIX)}${theme.bold(this.query)}${theme.fg("dim", SEARCH_CURSOR)}`;
 			return { text, width: this.computeSearchPrefixWidth() };
 		}
-		if (this.mode === "thinking" && this.modelPrefix) return this.modelPrefix;
 		return { text: "", width: 0 };
 	}
 
@@ -961,14 +796,15 @@ export class PowerbarController {
 	}
 
 	private interval(base: number): number {
-		const factor =
-			this.animationIntensity === "conservative" ? 1.8 : this.animationIntensity === "aggressive" ? 0.7 : 1;
-		return Math.max(20, Math.round(base * factor));
+		return Math.max(
+			20,
+			Math.round(motionDuration(base, this.animationIntensity, { conservative: 1.8, moderate: 1, aggressive: 0.7 })),
+		);
 	}
 
 	private startTimer(): void {
 		this.stopTimer();
-		this.timer = setInterval(() => {
+		this.clock.start(this.transition?.intervalMs ?? WIPE_INTERVAL_MS, () => {
 			const transition = this.transition;
 			if (!transition) {
 				this.stopTimer();
@@ -980,7 +816,7 @@ export class PowerbarController {
 			} else {
 				this.host.requestRender();
 			}
-		}, this.transition?.intervalMs ?? WIPE_INTERVAL_MS);
+		});
 	}
 
 	private snapTransition(): void {
@@ -992,9 +828,6 @@ export class PowerbarController {
 	}
 
 	private stopTimer(): void {
-		if (this.timer) {
-			clearInterval(this.timer);
-			this.timer = undefined;
-		}
+		this.clock.stop();
 	}
 }

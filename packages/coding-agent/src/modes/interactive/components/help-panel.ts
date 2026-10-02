@@ -85,7 +85,8 @@ export class HelpPanel implements Component {
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (this.transition.value() < 1 || event.y < this.listStartRow || event.y >= this.listStartRow + this.visibleRows)
+		if (!this.queryActive) return;
+		if (event.y < 0 || event.y < this.listStartRow || event.y >= this.listStartRow + this.visibleRows)
 			return undefined;
 		const result = this.list.handleMouse({
 			...event,
@@ -122,7 +123,7 @@ export class HelpPanel implements Component {
 		const { growth } = panelPhase(this.transition.value());
 		const visible = Math.ceil(lines.length * growth);
 		this.visibleRows = listLines.length;
-		this.listStartRow = 2;
+		this.listStartRow = 2 - (lines.length - visible);
 		return visible === 0 ? [] : lines.slice(-visible);
 	}
 }

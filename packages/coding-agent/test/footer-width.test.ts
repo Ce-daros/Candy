@@ -2,7 +2,7 @@ import { visibleWidth } from "@candy/tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import { FooterComponent } from "../src/modes/interactive/components/footer.ts";
-import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 function createSession(options: {
@@ -15,7 +15,7 @@ function createSession(options: {
 		selection: {
 			model: {
 				id: options.modelId ?? "test-model",
-				name: options.modelName,
+				name: options.modelName ?? options.modelId ?? "Test model",
 				reasoning: options.reasoning ?? false,
 			},
 			thinkingLevel: options.thinkingLevel ?? "off",
@@ -45,12 +45,6 @@ describe("FooterComponent bottom border", () => {
 	it("shows thinking only for reasoning models", () => {
 		expect(renderStatus(createSession({ reasoning: true, thinkingLevel: "medium" }), 80)).toContain("Medium");
 		expect(renderStatus(createSession({ reasoning: false, thinkingLevel: "medium" }), 80)).not.toContain("Medium");
-	});
-
-	it("paints the model label in the accent color without a chevron", () => {
-		const line = new FooterComponent(createSession({})).renderBottomBorder(60, 0, (text) => text);
-		expect(line).toContain(theme.getFgAnsi("accent"));
-		expect(stripAnsi(line)).not.toContain("▾");
 	});
 
 	it("includes the hidden-line count when the editor scrolled", () => {

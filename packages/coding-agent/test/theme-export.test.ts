@@ -1,8 +1,14 @@
+import { colorToHex } from "@candy/tui";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getThemeExportColors } from "../src/modes/interactive/theme/theme.ts";
+import {
+	getResolvedThemeColors,
+	getThemeByName,
+	getThemeExportColors,
+	initTheme,
+} from "../src/modes/interactive/theme/theme.ts";
 
 type ThemeFile = {
 	name: string;
@@ -16,6 +22,16 @@ type ThemeFile = {
 };
 
 describe("getThemeExportColors", () => {
+	it("exports the currently selected theme colors", () => {
+		for (const name of ["light", "dark"] as const) {
+			initTheme(name);
+			const colors = getThemeByName(name)!.colors;
+			const resolved = getResolvedThemeColors();
+			for (const role of ["border", "accent", "text"] as const) {
+				expect(resolved[role]).toBe(colorToHex(colors[role]));
+			}
+		}
+	});
 	let tempRoot: string;
 	let previousAgentDir: string | undefined;
 

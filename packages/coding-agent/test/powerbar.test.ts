@@ -1,4 +1,3 @@
-import type { ThinkingLevel } from "@candy/agent-core";
 import type { Model } from "@candy/ai";
 import { visibleWidth } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,8 +10,6 @@ import {
 } from "../src/modes/interactive/components/powerbar.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
-
-const LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 function createModel(id: string, name: string): Model<any> {
 	return {
@@ -40,33 +37,24 @@ const MANY_MODELS: PowerbarModelEntry[] = Array.from({ length: 12 }, (_, i) => {
 });
 
 interface AppliedSelection {
-	level?: ThinkingLevel;
 	modelId?: string;
 }
 
 interface PowerbarFixture {
 	controller: PowerbarController;
 	applied: AppliedSelection[];
-	setCurrentLevel: (level: ThinkingLevel) => void;
 	setCurrentModelIndex: (index: number) => void;
 	setModels: (models: readonly PowerbarModelEntry[]) => void;
 }
 
 function createFixture(): PowerbarFixture {
 	const applied: AppliedSelection[] = [];
-	let currentLevel: ThinkingLevel = "medium";
 	let currentModelIndex = 1;
 	let models: readonly PowerbarModelEntry[] = MODELS;
 	const host: PowerbarHost = {
 		requestRender: () => {},
-		getThinkingLevels: () => [...LEVELS],
-		getThinkingLevel: () => currentLevel,
 		getModels: () => models,
 		getCurrentModelIndex: () => currentModelIndex,
-		applyThinking: (level) => {
-			currentLevel = level;
-			applied.push({ level });
-		},
 		applyModel: (model) => {
 			applied.push({ modelId: model.id });
 			currentModelIndex = models.findIndex((entry) => entry.model.id === model.id);
@@ -75,9 +63,6 @@ function createFixture(): PowerbarFixture {
 	return {
 		controller: new PowerbarController(host),
 		applied,
-		setCurrentLevel(level: ThinkingLevel): void {
-			currentLevel = level;
-		},
 		setCurrentModelIndex(index: number): void {
 			currentModelIndex = index;
 		},
@@ -89,112 +74,10 @@ function createFixture(): PowerbarFixture {
 
 /** Advance the controller through all pending animation frames. */
 function settle(controller: PowerbarController): void {
-	for (let i = 0; i < 40 && !controller.isIdle(); i++) {
+	for (let i = 0; i < 40 && controller.mode !== "normal"; i++) {
 		vi.advanceTimersByTime(40);
 	}
 }
-
-describe("PowerbarController thinking track", () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-		initTheme(undefined, false);
-	});
-
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
-	function open(controller: PowerbarController): void {
-		controller.render(200);
-		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
-	}
-
-	it("confirm applies the level and collapses anchored on it", () => {
-		const { controller, applied } = createFixture();
-		open(controller);
-		settle(controller);
-		controller.move(1); // highlight High
-		controller.confirm();
-
-		expect(applied).toEqual([{ level: "high" }]);
-		expect(controller.mode).toBe("thinking");
-
-		// The collapse keeps the new anchor highlighted until the final swap.
-		const mid = stripAnsi(controller.render(200)!.text);
-		expect(mid).toContain("♦ High ♦");
-
-		settle(controller);
-		expect(controller.isIdle()).toBe(true);
-		expect(controller.mode).toBe("normal");
-	});
-
-	it("cancel collapses without applying anything", () => {
-		const { controller, applied } = createFixture();
-		open(controller);
-		settle(controller);
-		controller.move(2);
-		controller.collapse();
-		settle(controller);
-		expect(applied).toEqual([]);
-		expect(controller.isIdle()).toBe(true);
-	});
-
-	it("previews a level while navigating and restores the active level on cancel", () => {
-		const { controller, applied } = createFixture();
-		controller.setAnimationOptions(false, "moderate");
-		const preview = vi.fn();
-		const commit = vi.fn();
-		controller.onThinkingPreview = preview;
-		controller.onThinkingCommit = commit;
-		open(controller);
-		controller.move(2);
-		expect(preview).toHaveBeenLastCalledWith("xhigh");
-		controller.collapse();
-		expect(preview).toHaveBeenLastCalledWith("medium");
-		expect(commit).not.toHaveBeenCalled();
-		expect(applied).toEqual([]);
-		open(controller);
-		controller.move(3);
-		controller.confirm();
-		expect(commit).toHaveBeenLastCalledWith("max");
-		expect(applied).toEqual([{ level: "max" }]);
-		controller.dispose();
-	});
-
-	it("shows the final track immediately when animations are disabled", () => {
-		const { controller } = createFixture();
-		controller.setAnimationOptions(false, "conservative");
-		open(controller);
-		const text = stripAnsi(controller.render(200)!.text);
-		expect(text).toContain("Off");
-		expect(text).toContain("Max");
-		controller.confirm();
-		expect(controller.isIdle()).toBe(true);
-	});
-
-	it("shows at least six text-only thinking choices within an 80-column frame", () => {
-		const { controller } = createFixture();
-		controller.setAnimationOptions(false, "moderate");
-		controller.render(76);
-		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
-		const { text, regions } = controller.render(76)!;
-		expect(regions.length).toBeGreaterThanOrEqual(6);
-		expect(stripAnsi(text)).toContain("♦ Medium ♦");
-		expect(text).not.toMatch(/[▰▱]/);
-		expect(visibleWidth(text)).toBeLessThanOrEqual(76);
-		controller.dispose();
-	});
-
-	it("frames never exceed the available width", () => {
-		const { controller } = createFixture();
-		open(controller);
-		for (let frame = 0; frame < 8; frame++) {
-			const rendered = controller.render(40);
-			expect(visibleWidth(stripAnsi(rendered!.text))).toBeLessThanOrEqual(40);
-			vi.advanceTimersByTime(30);
-		}
-	});
-});
 
 describe("PowerbarController model track", () => {
 	beforeEach(() => {
@@ -278,41 +161,20 @@ describe("PowerbarController model track", () => {
 		expect(controller.isIdle()).toBe(true);
 	});
 
-	it("restores the searched model highlight after leaving the selector", () => {
+	it("returns input while closing and can reopen before the animation ends", () => {
 		const { controller } = createFixture();
-		controller.setAnimationOptions(false, "moderate");
-		controller.render(80);
 		controller.openModelBrowse({ anchorWidth: 9 });
-		controller.inputChar("s");
-		controller.inputChar("o");
+		settle(controller);
 		controller.move(1);
-		const highlighted = controller.getHighlightedModel();
-		const snapshot = controller.suspend()!;
+		controller.collapse();
 		expect(controller.isIdle()).toBe(true);
-		controller.restore(snapshot, {
-			modelAnchorWidth: 9,
-			thinkingAnchorWidth: 6,
-			thinkingPrefix: { text: "Kimi K2.6", width: 9 },
-		});
-		expect(controller.getSelector()).toBe("model");
-		expect(controller.getHighlightedModel()).toEqual(highlighted);
-		expect(stripAnsi(controller.render(80)!.text)).toContain("Model › so");
-	});
-
-	it("does not substitute the active model when search has no results", () => {
-		const { controller } = createFixture();
-		controller.setAnimationOptions(false, "moderate");
+		expect(controller.getHighlightedModel()).toBeUndefined();
+		expect(controller.render(76)).toBeDefined();
 		controller.openModelBrowse({ anchorWidth: 9 });
-		controller.inputChar("z");
-		controller.inputChar("z");
-		expect(controller.getHighlightedModel()).toBeUndefined();
-		const snapshot = controller.suspend()!;
-		controller.restore(snapshot, {
-			modelAnchorWidth: 9,
-			thinkingAnchorWidth: 6,
-			thinkingPrefix: { text: "Kimi K2.6", width: 9 },
-		});
-		expect(controller.getHighlightedModel()).toBeUndefined();
+		settle(controller);
+		expect(controller.isIdle()).toBe(false);
+		expect(controller.getHighlightedModel()?.id).toBe("kimi-k2.6");
+		controller.dispose();
 	});
 
 	it("keeps a model selector available with an empty quick-pick range", () => {
@@ -320,43 +182,8 @@ describe("PowerbarController model track", () => {
 		setModels([]);
 		controller.setAnimationOptions(false, "moderate");
 		controller.openModelBrowse({ anchorWidth: 9 });
-		expect(controller.getSelector()).toBe("model");
+		expect(controller.isIdle()).toBe(false);
 		expect(controller.getHighlightedModel()).toBeUndefined();
-		expect(controller.suspend()?.selector).toBe("model");
-	});
-
-	it("highlights the nearest remaining model when scope removes the prior highlight", () => {
-		const { controller, setModels } = createFixture();
-		controller.setAnimationOptions(false, "moderate");
-		controller.openModelBrowse({ anchorWidth: 9 });
-		controller.move(2);
-		expect(controller.getHighlightedModel()?.id).toBe("sonnet-4.5");
-		const snapshot = controller.suspend()!;
-		setModels(MODELS.filter((entry) => entry.model.id !== "sonnet-4.5"));
-		controller.restore(snapshot, {
-			modelAnchorWidth: 9,
-			thinkingAnchorWidth: 6,
-			thinkingPrefix: { text: "Kimi K2.6", width: 9 },
-		});
-		expect(controller.getHighlightedModel()?.id).toBe("gemini-3.1-pro");
-	});
-
-	it("keeps search and selects a remaining result when scope removes the highlighted match", () => {
-		const { controller, setModels } = createFixture();
-		controller.setAnimationOptions(false, "moderate");
-		controller.openModelBrowse({ anchorWidth: 9 });
-		for (const char of "sonnet") controller.inputChar(char);
-		controller.move(1);
-		expect(controller.getHighlightedModel()?.id).toBe("sonnet-4.5");
-		const snapshot = controller.suspend()!;
-		setModels(MODELS.filter((entry) => entry.model.id !== "sonnet-4.5"));
-		controller.restore(snapshot, {
-			modelAnchorWidth: 9,
-			thinkingAnchorWidth: 6,
-			thinkingPrefix: { text: "Kimi K2.6", width: 9 },
-		});
-		expect(controller.getHighlightedModel()?.id).toBe("sonnet-4.6");
-		expect(stripAnsi(controller.render(80)!.text)).toContain("Model › sonnet");
 	});
 });
 
@@ -422,27 +249,6 @@ describe("PowerbarController window sliding", () => {
 		// belongs to the selected item.
 		expect(text.startsWith("♦ Model 01 ♦")).toBe(true);
 	});
-
-	it("restores the visible window around a highlighted model", () => {
-		const { controller, setCurrentModelIndex, setModels } = createFixture();
-		setCurrentModelIndex(0);
-		setModels(MANY_MODELS);
-		controller.setAnimationOptions(false, "moderate");
-		controller.render(80);
-		controller.openModelBrowse({ anchorWidth: 9 });
-		for (let step = 0; step < 7; step++) controller.move(1);
-		const rendered = controller.render(80)!;
-		const before = stripAnsi(rendered.text);
-		const snapshot = controller.suspend()!;
-		expect(snapshot.windowStartKey).toBe(`test/${MANY_MODELS[rendered.regions[0]!.itemIndex]!.model.id}`);
-		controller.restore(snapshot, {
-			modelAnchorWidth: 9,
-			thinkingAnchorWidth: 6,
-			thinkingPrefix: { text: "Model 01", width: 8 },
-		});
-		expect(controller.getHighlightedModel()?.id).toBe("model-8");
-		expect(stripAnsi(controller.render(80)!.text)).toBe(before);
-	});
 });
 
 describe("PowerbarController clicks", () => {
@@ -458,19 +264,19 @@ describe("PowerbarController clicks", () => {
 	it("confirms a clicked item via its render region", () => {
 		const { controller, applied } = createFixture();
 		controller.render(200);
-		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 		const { regions } = controller.render(200)!;
-		const xhigh = regions.find((region) => region.itemIndex === LEVELS.indexOf("xhigh"));
-		expect(xhigh).toBeDefined();
-		controller.handleContentClick(xhigh!.start + 1);
-		expect(applied).toEqual([{ level: "xhigh" }]);
+		const clicked = regions.find((region) => region.itemIndex === 3);
+		expect(clicked).toBeDefined();
+		controller.handleContentClick(clicked!.start + 1);
+		expect(applied).toEqual([{ modelId: "sonnet-4.5" }]);
 	});
 
 	it("collapses when clicking outside any item", () => {
 		const { controller, applied } = createFixture();
 		controller.render(200);
-		controller.openThinking({ anchorWidth: 6, prefix: { text: "Kimi K2.6", width: 9 } });
+		controller.openModelBrowse({ anchorWidth: 9 });
 		settle(controller);
 		controller.handleContentClick(10_000);
 		settle(controller);
@@ -509,11 +315,8 @@ describe("FooterComponent powerbar integration", () => {
 	function createPowerbarHost(): PowerbarHost {
 		return {
 			requestRender: () => {},
-			getThinkingLevels: () => [...LEVELS],
-			getThinkingLevel: () => "medium",
 			getModels: () => MODELS,
 			getCurrentModelIndex: () => 1,
-			applyThinking: () => {},
 			applyModel: () => {},
 		};
 	}
@@ -561,23 +364,18 @@ describe("FooterComponent powerbar integration", () => {
 		settle(fixture.controller);
 	});
 
-	it("cycles model and thinking with Tab semantics even for a non-reasoning model", () => {
+	it.each([true, false])("keeps the effort label visible without a mouse selector (reasoning: %s)", (reasoning) => {
 		const session = createFooterSession();
-		session.selection.model!.reasoning = false;
+		session.selection.model!.reasoning = reasoning;
 		const footer = new FooterComponent(session, createPowerbarHost());
 		footer.setAnimationOptions(false, "moderate");
-		footer.openPowerbarModelBrowse();
-		expect(footer.getPowerbarSelector()).toBe("model");
-		expect(footer.switchPowerbar()).toBe(true);
-		expect(footer.getPowerbarSelector()).toBe("thinking");
-		const snapshot = footer.suspendPowerbar()!;
 		const line = stripAnsi(footer.renderBottomBorder(120, 0, (text) => text));
-		expect(line).toContain("Off");
-		footer.restorePowerbar(snapshot);
-		expect(footer.getPowerbarSelector()).toBe("thinking");
-		expect(stripAnsi(footer.renderBottomBorder(120, 0, (text) => text))).not.toContain("Medium");
-		expect(footer.switchPowerbar()).toBe(true);
-		expect(footer.getPowerbarSelector()).toBe("model");
+		const effortColumn = line.indexOf(reasoning ? "Medium" : "Off");
+		expect(effortColumn).toBeGreaterThan(4);
+		expect(footer.handleBottomBorderClick(effortColumn)).toBe(false);
+		expect(footer.isPowerbarIdle()).toBe(true);
+		expect(footer.handleBottomBorderClick(4)).toBe(true);
+		expect(footer.isPowerbarIdle()).toBe(false);
 		footer.dispose();
 	});
 });

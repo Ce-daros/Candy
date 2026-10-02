@@ -1,67 +1,63 @@
-import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
+import { createTemplateRenderer } from "./export-html-template.ts";
 
-describe("export HTML markdown link sanitization", () => {
-	const templateJs = readFileSync(new URL("../src/presentation/export-html/template.js", import.meta.url), "utf-8");
+describe("export HTML escaping", () => {
+	it.each(["javascript:alert(1)", "vbscript:alert(1)", "data:text/html,attack", "java\u0000script:alert(1)"])(
+		"rejects unsafe markdown link and image URLs: %s",
+		(url) => {
+			const renderer = createTemplateRenderer();
+			for (const markdown of [`[click](<${url}>)`, `![image](<${url}>)`]) {
+				expect(renderer.safeMarkedParse(markdown)).not.toMatch(/<(a|img)\b/);
+			}
+		},
+	);
 
-	it("overrides the marked link renderer to use scheme allow-list sanitization", () => {
-		expect(templateJs).toMatch(/link\s*\(\s*token\s*\)/);
-		expect(templateJs).toMatch(/sanitizeMarkdownUrl\(token\.href\)/);
-		expect(templateJs).toMatch(/\^\(https\?\|mailto\|tel\|ftp\)/);
+	it("preserves allowed URLs and escapes their attributes", () => {
+		const renderer = createTemplateRenderer();
+		for (const url of ["https://example.com", "mailto:me@example.com", "tel:123", "ftp://example.com", "/relative"]) {
+			expect(renderer.safeMarkedParse(`[click](${url})`)).toContain(`href="${url}"`);
+		}
+		expect(renderer.safeMarkedParse('[click](<https://example.com/"onmouseover="attack>)')).toContain(
+			'href="https://example.com/&quot;onmouseover=&quot;attack"',
+		);
 	});
 
-	it("overrides the marked image renderer to use scheme allow-list sanitization", () => {
-		expect(templateJs).toMatch(/image\s*\(\s*token\s*\)/);
-		expect(templateJs).toMatch(/sanitizeMarkdownUrl\(token\.href\)/);
+	it("escapes image content and entry IDs before rendering attributes", () => {
+		const attack = '" onerror="attack<>&';
+		const html = createTemplateRenderer().renderEntry({
+			id: attack,
+			type: "message",
+			message: { role: "user", content: [{ type: "image", mimeType: attack, data: attack }] },
+		});
+		expect(html).toContain('id="entry-&quot; onerror=&quot;attack&lt;&gt;&amp;"');
+		expect(html).toContain('data-entry-id="&quot; onerror=&quot;attack&lt;&gt;&amp;"');
+		expect(html).toContain(
+			'src="data:&quot; onerror=&quot;attack&lt;&gt;&amp;;base64,&quot; onerror=&quot;attack&lt;&gt;&amp;"',
+		);
+		expect(html).not.toContain(attack);
 	});
 
-	it("strips C0 controls before checking and emitting markdown URLs", () => {
-		expect(templateJs).toContain("replace(/[\\x00-\\x1f\\x7f]/g, '')");
-		expect(templateJs).not.toMatch(/\^\\s\*\(javascript\|vbscript\|data\):/i);
-	});
-
-	it("escapes href attributes in the custom link renderer", () => {
-		// The link renderer must escape href values to prevent attribute breakout
-		expect(templateJs).toMatch(/escapeHtml\(href\)/);
-	});
-
-	it("escapes image mimeType attributes", () => {
-		// Image mimeType must be escaped to prevent attribute breakout
-		expect(templateJs).not.toMatch(/\$\{img\.mimeType\}/);
-		expect(templateJs).toMatch(/escapeHtml\(img\.mimeType/);
-	});
-
-	it("escapes image data attributes", () => {
-		// Image data is embedded in src attributes and must not allow attribute breakout.
-		expect(templateJs).not.toMatch(/;base64,\$\{img\.data\}"/);
-		expect(templateJs).toMatch(/;base64,\$\{escapeHtml\(img\.data \|\| (?:''|"")\)\}"/);
-	});
-
-	it("escapes entry IDs before inserting them into attributes", () => {
-		// Session entry IDs are embedded in id and data-entry-id attributes.
-		expect(templateJs).not.toMatch(/id="\$\{entryId\}"/);
-		expect(templateJs).not.toMatch(/data-entry-id="\$\{entryId\}"/);
-		expect(templateJs).toMatch(/entry-\$\{escapeHtml\(entry\.id\)\}/);
-		expect(templateJs).toMatch(/data-entry-id="\$\{escapeHtml\(entryId\)\}"/);
-	});
-
-	it("escapes tree metadata rendered from session fields", () => {
-		// The tree renders session metadata via innerHTML, so dynamic fields must be escaped.
-		expect(templateJs).not.toMatch(/\[\$\{msg\.toolName \|\| 'tool'\}\]/);
-		expect(templateJs).not.toMatch(/\[\$\{msg\.role\}\]/);
-		expect(templateJs).not.toMatch(/\[model: \$\{entry\.modelId\}\]/);
-		expect(templateJs).not.toMatch(/\[thinking: \$\{entry\.thinkingLevel\}\]/);
-		expect(templateJs).not.toMatch(/\[\$\{entry\.type\}\]/);
-		expect(templateJs).toMatch(/\$\{escapeHtml\(msg\.toolName \|\| 'tool'\)\}/);
-		expect(templateJs).toMatch(/\$\{escapeHtml\(msg\.role\)\}/);
-		expect(templateJs).toMatch(/\$\{escapeHtml\(entry\.modelId\)\}/);
-		expect(templateJs).toMatch(/\$\{escapeHtml\(entry\.thinkingLevel\)\}/);
-		expect(templateJs).toMatch(/\$\{escapeHtml\(entry\.type\)\}/);
-	});
-
-	it("escapes model names in the exported header", () => {
-		// Assistant message provider/model values are collected from the session and rendered with innerHTML.
-		expect(templateJs).not.toMatch(/\$\{globalStats\.models\.join\(', '\) \|\| 'unknown'\}/);
-		expect(templateJs).toMatch(/\$\{escapeHtml\(globalStats\.models\.join\(', '\) \|\| 'unknown'\)\}/);
+	it("escapes session metadata in the tree and header", () => {
+		const attack = "<img src=x onerror=attack>";
+		const renderer = createTemplateRenderer([
+			{
+				id: "assistant",
+				type: "message",
+				message: { role: "assistant", provider: attack, model: attack, content: [] },
+			},
+		]);
+		for (const entry of [
+			{ type: "message", message: { role: "toolResult", toolName: attack } },
+			{ type: "message", message: { role: attack } },
+			{ type: "model_change", modelId: attack },
+			{ type: "thinking_level_change", thinkingLevel: attack },
+			{ type: attack },
+		]) {
+			const html = renderer.getTreeNodeDisplayHtml(entry, attack);
+			expect(html).toContain("&lt;img src=x onerror=attack&gt;");
+			expect(html).not.toContain(attack);
+		}
+		expect(renderer.renderHeader()).toContain("&lt;img src=x onerror=attack&gt;");
+		expect(renderer.renderHeader()).not.toContain(attack);
 	});
 });

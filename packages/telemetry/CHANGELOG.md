@@ -6,6 +6,10 @@
 
 - Renamed `@earendil-works/pi-telemetry` to `@candy/telemetry`. Update package dependencies and imports.
 
+### Changed
+
+- Consolidated the README around adapter contracts, typed schemas, and conformance testing; corrected the agent-core integration import.
+
 ## [0.87.1] - 2026-09-22
 
 ## [0.87.0] - 2026-09-21

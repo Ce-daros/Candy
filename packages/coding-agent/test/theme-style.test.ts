@@ -28,6 +28,23 @@ afterEach(() => {
 });
 
 describe("theme styles", () => {
+	it.each(["dark", "light"] as const)("restores enclosing %s theme colors after nested styles", (base) => {
+		const theme = loadTheme(base);
+		const dim = theme.getFgAnsi("dim");
+		const accent = theme.getFgAnsi("borderAccent");
+		expect(theme.fg("dim", `before ${theme.fg("borderAccent", "<Tab>")} after`)).toBe(
+			`${dim}before ${accent}<Tab>${dim} after\x1b[39m`,
+		);
+		const outerBg = theme.getBgAnsi("toolSuccessBg");
+		const innerBg = theme.getBgAnsi("toolErrorBg");
+		expect(theme.bg("toolSuccessBg", `before ${theme.bg("toolErrorBg", "inner")} after`)).toBe(
+			`${outerBg}before ${innerBg}inner${outerBg} after\x1b[49m`,
+		);
+		expect(theme.style(`before ${theme.fg("borderAccent", "<Tab>")} after`, { fg: "dim" })).toBe(
+			`${dim}before ${accent}<Tab>${dim} after\x1b[39m`,
+		);
+	});
+
 	it("renders theme tokens the same as the generic text styler", () => {
 		const theme = loadTheme("dark");
 		expect(theme.style("Ready", { fg: "success", bg: "toolSuccessBg", bold: true })).toBe(

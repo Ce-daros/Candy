@@ -24,6 +24,30 @@ function lineLength(bar: string): number {
 }
 
 describe("TopBarComponent", () => {
+	it("stops animation ticks while retaining the low-usage expiry deadline", () => {
+		vi.useFakeTimers();
+		try {
+			initTheme("dark");
+			const render = vi.fn();
+			const bar = new TopBarComponent(
+				() => ({ project: "Candy", branch: null, sessionName: undefined, contextPercent: 20 }),
+				render,
+			);
+			bar.render(80);
+			vi.advanceTimersByTime(100);
+			bar.setAnimations(false);
+			render.mockClear();
+			vi.advanceTimersByTime(2299);
+			expect(render).not.toHaveBeenCalled();
+			vi.advanceTimersByTime(1);
+			expect(render).toHaveBeenCalledOnce();
+			expect(stripAnsi(bar.render(80)[0])).not.toContain("20%");
+			expect(vi.getTimerCount()).toBe(0);
+			bar.dispose();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 	it("grows the occupied line and keeps percentage at a fixed column", () => {
 		const data = { project: "Candy", branch: "main" };
 		const low = renderBar(60, { ...data, percent: 10 });

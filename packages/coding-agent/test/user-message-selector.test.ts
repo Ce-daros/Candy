@@ -5,6 +5,21 @@ import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("UserMessageSelectorComponent", () => {
+	it("keeps an empty result open until Escape", () => {
+		vi.useFakeTimers();
+		try {
+			const cancel = vi.fn();
+			const selector = new UserMessageSelectorComponent([], vi.fn(), cancel);
+			vi.advanceTimersByTime(1000);
+			expect(cancel).not.toHaveBeenCalled();
+			expect(selector.render(80).length).toBeGreaterThan(0);
+			selector.handleInput("\x1b");
+			expect(cancel).toHaveBeenCalledOnce();
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 	beforeAll(() => initTheme("dark"));
 
 	it("shows two-line summaries with a full scrolling preview", () => {

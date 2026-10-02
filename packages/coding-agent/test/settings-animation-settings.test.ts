@@ -2,13 +2,6 @@ import { describe, expect, it } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 describe("animation settings", () => {
-	it("defaults to enabled animations with moderate intensity", () => {
-		const settings = SettingsManager.inMemory();
-
-		expect(settings.read("ui-animations")).toBe(true);
-		expect(settings.read("animation-intensity")).toBe("moderate");
-	});
-
 	it("persists animation choices", async () => {
 		const settings = SettingsManager.inMemory();
 

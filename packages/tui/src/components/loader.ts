@@ -1,3 +1,4 @@
+import { MotionClock } from "../motion.ts";
 import type { TUI } from "../tui.ts";
 import { Text } from "./text.ts";
 
@@ -18,7 +19,7 @@ export class Loader extends Text {
 	private frames = [...DEFAULT_FRAMES];
 	private intervalMs = DEFAULT_INTERVAL_MS;
 	private currentFrame = 0;
-	private intervalId: NodeJS.Timeout | null = null;
+	private readonly clock = new MotionClock();
 	private ui: TUI | null = null;
 	private renderIndicatorVerbatim = false;
 	private spinnerColorFn: (str: string) => string;
@@ -50,10 +51,7 @@ export class Loader extends Text {
 	}
 
 	stop(): void {
-		if (this.intervalId) {
-			clearInterval(this.intervalId);
-			this.intervalId = null;
-		}
+		this.clock.stop();
 	}
 
 	setMessage(message: string): void {
@@ -79,10 +77,10 @@ export class Loader extends Text {
 		if (this.frames.length <= 1) {
 			return;
 		}
-		this.intervalId = setInterval(() => {
+		this.clock.start(this.intervalMs, () => {
 			this.currentFrame = (this.currentFrame + 1) % this.frames.length;
 			this.updateDisplay();
-		}, this.intervalMs);
+		});
 	}
 
 	protected getRenderedIndicator(): string {

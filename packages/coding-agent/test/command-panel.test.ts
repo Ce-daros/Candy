@@ -1,4 +1,4 @@
-import { setKeybindings, visibleWidth } from "@candy/tui";
+import { CURSOR_MARKER, setKeybindings, visibleWidth } from "@candy/tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { CommandPanel, type CommandPanelAction } from "../src/modes/interactive/components/command-panel.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -11,6 +11,94 @@ const flush = async () => {
 };
 
 describe("CommandPanel", () => {
+	it.each([24, 40, 76, 116])("keeps other descriptions fixed while renaming at width %s", (width) => {
+		const panel = new CommandPanel(
+			[
+				{ id: "new", name: "New session", source: "Candy", argumentMode: "none", execute: async () => {} },
+				{
+					id: "rename",
+					name: "Rename",
+					inline: true,
+					initialArgs: "中文名称",
+					argumentMode: "single",
+					execute: async () => {},
+				},
+			],
+			{ title: "History", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		panel.focused = true;
+		const candyColumn = () => {
+			const line = stripAnsi(panel.render(width).find((row) => row.includes("New session"))!);
+			return line.includes("Candy") ? visibleWidth(line.slice(0, line.indexOf("Candy"))) : -1;
+		};
+		const before = candyColumn();
+		panel.handleInput("\x1b[B");
+		panel.handleInput("\r");
+		expect(candyColumn()).toBe(before);
+		panel.handleInput(" 更多文字🌸");
+		expect(candyColumn()).toBe(before);
+		expect(panel.render(width).every((line) => visibleWidth(line) <= width)).toBe(true);
+		panel.focused = false;
+		expect(panel.render(width).join("\n")).not.toContain("\x1b[7m");
+		panel.handleInput("\x1b");
+		expect(candyColumn()).toBe(before);
+		panel.dispose();
+	});
+
+	it("moves the cursor from search to inline input and restores it on cancel", () => {
+		const panel = new CommandPanel(
+			[
+				{
+					id: "rename",
+					name: "Rename",
+					inline: true,
+					initialArgs: "",
+					argumentMode: "single",
+					execute: async () => {},
+				},
+			],
+			{ title: "History", onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		panel.focused = true;
+		panel.render(76);
+		panel.handleInput("\r");
+		const editing = panel.render(76).join("\n");
+		expect(editing.split(CURSOR_MARKER)).toHaveLength(2);
+		expect(editing.slice(0, editing.indexOf(CURSOR_MARKER))).toContain("Rename");
+		panel.handleInput("\x1b");
+		const cancelled = panel.render(76).join("\n");
+		expect(cancelled.split(CURSOR_MARKER)).toHaveLength(2);
+		expect(cancelled.slice(0, cancelled.indexOf(CURSOR_MARKER))).toContain("Search:");
+		panel.dispose();
+	});
+
+	it.each([12, 24, 40, 76])("keeps an inline Chinese cursor within the clipped row at width %s", (width) => {
+		const panel = new CommandPanel(
+			[
+				{
+					id: "rename",
+					name: "Rename",
+					inline: true,
+					initialArgs: "很长的中文名称🌸再加几个字",
+					argumentMode: "single",
+					execute: async () => {},
+				},
+			],
+			{ title: "History", searchable: false, onCancel: vi.fn(), onMessage: vi.fn(), requestRender: vi.fn() },
+		);
+		panel.focused = true;
+		panel.handleInput("\r");
+		for (let step = 0; step < 5; step++) {
+			const lines = panel.render(width);
+			for (const line of lines) {
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+				const marker = line.indexOf(CURSOR_MARKER);
+				if (marker >= 0) expect(visibleWidth(line.slice(0, marker))).toBeLessThan(width);
+			}
+			panel.handleInput("\x1b[D");
+		}
+		panel.dispose();
+	});
 	beforeAll(() => {
 		initTheme("dark");
 		setKeybindings(new KeybindingsManager());
@@ -370,6 +458,7 @@ describe("CommandPanel", () => {
 				requestRender: vi.fn(),
 			},
 		);
+		panel.focused = true;
 		panel.handleInput("\r");
 		expect(stripAnsi(panel.render(80).join("\n"))).toContain("Timeout");
 		panel.handleInput("1");

@@ -1,70 +1,28 @@
-<p align="center">
-  <a href="https://www.npmjs.com/package/@candy/coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@candy/coding-agent?style=flat-square&logo=npm&logoColor=white" /></a>
-</p>
+# Candy
 
-# candy
+Candy is a terminal coding agent with model selection, session history, file and shell tools, and reusable skills, prompts, and extensions.
 
-Candy is an agent harness for daily work in the terminal. Its interface brings model selection, session history, agent resources, and explicit commands into a consistent workflow. Skills, prompt templates, and extensions adapt it to specialized work.
+## Start
 
-Its fullscreen interface shows assistant text, thinking, and tool activity in a shared conversation. The Powerbar handles model and thinking selection; its Sources, Details, History, and Agent pages handle the surrounding tasks. Type `/` in an empty editor to search commands and settings. Read the [terminal guide](docs/usage.md) for the current controls.
-
-Ask candy to create the prompt templates, skills, extensions, and themes you need, or install a candy package. Use candy directly, automate it in print, JSON, or RPC mode, or build applications with the TypeScript SDK.
-
-## Getting started
-
-Install the command-line interface with npm:
+Requires Node.js 22.19 or newer:
 
 ```bash
 npm install -g --ignore-scripts @candy/coding-agent
-```
-
-This requires Node.js 22.19 or newer. candy does not require dependency lifecycle scripts for a normal npm installation.
-
-Start candy in the directory where you want it to work:
-
-```bash
 cd /path/to/project
 candy
 ```
 
-For a built-in AI provider, open Model → Sources to connect a subscription or API key. Then give candy a task.
+Press Escape twice in an empty editor and choose Sources in Actions to connect a subscription or API key, choose a model, and enter a task. See [Quickstart](docs/quickstart.md) and the [terminal guide](docs/usage.md).
 
-See the [documentation](docs/index.md) for full setup and usage instructions.
+## Documentation
 
-## Development
+- [Configuration](docs/configuration.md) and [settings](docs/settings.md)
+- [Models](docs/models.md) and [authentication](docs/providers.md)
+- [Sessions](docs/sessions.md)
+- [Extensions](docs/extensions.md), [skills](docs/skills.md), and [prompt templates](docs/prompt-templates.md)
+- [CLI integration](docs/cli-integration.md), [RPC](docs/rpc.md), and [SDK](docs/sdk.md)
 
-Clone this repository, install its dependencies, and run candy from source:
-
-```bash
-git clone <this repository>
-cd Candy
-npm install --ignore-scripts
-npm run build
-```
-
-Before submitting changes, run:
-
-```bash
-npm run check
-./test.sh
-```
-
-Credential-backed integration tests are opt-in:
-
-```bash
-npm run test:e2e
-```
-
-The suite reads Anthropic credentials from the environment and may send requests to the provider. The default `npm test` command excludes these tests.
-
-The RPC example and Codex cache probe are maintained as explicit development commands:
-
-```bash
-npm run example:rpc
-npm run probe:codex-cache
-```
-
-Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for development guidance, [DESIGN.md](../../DESIGN.md) for product and interaction design, and [AGENTS.md](../../AGENTS.md) for implementation, testing, dependency, and changelog rules.
+The [documentation index](docs/index.md) includes platform setup and protocol references. Repository development follows [CONTRIBUTING.md](../../CONTRIBUTING.md) and [AGENTS.md](../../AGENTS.md).
 
 ## License
 

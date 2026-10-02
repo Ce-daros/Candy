@@ -26,6 +26,33 @@ describe("SettingsManager", () => {
 	});
 
 	describe("preserves externally added settings", () => {
+		it.each(["tree", "fork", "none"])(
+			"removes doubleEscapeAction=%s from both settings scopes on the next save",
+			async (doubleEscapeAction) => {
+				for (const scope of ["global", "project"] as const) {
+					const settingsPath =
+						scope === "global" ? join(agentDir, "settings.json") : join(projectDir, ".candy", "settings.json");
+					writeFileSync(
+						settingsPath,
+						JSON.stringify({ doubleEscapeAction, defaultModel: "saved-model", customSetting: "keep" }),
+					);
+					const manager = SettingsManager.create(projectDir, agentDir);
+					const loaded = scope === "global" ? manager.getGlobalSettings() : manager.getProjectSettings();
+					expect(loaded).not.toHaveProperty("doubleEscapeAction");
+					expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toHaveProperty(
+						"doubleEscapeAction",
+						doubleEscapeAction,
+					);
+					await manager.commitSetting(scope, "theme", "light");
+					expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({
+						defaultModel: "saved-model",
+						customSetting: "keep",
+						theme: "light",
+					});
+				}
+			},
+		);
+
 		it("drops the removed enabledModels setting on load", async () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ enabledModels: ["gpt-4o"] }));
@@ -349,6 +376,13 @@ describe("SettingsManager", () => {
 				hyperlinks: true,
 			});
 			expect(getOverrides({ images: "auto", trueColor: "auto", hyperlinks: "auto" })).toEqual({});
+			expect(getOverrides({ images: "sixel" })).toEqual({ images: "sixel" });
+		});
+
+		it("loads an explicit project Sixel protocol without terminal environment markers", () => {
+			writeFileSync(join(projectDir, ".candy", "settings.json"), JSON.stringify({ terminal: { images: "sixel" } }));
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
+			expect(manager.getTerminalCapabilityOverrides()).toEqual({ images: "sixel" });
 		});
 	});
 

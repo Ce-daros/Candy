@@ -13,6 +13,8 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 export interface SelectItem {
 	value: string;
 	label: string;
+	/** Inline content rendered after the label; excluded from shared column measurement. */
+	inline?: (width: number) => string;
 	description?: string;
 	selectable?: boolean;
 	/** Render flush-left as a section title; selectable items keep the two-space indent. */
@@ -114,7 +116,13 @@ export class SelectList implements Component {
 
 			const isSelected = i === this.selectedIndex;
 			const descriptionSingleLine = item.description ? normalizeToSingleLine(item.description) : undefined;
-			lines.push(this.renderItem(item, isSelected, width, descriptionSingleLine, primaryColumnWidth));
+			lines.push(
+				truncateToWidth(
+					this.renderItem(item, isSelected, width, descriptionSingleLine, primaryColumnWidth),
+					width,
+					"",
+				),
+			);
 		}
 
 		// Add scroll indicators if needed
@@ -236,6 +244,22 @@ export class SelectList implements Component {
 		const suffix = isSelected ? this.theme.selectedPrefix(" ♦") : "";
 		const prefixWidth = visibleWidth(prefix);
 		const suffixWidth = visibleWidth(suffix);
+		if (item.inline) {
+			const label = truncateToWidth(
+				this.getDisplayValue(item),
+				Math.max(0, width - prefixWidth - suffixWidth - 3),
+				"",
+			);
+			const labelWidth = visibleWidth(label);
+			const inlineWidth = Math.max(0, width - prefixWidth - labelWidth - suffixWidth - PRIMARY_COLUMN_GAP);
+			return (
+				prefix +
+				(isSelected ? this.theme.selectedText(label) : label) +
+				" ".repeat(Math.min(PRIMARY_COLUMN_GAP, Math.max(0, width - prefixWidth - labelWidth - suffixWidth))) +
+				item.inline(inlineWidth) +
+				suffix
+			);
+		}
 
 		if (descriptionSingleLine) {
 			const effectivePrimaryColumnWidth = Math.max(1, Math.min(primaryColumnWidth, width - prefixWidth - 4));
@@ -337,5 +361,9 @@ export class SelectList implements Component {
 	getSelectedItem(): SelectItem | null {
 		const item = this.filteredItems[this.selectedIndex];
 		return item || null;
+	}
+
+	getSelectedRow(): number {
+		return this.selectedIndex - this.getVisibleRange().startIndex;
 	}
 }

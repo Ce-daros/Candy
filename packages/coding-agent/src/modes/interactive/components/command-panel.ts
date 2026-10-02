@@ -10,7 +10,6 @@ import {
 	Text,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
-	visibleWidth,
 	wrapTextWithAnsi,
 } from "@candy/tui";
 import { dialogTitle, getSelectListTheme, theme } from "../theme/theme.ts";
@@ -100,8 +99,8 @@ export class CommandPanel implements Component, Focusable {
 
 	set focused(value: boolean) {
 		this.focusedValue = value;
-		this.searchInput.focused = value && !this.activeAction && this.searchFocused;
-		this.argumentInput.focused = value && !!this.activeAction;
+		this.searchInput.focused = value && !this.activeAction && this.searchFocused && !this.detailFocused;
+		this.argumentInput.focused = value && !!this.activeAction && !this.detailFocused;
 	}
 
 	getSelectedId(): string | undefined {
@@ -318,6 +317,7 @@ export class CommandPanel implements Component, Focusable {
 			: undefined;
 		if ((this.error || selectedAction?.status?.detail) && kb.matches(data, "app.panel.focusNext")) {
 			this.detailFocused = !this.detailFocused;
+			this.focused = this.focusedValue;
 			this.options.requestRender();
 			return;
 		}
@@ -444,14 +444,11 @@ export class CommandPanel implements Component, Focusable {
 			const tone = action.status?.tone ?? "muted";
 			const status = action.status ? theme.fg(tone, action.status.text) : undefined;
 			const editing = this.inlineEditing && this.activeAction?.id === action.id;
-			const inlineLabelWidth = visibleWidth(`${action.checked === undefined ? "" : "[x] "}${action.name}`);
-			const inputWidth = Math.max(1, this.renderedWidth - inlineLabelWidth - 6);
-			const inlineInput = editing ? this.argumentInput.render(inputWidth)[0] : undefined;
-			const inlineValue = inlineInput ? `  ${inlineInput}` : "";
 			items.push({
 				value: action.id,
 				checked: action.checked,
-				label: `${action.name}${inlineValue}`,
+				label: action.name,
+				inline: editing ? (width) => this.argumentInput.render(width)[0] : undefined,
 				description: editing ? undefined : [status, action.source, action.description].filter(Boolean).join(" · "),
 			});
 		}
@@ -493,7 +490,7 @@ export class CommandPanel implements Component, Focusable {
 		this.activeAction = action;
 		this.inlineEditing = true;
 		this.argumentInput.setValue(action.initialArgs ?? "", (action.initialArgs ?? "").length);
-		this.argumentInput.focused = this.focusedValue;
+		this.focused = this.focusedValue;
 		this.error = undefined;
 		this.updateList(action.id);
 	}
@@ -538,7 +535,7 @@ export class CommandPanel implements Component, Focusable {
 			this.activeAction = undefined;
 			this.completions = undefined;
 			this.argumentInput.focused = false;
-			this.searchInput.focused = this.focusedValue;
+			this.focused = this.focusedValue;
 			this.error = undefined;
 			this.updateList(selectedId);
 		} else {

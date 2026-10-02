@@ -52,6 +52,37 @@ describe("AgentSession retry and event characterization", () => {
 		expect(harness.session.execution.isRetrying).toBe(false);
 	});
 
+	it("caps agent retry delay", async () => {
+		const harness = await createHarness({
+			settings: { retry: { enabled: true, maxRetries: 5, baseDelayMs: 1, maxAgentDelayMs: 5 } },
+		});
+		harnesses.push(harness);
+		harness.setResponses([
+			...Array.from({ length: 4 }, () =>
+				fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" }),
+			),
+			fauxAssistantMessage("recovered"),
+		]);
+
+		await harness.session.execution.prompt("test");
+
+		expect(harness.eventsOfType("auto_retry_start").map((event) => event.delayMs)).toEqual([1, 2, 4, 5]);
+	});
+
+	it("retries provider network_error failures", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "Provider finish_reason: network_error" }),
+			fauxAssistantMessage("recovered"),
+		]);
+
+		await harness.session.execution.prompt("test");
+
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(harness.eventsOfType("auto_retry_end")).toMatchObject([{ success: true }]);
+	});
+
 	it("retries multiple transient failures and succeeds on the final attempt", async () => {
 		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
 		harnesses.push(harness);

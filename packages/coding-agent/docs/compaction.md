@@ -16,8 +16,8 @@ candy has two summarization mechanisms:
 
 | Mechanism | Trigger | Purpose |
 |-----------|---------|---------|
-| Compaction | Context exceeds threshold, or History → Compact | Summarize old messages to free up context |
-| Branch summarization | History → Tree navigation | Preserve context when switching branches |
+| Compaction | Context exceeds threshold, or Actions → Compact | Summarize old messages to free up context |
+| Branch summarization | Actions → Tree navigation | Preserve context when switching branches |
 
 Both use closely related structured formats and track file operations cumulatively. Summarization requests disable prompt-cache writes because these one-off prompts are unlikely to be reused.
 
@@ -37,7 +37,7 @@ During a multi-turn agent run, candy checks the canonical projected context afte
 
 A provider context-overflow error or an early final `stopReason: "length"` can select one compact-and-retry recovery attempt. Length responses with tool calls retain their synthetic failed tool results and follow the ordinary tool/queue scheduler rather than forcing the run to end.
 
-You can also choose Compact in History and enter optional instructions to focus the summary.
+You can also choose Compact in Actions and enter optional instructions to focus the summary.
 
 ### How It Works
 
@@ -169,7 +169,7 @@ See [`prepareCompaction()`](../src/core/compaction/compaction.ts) and [`compact(
 
 ### When It Triggers
 
-When you use History → Tree to navigate to a different branch, candy offers to summarize the work you're leaving. This injects context from the left branch into the new branch.
+When you use Actions → Tree to navigate to a different branch, candy offers to summarize the work you're leaving. This injects context from the left branch into the new branch.
 
 ### How It Works
 
@@ -294,25 +294,7 @@ Extensions can observe committed work at `turn_end` and receive the final `agent
 
 ## Settings
 
-Configure compaction in `~/.candy/agent/settings.json` or `<project-dir>/.candy/settings.json`:
-
-```json
-{
-  "compaction": {
-    "enabled": true,
-    "reserveTokens": 16384,
-    "keepRecentTokens": 20000
-  }
-}
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enabled` | `true` | Enable auto-compaction |
-| `reserveTokens` | `16384` | Tokens to reserve for LLM response |
-| `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
-
-Disable auto-compaction with `"enabled": false`. You can still choose Compact in History.
+Configure compaction in user or project settings; [Settings](settings.md#compaction) owns field types, defaults, and precedence. Disabling automatic compaction still allows Actions → Compact.
 
 ### Per-model overrides
 

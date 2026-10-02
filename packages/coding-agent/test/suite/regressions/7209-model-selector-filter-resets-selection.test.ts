@@ -13,14 +13,12 @@ describe("Powerbar model search selection", () => {
 		}));
 		const host: PowerbarHost = {
 			requestRender() {},
-			getThinkingLevels: () => ["off"],
-			getThinkingLevel: () => "off",
 			getModels: () => models,
 			getCurrentModelIndex: () => 0,
-			applyThinking() {},
 			applyModel() {},
 		};
 		const powerbar = new PowerbarController(host);
+		powerbar.setAnimationOptions(false, "moderate");
 		powerbar.render(120);
 		powerbar.openModelBrowse({ anchorWidth: 9 });
 		powerbar.move(2);
@@ -29,6 +27,6 @@ describe("Powerbar model search selection", () => {
 		for (const char of "alpha") powerbar.inputChar(char);
 
 		expect(powerbar.getHighlightedModel()?.name).toBe("Alpha One");
-		expect(powerbar.capture()?.query).toBe("alpha");
+		expect(powerbar.render(120)?.text).toContain("alpha");
 	});
 });

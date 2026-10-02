@@ -6,7 +6,7 @@ Common daily workflows belong in Candy; specialized workflows and integrations c
 
 ## Development documents
 
-- [DESIGN.md](DESIGN.md) defines product behavior and interaction design.
+- [DESIGN.md](DESIGN.md) describes the product's design philosophy.
 - [AGENTS.md](AGENTS.md) defines implementation, validation, workspace safety, dependency maintenance, and changelog rules.
 - [Terminal guide](packages/coding-agent/docs/usage.md) describes how to use Candy.
 

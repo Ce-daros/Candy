@@ -1,15 +1,24 @@
-import { ProcessTerminal, setCapabilityOverrides, setKeybindings, type TUI, TuiMainScreen } from "@candy/tui";
+import {
+	CURSOR_MARKER,
+	ProcessTerminal,
+	setCapabilityOverrides,
+	setKeybindings,
+	type TUI,
+	TuiMainScreen,
+} from "@candy/tui";
 import { existsSync } from "fs";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.ts";
 import { DefaultPackageManager, type ResolvedResource } from "../core/package-manager.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
 import type { ProjectTrustSelection, ProjectTrustStoreEntry } from "../core/trust-manager.ts";
+import type { PanelContent } from "../modes/interactive/components/composer-panel.ts";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.ts";
 import {
 	FirstTimeSetupComponent,
 	type FirstTimeSetupResult,
 } from "../modes/interactive/components/first-time-setup.ts";
+import { PanelTransition, panelPhase, panelRowVisible } from "../modes/interactive/components/panel-transition.ts";
 import { TrustSelectorComponent } from "../modes/interactive/components/trust-selector.ts";
 import {
 	detectTerminalBackgroundFromEnv,
@@ -111,6 +120,59 @@ async function clearStartupTui(ui: TUI): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 25));
 }
 
+export function mountStartupContent(ui: TUI, settings: SettingsManager, content: PanelContent): () => Promise<void> {
+	const transition = new PanelTransition(() => ui.requestRender());
+	transition.setOptions(settings.read("ui-animations"), settings.read("animation-intensity"));
+	let pending = true;
+	let closing = false;
+	let displayed: string[] = [];
+	let outgoing: string[] = [];
+	let shownRows = new Set<number>();
+	ui.addChild({
+		invalidate: () => {
+			if (!closing) content.invalidate();
+		},
+		handleMouse: (event) => {
+			if (closing || !shownRows.has(event.y)) return;
+			return content.handleMouse?.(event);
+		},
+		render: (width) => {
+			if (pending) {
+				pending = false;
+				transition.setOpen(true);
+			}
+			if (!closing) content.setAvailableHeight?.(ui.terminal.rows);
+			const lines = (closing ? outgoing : content.render(width)).slice(0, ui.terminal.rows);
+			const progress = transition.value();
+			const { growth } = panelPhase(progress);
+			const height =
+				closing && progress === 0
+					? 0
+					: Math.min(lines.length, Math.max(2, Math.round(2 + (lines.length - 2) * growth)));
+			shownRows = new Set<number>();
+			displayed = Array.from({ length: height }, (_, row) => {
+				if (!panelRowVisible(progress, row, lines.length, 0.73)) return "";
+				shownRows.add(row);
+				return lines[row]!;
+			});
+			return displayed;
+		},
+	});
+	ui.setFocus(content);
+	return () =>
+		new Promise((resolve) => {
+			pending = false;
+			closing = true;
+			outgoing = displayed.map((line) => line.replaceAll(CURSOR_MARKER, ""));
+			ui.setFocus(null);
+			transition.setOpen(false, () => {
+				outgoing = [];
+				transition.dispose();
+				resolve();
+			});
+		});
+}
+
 /**
  * First-time setup runs when all of these hold:
  * - this is the official candy distribution (not a fork/rebrand)
@@ -139,19 +201,19 @@ export function shouldRunFirstTimeSetup(settingsPath: string = getSettingsPath()
  */
 async function withStartupTui<T>(
 	settingsManager: SettingsManager,
-	open: (ui: TUI, done: (value: T | undefined) => void) => (() => void) | undefined,
+	open: (ui: TUI, done: (value: T | undefined) => void) => (() => void | Promise<void>) | undefined,
 ): Promise<T | undefined> {
 	const ui = await createStartupTui(settingsManager);
 	return new Promise((resolve) => {
 		let settled = false;
-		let cleanup: (() => void) | undefined;
+		let cleanup: (() => void | Promise<void>) | undefined;
 		const finish = (result: T | undefined) => {
 			if (settled) {
 				return;
 			}
 			settled = true;
 			void (async () => {
-				cleanup?.();
+				await cleanup?.();
 				await clearStartupTui(ui);
 				ui.stop();
 				resolve(result);
@@ -174,10 +236,12 @@ export async function showStartupSelector<T>(
 			() => done(undefined),
 			{ tui: ui, getAvailableHeight: () => Math.floor(ui.terminal.rows * 0.8) },
 		);
-		ui.addChild(selector);
-		ui.setFocus(selector);
+		const close = mountStartupContent(ui, settingsManager, selector);
 		startStartupTui(ui, settingsManager);
-		return undefined;
+		return async () => {
+			await close();
+			selector.dispose();
+		};
 	});
 }
 
@@ -195,10 +259,9 @@ export async function showStartupTrustSelector(
 			onSelect: done,
 			onCancel: () => done(undefined),
 		});
-		ui.addChild(selector);
-		ui.setFocus(selector);
+		const close = mountStartupContent(ui, settingsManager, selector);
 		startStartupTui(ui, settingsManager);
-		return undefined;
+		return close;
 	});
 }
 
@@ -207,6 +270,7 @@ export async function showFirstTimeSetup(settingsManager: SettingsManager): Prom
 	const ui = await createStartupTui(settingsManager);
 	return new Promise((resolve) => {
 		let settled = false;
+		let close: (() => Promise<void>) | undefined;
 		const finish = async (result: FirstTimeSetupResult | undefined) => {
 			if (settled) {
 				return;
@@ -215,6 +279,7 @@ export async function showFirstTimeSetup(settingsManager: SettingsManager): Prom
 			if (result) {
 				await settingsManager.commitSetting("global", "theme", result.theme);
 			}
+			await close?.();
 			await clearStartupTui(ui);
 			ui.stop();
 			resolve();
@@ -234,8 +299,7 @@ export async function showFirstTimeSetup(settingsManager: SettingsManager): Prom
 				onSubmit: (result) => void finish(result),
 				onCancel: () => void finish(undefined),
 			});
-			ui.addChild(component);
-			ui.setFocus(component);
+			close = mountStartupContent(ui, settingsManager, component);
 			ui.requestRender();
 		};
 
@@ -252,9 +316,11 @@ export async function showStartupInput(
 		const input = new ExtensionInputComponent(title, placeholder, done, () => done(undefined), {
 			tui: ui,
 		});
-		ui.addChild(input);
-		ui.setFocus(input);
+		const close = mountStartupContent(ui, settingsManager, input);
 		startStartupTui(ui, settingsManager);
-		return () => input.dispose();
+		return async () => {
+			await close();
+			input.dispose();
+		};
 	});
 }

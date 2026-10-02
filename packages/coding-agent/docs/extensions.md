@@ -175,7 +175,7 @@ Use a custom message when content should appear in the transcript; use `ctx.ui.s
 
 `ctx.ui` provides select, confirm, input, and multi-line editor dialogs, notifications, status text, and plain-text widgets. Hosts own the rendering and focus behavior. `ctx.mode` reports the current host, and `ctx.hasUI` indicates whether dialogs are available.
 
-In interactive mode, dialogs follow the shared composer layout. RPC can forward supported dialogs, notifications, status text, and plain-text widgets through the [RPC Extension UI protocol](rpc-extension-ui.md). JSON and print modes have no interactive UI.
+In interactive mode, dialogs follow the shared composer layout.
 
 Extensions load in interactive, RPC, JSON, and print modes. RPC can forward supported dialogs and text updates through the [RPC Extension UI protocol](rpc-extension-ui.md); JSON and print modes have no UI.
 Guard terminal-only behavior with `ctx.mode === "tui"` and use `ctx.hasUI` for interactions supported by interactive and RPC clients.

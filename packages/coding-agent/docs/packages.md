@@ -118,7 +118,7 @@ For each resource type:
 
 Filters narrow the package manifest. They do not expose resources that the package itself did not declare.
 
-Run `candy config` to enable or disable discovered resources. The panel groups resources by type and source package and shows each path and inherited, enabled, or disabled state. It starts with personal configuration; press `Alt+S` to switch scope, or run `candy config --local` to start with project overrides. Use `Tab` and `Shift+Tab` to move between panel regions.
+Run `candy config` to enable or disable discovered resources. The panel groups resources by type and source package and shows each path and inherited, enabled, or disabled state. It starts with personal configuration; press `Alt+S` to switch scope, or run `candy config --local` to start with project overrides. Use `Tab` to move between panel regions.
 
 ## Understand scope and identity
 

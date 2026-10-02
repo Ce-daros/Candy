@@ -18,6 +18,10 @@
 - Added read-only snapshots of steering and follow-up messages held by the externally supplied `AgentInputs` owner.
 - Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.
 
+### Changed
+
+- Replaced the README example with externally owned history and inputs, and documented fixed host hooks and committed-message events.
+
 ## [0.87.1] - 2026-09-22
 
 ## [0.87.0] - 2026-09-21

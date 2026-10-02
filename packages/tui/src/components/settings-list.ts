@@ -1,7 +1,7 @@
 import { fuzzyFilter } from "../fuzzy.ts";
 import { getKeybindings } from "../keybindings.ts";
 import { moveSelection } from "../selection.ts";
-import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
+import { type Component, type Focusable, isFocusable, type TuiMouseEvent, type TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 import { Input } from "./input.ts";
 
@@ -23,7 +23,9 @@ export interface SettingItem {
 	submenu?: (
 		currentValue: string,
 		done: (selectedValue?: string, options?: { navigateTo?: string }) => void,
-	) => Component & { setAvailableHeight?(height: number): void };
+	) => Component & {
+		setAvailableHeight?(height: number): void;
+	};
 }
 
 export interface SettingsListTheme {
@@ -42,7 +44,19 @@ export interface SettingsListOptions {
 
 export type SettingsListOnChange = (id: string, newValue: string) => void | Promise<void>;
 
-export class SettingsList implements Component {
+export class SettingsList implements Component, Focusable {
+	private focusedValue = false;
+
+	get focused(): boolean {
+		return this.focusedValue;
+	}
+
+	set focused(value: boolean) {
+		this.focusedValue = value;
+		if (this.searchInput) this.searchInput.focused = value && !this.submenuComponent;
+		if (this.submenuComponent && isFocusable(this.submenuComponent)) this.submenuComponent.focused = value;
+	}
+
 	private items: SettingItem[];
 	private filteredItems: SettingItem[];
 	private theme: SettingsListTheme;
@@ -57,7 +71,11 @@ export class SettingsList implements Component {
 	private changeError: string | undefined;
 
 	// Submenu state
-	private submenuComponent: (Component & { setAvailableHeight?(height: number): void }) | null = null;
+	private submenuComponent:
+		| (Component & {
+				setAvailableHeight?(height: number): void;
+		  })
+		| null = null;
 	private availableHeight = 20;
 	private submenuItemIndex: number | null = null;
 	private navigateAfterClose: string | null = null;
@@ -312,6 +330,7 @@ export class SettingsList implements Component {
 				},
 			);
 			this.submenuComponent.setAvailableHeight?.(this.availableHeight);
+			this.focused = this.focusedValue;
 		} else if (item.values && item.values.length > 0) {
 			// Cycle through values
 			const currentIndex = item.values.indexOf(item.currentValue);
@@ -336,6 +355,7 @@ export class SettingsList implements Component {
 	}
 
 	private closeSubmenu(): void {
+		if (this.submenuComponent && isFocusable(this.submenuComponent)) this.submenuComponent.focused = false;
 		this.submenuComponent = null;
 		if (this.navigateAfterClose !== null) {
 			const id = this.navigateAfterClose;
@@ -349,6 +369,7 @@ export class SettingsList implements Component {
 			this.selectedIndex = this.submenuItemIndex;
 			this.submenuItemIndex = null;
 		}
+		this.focused = this.focusedValue;
 	}
 
 	private applyFilter(query: string): void {

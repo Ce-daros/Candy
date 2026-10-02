@@ -7,6 +7,7 @@ import type { ResourceConfiguration } from "../core/resource-configuration.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { ConfigSelectorComponent, type ScopedResolvedPaths } from "../modes/interactive/components/config-selector.ts";
 import { initTheme, stopThemeWatcher } from "../modes/interactive/theme/theme.ts";
+import { mountStartupContent } from "./startup-ui.ts";
 
 export interface ConfigSelectorOptions {
 	resolvedPaths: ScopedResolvedPaths;
@@ -31,25 +32,24 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 		);
 		ui.setClearOnShrink(options.settingsManager.read("clear-on-shrink"));
 		let resolved = false;
+		let close!: () => Promise<void>;
+		const finish = async (exit = false) => {
+			if (resolved) return;
+			resolved = true;
+			await close();
+			ui.stop();
+			stopThemeWatcher();
+			if (exit) process.exit(0);
+			resolve();
+		};
 
 		const selector = new ConfigSelectorComponent(
 			options.resolvedPaths,
 			options.settingsManager,
 			options.cwd,
 			options.agentDir,
-			() => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					stopThemeWatcher();
-					resolve();
-				}
-			},
-			() => {
-				ui.stop();
-				stopThemeWatcher();
-				process.exit(0);
-			},
+			() => void finish(),
+			() => void finish(true),
 			() => ui.requestRender(),
 			ui.terminal.rows,
 			options.writeScope,
@@ -58,8 +58,7 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 			{ resourceConfiguration: options.resourceConfiguration },
 		);
 
-		ui.addChild(selector);
-		ui.setFocus(selector.getResourceList());
+		close = mountStartupContent(ui, options.settingsManager, selector);
 		ui.start();
 	});
 }

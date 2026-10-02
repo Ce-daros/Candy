@@ -267,12 +267,12 @@ export class Theme implements ThemeContract {
 
 	fg(color: ThemeColor, text: string): string {
 		const ansi = this.tokenAnsi(this.fgAnsi, color);
-		return `${ansi}${text}\x1b[39m`;
+		return styleTextWithAnsi(text, ansi, undefined, {});
 	}
 
 	bg(color: ThemeBg, text: string): string {
 		const ansi = this.tokenAnsi(this.bgAnsi, color);
-		return `${ansi}${text}\x1b[49m`;
+		return styleTextWithAnsi(text, undefined, ansi, {});
 	}
 
 	private tokenAnsi<T extends ThemeToken>(ansi: Map<T, string>, token: T): string {

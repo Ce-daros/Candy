@@ -1,39 +1,29 @@
-# candy
+# Candy documentation
 
-candy is an extensible AI agent that works from your terminal. Give it a goal and a working folder, and it can inspect files, run commands, edit content, and work through multi-step tasks.
+## Start and use
 
-Use candy for software development, research notes, writing projects, data files, or hobby work. You can use candy as is, prompt it to adapt itself to your workflow, or build other applications powered by candy using the SDK.
+- [Quickstart](quickstart.md): installation, authentication, and first task
+- [Terminal guide](usage.md): prompts, files, tools, navigation, and export
+- [Models](models.md): selection, providers, scope, and compatible endpoints
+- [Sessions and context](sessions.md): continue, branch, clone, import, and compact
+- [Configuration](configuration.md): files, precedence, instructions, and resources
+- [How Candy works](how-candy-works.md): runtime and conversation lifecycle
 
-## Start using candy
+## Customize
 
-New to candy? Follow the [Quickstart](quickstart.md) to install candy, connect a model, and complete your first task.
+Use the [customization chooser](quickstart.md#choose-how-to-customize-candy) for prompt templates, skills, extensions, themes, providers, and packages.
 
-If candy is already installed, choose what you want to do:
+## Automate and embed
 
-- [Use candy interactively](usage.md) to add files, run commands, direct ongoing work, and export results.
-- [Choose a model](models.md) or connect a subscription, API key, local model, or compatible endpoint.
-- [Continue or branch a session](sessions.md) to resume work or explore another approach without losing history.
-- [Configure candy](configuration.md) for your preferences, working folders, instructions, and reusable resources.
-- [Understand how candy works](how-candy-works.md), including tools, context, sessions, and the agent loop.
+- [CLI](cli.md): invocation, tools, and print mode
+- [JSON events](json.md): one-run event output
+- [RPC](rpc.md): control a separate process
+- [SDK](sdk.md): embed the runtime in an application
 
-## Customize candy
+## References
 
-candy can reuse prompts, load specialized instructions, add executable integrations, change its terminal interface, connect model services, and distribute these resources as packages.
-Use the [Quickstart customization chooser](quickstart.md#choose-how-to-customize-candy) to select the smallest mechanism that meets your need.
+[Settings](settings.md) · [Authentication](providers.md) · [Keybindings](keybindings.md) · [Environment](environment-variables.md)
 
-## Automate or embed candy
+[Terminal setup](terminal-setup.md) · [Windows](windows.md) · [tmux](tmux.md) · [Termux](termux.md)
 
-- Use [print mode](cli.md#invocation-and-output) for one-off and scripted tasks.
-- Use [JSON event stream mode](json.md) to consume structured events from one run.
-- Use [RPC mode](rpc.md) to control a separate candy process.
-- Use the [TypeScript SDK](sdk.md) to run candy inside an application.
-
-## Find reference and setup information
-
-Use the reference pages to look up [CLI options](cli.md), [settings](settings.md), [provider authentication](providers.md), [keybindings](keybindings.md), and [environment variables](environment-variables.md).
-
-For platform-specific help, see [Terminal Setup](terminal-setup.md), [Windows](windows.md), [tmux](tmux.md), or [Termux on Android](termux.md).
-
-## Work safely
-
-candy's tools and extensions run with the permissions of the candy process. Project trust controls which project resources candy loads, but it does not sandbox tool calls. Review [Security](security.md) before using untrusted files, repositories, extensions, or unattended automation.
+[Security](security.md) explains process permissions, project trust, resource execution, and unattended use.

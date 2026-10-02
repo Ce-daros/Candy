@@ -1,59 +1,18 @@
 ---
 name: add-llm-provider
-description: Checklist for adding a new LLM provider to packages/ai. Covers core types, provider implementation, lazy registration, model generation, the live test matrix, coding-agent wiring, and docs.
+description: Add a native model provider or API implementation to packages/ai and wire it into Candy.
 ---
 
-# Adding a New LLM Provider (packages/ai)
+# Add a model provider
 
-A new provider touches multiple files. Work through these steps in order.
+Read `packages/ai/src/models.ts` and a provider with matching authentication and protocol before editing. Providers own authentication and catalogs; API implementations own wire conversion and streaming. A new provider using an existing API does not need a new protocol implementation.
 
-## 1. Core Types (`packages/ai/src/types.ts`)
+1. Add the provider ID to `KnownProvider` in `packages/ai/src/types.ts`. For a new API, add its ID to `KnownApi` and its option type to `ApiOptionsMap`.
+2. For a new API, create `src/api/<api-id>.ts` and its lazy wrapper. Export `stream` and `streamSimple`, consume `TranscriptContext`, emit balanced stream events, and honor cancellation. Add necessary option-type exports and package subpaths.
+3. Update `packages/ai/scripts/generate-models.ts` to map catalog data to chat or image model entries. IDs are unique per provider and operation. Regenerate the tracked model JSON and generated wrappers; never edit `models.generated.ts` by hand.
+4. Add `src/providers/<id>.ts` using `createProvider()`, provider-owned auth, catalog data, and an existing or new lazy API implementation. Register the factory in `src/providers/all.ts`; update environment credential detection in `src/env-api-keys.ts` when needed.
+5. Add offline tests for catalog, auth, streaming, tools, usage, cancellation, and failure boundaries. Follow AGENTS.md for focused test commands. Extend the applicable `test/e2e/` matrix, but run credential-backed tests only when explicitly authorized.
+6. In coding-agent, update `src/core/model-resolver.ts`'s `defaultModelPerProvider` if a startup default is needed. Update provider help in `src/cli/args.ts` and authentication setup in `docs/providers.md`.
+7. Update the relevant AI reference and package Unreleased entries. Run required checks and report which behavior was exercised.
 
-- Add API identifier to `Api` type union (e.g. `"bedrock-converse-stream"`).
-- Create options interface extending `StreamOptions`.
-- Add mapping to `ApiOptionsMap`.
-- Add provider name to `KnownProvider` type union.
-
-## 2. Provider Implementation (`packages/ai/src/providers/`)
-
-Create a provider file exporting:
-
-- `stream<Provider>()` returning `AssistantMessageEventStream`.
-- `streamSimple<Provider>()` for `SimpleStreamOptions` mapping.
-- Provider-specific options interface.
-- Message/tool conversion functions.
-- Response parsing that emits standardized events (`text`, `tool_call`, `thinking`, `usage`, `stop`).
-
-## 3. Provider Exports and Lazy Registration
-
-- Add a package subpath export in `packages/ai/package.json` pointing at `./dist/providers/<provider>.js`.
-- Add `export type` re-exports in `packages/ai/src/index.ts` for provider option types that should remain available from the root entry.
-- Register the provider in `packages/ai/src/providers/register-builtins.ts` via lazy loader wrappers; do not statically import provider implementation modules there.
-- Add credential detection in `packages/ai/src/env-api-keys.ts`.
-
-## 4. Model Generation (`packages/ai/scripts/generate-models.ts`)
-
-- Add logic to fetch/parse models from the provider source.
-- Map to the standardized `Model` interface.
-
-## 5. Tests (`packages/ai/test/`)
-
-- Add deterministic coverage for the provider's local behavior in `packages/ai/test/`. These run with `npm test`.
-- Live verification runs against real endpoints and ambient credentials. Add the provider to the matching files under `packages/ai/test/e2e/`, which are excluded from `npm test` and run explicitly with `npm run test:e2e`.
-- Always add the provider to `packages/ai/test/e2e/stream.test.ts` with at least one representative model, even if it reuses an existing API impl such as `openai-completions`.
-- Add the provider to the broader live matrix where applicable: `tokens.test.ts`, `abort.test.ts`, `context-overflow.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`, `cross-provider-handoff.test.ts`.
-- For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (e.g. GPT and Claude), add at least one pair per family.
-- For non-standard auth, create a utility (e.g. `bedrock-utils.ts`) with credential detection.
-
-## 6. Coding Agent (`packages/coding-agent/`)
-
-- `src/core/model-resolver.ts`: add default model ID to `defaultModelPerProvider`.
-- `src/core/provider-display-names.ts`: add API-key login display name so `/login` and related UI show the provider for built-in API-key auth.
-- `src/cli/args.ts`: add env var documentation.
-- `README.md`: add provider setup instructions.
-- `docs/providers.md`: add setup instructions, env var, and `auth.json` key.
-
-## 7. Documentation
-
-- `packages/ai/README.md`: add to providers table, document options/auth, add env vars.
-- `packages/ai/CHANGELOG.md`: add entry under `## [Unreleased]`.
+Native extension registration uses the same provider contract; see `packages/coding-agent/docs/custom-provider.md`. Inspect current dependency types instead of copying an older provider registration API.

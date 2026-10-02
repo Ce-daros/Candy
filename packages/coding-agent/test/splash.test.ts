@@ -1,20 +1,14 @@
-import { readFileSync } from "node:fs";
-import { resetCapabilitiesCache, setCapabilities } from "@candy/tui";
-import { PhotonImage } from "@silvia-odwyer/photon-node";
-import { describe, expect, test } from "vitest";
-import { SplashComponent, SplashTips } from "../src/modes/interactive/components/splash.ts";
+import { calculateSixelCellSize, resetCapabilitiesCache, setCapabilities, setCellDimensions } from "@candy/tui";
+import xterm from "@xterm/headless";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { SplashComponent, SplashLogoComponent, SplashTips } from "../src/modes/interactive/components/splash.ts";
 import {
 	SIXEL_HEIGHT_PX,
 	SIXEL_SEQUENCE,
 	SIXEL_WIDTH_PX,
-	SPRITE_PALETTE,
 } from "../src/modes/interactive/components/splash-logo.generated.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
-
-function childrenOf(component: SplashComponent) {
-	return component;
-}
 
 const options = {
 	version: "0.87.1",
@@ -23,113 +17,18 @@ const options = {
 };
 
 describe("SplashComponent", () => {
-	test("encodes every source pixel as an exact 4 by 4 Sixel block", () => {
-		const source = PhotonImage.new_from_byteslice(
-			new Uint8Array(readFileSync(new URL("../assets/candy-v3.png", import.meta.url))),
-		);
-		const sourcePixels = source.get_raw_pixels();
-		expect(SIXEL_WIDTH_PX).toBe(source.get_width() * 4);
-		expect(SIXEL_HEIGHT_PX).toBe(source.get_height() * 4);
-
-		const pixels = new Int16Array(SIXEL_WIDTH_PX * SIXEL_HEIGHT_PX).fill(-1);
-		const body = SIXEL_SEQUENCE.replace(/^\x1bP0;1;0q"1;1;\d+;\d+/, "")
-			.replace(/#\d+;2;\d+;\d+;\d+/g, "")
-			.replace(/\x1b\\$/, "");
-		let x = 0;
-		let y = 0;
-		let color = 0;
-		for (const match of body.matchAll(/#\d+|!\d+[?-~]|[?-~]|\$|-/g)) {
-			const token = match[0];
-			if (token === "$") {
-				x = 0;
-			} else if (token === "-") {
-				x = 0;
-				y += 6;
-			} else if (token.startsWith("#")) {
-				color = Number(token.slice(1));
-			} else {
-				const repeated = token.startsWith("!");
-				const count = repeated ? Number(token.slice(1, -1)) : 1;
-				const bits = token.charCodeAt(token.length - 1) - 63;
-				for (let column = 0; column < count; column++, x++) {
-					for (let bit = 0; bit < 6; bit++) {
-						if ((bits & (1 << bit)) !== 0 && y + bit < SIXEL_HEIGHT_PX) {
-							pixels[(y + bit) * SIXEL_WIDTH_PX + x] = color;
-						}
-					}
-				}
-			}
-		}
-
-		const colorIndex = new Map(SPRITE_PALETTE.map(([r, g, b], index) => [(r << 16) | (g << 8) | b, index]));
-		for (let sy = 0; sy < source.get_height(); sy++) {
-			for (let sx = 0; sx < source.get_width(); sx++) {
-				const offset = (sy * source.get_width() + sx) * 4;
-				const expected =
-					sourcePixels[offset + 3] === 0
-						? -1
-						: colorIndex.get(
-								(sourcePixels[offset] << 16) | (sourcePixels[offset + 1] << 8) | sourcePixels[offset + 2],
-							);
-				for (let dy = 0; dy < 4; dy++) {
-					for (let dx = 0; dx < 4; dx++) {
-						const actual = pixels[(sy * 4 + dy) * SIXEL_WIDTH_PX + sx * 4 + dx];
-						if (actual !== expected)
-							throw new Error(`Sixel pixel differs from source at ${sx},${sy} + ${dx},${dy}`);
-					}
-				}
-			}
-		}
+	beforeEach(() => setCellDimensions({ widthPx: 9, heightPx: 18 }));
+	afterEach(() => {
+		resetCapabilitiesCache();
+		setCellDimensions({ widthPx: 9, heightPx: 18 });
 	});
-
-	test("uses a SixelImage when the terminal supports sixel", () => {
+	test.each([null, "kitty", "iterm2"] as const)("omits the logo for protocol %s", (images) => {
 		initTheme("dark");
-		setCapabilities({ images: "sixel", trueColor: true, hyperlinks: true });
-		try {
-			const splash = new SplashComponent(options);
-			expect(
-				childrenOf(splash)
-					.render(80)
-					.some((line) => line.includes("\x1bP0;1;0q")),
-			).toBe(true);
-		} finally {
-			resetCapabilitiesCache();
-		}
-	});
-
-	test("falls back to the sprite renderer without image support", () => {
-		initTheme("dark");
-		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
-		try {
-			const splash = new SplashComponent(options);
-			expect(
-				childrenOf(splash)
-					.render(80)
-					.some((line) => line.includes("▀") || line.includes("▄")),
-			).toBe(true);
-		} finally {
-			resetCapabilitiesCache();
-		}
-	});
-
-	test("sprite fallback renders centered truecolor half-block lines", () => {
-		initTheme("dark");
-		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
-		try {
-			const splash = new SplashComponent(options);
-			const lines = splash.render(60);
-			const spriteLines = lines.filter((line) => line.includes("▀") || line.includes("▄"));
-			expect(spriteLines.length).toBeGreaterThan(0);
-			for (const line of spriteLines) {
-				expect(line).toContain("\x1b[38;2;");
-				const visible = stripAnsi(line);
-				expect(visible.length).toBeLessThanOrEqual(60);
-				// centered: leading whitespace, no trailing sprite content beyond the block
-				expect(visible.startsWith(" ")).toBe(true);
-			}
-		} finally {
-			resetCapabilitiesCache();
-		}
+		setCapabilities({ images, trueColor: true, hyperlinks: false });
+		const lines = new SplashComponent(options).render(80);
+		expect(lines.some((line) => line.includes(SIXEL_SEQUENCE))).toBe(false);
+		expect(lines.some((line) => line.includes("▀") || line.includes("▄"))).toBe(false);
+		expect(stripAnsi(lines.join("\n"))).toContain("Candy (0.87.1)");
 	});
 
 	test("renders the baked sixel sequence line when supported", () => {
@@ -139,7 +38,6 @@ describe("SplashComponent", () => {
 			const splash = new SplashComponent(options);
 			const lines = splash.render(60);
 			expect(lines.some((line) => line.includes("\x1bP0;1;0q"))).toBe(true);
-			// No half-block sprite glyphs in sixel mode
 			expect(lines.every((line) => !line.includes("▀") && !line.includes("▄"))).toBe(true);
 		} finally {
 			resetCapabilitiesCache();
@@ -168,9 +66,8 @@ describe("SplashComponent", () => {
 		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 		try {
 			const splash = new SplashComponent(options);
-			const tipBefore = stripAnsi(splash.render(100).join("\n"))
-				.split("\n")
-				.find((line) => line.includes("psst"));
+			const tipBefore = stripAnsi(SplashTips.basic[options.tipIndex]());
+			expect(stripAnsi(splash.render(100).join("\n"))).toContain(tipBefore);
 			splash.setResources({ context: 0, skills: 0, prompts: 3, extensions: 0 });
 			const output = stripAnsi(splash.render(100).join("\n"));
 			expect(output).toContain("0 context · 0 skills · 3 prompts · 0 extensions");
@@ -180,24 +77,47 @@ describe("SplashComponent", () => {
 		}
 	});
 
-	test("has ten basic, five advanced, and five easter-egg tips", () => {
-		expect(SplashTips.basic).toHaveLength(10);
-		expect(SplashTips.advanced).toHaveLength(5);
-		expect(SplashTips.easter).toHaveLength(5);
+	test.each(["dark", "light"])("keeps every %s tip dim after its highlighted keycap", async (name) => {
+		initTheme(name);
+		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
+		const tips = [...SplashTips.basic, ...SplashTips.advanced, ...SplashTips.easter];
+		for (const [tipIndex, tip] of tips.entries()) {
+			const lines = new SplashComponent({ ...options, tipIndex }).render(160);
+			const line = lines.find((value) => stripAnsi(value).trim() === stripAnsi(tip()));
+			expect(line).toBeDefined();
+			const terminal = new xterm.Terminal({ cols: 160, rows: 3, allowProposedApi: true });
+			try {
+				await new Promise<void>((resolve) =>
+					terminal.write(`${line}\r\n${theme.fg("dim", "D")}${theme.fg("borderAccent", "K")}X`, resolve),
+				);
+				const rendered = terminal.buffer.active.getLine(0)!;
+				const reference = terminal.buffer.active.getLine(1)!;
+				const plain = rendered.translateToString(true);
+				const keyStart = plain.indexOf("<");
+				const keyEnd = plain.indexOf(">", keyStart);
+				for (let column = plain.search(/\S/); column < plain.length; column++) {
+					const expected = reference.getCell(column >= keyStart && column <= keyEnd ? 1 : 0)!;
+					const actual = rendered.getCell(column)!;
+					expect(actual.getFgColor(), `${name} tip ${tipIndex}, column ${column}`).toBe(expected.getFgColor());
+					expect(actual.getFgColorMode()).toBe(expected.getFgColorMode());
+				}
+				expect(reference.getCell(2)!.isFgDefault()).toBe(true);
+			} finally {
+				terminal.dispose();
+			}
+		}
 	});
 
-	test("renders no home actions and keeps the selected tip through resize", () => {
+	test("keeps the selected tip through resize", () => {
 		initTheme("dark");
 		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 		try {
-			const splash = new SplashComponent({ ...options, tipIndex: 10 });
+			const splash = new SplashComponent(options);
+			const tip = stripAnsi(SplashTips.basic[options.tipIndex]());
 			const first = stripAnsi(splash.render(80).join("\n"));
 			const resized = stripAnsi(splash.render(120).join("\n"));
-			expect(first).toContain("shell output just for you? start with <!!>.");
-			expect(resized).toContain("shell output just for you? start with <!!>.");
-			expect(first).toContain("<!!>");
-			expect(resized).toContain("<!!>");
-			expect(first).not.toContain("History     Command     Hotkeys");
+			expect(first).toContain(tip);
+			expect(resized).toContain(tip);
 			splash.setAvailableHeight(12);
 			expect(splash.render(80)).toHaveLength(12);
 		} finally {
@@ -205,7 +125,7 @@ describe("SplashComponent", () => {
 		}
 	});
 
-	test("uses the sprite when the available height cannot fit the sixel logo", () => {
+	test("omits the logo and keeps metadata when available height is too small", () => {
 		initTheme("dark");
 		setCapabilities({ images: "sixel", trueColor: true, hyperlinks: true });
 		try {
@@ -213,11 +133,30 @@ describe("SplashComponent", () => {
 			splash.setAvailableHeight(12);
 			const lines = splash.render(80);
 			expect(lines).toHaveLength(12);
-			expect(lines.some((line) => line.includes("\x1bP0;1;0q"))).toBe(false);
-			expect(lines.some((line) => line.includes("▀") || line.includes("▄"))).toBe(true);
+			expect(lines.some((line) => line.includes(SIXEL_SEQUENCE))).toBe(false);
+			expect(lines.some((line) => line.includes("▀") || line.includes("▄"))).toBe(false);
 			expect(stripAnsi(lines.join("\n"))).toContain("Candy (0.87.1)");
+			expect(stripAnsi(lines.join("\n"))).toContain("1 context · 8 skills · 1 prompts · 2 extensions");
 		} finally {
 			resetCapabilitiesCache();
 		}
+	});
+	test("hides and restores the logo at its calculated cell boundaries", () => {
+		initTheme("dark");
+		setCapabilities({ images: "sixel", trueColor: true, hyperlinks: true });
+		const logo = new SplashLogoComponent();
+		const { columns, rows } = calculateSixelCellSize(SIXEL_WIDTH_PX, SIXEL_HEIGHT_PX);
+		logo.setMaxHeight(rows);
+		expect(logo.render(columns).some((line) => line.includes(SIXEL_SEQUENCE))).toBe(true);
+		expect(logo.render(columns - 1)).toEqual([]);
+		logo.setMaxHeight(rows - 1);
+		expect(logo.render(columns)).toEqual([]);
+		logo.setMaxHeight(rows);
+		expect(logo.render(columns).some((line) => line.includes(SIXEL_SEQUENCE))).toBe(true);
+		setCellDimensions({ widthPx: 14, heightPx: 28 });
+		logo.invalidate();
+		const resized = calculateSixelCellSize(SIXEL_WIDTH_PX, SIXEL_HEIGHT_PX);
+		logo.setMaxHeight(resized.rows);
+		expect(logo.render(resized.columns).some((line) => line.includes(SIXEL_SEQUENCE))).toBe(true);
 	});
 });

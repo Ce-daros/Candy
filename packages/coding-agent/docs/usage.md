@@ -22,9 +22,9 @@ File suggestions appear above the editor, with the selected file's full path bel
 
 ## Follow candy's work
 
-candy shows each tool call and result in execution order. Completed reads and searches show a compact result summary. Edits, writes, and shell commands show up to five terminal rows by default; errors show up to twelve. Click a tool's title to expand that call. Press `Ctrl+O` to expand or collapse details across the transcript, or change the tool preview limit to 10 or 20 rows in Command. Cancelled calls have their own status. Thinking blocks start collapsed with a short excerpt; press `Ctrl+T` to change their visibility.
+candy shows each tool call and result in execution order. Completed reads and searches show a compact result summary. Edits, writes, and shell commands show up to five terminal rows by default; errors show up to twelve. Click a tool's title to expand that call. Press `Ctrl+O` to expand or collapse details across the transcript, or change the tool preview limit to 10 or 20 rows in Command. Cancelled calls have their own status. Thinking blocks start collapsed with a short excerpt; change their visibility with **Hide thinking** in Command.
 
-The home screen shows the Candy logo and a short list of controls. Loaded resources render as a one-line summary; verbose startup also lists their names and paths. The editor border, six-step meter, and moving trails reflect the selected thinking level: gray at Off and Minimal, blue at Low, pink at Medium, cyan at High, and flowing color with brighter highlights at Xhigh and Max. Shell mode uses yellow for its command title. Retry, compaction, and branch-summary status appears on the frame's top edge.
+The home screen shows the Candy logo, version, counts for contexts, skills, prompts, and extensions, and one tip. The editor border and six-step meter reflect the thinking level. Retry, compaction, and branch-summary status appears on the frame's top edge.
 
 Open Command to change **UI animations** or **Animation intensity**. With animations off, panels and the frame appear immediately; level colors and status text remain visible. See [Terminal and display settings](settings.md#terminal-and-display).
 
@@ -49,23 +49,27 @@ Windows Terminal reserves some Alt shortcuts. See [Terminal Setup](terminal-setu
 
 ## Powerbar and Command
 
-Press `Ctrl+L` or click the editor's bottom border to open the Powerbar. `Left` and `Right` browse models or thinking levels. `Tab` switches between Model and Thinking. `Enter` applies the highlighted choice; `Escape` closes the selector.
+Press `Ctrl+L` or click the model name in the editor border. `Left` and `Right` browse models, typing searches, `Enter` applies, and `Escape` cancels a preview. `Up`, `Down`, and `Tab` do nothing in model selection. `Shift+Tab` cycles the active model's thinking effort from the editor or during model selection.
 
-From Model, press `Up` for Sources or `Down` for Details of the highlighted model. Sources manages providers, authentication, catalogs, and which models appear in quick selection. Details shows the model's capabilities and its default model, thinking, and compaction options. You can inspect Details without changing the active model.
+Press `Escape` twice within 500ms in an empty ordinary editor to open Actions. Search for an action or browse its groups:
 
-In Sources, press `Space` to include or exclude a model from quick selection. A provider can be selected or cleared as a group. `Ctrl+A` includes all models matching the current search; `Ctrl+D` clears those matches. Neither key changes the scope when nothing matches. `Tab` moves between search and the list; clicking a row focuses it.
+| Group | Actions |
+|---|---|
+| Models | Current Model, Sources |
+| Current session | Context, Compact, Session details, Rename |
+| Sessions | New session, Tree, Fork, Clone, Resume / Switch session |
+| Files | Export, Import |
+| Agent | Instructions, Skills, Tools, Behavior |
 
-From Thinking, press `Up` for History or `Down` for Agent. History contains context, compaction, session details, rename, tree navigation, fork, clone, and switching sessions. Agent contains Instructions, Skills, Tools, and Behavior. Closing a page returns to the selector from which you opened it.
+Current Model shows the active model's details and saved defaults. Sources manages provider access and the quick-selection scope. See [Models](models.md#select-a-model). Actions → Tools changes active tools or saves defaults for new sessions. Returning from a child page restores the menu's search and selection; closing Actions returns to the editor.
 
-In Agent → Tools, change the current session's active tools or save them as the default for new sessions. **Use inherited default tools** clears the saved list; the page confirms when a change is saved.
-
-With an empty ordinary editor, type `/` to open Command. Search commands and individual settings there. A single `/` key opens the menu; a pasted slash or slash-prefixed text in a message remains ordinary text. `Enter` runs resource commands without arguments and opens required local arguments. Press `Right` on a resource command to enter optional arguments. `Backspace` on an empty argument returns to the list; on an empty search it closes Command. `Escape` returns one level. Prompt templates, skills, and extensions appear in Command when loaded. Skills appear under their own names, with their source shown beside them. See the [Commands reference](commands.md).
+Type `/` in an empty ordinary editor to open Command, or `?` to open Help. Command searches actions, settings, and loaded extension/prompt/skill commands. A pasted slash or slash-prefixed message remains ordinary text. See [Commands](commands.md) for argument entry, completion, and explicit execution.
 
 ## Continue or start over
 
 candy saves sessions automatically unless session persistence is disabled.
 
-Use History to resume another saved session, rename the current session, inspect its details, navigate its tree, fork or clone, and compact context. Rename opens with the current session name filled in. Command's **New** action starts a new session. See [Sessions and Context](sessions.md) for these workflows.
+Use Actions to resume another saved session, rename the current session, inspect its details, navigate its tree, fork or clone, and compact context. Rename opens with the current session name filled in. **New session** in Actions starts a new session. See [Sessions and Context](sessions.md) for these workflows.
 
 After leaving candy, run `candy --continue` from the same folder to resume its most recent session.
 
@@ -83,13 +87,13 @@ Shell commands appear as their own activity segment. The output preview keeps th
 
 ## Copy or export results
 
-Press `Ctrl+X` or choose **Copy** in Command to copy the last assistant response. Choose **Export** to save the session as HTML or JSONL.
+Press `Ctrl+X` to copy the selected text or last assistant response. Choose Actions → Export to save the session as HTML or JSONL.
 
 ## Adjust the terminal
 
 Candy runs fullscreen: the editor and status area stay fixed while the transcript scrolls within the terminal window. A title bar at the top shows the project, git branch, and session name.
 
-Terminal support for mouse input, keyboard shortcuts, and inline images varies. See [Terminal Setup](terminal-setup.md) for platform-specific configuration and [Keybindings](keybindings.md) for every configurable shortcut. Choose **Hotkeys** in Command to inspect the shortcuts active in your current session.
+Terminal support for mouse input, keyboard shortcuts, and inline images varies. See [Terminal Setup](terminal-setup.md) for platform-specific configuration and [Keybindings](keybindings.md) for every configurable shortcut. Open Help with `?` and choose **Hotkeys** to inspect the shortcuts active in your current session.
 
 Use the transcript search shortcut from [Keybindings](keybindings.md#fullscreen) to search currently rendered text. Collapsed content is excluded until expanded. Search opens above the editor; closing it restores your draft and keeps the last viewed position.
 

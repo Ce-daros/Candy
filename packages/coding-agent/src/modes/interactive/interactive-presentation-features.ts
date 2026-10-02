@@ -367,25 +367,29 @@ export class DetailsController extends FeatureController {
 	}
 }
 
-export class HistoryController extends FeatureController {
-	openHistory(): void {
+export class ActionsController extends FeatureController {
+	private readonly openSources: () => void;
+	private readonly openDetails: (model: Model<Api>) => void;
+
+	constructor(
+		host: PresentationHost,
+		page: PageFactory,
+		refresh: RefreshPage,
+		openSources: () => void,
+		openDetails: (model: Model<Api>) => void,
+	) {
+		super(host, page, refresh);
+		this.openSources = openSources;
+		this.openDetails = openDetails;
+	}
+
+	openActions(): void {
 		this.page(
-			"history",
-			"History",
-			() => [
-				...this.host
-					.historyCommands()
-					.map((item) => ({ ...item, group: item.id === "local:New session" ? "Sessions" : "Files" })),
-				action("context", "Context", async () => {
-					const usage = this.host.session().execution.getContextUsage();
-					this.host.read(
-						"Context",
-						usage
-							? `Tokens: ${usage.tokens ?? "Unknown"}\n\nContext window: ${usage.contextWindow}\n\nUsed: ${usage.percent === null ? "Unknown" : `${usage.percent.toFixed(1)}%`}`
-							: "Context usage unavailable",
-					);
-				}),
-				...(
+			"actions",
+			"Actions",
+			() => {
+				const commands = this.host.sessionCommands();
+				const sessions = (
 					[
 						["compact", "Compact", "single"],
 						["details", "Session details", "none"],
@@ -399,30 +403,61 @@ export class HistoryController extends FeatureController {
 					...action(
 						id,
 						name,
-						async (args) => this.host.historyAction(id, args),
+						async (args) => this.host.sessionAction(id, args),
 						id === "rename" ? this.host.session().history.getSessionName() : undefined,
 						mode,
 					),
 					initialArgs: id === "rename" ? this.host.session().history.getSessionName() : undefined,
 					inline: id === "rename",
 					group: id === "details" || id === "compact" || id === "rename" ? "Current session" : "Sessions",
-				})),
-			],
+				}));
+				return [
+					{
+						...action(
+							"current-model",
+							"Current Model",
+							async () => {
+								const model = this.host.session().selection.model;
+								if (!model) throw new Error("No model selected");
+								this.openDetails(model);
+							},
+							this.host.session().selection.model?.name,
+						),
+						group: "Models",
+					},
+					{ ...action("sources", "Sources", async () => this.openSources()), group: "Models" },
+					{
+						...action("context", "Context", async () => {
+							const usage = this.host.session().execution.getContextUsage();
+							this.host.read(
+								"Context",
+								usage
+									? `Tokens: ${usage.tokens ?? "Unknown"}\n\nContext window: ${usage.contextWindow}\n\nUsed: ${usage.percent === null ? "Unknown" : `${usage.percent.toFixed(1)}%`}`
+									: "Context usage unavailable",
+							);
+						}),
+						group: "Current session",
+					},
+					...sessions.filter((item) => item.group === "Current session"),
+					...commands
+						.filter((item) => item.id === "local:New session")
+						.map((item) => ({ ...item, group: "Sessions" })),
+					...sessions.filter((item) => item.group === "Sessions"),
+					...commands
+						.filter((item) => item.id !== "local:New session")
+						.map((item) => ({ ...item, group: "Files" })),
+					...[
+						action("instructions", "Instructions", async () => this.openInstructions()),
+						action("skills", "Skills", async () => this.openSkills()),
+						action("tools", "Tools", async () => this.openTools()),
+						action("behavior", "Behavior", async () => this.openBehavior()),
+					].map((item) => ({ ...item, group: "Agent" })),
+				];
+			},
 			undefined,
 			undefined,
 			true,
 		);
-	}
-}
-
-export class AgentController extends FeatureController {
-	openAgent(): void {
-		this.page("agent", "Agent", () => [
-			action("instructions", "Instructions", async () => this.openInstructions()),
-			action("skills", "Skills", async () => this.openSkills()),
-			action("tools", "Tools", async () => this.openTools()),
-			action("behavior", "Behavior", async () => this.openBehavior()),
-		]);
 	}
 
 	private openInstructions(): void {
@@ -431,7 +466,7 @@ export class AgentController extends FeatureController {
 		const files = resources.getInventory().instructions;
 		const drafts = new Map<string, string>();
 		this.page(
-			"agent",
+			"actions",
 			"Instructions",
 			() => [
 				action("effective", "Effective instructions", async () =>
@@ -468,7 +503,7 @@ export class AgentController extends FeatureController {
 	private openTools(): void {
 		const session = this.host.session();
 		this.page(
-			"agent",
+			"actions",
 			"Tools",
 			(page) => [
 				action("save", "Save current tools as default", async () => {
@@ -513,7 +548,7 @@ export class AgentController extends FeatureController {
 
 	private openBehavior(): void {
 		const session = this.host.session();
-		this.page("agent", "Behavior", (page) => [
+		this.page("actions", "Behavior", (page) => [
 			action("steering", `Steering: ${session.execution.steeringMode}`, async () => {
 				await session.execution.setSteeringMode(session.execution.steeringMode === "all" ? "one-at-a-time" : "all");
 				this.refresh(page);

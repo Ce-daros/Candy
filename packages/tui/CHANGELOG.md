@@ -6,23 +6,19 @@
 
 - Vertical `SelectList` and `SettingsList` navigation stops at the first and last selectable rows for arrows, wheel input, and paging. Settings value cycling continues to wrap.
 - Removed the unused `KeyEventType` export and `isPunctuationChar` helper.
-- `visibleWindow(index, count, viewportSize)` added to `selection.ts`: render-time centered window over a flat list, complementing `moveSelection`/`moveViewport`.
-
-- `SelectItem` supports an optional `checked` flag and `SelectListTheme` an optional `checkbox(checked)` renderer: checkbox items render the glyph between the selection cursor and the label with the column width accounting for it.
-
-- `SelectItem` supports an optional `header` flag; header rows render flush-left without the selection cursor while selectable items keep the two-space indent.
-
 - Removed slash-command and `skill:` autocomplete from the generic editor. Applications can provide command navigation separately; editor text beginning with `/` is submitted literally.
 - `SettingsListTheme` now requires a `keycap` renderer for shortcut hints.
 - Renamed `@earendil-works/pi-tui` to `@candy/tui`. Update imports and use `CANDY_IMAGE_PROTOCOL`, `CANDY_TRUE_COLOR`, and `CANDY_HYPERLINKS` for terminal capability overrides.
 
 ### Added
 
+- Added shared `MotionClock`, `MotionValue`, easing functions, and intensity-based durations for component animation lifecycles.
+- Added `SelectItem.inline` and `SelectList.getSelectedRow()` for editing one row without changing shared label measurements.
+
+- `visibleWindow(index, count, viewportSize)` added to `selection.ts`: render-time centered window over a flat list, complementing `moveSelection`/`moveViewport`.
+- `SelectItem` supports an optional `checked` flag and `SelectListTheme` an optional `checkbox(checked)` renderer: checkbox items render the glyph between the selection cursor and the label with the column width accounting for it.
+- `SelectItem` supports an optional `header` flag; header rows render flush-left without the selection cursor while selectable items keep the two-space indent.
 - Added Sixel image protocol support (Windows Terminal 1.22+), auto-detected for `WT_SESSION` and forceable via `CANDY_IMAGE_PROTOCOL=sixel`. Includes a `SixelImage` component for pre-encoded sequences and a `calculateSixelCellSize` helper.
-- Added an optional `leftGutter` to `EditorOptions` that prefixes editor content lines (never the horizontal borders), clipped on narrow terminals.
-- Added an optional `firstLineGutter` to `EditorOptions` for a distinct prefix on the first content line, e.g. a `> ` shell prompt, clipped against the `leftGutter` slot width.
-- Added an optional `textColor` to `EditorTheme` that styles the typed editor text without coloring the frame.
-- Added `Editor.setFirstLineGutter()` to replace the first-line gutter, for example when an input mode changes the prompt glyph.
 - Added a `bottomBorderClick` hook on `Editor` for subclasses to intercept left clicks on the editor's bottom border row (used by the coding-agent footer powerbar).
 - Added editor history scopes and a side-border styling hook for mode-specific composer history and frame animation.
 - Added `TuiAltScreen.setSearchHost()`, `TuiAltScreen.closeSearch()`, and exported `TuiAltScreenSearchHost` so applications can mount transcript search in their own focused UI while reusing the alt-screen search index, match count, highlighting, and navigation. Close search before replacing its host UI.
@@ -33,8 +29,17 @@
 - Added typed RGB, indexed, and OKLCH colors, color conversion and mixing, ANSI styling, and terminal color-mode detection.
 - Exported reusable alt-screen search components, indexing types, and helpers.
 - Added `SettingsList.setAvailableHeight()` and optional submenu height propagation.
+- Added editor `leftGutter`, `firstLineGutter`, `setFirstLineGutter()`, and typed-text `textColor` styling, with narrow-terminal clipping.
+
+### Changed
+
+- Shortcut hints use shared angle-bracket keycap rendering.
+- Shortened the README and moved component/input and renderer/lifecycle references into published `docs/`.
 
 ### Fixed
+
+- Inputs remove their visual cursor when blurred and clip wide characters to their supplied width. Selection rows also clip to narrow terminal widths.
+- Settings lists propagate focus to their active submenu.
 
 - Detect Windows Terminal Sixel support through `WT_PROFILE_ID` when `WT_SESSION` is unavailable.
 - Fixed path and `@` autocomplete not working after opening wrappers such as `(`, `[`, `{`, `<`, or a backtick, e.g. `(~/Dev<Tab>`.
@@ -43,11 +48,6 @@
 - Fixed image fallback paths showing Windows backslash separators (now normalized to `~/...`).
 - Fixed Sixel images being erased by partial repaints that left the image rows unchanged.
 - Fixed settings submenus overflowing the available viewport.
-
-### Changed
-
-- Shortcut hints use shared angle-bracket keycap rendering.
-- `SettingsList` forwards its available viewport height to active nested controls so submenus can keep their content and footer within the panel.
 
 ## [0.87.1] - 2026-09-22
 
@@ -59,6 +59,7 @@
 
 ### Added
 
+
 - Added bundled asynchronous native clipboard readers for macOS, Windows, and X11 through the exported `getNativeClipboard()` API, replacing the external native clipboard dependency in consumers ([#9163](https://github.com/earendil-works/pi/pull/9163)).
 
 ### Changed
@@ -67,6 +68,8 @@
 
 ### Fixed
 
+
+- Nested ANSI styles restore enclosing colors and attributes after inner styles end or reset.
 - Fixed LaTeX legacy font switches falling back to raw source, centered `cases` layouts around surrounding equations, and vertically laid out unsupported and nested display scripts ([#8827](https://github.com/earendil-works/pi/issues/8827), [#9564](https://github.com/earendil-works/pi/issues/9564), [#7929](https://github.com/earendil-works/pi/issues/7929)).
 - Fixed fullscreen clipboard failures hiding actionable backend error messages behind a generic notice, and extended failure notices to five seconds ([#9618](https://github.com/earendil-works/pi/issues/9618)).
 - Fixed fullscreen Kitty images being erased by later row clears in WezTerm ([#9169](https://github.com/earendil-works/pi/issues/9169)).

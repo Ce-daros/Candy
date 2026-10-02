@@ -417,6 +417,7 @@ export class Input implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
+		this.renderedStartColumn = 0;
 		// Calculate visible window
 		const availableWidth = width - visibleWidth(this.prompt);
 
@@ -430,7 +431,8 @@ export class Input implements Component, Focusable {
 			const atCursor = graphemes[0]?.segment ?? " ";
 			const afterCursor = placeholder.slice(atCursor.length);
 			const marker = this.focused ? CURSOR_MARKER : "";
-			const cursorChar = `\x1b[7m${this.placeholderStyle(atCursor)}\x1b[27m`;
+			const styledChar = this.placeholderStyle(atCursor);
+			const cursorChar = this.focused ? `\x1b[7m${styledChar}\x1b[27m` : styledChar;
 			const textWithCursor = marker + cursorChar + this.placeholderStyle(afterCursor);
 			const padding = " ".repeat(Math.max(0, availableWidth - visibleWidth(textWithCursor)));
 			return [this.prompt + textWithCursor + padding];
@@ -492,7 +494,7 @@ export class Input implements Component, Focusable {
 		const marker = this.focused ? CURSOR_MARKER : "";
 
 		// Use inverse video to show cursor
-		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
+		const cursorChar = this.focused ? `\x1b[7m${atCursor}\x1b[27m` : atCursor;
 		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
 		// Calculate visual width
@@ -500,6 +502,6 @@ export class Input implements Component, Focusable {
 		const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
 		const line = this.prompt + textWithCursor + padding;
 
-		return [line];
+		return [truncateToWidth(line, width, "")];
 	}
 }

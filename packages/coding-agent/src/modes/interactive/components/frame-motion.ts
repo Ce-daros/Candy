@@ -3,8 +3,10 @@ import {
 	type Color,
 	colorToOklch,
 	foregroundAnsi,
+	MotionClock,
 	mixColors,
 	oklchColor,
+	smoothstep,
 	type TUI,
 	truncateToWidth,
 	visibleWidth,
@@ -37,11 +39,6 @@ const THINKING_COLORS: Record<ThinkingLevel, ThemeColor> = {
 export function thinkingMeter(level: ThinkingLevel): string {
 	const filled = THINKING_LEVELS.indexOf(level);
 	return "▰".repeat(filled) + "▱".repeat(6 - filled);
-}
-
-function smoothstep(value: number): number {
-	const p = Math.max(0, Math.min(1, value));
-	return p * p * (3 - 2 * p);
 }
 
 interface Transition {
@@ -90,7 +87,7 @@ export class FrameMotion {
 	private statusStart = 0;
 	private thinking: ThinkingLevel = "off";
 	private effortPulseStart = -Infinity;
-	private timer: NodeJS.Timeout | undefined;
+	private readonly clock = new MotionClock();
 	private paletteKey = "";
 	private borderRamp: string[] = [];
 	private statusRamps: string[][] = [];
@@ -291,29 +288,22 @@ export class FrameMotion {
 	}
 
 	dispose(): void {
-		if (this.timer) clearTimeout(this.timer);
-		this.timer = undefined;
+		this.clock.stop();
 	}
 
 	private startTimer(): void {
-		if (this.timer) clearTimeout(this.timer);
-		this.timer = undefined;
+		this.clock.stop();
 		if (!this.enabled) return;
 		if (this.entrancePending && !this.transition) return;
-		const breathing = THINKING_LEVELS.indexOf(this.thinking) >= 3;
+		const breathing = this.thinking !== "off";
 		const pulsing = performance.now() - this.effortPulseStart < 900;
 		if (!this.status && !this.transition && this.entranceProgress() >= 1 && !breathing && !pulsing) return;
 		const activeTransition = this.transition || this.entranceProgress() < 1;
-		this.timer = setTimeout(
-			() => {
-				this.timer = undefined;
-				if (this.transition && this.getTitleProgress() >= 1) this.transition = undefined;
-				this.ui.requestRender();
-				this.startTimer();
-			},
-			TIMING[this.intensity][activeTransition ? "frame" : "status"],
-		);
-		this.timer.unref();
+		this.clock.schedule(TIMING[this.intensity][activeTransition ? "frame" : "status"], () => {
+			if (this.transition && this.getTitleProgress() >= 1) this.transition = undefined;
+			this.ui.requestRender();
+			this.startTimer();
+		});
 	}
 
 	private entranceProgress(): number {
@@ -359,10 +349,10 @@ export class FrameMotion {
 			const wave = Math.abs(distance / (perimeter / 2) - pulse);
 			if (wave < 0.15) return Math.round((1 - wave / 0.15) * RAMP_STEPS);
 		}
-		const breath = level < 3 ? 0 : Math.round((1 + Math.sin(now / (1800 - level * 110))) * (level - 2) * 0.5);
+		const breath = level === 0 ? 0 : Math.round((1 + Math.sin(now / (1700 - level * 100))) * (0.6 + level * 0.48));
 		if (!this.status) return breath === 0 ? "base" : breath;
 		const phase = (now - this.statusStart) / TIMING[this.intensity].status;
-		const trail = 5 + level * 2;
+		const trail = Math.max(8, this.width * 0.1) * (0.7 + level * 0.35);
 		const peak = Math.min(RAMP_STEPS, 4 + level);
 		let distance: number;
 		if (this.status === "working") {
@@ -529,7 +519,7 @@ export class FrameMotion {
 		this.borderRamp = palette.map((color) => foregroundAnsi(color, mode));
 		this.statusRamps = palette.map((color) => {
 			const { l, c, h } = colorToOklch(color);
-			const high = light ? l * 0.62 : Math.min(0.99, l + 0.2);
+			const high = light ? l * (0.7 - level * 0.035) : Math.min(0.99, l + 0.15 + level * 0.035);
 			return Array.from({ length: RAMP_STEPS + 1 }, (_, brightness) =>
 				foregroundAnsi(oklchColor(l + ((high - l) * brightness) / RAMP_STEPS, c * (1 - brightness / 16), h), mode),
 			);

@@ -1,4 +1,13 @@
-import { Container, moveSelection, Spacer, Text } from "@candy/tui";
+import {
+	type Component,
+	Container,
+	moveSelection,
+	Spacer,
+	sliceByColumn,
+	Text,
+	truncateToWidth,
+	visibleWidth,
+} from "@candy/tui";
 import { APP_NAME, CONFIG_DIR_NAME } from "../../../config.ts";
 import {
 	getProjectTrustOptions,
@@ -29,15 +38,18 @@ export interface TrustSelectorOptions {
 	onCancel: () => void;
 }
 
-function formatDecision(trustPath: string | undefined, decision: ProjectTrustStoreEntry | null): string {
-	if (decision === null) {
-		return "none";
-	}
-	const label = decision.decision ? "trusted" : "untrusted";
-	if (trustPath !== undefined && decision.path !== trustPath) {
-		return `${label} (inherited from ${decision.path})`;
-	}
-	return `${label} (${decision.path})`;
+function pathText(prefix: string, path: string, suffix: string, style: (text: string) => string): Component {
+	return {
+		invalidate: () => {},
+		render: (width) => {
+			const available = Math.max(0, width - 2 - visibleWidth(prefix + suffix));
+			const pathWidth = visibleWidth(path);
+			const tailWidth = Math.max(0, available - 1);
+			const fitted =
+				pathWidth <= available ? path : `…${sliceByColumn(path, pathWidth - tailWidth, tailWidth, true)}`;
+			return [truncateToWidth(` ${style(prefix + fitted + suffix)} `, width, "")];
+		},
+	};
 }
 
 export class TrustSelectorComponent extends Container {
@@ -63,7 +75,7 @@ export class TrustSelectorComponent extends Container {
 		this.onCancelCallback = options.onCancel;
 
 		this.addChild(new Text(dialogTitle("Project trust"), 1, 0));
-		this.addChild(new Text(theme.fg("muted", options.cwd), 1, 0));
+		this.addChild(pathText("", options.cwd, "", (text) => theme.fg("muted", text)));
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
@@ -76,17 +88,20 @@ export class TrustSelectorComponent extends Container {
 		);
 		this.addChild(new Spacer(1));
 		const decision = options.savedDecision;
-		this.addChild(
-			new Text(
-				infoLine(
-					"Saved decision",
-					formatDecision(this.trustOptions[0]?.savedPath, decision),
-					decision === null ? "muted" : decision.decision ? "success" : "error",
+		if (decision === null) {
+			this.addChild(new Text(infoLine("Saved decision", "none", "muted"), 1, 0));
+		} else {
+			const inherited = decision.path !== this.trustOptions[0]?.savedPath;
+			const label = decision.decision ? "trusted" : "untrusted";
+			this.addChild(
+				pathText(
+					`${theme.fg("muted", "Saved decision: ")}${label} (${inherited ? "inherited from " : ""}`,
+					decision.path,
+					")",
+					(text) => theme.fg(decision.decision ? "success" : "error", text),
 				),
-				1,
-				0,
-			),
-		);
+			);
+		}
 		this.addChild(
 			new Text(
 				infoLine(
@@ -137,19 +152,35 @@ export class TrustSelectorComponent extends Container {
 			const isCurrent = this.isSavedOption(option);
 			const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
 			const label = selectedRowLabel(option.label, isSelected);
-			this.listContainer.addChild(
-				new Text(
-					`${selectionCursor(isSelected)}${currentMarker}${label}${selectionMarkerSuffix(isSelected)}`,
-					1,
-					0,
-				),
-			);
+			if (option.savedPath && option.label.includes(option.savedPath)) {
+				const pathStart = option.label.indexOf(option.savedPath);
+				this.listContainer.addChild(
+					pathText(
+						`${selectionCursor(isSelected)}${currentMarker}${option.label.slice(0, pathStart)}`,
+						option.savedPath,
+						`${option.label.slice(pathStart + option.savedPath.length)}${selectionMarkerSuffix(isSelected)}`,
+						(text) => selectedRowLabel(text, isSelected),
+					),
+				);
+			} else {
+				this.listContainer.addChild(
+					new Text(
+						`${selectionCursor(isSelected)}${currentMarker}${label}${selectionMarkerSuffix(isSelected)}`,
+						1,
+						0,
+					),
+				);
+			}
 			const savedPaths = option.updates.filter((update) => update.decision !== null).map((update) => update.path);
 			const detail =
 				savedPaths.length === 0
 					? `This session only${metaSeparator()}not saved`
 					: `${savedPaths.join(", ")}${metaSeparator()}saved`;
-			this.listContainer.addChild(new Text(theme.fg("muted", `     ${detail}`), 1, 0));
+			this.listContainer.addChild(
+				savedPaths.length === 0
+					? new Text(theme.fg("muted", `     ${detail}`), 1, 0)
+					: pathText("     ", savedPaths.join(", "), `${metaSeparator()}saved`, (text) => theme.fg("muted", text)),
+			);
 		}
 	}
 

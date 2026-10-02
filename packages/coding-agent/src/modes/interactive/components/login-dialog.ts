@@ -29,7 +29,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	}
 	set focused(value: boolean) {
 		this._focused = value;
-		this.input.focused = value;
+		this.input.focused = value && this.inputResolver !== undefined;
 	}
 
 	constructor(
@@ -78,6 +78,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	}
 
 	private replaceInputWithSubmittedText(value: string): void {
+		this.input.focused = false;
 		this.stageContainer.children = this.stageContainer.children.map((child) =>
 			child === this.input ? new Text(`> ${value}`, 0, 0) : child,
 		);
@@ -168,6 +169,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		return new Promise((resolve, reject) => {
 			this.inputResolver = resolve;
 			this.inputRejecter = reject;
+			this.input.focused = this._focused;
 		});
 	}
 
@@ -201,6 +203,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		return new Promise((resolve, reject) => {
 			this.inputResolver = resolve;
 			this.inputRejecter = reject;
+			this.input.focused = this._focused;
 		});
 	}
 
@@ -238,6 +241,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	 * Show waiting message (for polling flows like GitHub Copilot)
 	 */
 	showWaiting(message: string): void {
+		this.input.focused = false;
 		this.setPhase("Waiting");
 		if (this.waitingText) this.waitingText.setText(theme.fg("dim", message));
 		else {
@@ -272,6 +276,6 @@ export class LoginDialogComponent extends Container implements Focusable {
 		}
 
 		// Pass to input
-		this.input.handleInput(data);
+		if (this.inputResolver) this.input.handleInput(data);
 	}
 }

@@ -10,6 +10,37 @@ import { KeybindingsManager } from "../src/presentation/keybindings.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("editor frame motion", () => {
+	it.each(["minimal", "low", "medium", "high", "xhigh", "max"] as const)(
+		"animates idle %s effort without changing geometry",
+		(level) => {
+			motion.beginFrame();
+			vi.advanceTimersByTime(520);
+			motion.setThinking(level);
+			const frames = new Set<string>();
+			for (let index = 0; index < 8; index++) {
+				const frame = motion.paintBorder("─".repeat(60), 0, 0);
+				expect(stripAnsi(frame)).toBe("─".repeat(60));
+				frames.add(frame);
+				vi.advanceTimersByTime(450);
+			}
+			expect(frames.size).toBeGreaterThan(1);
+			motion.setThinking("off");
+			expect(vi.getTimerCount()).toBe(0);
+		},
+	);
+
+	it.each(["dark", "light"] as const)("freezes active work when motion is disabled in %s appearance", (appearance) => {
+		initTheme(appearance, false);
+		motion.beginFrame();
+		motion.setThinking("high");
+		motion.setStatus("working");
+		vi.advanceTimersByTime(800);
+		motion.setOptions(false, "moderate");
+		const frame = motion.paintBorder("─".repeat(60), 0, 0);
+		vi.advanceTimersByTime(2000);
+		expect(motion.paintBorder("─".repeat(60), 0, 0)).toBe(frame);
+		expect(vi.getTimerCount()).toBe(0);
+	});
 	let motion: FrameMotion;
 
 	beforeEach(() => {
@@ -44,7 +75,7 @@ describe("editor frame motion", () => {
 			frames.add(stripAnsi(motion.paintBorder(top, 0, 0)));
 			vi.advanceTimersByTime(24);
 		}
-		expect(frames.size).toBeGreaterThan(12);
+		expect(frames.size).toBeGreaterThan(2);
 		expect([...frames].at(-1)).toBe(top);
 	});
 

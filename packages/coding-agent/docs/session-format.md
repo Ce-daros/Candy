@@ -17,7 +17,7 @@ By default, `<session-id>` is a UUID. Callers can supply a custom ID through the
 
 Sessions can be removed by deleting their `.jsonl` files under `~/.candy/agent/sessions/`.
 
-candy also supports deleting sessions interactively from **History → Resume / Switch session** (select a session and press `Ctrl+D`, then confirm). When available, candy uses the `trash` CLI to avoid permanent deletion.
+candy also supports deleting sessions interactively from **Actions → Resume / Switch session** (select a session and press `Ctrl+D`, then confirm). When available, candy uses the `trash` CLI to avoid permanent deletion.
 
 ## Session Version
 
@@ -69,7 +69,7 @@ First line of the file. Metadata only, not part of the tree (no `id`/`parentId`)
 {"type":"session","version":3,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project"}
 ```
 
-For sessions with a parent (created via History → Fork, History → Clone, or `newSession({ parentSession })`):
+For sessions with a parent (created via Actions → Fork, Actions → Clone, or `newSession({ parentSession })`):
 
 ```json
 {"type":"session","version":3,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","parentSession":"/path/to/original/session.jsonl"}
@@ -146,7 +146,7 @@ Targets may be user, assistant, tool-result, or custom-message entries. `replace
 
 ### BranchSummaryEntry
 
-Created when switching branches through History → Tree with an LLM generated summary of the left branch up to the common ancestor. Captures context from the abandoned path.
+Created when switching branches through Actions → Tree with an LLM generated summary of the left branch up to the common ancestor. Captures context from the abandoned path.
 
 ```json
 {"type":"branch_summary","id":"g7h8i9j0","parentId":"a1b2c3d4","timestamp":"2024-12-03T14:15:00.000Z","fromId":"f6g7h8i9","summary":"Branch explored approach A..."}
@@ -194,13 +194,13 @@ Set `label` to `undefined` to clear a label.
 
 ### SessionInfoEntry
 
-Session metadata (e.g., user-defined display name). Set via History → Rename, `--name` / `-n`, or `candy.setSessionName()` in extensions.
+Session metadata (e.g., user-defined display name). Set via Actions → Rename, `--name` / `-n`, or `candy.setSessionName()` in extensions.
 
 ```json
 {"type":"session_info","id":"k1l2m3n4","parentId":"j0k1l2m3","timestamp":"2024-12-03T14:35:00.000Z","name":"Refactor auth module"}
 ```
 
-The session name is displayed in History → Resume / Switch session instead of the first message when set.
+The session name is displayed in Actions → Resume / Switch session instead of the first message when set.
 
 ## Tree Structure
 

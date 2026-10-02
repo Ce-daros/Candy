@@ -1,3 +1,4 @@
+import { resetCapabilitiesCache, setCapabilities, setCellDimensions } from "@candy/tui";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -10,17 +11,22 @@ import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("first-time setup viewport", () => {
-	it("scales both logo dimensions, including a one-row height", () => {
+	beforeEach(() => {
+		setCapabilities({ images: "sixel", trueColor: true, hyperlinks: false });
+		setCellDimensions({ widthPx: 9, heightPx: 18 });
+	});
+	afterEach(() => resetCapabilitiesCache());
+	it("shows the original logo only when its complete pixel footprint fits", () => {
 		const full = new SplashLogoComponent().render(80);
 		const compact = new SplashLogoComponent(8).render(80);
 		const tiny = new SplashLogoComponent(1).render(80);
-		expect(full).toHaveLength(14);
-		expect(compact).toHaveLength(8);
-		expect(tiny).toHaveLength(1);
-		expect(stripAnsi(compact[0]).length).toBeLessThan(stripAnsi(full[0]).length);
+		expect(full).toHaveLength(16);
+		expect(compact).toEqual([]);
+		expect(tiny).toEqual([]);
+		expect(new SplashLogoComponent().render(57)).toEqual([]);
 	});
 
-	it("keeps theme choices visible at 80 by 24 and grows the logo after a resize", () => {
+	it("keeps theme choices visible and shows or hides the logo after a resize", () => {
 		initTheme("dark");
 		let height = 24;
 		let submitted: { theme: string } | undefined;
@@ -35,11 +41,16 @@ describe("first-time setup viewport", () => {
 		});
 		const compact = setup.render(80);
 		expect(compact.length).toBeLessThanOrEqual(height);
+		expect(compact.some((line) => line.includes("\x1bP0;1;0q"))).toBe(true);
 		expect(stripAnsi(compact.join("\n"))).toContain("Light");
 		setup.handleInput("\n");
 		expect(submitted).toEqual({ theme: "dark" });
 		height = 45;
 		expect(setup.render(160).length).toBeGreaterThan(compact.length);
+		height = 20;
+		const small = setup.render(80);
+		expect(small.some((line) => line.includes("\x1bP0;1;0q"))).toBe(false);
+		expect(stripAnsi(small.join("\n"))).toContain("Light");
 	});
 });
 

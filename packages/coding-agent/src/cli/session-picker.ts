@@ -7,7 +7,7 @@ import type { SessionInfo, SessionListProgress } from "../core/session-history.t
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.ts";
 import { KeybindingsManager } from "../presentation/keybindings.ts";
-import { createStartupTui, startStartupTui } from "./startup-ui.ts";
+import { createStartupTui, mountStartupContent, startStartupTui } from "./startup-ui.ts";
 
 type SessionsLoader = (onProgress?: SessionListProgress, signal?: AbortSignal) => Promise<SessionInfo[]>;
 
@@ -22,34 +22,28 @@ export async function selectSession(
 		const keybindings = KeybindingsManager.create();
 		setKeybindings(keybindings);
 		let resolved = false;
+		let close!: () => Promise<void>;
+		const finish = async (path: string | null, exit = false) => {
+			if (resolved) return;
+			resolved = true;
+			await close();
+			selector.dispose();
+			ui.stop();
+			if (exit) process.exit(0);
+			resolve(path);
+		};
 
 		const selector = new SessionSelectorComponent(
 			currentSessionsLoader,
 			allSessionsLoader,
-			(path: string) => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					resolve(path);
-				}
-			},
-			() => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					resolve(null);
-				}
-			},
-			() => {
-				ui.stop();
-				process.exit(0);
-			},
+			(path) => void finish(path),
+			() => void finish(null),
+			() => void finish(null, true),
 			() => ui.requestRender(),
 			{ showRenameHint: false, keybindings },
 		);
 
-		ui.addChild(selector);
-		ui.setFocus(selector.getSessionList());
+		close = mountStartupContent(ui, settingsManager, selector);
 		startStartupTui(ui, settingsManager);
 	});
 }

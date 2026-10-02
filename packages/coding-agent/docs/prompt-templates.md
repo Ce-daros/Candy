@@ -20,7 +20,7 @@ The filename becomes the Command entry name, so this template appears as **revie
 
 `argument-hint` is optional. Use `<angle brackets>` for required arguments and `[square brackets]` for optional arguments.
 
-Open Command and run **Reload** after adding or changing a template in an active session.
+Press Ctrl+R after adding or changing a template in an active session.
 
 <a id="invoke-a-template"></a>
 

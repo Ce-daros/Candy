@@ -1,6 +1,6 @@
 # Choose a Model
 
-For a built-in provider, open Sources to connect it, then choose a model in the Model selector. Use custom model configuration when candy does not already include the provider or endpoint you need.
+For a built-in provider, open Actions → Sources to connect it, then choose a model in the Model selector. Use custom model configuration when candy does not already include the provider or endpoint you need.
 
 ## Choose a connection
 
@@ -16,7 +16,7 @@ candy starts with its bundled model catalog covering providers, model IDs, capab
 
 ## Authenticate
 
-Open Sources and select a provider to connect it. candy stores credentials in [`auth.json`](configuration.md#agent-directory). Remove saved credentials from that provider's page.
+Press Escape twice in an empty editor, then choose Sources and select a provider to connect it. candy stores credentials in [`auth.json`](configuration.md#agent-directory). Remove saved credentials from that provider's page.
 
 You can instead provide an API key through the provider's environment variable. This is useful in CI and other environments where candy should not write credentials. [Provider Authentication](providers.md) lists the variables and cloud-provider setup.
 
@@ -26,22 +26,16 @@ Keep `auth.json` and any credential commands private. Project settings and exten
 
 ## Select a model
 
-Press `Ctrl+L` or click Model in the editor border to open the Powerbar. `Left` and `Right` browse the quick-selection scope; typing searches model names, IDs, and providers. `Enter` changes the model for the current session. `Up` opens Sources to manage provider access, refresh catalogs, and choose which models appear here. Sources keeps configured scope entries when a model or its authentication becomes unavailable. An unset scope includes every available model; an explicitly empty scope shows no quick-selection models.
+Press `Ctrl+L` or click Model in the editor border to open the Powerbar. `Left` and `Right` browse the quick-selection scope; typing searches model names, IDs, and providers. `Enter` changes the model for the current session. `Up`, `Down`, and `Tab` do nothing in model selection. Press Escape twice in an empty editor and choose Sources to manage provider access, refresh catalogs, and choose which models appear here. Sources keeps configured scope entries when a model or its authentication becomes unavailable. An unset scope includes every available model; an explicitly empty scope shows no quick-selection models.
 
-In Sources, `Space` toggles the highlighted model in quick selection. Select or clear a provider as a group. `Ctrl+A` includes the models matching the current search, `Ctrl+D` clears those matches, and `Tab` moves between search and the list. Bulk actions do nothing when the search has no matches. Clicking a row focuses it.
+In Sources, `Space` toggles the highlighted model in quick selection. Select or clear a provider as a group. `Ctrl+A` includes the models matching the current search, `Ctrl+D` clears those matches, and `Tab` moves between search and the list. Bulk actions do nothing when the search has no matches. Clicking a row focuses it. Scope edits take effect when you return from Sources to Actions: the current model stays if still available in scope; otherwise Candy selects the first available scoped model, or clears the active model when none remain. Starting or restoring a session preserves its model.
 
-Press `Down` from a highlighted model to open its Details. Details shows the model's full ID, provider, input types, context and output limits, reasoning support, and price. **Set as default** saves the model for new sessions without changing the current session. You can also set or clear the model's default thinking level and compaction token overrides there. Details shows the source of an inherited thinking or compaction value.
+Choose Actions → Current Model to inspect the active model. Its details show the model's full ID, provider, input types, context and output limits, reasoning support, and price. **Set as default** saves the model for new sessions without changing the current session. You can also set or clear the model's default thinking level and compaction token overrides there. Details shows the source of an inherited thinking or compaction value.
 Numeric override inputs open with their current saved value filled in.
 
-Press `Tab` to move to Thinking. `Left` and `Right` browse supported levels, with a live border and meter preview. `Escape` restores the old level and `Enter` applies the new one. Models without reasoning still show Off. The global default thinking level is available in Command.
+Press `Shift+Tab` to cycle the active model's thinking effort from the editor or during model selection. The effort label and meter show the current level. Models without reasoning show Off and report that thinking is unsupported when the shortcut is pressed. Configure a model's saved Default thinking through Actions → Current Model; the global default thinking level is available in Command.
 
 A session records model and thinking-level changes. Resuming the session restores them without changing defaults for new sessions.
-
-## Connect local models
-
-Configure a local model server in [`models.json`](configuration.md#agent-directory) when it exposes an API candy supports. See [Configure a compatible endpoint](#configure-a-compatible-endpoint) for an example.
-
-For Ollama, LM Studio, vLLM, SGLang, and other compatible servers, [configure a compatible endpoint](#configure-a-compatible-endpoint) in `models.json`.
 
 ## Configure a compatible endpoint
 
@@ -66,7 +60,7 @@ A custom backend that implements Candy's `pi-messages` protocol can set `api` to
 
 The dummy key makes the model available to candy; Ollama ignores it. For an authenticated endpoint, `apiKey` and header values can use `$NAME` or `${NAME}` environment interpolation, a literal value, or a leading `!command`. Commands in `models.json` run at request time and are not cached by candy.
 
-Choose Reload in Command after changing `models.json`. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
+Press Ctrl+R after changing `models.json`. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
 
 ### Describe model input and caching
 

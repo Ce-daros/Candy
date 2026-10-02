@@ -13,7 +13,9 @@ On Windows, use a real PowerShell or Windows Terminal PTY:
 node scripts/interactive-smoke.mjs --no-animations
 ```
 
-Check Ctrl+L, both selectors, their four directions, Tab, Command (`/` on an empty input), paste, Chinese input, History, and Agent. Press Ctrl+D to exit. Omit `--no-animations` to check motion. Resize the terminal between 80 columns and a wider layout.
+Check Ctrl+L, model browse/search/confirm/cancel, ignored Up/Down/Tab keys, Shift+Tab effort cycling, double Escape opening Actions, Current Model, Sources, session actions, Instructions/Skills/Tools/Behavior, child-page return, Command (`/` on an empty input), paste, and Chinese input. Press Ctrl+D to exit. Omit `--no-animations` to check motion. Resize the terminal between 80 columns and a wider layout.
+
+Use `--startup-dialogs` to exercise first-time setup, project trust, the startup session picker, session-name input, and a simulated login before the main interface. Cancel or confirm each startup page, then enter `fake-key` in the simulated API-key prompt. The fixture displays its waiting state briefly and continues to the main interface. Its device-code link uses `example.test`, and no authentication request is made. Combine this flag with `--no-animations` or `--light` as needed.
 
 On Linux, use tmux to send real keys and capture the display:
 
@@ -23,7 +25,12 @@ tmux send-keys -t candy-smoke 'node scripts/interactive-smoke.mjs --no-animation
 sleep 2
 tmux capture-pane -t candy-smoke -p
 tmux send-keys -t candy-smoke C-l
-tmux send-keys -t candy-smoke Up
+tmux send-keys -t candy-smoke Escape
+sleep 0.1
+tmux send-keys -t candy-smoke Escape
+sleep 0.1
+tmux send-keys -t candy-smoke Escape
+sleep 0.2
 tmux capture-pane -t candy-smoke -p
 tmux resize-window -t candy-smoke -x 120 -y 36
 tmux capture-pane -t candy-smoke -p

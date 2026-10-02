@@ -1,5 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import { Input } from "../src/components/input.ts";
 import { SelectList } from "../src/components/select-list.ts";
 import type { TuiMouseEvent } from "../src/tui.ts";
 import { visibleWidth } from "../src/utils.ts";
@@ -19,6 +20,34 @@ const visibleIndexOf = (line: string, text: string): number => {
 };
 
 describe("SelectList", () => {
+	it("excludes inline inputs from shared column measurement and clips narrow rows", () => {
+		const input = new Input();
+		input.focused = true;
+		input.setValue("中文🌸 very long name", 0);
+		const ordinary = new SelectList(
+			[
+				{ value: "new", label: "New session", description: "Candy" },
+				{ value: "rename", label: "Rename" },
+			],
+			5,
+			testTheme,
+			{ minPrimaryColumnWidth: 16, maxPrimaryColumnWidth: 42 },
+		);
+		const editing = new SelectList(
+			[
+				{ value: "new", label: "New session", description: "Candy" },
+				{ value: "rename", label: "Rename", inline: (width) => input.render(width)[0] },
+			],
+			5,
+			testTheme,
+			{ minPrimaryColumnWidth: 16, maxPrimaryColumnWidth: 42 },
+		);
+		editing.setSelectedValue("rename");
+		assert.equal(visibleIndexOf(editing.render(80)[0], "Candy"), visibleIndexOf(ordinary.render(80)[0], "Candy"));
+		for (const width of [1, 4, 8, 16, 24, 80]) {
+			assert.ok(editing.render(width).every((row) => visibleWidth(row) <= width));
+		}
+	});
 	it("normalizes multiline descriptions to single line", () => {
 		const items = [
 			{

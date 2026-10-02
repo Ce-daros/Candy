@@ -4,13 +4,7 @@ import type { AnimationIntensity } from "../../../core/settings-manager.ts";
 import { theme } from "../theme/theme.ts";
 import type { EditorBottomStatus } from "./custom-editor.ts";
 import { type FrameMotion, thinkingMeter } from "./frame-motion.ts";
-import {
-	PowerbarController,
-	type PowerbarHost,
-	type PowerbarModelRef,
-	type PowerbarSelector,
-	type PowerbarSnapshot,
-} from "./powerbar.ts";
+import { PowerbarController, type PowerbarHost, type PowerbarModelRef } from "./powerbar.ts";
 
 /** Frame corner that opens the merged bottom border. */
 const BOTTOM_BORDER_CORNER = "╰── ";
@@ -39,14 +33,12 @@ interface LabelRegion {
 /**
  * Status line merged into the editor's bottom border.
  *
- * With a PowerbarHost, the model and effort labels become clickable anchors
- * for the inline Powerbar selectors (see powerbar.ts).
+ * With a PowerbarHost, the model label opens the inline model selector.
  */
 export class FooterComponent implements EditorBottomStatus {
 	private session: AgentSession;
 	private readonly powerbar: PowerbarController | undefined;
 	private lastModelRegion: LabelRegion | undefined;
-	private lastThinkingRegion: LabelRegion | undefined;
 	private frameMotion: FrameMotion | undefined;
 
 	constructor(session: AgentSession, powerbarHost?: PowerbarHost) {
@@ -60,11 +52,6 @@ export class FooterComponent implements EditorBottomStatus {
 
 	setFrameMotion(motion: FrameMotion): void {
 		this.frameMotion = motion;
-		if (this.powerbar) {
-			this.powerbar.paintThinking = (text) => motion.paintThinking(text);
-			this.powerbar.onThinkingPreview = (level) => motion.setThinking(level);
-			this.powerbar.onThinkingCommit = (level) => motion.setThinking(level, true);
-		}
 	}
 
 	setAnimationOptions(enabled: boolean, intensity: AnimationIntensity): void {
@@ -107,8 +94,8 @@ export class FooterComponent implements EditorBottomStatus {
 
 	/**
 	 * Model and effort labels, dropping lower-priority parts when the terminal is
-	 * narrow: scroll hint first, then the effort selector, then a truncated model.
-	 * Also records the clickable regions of the model and effort labels.
+	 * narrow: scroll hint first, then the effort label, then a truncated model.
+	 * Also records the model label's clickable region.
 	 */
 	private buildLabels(
 		maxWidth: number,
@@ -122,9 +109,6 @@ export class FooterComponent implements EditorBottomStatus {
 		const modelWidth = visibleWidth(model);
 		const recordRegions = (modelStart: number): void => {
 			this.lastModelRegion = model ? { start: modelStart, width: modelWidth } : undefined;
-			this.lastThinkingRegion = thinking
-				? { start: modelStart + modelWidth + gapWidth, width: visibleWidth(thinking) }
-				: undefined;
 		};
 
 		const modelStart = scroll ? visibleWidth(scroll) + gapWidth : 0;
@@ -154,24 +138,6 @@ export class FooterComponent implements EditorBottomStatus {
 		return !this.powerbar || this.powerbar.isIdle();
 	}
 
-	/** Expand the thinking level track out of the effort label. Returns false when the Powerbar is unavailable. */
-	openPowerbarThinking(): boolean {
-		if (!this.powerbar) return false;
-		const model = this.session.selection.model;
-		const modelName = model ? modelDisplayName(model) : "no-model";
-		const thinkingLevel = model?.reasoning ? this.session.selection.thinkingLevel : "off";
-		const anchorLabel = thinkingLevel.charAt(0).toUpperCase() + thinkingLevel.slice(1);
-		this.powerbar.openThinking({
-			anchorWidth: visibleWidth(anchorLabel),
-			levels: model?.reasoning ? undefined : ["off"],
-			prefix: {
-				text: modelName,
-				width: visibleWidth(modelName),
-			},
-		});
-		return true;
-	}
-
 	/** Expand the model track out of the model label. Returns false when the Powerbar is unavailable. */
 	openPowerbarModelBrowse(): boolean {
 		if (!this.powerbar) return false;
@@ -195,39 +161,8 @@ export class FooterComponent implements EditorBottomStatus {
 		this.powerbar?.move(delta);
 	}
 
-	switchPowerbar(): boolean {
-		if (!this.powerbar || this.powerbar.isIdle()) return false;
-		if (this.powerbar.mode === "thinking") return this.openPowerbarModelBrowse();
-		return this.openPowerbarThinking();
-	}
-
-	getPowerbarSelector(): PowerbarSelector | undefined {
-		return this.powerbar?.getSelector();
-	}
-
 	getHighlightedModel(): PowerbarModelRef | undefined {
 		return this.powerbar?.getHighlightedModel();
-	}
-
-	capturePowerbar(): PowerbarSnapshot | undefined {
-		return this.powerbar?.capture();
-	}
-
-	suspendPowerbar(): PowerbarSnapshot | undefined {
-		return this.powerbar?.suspend();
-	}
-
-	restorePowerbar(snapshot: PowerbarSnapshot): void {
-		const model = this.session.selection.model;
-		const modelName = model ? modelDisplayName(model) : "no-model";
-		const level = model?.reasoning ? this.session.selection.thinkingLevel : "off";
-		const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
-		this.powerbar?.restore(snapshot, {
-			modelAnchorWidth: visibleWidth(modelName),
-			thinkingAnchorWidth: visibleWidth(levelLabel),
-			thinkingPrefix: { text: modelName, width: visibleWidth(modelName) },
-			thinkingLevels: model?.reasoning ? undefined : ["off"],
-		});
 	}
 
 	powerbarInputChar(char: string): void {
@@ -248,9 +183,6 @@ export class FooterComponent implements EditorBottomStatus {
 		if (this.powerbar.isIdle()) {
 			if (this.inRegion(this.lastModelRegion, contentX)) {
 				return this.openPowerbarModelBrowse();
-			}
-			if (this.inRegion(this.lastThinkingRegion, contentX)) {
-				return this.openPowerbarThinking();
 			}
 			return false;
 		}

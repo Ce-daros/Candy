@@ -60,7 +60,7 @@ export interface TerminalSettings {
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
 	hyperlinks?: boolean | "auto";
-	images?: "kitty" | "iterm2" | "auto" | false;
+	images?: "kitty" | "iterm2" | "sixel" | "auto" | false;
 	trueColor?: boolean | "auto";
 }
 
@@ -151,8 +151,7 @@ export interface Settings {
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	defaultTools?: string[]; // Initial built-in tool selection
-	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
-	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening History tree
+	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening the session tree
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	outputPad?: 0 | 1; // Horizontal padding for chat message output (default: 1)

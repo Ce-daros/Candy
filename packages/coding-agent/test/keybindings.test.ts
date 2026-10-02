@@ -38,4 +38,12 @@ describe("Windows keybinding defaults", () => {
 		);
 		expect(KEYBINDINGS["app.message.dequeue"].defaultKeys).toBe(windowsKeybindings ? "alt+q" : "alt+up");
 	});
+
+	it("binds new sessions and thinking cycling to the reassigned keys", () => {
+		expect(KEYBINDINGS["app.session.new"].defaultKeys).toBe("ctrl+n");
+		expect(KEYBINDINGS["app.thinking.cycle"].defaultKeys).toBe("shift+tab");
+		expect(KEYBINDINGS["app.thinking.toggle"].defaultKeys).toEqual([]);
+		expect(KEYBINDINGS["app.session.toggleNamedFilter"].defaultKeys).toEqual([]);
+		expect(KEYBINDINGS["app.panel.focusPrevious"].defaultKeys).toEqual([]);
+	});
 });

@@ -13,9 +13,6 @@ export interface AppKeybindings {
 	"app.shell.enter": true;
 	"app.powerbar.left": true;
 	"app.powerbar.right": true;
-	"app.powerbar.next": true;
-	"app.powerbar.up": true;
-	"app.powerbar.down": true;
 	"app.panel.focusNext": true;
 	"app.panel.focusPrevious": true;
 	"app.panel.scope": true;
@@ -24,6 +21,7 @@ export interface AppKeybindings {
 	"app.settings.next": true;
 	"app.model.select": true;
 	"app.tools.expand": true;
+	"app.thinking.cycle": true;
 	"app.thinking.toggle": true;
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;

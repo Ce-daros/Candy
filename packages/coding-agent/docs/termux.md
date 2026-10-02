@@ -88,7 +88,7 @@ candy detects that it is running in Termux, but it cannot infer how you want it 
 - Do not access shared storage unless the task requires it.
 ````
 
-Run **Reload** in Command after changing the file during an active session.
+Press Ctrl+R after changing the file during an active session.
 
 ## Troubleshooting
 

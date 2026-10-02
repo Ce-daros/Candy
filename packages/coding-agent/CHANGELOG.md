@@ -4,90 +4,109 @@
 
 ### Breaking Changes
 
+- Removed `doubleEscapeAction` and the `app.powerbar.next`, `app.powerbar.up`, and `app.powerbar.down` bindings. Double Escape in an empty editor always opens Actions; Tree and Fork are selected there. Old `doubleEscapeAction` values are removed on the next settings save. Remove retired powerbar bindings from custom keybinding files.
+
 - Runtime disposal is awaitable and settles model-catalog, credential, shell, execution, and retry work. Internally created `ModelRuntime` instances belong to runtime services; injected instances remain caller-owned.
 - The SDK session facade is split into `execution`, `history`, `selection`, and `resources`. Move run operations to `session.execution`, committed records and session metadata to `session.history`, model and thinking state to `session.selection`, and discovered resources to `session.resources`. Mutable `agent` internals and per-setting forwarding methods are no longer exposed.
 - `SessionManager` is now `SessionHistory`; extension session reads use `ctx.history`. Session history owns committed entries and context projection, while execution owns queues, cancellation, retries, overflow recovery, and completion.
 - `turn_end` is the only extension boundary that can append `custom`, `custom_message`, or `context_edit` records and request continuation. `agent_before_settle`, compaction and tree preparation hooks, final-message replacement, streaming observation hooks, and cache-warming decision hooks are removed. `agent_settled` remains notification-only.
-- Extension providers register a native `Provider` with `registerProvider(provider)`. The `ProviderConfig` registration API and raw provider request/response hooks are removed; keep compatible endpoint and model configuration in `models.json`.
+- Extension providers register a native `Provider` with `registerProvider(provider)`. The `ProviderConfig` registration API and raw provider request/response hooks are removed; keep compatible endpoint and model configuration in `models.json`. The OAuth `modifyModels` hook is also removed; native providers implement `refreshModels(context)`.
 - Extension UI is limited to `select`, `confirm`, `input`, multi-line `editor`, `notify`, `setStatus`, and plain-text `setWidget`. Header, footer, editor, component, renderer, theme, raw-key, and autocomplete injection APIs are removed. RPC extension UI follows the same supported methods.
-- Read typed interactive settings with `SettingsManager.read(id)` and persist changes with `commitSetting()` or `commitNestedSetting()`. Mapped setting getters and per-setting forwarding methods are removed.
 - Removed first-time setup analytics opt-in and its settings methods; setup retains theme selection, and existing configuration keys remain on disk.
 - `estimateTokens` is `estimateMessageTokens` from `@candy/ai/utils/estimate`. The context estimate, per-message estimate, and usage-based context total now have one implementation shared with the runtime.
 - Removed `FileAuthStorageBackend` and `InMemoryCodingAgentModelsStore`. Locked JSON access lives in `core/storage/json-file.ts`, and the in-memory model store is `InMemoryModelsStore` from `@candy/ai`.
 - Removed unused SDK and internal helpers: `isBunRuntime`, `getModelsPath`, `getToolsDir`, `getPromptsDir`, `restoreModelFromSession`, `getConfigValueEnvVarName`, `resolveHeaders`, the unused plural tool-definition factories and wrapper, `getModelSearchText`, `isLightTheme`, `RpcCommandType`, `ToolRenderResultLike`, `BashRenderState`, and the unused deprecation utility.
-- Command panel toggle actions now render their checkbox through `SelectItem.checked` with the shared green/dim checkbox glyph instead of an uncolored `[x]`/`[ ]` prefix baked into the label.
-
 - Project trust detection no longer considers `.agents/skills` in directories above the user home: the ancestor walk stops at the home directory, which is user territory, not project context.
-
-- Hand-rendered list panels share one scaffold: `readListAction` (navigation keys incl. vim aliases and horizontal cursor keys), `scrollCounter` ("  (n/total)"), and `emptyLine` from `list-scaffold.ts`, plus `visibleWindow` from `@candy/tui`. The four ad-hoc scroll-counter formats, ad-hoc windowing math, and per-panel key handling in the trust, extension, oauth, session, tree, and config panels are gone.
-
-- Extension dialogs (selector, input, editor) mount through one `panelDialog` helper in interactive mode, and the startup dialogs (selector, trust selector, input) through `withStartupTui`, replacing eleven copies of the settled-flag promise wrapper.
-
-- Metadata rows share `metaSeparator()`, "Label: value" lines share `infoLine` (value gets semantic color: trusted green, untrusted red), checkboxes share `checkboxGlyph`, and hint rows share `hintRow`.
-
 - Project trust prompting now uses the dedicated trust selector everywhere (startup, session resume, package manager). The multi-line prompt rendered as an all-accent title via generic `ui.select` is gone; the selector shows the title, path, and consequence paragraph with proper title/body color semantics.
-
-- Dialog and panel titles come from one shared `dialogTitle`/`dialogBody` theme helper in `theme.ts` instead of inline `bold(accent(...))` copies; the Help panel keeps its cyan title via the helper's color parameter.
-
-- Selection markers across transcript panels (session, tree, config, trust, oauth, reading panel, powerbar tracks) now come from one shared `selectionMarker`/`selectionCursor`/`selectedRowLabel` theme helper in `theme.ts`. Trust and session selectors previously used a cyan chevron dialect; the marker glyph is replaceable in one place.
-
-- Thinking blocks now fold by rendered cell width (CJK counts as two cells) against a three-line budget of the current viewport width, so long unwrapped paragraphs fold while short thoughts stay visible; resizing the terminal re-evaluates the fold.
-
-- Command panel section titles (Commands, Settings, History groups) now render flush-left in the palette warning color instead of muted, indented like list items.
-
 - Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.
 - `createAgentSession()` and the lower-level session/service assembly APIs are no longer public SDK constructors. Create `AgentSessionRuntime` with `createAgentSessionRuntime()` and use `runtime.session`; await `runtime.dispose()` to settle and release the active session. Runtime replacements use `newSession()`, `switchSession()`, `fork()`, `clone()`, and `importFromJsonl()`.
 - The SDK root no longer exports terminal UI implementations or RPC clients. Import UI components from `@candy/coding-agent/ui`, and import `RpcClient` and protocol types from `@candy/coding-agent/rpc`. The `@candy/coding-agent/rpc-entry` launcher remains available.
-- `SettingsManager` changes are asynchronous commits. Await setting setters or `commitSetting(scope, field, value)`; the old `mutateAndPersist()` transaction API is removed. Runtime overrides remain process-local.
+- Read settings with `SettingsManager.read(id)` and await `commitSetting()` or `commitNestedSetting()`. Mapped getters, forwarding methods, and `mutateAndPersist()` are removed. Commits persist before publishing; failures leave the previous effective state. Runtime overrides remain process-local.
 - `session.selection.setModel()` is asynchronous because it checks provider authentication before applying a selection. It no longer accepts a persistence option; persist defaults through the settings operation.
 - Removed `ModelRegistry` and the legacy AI compatibility entrypoint. SDK and extension callers use `ModelRuntime` through `ctx.modelRuntime`; built-in API streams are available through `@candy/ai/api/streams` when explicit stream injection is needed.
-- The SDK runtime uses `resourceLoaderOptions` for headless discovery overrides and disables theme discovery unless the host supplies `themeAdapter` from `@candy/coding-agent/ui`. Extension files that import UI modules must be loaded with `extensionModules` from `@candy/coding-agent/extension-host-modules`.
-- Removed the legacy OAuth `modifyModels` extension hook. Provider extensions now implement `refreshModels(context)` and return the refreshed model list.
+- The SDK runtime uses `resourceLoaderOptions` for headless discovery overrides and disables theme discovery unless the host supplies `resourceThemeAdapter` as `themeAdapter` from `@candy/coding-agent/ui`. Extension files that import UI modules must be loaded with `extensionModules` from `@candy/coding-agent/extension-host-modules`.
 - `AgentSession.clearQueue()` and RPC `clear_queue` return queued text with its image attachments so clients can restore complete input. Resource commands must be submitted explicitly; text beginning with `/` or `skill:` remains ordinary text.
-- Settings commits validate and persist a candidate before publishing effective state; write failures reject and leave the previous setting in effect.
 - Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package publishes a headless SDK root, separate UI and RPC subpaths, the extension-host module map, and the RPC launcher.
 - First-time setup now runs for the official distribution whenever the default agent directory has no settings file; `CANDY_EXPERIMENTAL` no longer gates setup.
 - Session reads report malformed JSONL records with their file and line number and do not modify files. Legacy records and missing final newlines are rewritten atomically on the next save.
-- Removed the pi.dev release infrastructure from the product: the automatic version check, the self-update installer (`candy update` managed/npm/pnpm/yarn/bun self-update paths), and the install-report ping. Upgrade candy with your package manager, for example `npm install -g @candy/coding-agent@latest`.
+- Removed pi.dev self-update, version checks, install-report pings, and the remote catalog overlay. Upgrade with your package manager. Model refresh uses bundled data and locally configured providers.
 - `candy update` no longer updates candy itself. It handles `--extensions`, `--extension <source>`, and `--models` only; running it without a target, `--self`, `self`, or `candy` prints the manual upgrade instruction, and `--all`/`--force` were removed.
 - Removed the `CANDY_SKIP_VERSION_CHECK` and `CANDY_TELEMETRY` environment variables. The `enableInstallTelemetry` setting now only controls provider attribution headers.
-- Removed the pi.dev remote model-catalog overlay; `candy update --models` and startup refreshes use the bundled catalog and locally configured providers only.
-- OpenRouter requests now attribute to Candy (`HTTP-Referer: https://github.com/Ce-daros/Candy`, `X-OpenRouter-Title: Candy`, `X-OpenRouter-Categories: cli-agent`) instead of pi.dev.
+- Removed Ant Ling, Baseten, and Radius from provider selection. Removed `/ir`, `/tui`, `/deslop`, `/is`, `/cl`, `/sa`, `/pr`, `/bug`, and `/share`, their bundled resources, and the issue-analysis workflow. Removed Radius relay and bug-report uploads.
+- Removed the built-in llama.cpp provider, `/llama` command, and integrated router model discovery and management. Configure compatible model endpoints in `models.json`.
+- Removed interactive model cycling and its old scoped selection API: the top-level `--models` flag, `enabledModels`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use Sources to configure the user-level quick-selection scope and the Powerbar to choose the current model. `candy update --models` remains the model-catalog refresh command.
+- Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
+- Removed the overlay and inline thinking selectors. Use the configurable thinking-cycle shortcut (Shift+Tab by default) for the active effort; Actions → Current Model retains saved Default thinking settings.
+- Removed extension APIs for replacing built-in working text and visibility.
+- Message APIs no longer interpret slash-prefixed text as commands or expand prompt templates. Use `executeCommand({ source, name, args })` in the SDK or RPC `execute_command` for explicit command execution. The `expandPromptTemplates` option is removed.
+- Renamed `@earendil-works/pi-coding-agent` to `@candy/coding-agent`, the `pi` executable to `candy`, configuration directories from `.pi` to `.candy`, application environment variables from `PI_*` to `CANDY_*`, and application package metadata from `piConfig` to `candyConfig`. Update imports, launchers, and configuration paths.
 
 ### Added
 
+- Added root `candy.sh` and `candy.ps1` launchers for the built CLI, forwarding command-line arguments and its exit code while preserving the caller's working directory.
 - Added a Bun-specific transport test entry, `npm run test:bun`, separate from the Node Vitest collection.
 - Added explicit RPC settings commits, paired default-model saving, resource configuration and instruction operations, and `import_session`. Settings commits emit a post-persistence `settings_commit` event. Extensions receive the same session-scoped operations through `ctx.resources`.
 - Added `?` Help mode for Hotkeys and Changelog.
 - Exposed optional tool cancellation metadata in the `tool_execution_end` extension event so transcript views can distinguish an aborted tool from an ordinary error after reloading a session.
 - Added `toolPreviewLines` (`5`, `10`, or `20`, default `5`) to control the visible row limit for `bash` and tool previews.
-- Redesigned the interactive UI around Candy's semantic palette across transcripts, composer, settings, selectors, session navigation, login and trust flows, extension dialogs, resources, notifications, and startup surfaces.
-- Added collapsible transcript previews for long user messages, queued messages, skills, summaries, and tool output, with per-item expansion alongside the global details toggle.
-- Added composer-hosted transcript search, image paste markers, masked API-key input, panel region navigation, and a reading panel for changelog content.
 - Added per-input disposition to successful RPC `prompt`, `steer`, and `follow_up` responses, `AgentSession.steer()`/`followUp()`, and `RpcClient.prompt()`/`steer()`/`followUp()`; `RpcClient.prompt()` also accepts `streamingBehavior` ([#9098](https://github.com/earendil-works/pi/issues/9098), [#9803](https://github.com/earendil-works/pi/issues/9803)).
 - Added image generation to `ModelRuntime`: `generateImages()` with runtime-resolved auth (stored credentials, OAuth, runtime API keys, `models.json` headers), plus `getModelsOfType()`, `getModelOfType()`, `getAvailableOfType()`, `getAllModels()`, and `getAllAvailable()`. OpenRouter image models are listed under the `openrouter` provider and share its credential; an upstream ID can have separate chat and image entries. `models.json` providers and extension registrations without a model list keep built-in image generation. Extension model lists can include discriminated chat and image entries with operation implementations; when supplied, they replace the provider catalog across every operation. Chat-facing reads (`getModels()`, `getAvailableSnapshot()`, the model picker) are unchanged.
 - Added a show/hide toggle (`H`) in HTML exports for custom messages marked `display: false`. Messages remain hidden by default and can also be revealed from the sidebar ([#8896](https://github.com/earendil-works/pi/issues/8896)).
-- Added a fixed fullscreen title bar showing `Candy ─ <project>/<branch>`, the session name, and a context line and percentage that follow usage.
-- Added a startup splash screen with the Candy logo, version, counts for contexts, skills, prompts, and extensions, and one tip. Sixel-capable terminals use the image logo; other terminals use a Unicode half-block sprite.
-- Added the footer Powerbar: the model and thinking labels anchor inline selectors rendered in the editor's bottom border. Clicking a label or pressing `Ctrl+L` expands a track of options around the current value. The track uses ease-out per-frame positioning, edge markers, fuzzy model search, and preview. Left/Right browse; Tab switches selectors; Up opens Sources or History; Down opens Details or Agent.
-- Added explicit Shell and Shell · No Context input modes, scoped input histories, keyboard switching between footer selectors, and configurable editor animations.
-- Added Command mode for searchable local actions, settings, extensions, prompt templates, and skills. Added Sources for provider authentication and model quick-selection scope; Details for highlighted model metadata and defaults; History for session navigation and context; and Agent for instructions, skills, tools, and behavior.
-- Added scoped-model bulk actions for whole providers and search matches, mouse focus, path completion in command arguments, and prefilled History rename and model Details numeric fields. Agent Tools now confirms saved defaults and can restore inherited default tools.
-- Added persistent user-level model quick-selection scope, including an explicitly empty scope and unavailable model references. Model Details can save a default without switching the session, and set or clear per-model thinking and compaction defaults.
-- Added source-qualified command discovery and explicit extension, prompt, and skill execution across SDK, RPC, and experimental clients, including queued message execution.
 - Added an isolated faux-provider smoke launcher for Windows PTY and Linux/tmux interaction checks.
 - Added OKLCH theme colors and composable `Theme.style()` attributes with truecolor and indexed-terminal rendering.
-- Added `DESIGN.md` for Candy's product, navigation, color, motion, and interaction rules.
+- Added a footer model selector with search and preview, and a searchable Actions menu for current model details, Sources, session actions, files, instructions, skills, tools, and behavior. Scope supports empty selections and unavailable saved models.
+- Added explicit source-qualified extension, prompt, and skill execution in SDK and RPC, including queued execution; Command provides resource discovery and argument/path completion.
+- Added fullscreen project/session/context headers, a logo home with version and resource counts, Shell input modes with separate histories, transcript search, image paste markers, masked credential input, and panel region navigation.
+- Added per-item transcript expansion, copyable code blocks, Diagram/Source views, and a reading panel for session details, Hotkeys, and Changelog.
 
-### Tests
+### Changed
 
-- Moved credential-backed AgentSession and compaction integration tests into the opt-in `npm run test:e2e` suite; the default Vitest suite remains offline and deterministic.
+- Merged History and Agent into Actions, with Current Model and Sources entries. Ctrl+L only selects models; Up, Down, and Tab have no action there. Thinking-cycle shortcuts work during model preview. Returning from Sources applies edited model scope before restoring Actions; failures keep Sources open for retry.
+
+- Opening another panel and returning between panels replay the same frame expansion and content reveal used when opening Actions. Rename, parameter editing, filtering, and other changes within the same panel update immediately. Startup pages share the same entrance timing and reveal stages. Thinking borders have stronger effort-dependent brightness and wider working trails, with visible idle breathing for active effort levels.
+- Session-browser rename keeps the header and edits in the list area, preserving search and selection on return.
+- Project trust paths stay on one line and preserve their final directory, keeping the action hints visible in an 80-column terminal. Session browser headers use the shorter Resume Session title.
+
+- Removed tests that pinned splash tip counts, copy, logo pixels, and theme palettes. Consolidated retry coverage in the shared harness and changed HTML export tests to execute rendering and escaping behavior.
+
+- Default keybindings now use `Ctrl+N` for New session and `Shift+Tab` to cycle the thinking level. `Shift+Tab` no longer focuses the previous panel region, `Ctrl+N` no longer toggles the named-session filter, and toggling thinking block visibility has no default key. All four actions remain configurable in `keybindings.json`.
+- Moved New session, Import, and Export to Actions and Project trust to Settings. Reload now uses `Ctrl+R`; Command retains Debug and no longer lists Copy or Quit.
+- Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).
+- Updated source launchers, workspace aliases, examples, and package tooling for Candy package names and configuration.
+- The reload-runtime example now rejects reload attempts from tools and directs users to explicit reload.
+- Interactive presentation uses the Candy semantic palette, configurable thinking-level motion, cyan keycaps, compact connected tool activity, and collapsible thinking longer than three rendered lines. Mermaid renders after its code block completes; changelog stays collapsed by default. Saved display settings still apply.
+- Context usage appears in the top bar; model selection and the thinking effort display share the composer border. Panels fit their content up to 80 percent of terminal height. Transient notices fade; warnings and errors retain expandable reasons.
+- Sources reconciles the active model only when returning from Sources to Actions after an edit: retain an available scoped model, otherwise select the first available one or clear the selection. Starting or restoring a session preserves its model. Nested pages restore search, highlighted identity, and position.
+- Model Details edits defaults inline and Delete restores inheritance. Command groups actions, settings, and resources; Actions → Skills opens files and Actions → Tools separates toggles from descriptions. Trust prompts show the project path and consequences.
+- Built-in themes use 16 palette variables and semantic roles, with truecolor-aware CLI output and HTML exports.
+- Reorganized development, package, SDK, and terminal references; corrected retired command entries and API examples. Rewrote `DESIGN.md` around Candy's design philosophy, visual character, motion, and interaction invention.
 
 ### Fixed
 
+- Fixed missing transitions when entering and returning from open panels, including History session details and nested Agent, model, configuration, and login pages.
+- Fixed History rename shifting other rows' descriptions, duplicate input cursors, and focus loss in settings and resource selectors.
+- Closing panels render saved frames rather than disposed components; rapid navigation cancels obsolete completion callbacks. Session rename reports save failures and ignores completion after cancellation or disposal. Empty tree and fork selectors remain open until cancelled.
+
+- Home tips keep their dim text color after highlighted shortcuts; nested theme colors and backgrounds restore the enclosing style throughout the UI.
+- Added `terminal.images: "sixel"` so Windows Terminal can render the original home logo when `WT_SESSION` and `WT_PROFILE_ID` are absent.
+- Migrated the project's prompt URL widget to the current history and plain-text widget APIs; startup and session reload restore links from the active branch without accessing removed extension APIs.
 - In-app changelog links, the extension migration guide, the extensions documentation link, and theme `$schema` URLs now resolve to this repository instead of the upstream project. Absolute historical upstream links are left untouched, so old entries keep pointing at the commits and issues they describe.
 - Resource filter patterns written by the config selector (`+`/`-` entries in settings package extensions/skills/prompts/themes arrays) now use `/` separators on Windows, so project settings stay portable across operating systems; previously stored backslash entries keep matching and are replaced on the next toggle.
-- Render the home logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals, preserving every source pixel and its transparent background.
+- Render the home and first-time setup logo from `candy-v3.png` with exact 4× pixel enlargement in Sixel terminals. Removed character-logo rendering and sprite generation; hide the logo when Sixel is unavailable or the complete image cannot fit the available width and height.
+- Project TPS statistics are hidden by default, expand when clicking a completed reply’s star, and remain available after session reload.
+- Fixed working-state border trails being nearly invisible in terminals that do not visibly render bold box-drawing characters; the trails now use moving color-lightness steps and stop when work ends or animations are disabled.
+- Fixed X11 clipboard text being misidentified as an image when the clipboard owner accepts unadvertised image targets ([#9786](https://github.com/earendil-works/pi/issues/9786)).
+- Prevented managed git packages from automatically installing Pi peer dependencies and added warnings for extension packages that list host-provided modules in `dependencies` ([#9863](https://github.com/earendil-works/pi/issues/9863)).
+- Fixed pinned git extensions loaded with `-e` continuing to use the first downloaded commit after the ref changes ([#9982](https://github.com/earendil-works/pi/issues/9982)).
+- Fixed `RpcClient` skipping the next event listener when a listener unsubscribes while handling an event, which could make `waitForIdle()` time out after `collectEvents()` ([#9990](https://github.com/earendil-works/pi/issues/9990)).
+- Fixed full-file `read` calls rendering as `:1` when models send `null` for omitted `offset` and `limit` ([#9996](https://github.com/earendil-works/pi/issues/9996)).
+- Fixed new sessions being lost when candy exits before the first assistant response. The session file is now created when the first user message is sent ([#10000](https://github.com/earendil-works/pi/issues/10000)).
+- Fixed Sources checkbox toggling with Space, bulk actions on filtered lists, no-match selection, and authentication status distinguishing active credentials from stored entries.
+- Fixed nested navigation restoring selector search, highlighted identity, and browsing position. Models without reasoning retain an Off selector so History and Agent remain reachable.
+- Fixed late authentication and catalog callbacks changing focus after leaving their page, and composer panels failing to forward focus to their active child.
+- Fixed settings submenu height and search activation, child-dialog invalidation, cancelled import input, and relative import/export paths resolving against the session directory.
+- Fixed shortcut colors in status and animated titles, ANSI/CJK title widths, truncated Hotkeys alternatives at 80 columns, and reading-panel search matching ANSI sequences.
+- Fixed custom themes ignoring terminal truecolor support ([#9973](https://github.com/earendil-works/pi/issues/9973)).
 
 ### Removed
 
@@ -101,64 +120,9 @@
 - Removed `packages/coding-agent/install-lock/` and `scripts/generate-coding-agent-install-lock.mjs`. The lockfile root was consumed only by the retired Pi installer and updater, and the root `check` chain no longer runs `check:install-lock:coding-agent`.
 - Removed `test/agent-session-compaction.test.ts`, which required a real `API_KEY` and never ran in CI. `test/suite/agent-session-compaction.test.ts` covers the same behavior with the faux provider.
 
-### Breaking Changes
+### Tests
 
-- Removed Ant Ling, Baseten, and Radius from provider selection. Removed `/ir`, `/tui`, `/deslop`, `/is`, `/cl`, `/sa`, `/pr`, `/bug`, and `/share`, their bundled resources, and the issue-analysis workflow. Removed Radius relay and bug-report uploads.
-- Removed the built-in llama.cpp provider, `/llama` command, and integrated router model discovery and management. Configure compatible model endpoints in `models.json`.
-- Removed interactive model cycling and its old scoped selection API: the top-level `--models` flag, `enabledModels`, the SDK `scopedModels` option, `AgentSession.cycleModel()`, `RpcClient.cycleModel()`, `ModelCycleResult`, RPC `cycle_model`, and model-cycle keybindings. Use Sources to configure the user-level quick-selection scope and the Powerbar to choose the current model. `candy update --models` remains the model-catalog refresh command.
-- Removed the regular (windowed) TUI mode; interactive mode always runs fullscreen. The `tuiMode` setting, the `--tui-mode` flag, and the `TuiMode` export are removed.
-- Removed the `ThinkingSelectorComponent` overlay; the thinking level selector is now the inline footer powerbar.
-- Removed extension APIs for replacing built-in working text and visibility.
-- Message APIs no longer interpret slash-prefixed text as commands or expand prompt templates. Use `executeCommand({ source, name, args })` in the SDK or RPC `execute_command` for explicit command execution.
-- Renamed `@earendil-works/pi-coding-agent` to `@candy/coding-agent`, the `pi` executable to `candy`, configuration directories from `.pi` to `.candy`, application environment variables from `PI_*` to `CANDY_*`, and application package metadata from `piConfig` to `candyConfig`. Update imports, launchers, and configuration paths.
-- Removed the `expandPromptTemplates` message option. Experimental main, micro, and mini clients now use explicit command execution; skills appear under their bare names with source identity.
-
-### Changed
-
-- Assistant replies use quieter text and breathing activity markers, with connected, independently collapsible thinking runs and a short reply entrance. The first prompt has two extra rows below the header.
-
-- Moved New session, Import, and Export to History and Project trust to Settings. Reload now uses `Ctrl+R`; Command retains Debug and no longer lists Copy or Quit.
-- Thinking blocks longer than three lines collapse to a labeled excerpt by default. Mermaid diagrams render after their code block is complete, and changelog entries stay collapsed by default. Explicit saved settings continue to control each behavior.
-- Tool activity now uses connected status nodes and compact results; shell and tool previews share the configured row limit, while errors show up to 12 rows.
-- Composer autocomplete and selectors use Candy selection markers, inline file details, and panel layouts; settings are grouped into five searchable categories with region navigation.
-- Updated image, code, table, and heading presentation; Mermaid code blocks can switch between Diagram and Source, and code blocks expose a copy action.
-- Session details, Hotkeys, and changelog details use a shared reading panel. Ordinary transient notices fade after a short delay, while warnings and errors remain in the transcript.
-- Thinking levels use progressively stronger Candy colors and level-sensitive composer and activity animations. The collapsed frame retains its meter; the expanded Thinking selector shows level names only. Model and Thinking tracks use tighter spacing to fit more choices.
-- Merged the footer into the editor's bottom border with model and thinking selectors and a `│` left gutter on input lines. Context usage appears in the top bar as an occupied line and a percentage. The footer no longer shows the provider prefix, context window size, token totals, the cwd/git/session line, or extension statuses.
-- Connected the model and thinking labels with a border line, added frame and activity animations, and applied the selected theme to CLI output and HTML exports.
-- Consolidated the built-in themes into 16 palette variables while retaining semantic color roles for custom themes.
-- Switched the build from the TypeScript native preview to TypeScript 7.0 with an ES2024 target, and replaced `tsx` with Node's built-in type stripping for running from source ([#9965](https://github.com/earendil-works/pi/issues/9965)).
-- Pressing `tab` in the footer powerbar now wraps between the model and thinking level selectors instead of stopping at the thinking level.
-- The composer prompt glyph is a half-width space followed by `◆` in normal mode (new `editorPrompt` theme color, pink by default) or `❯` in Shell modes (`bashMode`), and typed input text uses `text` (ink). Shell titles render with one space of padding on each side. The footer model label is purple, the picker `‹`/`›` arrows are cyan, and the `▼` selector chevrons are removed.
-- Startup and New session now share the same logo home with the version, four resource counts, and one tip; the History, Command, and Hotkeys links and separate loaded-resources line are removed.
-- Sources applies quick-selection reconciliation only when leaving its root after an edit. The current model stays when still available, otherwise the first available scoped model is selected; an empty available scope clears the active model. Starting or restoring a session keeps its model.
-- Model Details groups catalog facts and keeps defaults on their rows. Thinking cycles in place, token counts edit inline, and Delete restores inheritance for overridden values.
-- Command actions are grouped into Commands, Settings, and Resources; Boolean and enumerated settings can be changed from their rows. Agent Skills opens the selected skill file directly and returns to its previous list state; Agent Tools toggles on Space and opens descriptions and parameters on Enter.
-- Authentication status appears beside Check authentication and distinguishes checking, configured credentials, not connected, and failed checks with their reason.
-- Transcript errors and warnings use semantic markers, a side rail, and expandable long reasons; cancellation is muted. Composer panels fit short content and cap their height at 80 percent of terminal rows.
-- Shortcut hints now render the complete angle-bracket keycap in cyan, including status, search, dialogs, and experimental clients.
-- Rewrote the development philosophy and contribution process for Candy, and simplified `AGENTS.md` around complete workflows, coordinated refactors, independent implementation decisions, and proportionate verification.
-- Updated source launchers, workspace aliases, examples, and package tooling for Candy package names and configuration.
-- The reload-runtime example now rejects reload attempts from tools and directs users to explicit reload.
-
-### Fixed
-
-- Project TPS statistics are hidden by default, expand when clicking a completed reply’s star, and remain available after session reload.
-
-- Fixed working-state border trails being nearly invisible in terminals that do not visibly render bold box-drawing characters; the trails now use moving color-lightness steps and stop when work ends or animations are disabled.
-- Fixed X11 clipboard text being misidentified as an image when the clipboard owner accepts unadvertised image targets ([#9786](https://github.com/earendil-works/pi/issues/9786)).
-- Prevented managed git packages from automatically installing Pi peer dependencies and added warnings for extension packages that list host-provided modules in `dependencies` ([#9863](https://github.com/earendil-works/pi/issues/9863)).
-- Fixed pinned git extensions loaded with `-e` continuing to use the first downloaded commit after the ref changes ([#9982](https://github.com/earendil-works/pi/issues/9982)).
-- Fixed `RpcClient` skipping the next event listener when a listener unsubscribes while handling an event, which could make `waitForIdle()` time out after `collectEvents()` ([#9990](https://github.com/earendil-works/pi/issues/9990)).
-- Fixed full-file `read` calls rendering as `:1` when models send `null` for omitted `offset` and `limit` ([#9996](https://github.com/earendil-works/pi/issues/9996)).
-- Fixed new sessions being lost when pi exits before the first assistant response. The session file is now created when the first user message is sent ([#10000](https://github.com/earendil-works/pi/issues/10000)).
-- Fixed Sources checkbox toggling with Space, bulk actions on filtered lists, no-match selection, and authentication status distinguishing active credentials from stored entries.
-- Fixed nested navigation restoring selector search, highlighted identity, and browsing position. Models without reasoning retain an Off selector so History and Agent remain reachable.
-- Fixed late authentication and catalog callbacks changing focus after leaving their page, and composer panels failing to forward focus to their active child.
-- Fixed settings submenu height and search activation, child-dialog invalidation, cancelled import input, and relative import/export paths resolving against the session directory.
-- Fixed shortcut colors in status and animated titles, ANSI/CJK title widths, truncated Hotkeys alternatives at 80 columns, and reading-panel search matching ANSI sequences.
-- Fixed custom themes ignoring terminal truecolor support ([#9973](https://github.com/earendil-works/pi/issues/9973)).
-- Fixed experimental development clients resolving renamed Candy source packages.
+- Moved credential-backed AgentSession and compaction integration tests into the opt-in `npm run test:e2e` suite; the default Vitest suite remains offline and deterministic.
 
 ## [0.87.1] - 2026-09-22
 

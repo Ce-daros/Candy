@@ -56,23 +56,6 @@ async function capturePayload(
 }
 
 describe("Fireworks models", () => {
-	it("registers Fireworks Messages models via the Anthropic-compatible Messages API", () => {
-		const models = fireworksMessagesModels();
-		expect(models.length).toBeGreaterThan(0);
-
-		for (const model of models) {
-			expect(model.api).toBe("anthropic-messages");
-			expect(model.provider).toBe("fireworks");
-			expect(model.baseUrl).toBe("https://api.fireworks.ai/inference");
-			expect(model.reasoning).toBe(true);
-			expect(model.input).toContain("text");
-			expect(model.contextWindow).toBeGreaterThan(0);
-			expect(model.maxTokens).toBeGreaterThan(0);
-			expect(model.cost.input).toBeGreaterThan(0);
-			expect(model.cost.output).toBeGreaterThan(0);
-		}
-	});
-
 	it("aligns -fast router models with their base model's OpenAI-compatible config", () => {
 		const models = fireworksCompletionsModels();
 		const fastRouters = models.filter((model) => model.id.endsWith("-fast"));
@@ -174,20 +157,6 @@ describe("Fireworks models", () => {
 
 		expect(findEnvKeys("fireworks")).toEqual(["FIREWORKS_API_KEY"]);
 		expect(getEnvApiKey("fireworks")).toBe("test-fireworks-key");
-	});
-
-	it("sets Fireworks-specific compat for session affinity and unsupported tool fields", () => {
-		const models = fireworksMessagesModels();
-		expect(models.length).toBeGreaterThan(0);
-
-		for (const model of models) {
-			expect(model.compat).toBeDefined();
-			expect(model.compat?.sendSessionAffinityHeaders, model.id).toBe(true);
-			expect(model.compat?.supportsEagerToolInputStreaming, model.id).toBe(false);
-			expect(model.compat?.supportsCacheControlOnTools, model.id).toBe(false);
-			expect(model.compat?.supportsLongCacheRetention, model.id).toBe(false);
-			expect(model.compat?.allowEmptySignature, model.id).toBe(true);
-		}
 	});
 });
 

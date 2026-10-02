@@ -23,4 +23,43 @@ describe("colors", () => {
 		);
 		assert.match(styleText("Ready", { fg: rgbColor(18, 52, 86) }, "256color"), /^\x1b\[38;5;\d+mReady\x1b\[39m$/);
 	});
+
+	it("restores enclosing colors across multiple nesting levels", () => {
+		for (const mode of ["truecolor", "256color"] as const) {
+			const outer = { fg: indexedColor(8), bg: indexedColor(0) };
+			const inner = { fg: indexedColor(6), bg: indexedColor(4) };
+			const nested = styleText(`b${styleText("c", { fg: indexedColor(3) }, mode)}d`, inner, mode);
+			assert.strictEqual(
+				styleText(`a${nested}e`, outer, mode),
+				"\x1b[38;5;8m\x1b[48;5;0ma\x1b[38;5;6m\x1b[48;5;4mb\x1b[38;5;3mc\x1b[38;5;6md\x1b[48;5;0m\x1b[38;5;8me\x1b[49m\x1b[39m",
+			);
+		}
+	});
+
+	it("restores enclosing attributes after their shared and individual resets", () => {
+		assert.strictEqual(
+			styleText(
+				"a\x1b[22mb\x1b[23mc\x1b[24md\x1b[27me\x1b[29mf",
+				{
+					bold: true,
+					dim: true,
+					italic: true,
+					underline: true,
+					inverse: true,
+					strikethrough: true,
+				},
+				"truecolor",
+			),
+			"\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[7m\x1b[9ma\x1b[1m\x1b[2mb\x1b[3mc\x1b[4md\x1b[7me\x1b[9mf\x1b[29m\x1b[27m\x1b[24m\x1b[23m\x1b[22m",
+		);
+	});
+
+	it("reopens enclosing styles after full resets and leaves unrelated resets intact", () => {
+		for (const reset of ["\x1b[0m", "\x1b[m"]) {
+			assert.strictEqual(
+				styleText(`a${reset}b\x1b[49mc`, { fg: indexedColor(8), bold: true }, "truecolor"),
+				`\x1b[38;5;8m\x1b[1ma${reset}\x1b[38;5;8m\x1b[1mb\x1b[49mc\x1b[22m\x1b[39m`,
+			);
+		}
+	});
 });

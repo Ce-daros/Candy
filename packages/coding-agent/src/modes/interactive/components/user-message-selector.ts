@@ -165,7 +165,6 @@ export class UserMessageSelectorComponent implements Component {
 		this.messageList = new UserMessageList(messages, initialSelectedId);
 		this.messageList.onSelect = onSelect;
 		this.messageList.onCancel = onCancel;
-		if (messages.length === 0) setTimeout(onCancel, 100);
 	}
 
 	setAvailableHeight(height: number): void {
