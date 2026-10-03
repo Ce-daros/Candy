@@ -83,51 +83,55 @@ function identityConverter(messages: AgentMessage[]): Message[] {
 }
 
 describe("agentLoop with AgentMessage", () => {
-	it("should emit events with AgentMessage types", async () => {
-		const context: AgentContext = {
-			messages: [],
-			tools: [],
-		};
+	it.each(["done", "end"] as const)(
+		"emits AgentMessage events when the provider stream finishes with %s",
+		async (completion) => {
+			const context: AgentContext = {
+				messages: [],
+				tools: [],
+			};
 
-		const userPrompt: AgentMessage = createUserMessage("Hello");
+			const userPrompt: AgentMessage = createUserMessage("Hello");
 
-		const config: AgentLoopConfig = {
-			model: createModel(),
-			convertToLlm: identityConverter,
-		};
+			const config: AgentLoopConfig = {
+				model: createModel(),
+				convertToLlm: identityConverter,
+			};
 
-		const streamFn = () => {
-			const stream = new MockAssistantStream();
-			queueMicrotask(() => {
-				const message = createAssistantMessage([{ type: "text", text: "Hi there!" }]);
-				stream.push({ type: "done", reason: "stop", message });
-			});
-			return stream;
-		};
+			const streamFn = () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					const message = createAssistantMessage([{ type: "text", text: "Hi there!" }]);
+					if (completion === "done") stream.push({ type: "done", reason: "stop", message });
+					else stream.end(message);
+				});
+				return stream;
+			};
 
-		const events: AgentEvent[] = [];
-		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+			const events: AgentEvent[] = [];
+			const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
 
-		for await (const event of stream) {
-			events.push(event);
-		}
+			for await (const event of stream) {
+				events.push(event);
+			}
 
-		const messages = await stream.result();
+			const messages = await stream.result();
 
-		// Should have user message and assistant message
-		expect(messages.length).toBe(2);
-		expect(messages[0].role).toBe("user");
-		expect(messages[1].role).toBe("assistant");
+			// Should have user message and assistant message
+			expect(messages.length).toBe(2);
+			expect(messages[0].role).toBe("user");
+			expect(messages[1].role).toBe("assistant");
 
-		// Verify event sequence
-		const eventTypes = events.map((e) => e.type);
-		expect(eventTypes).toContain("agent_start");
-		expect(eventTypes).toContain("turn_start");
-		expect(eventTypes).toContain("message_start");
-		expect(eventTypes).toContain("message_end");
-		expect(eventTypes).toContain("turn_end");
-		expect(eventTypes).toContain("agent_end");
-	});
+			// Verify event sequence
+			const eventTypes = events.map((e) => e.type);
+			expect(eventTypes).toContain("agent_start");
+			expect(eventTypes).toContain("turn_start");
+			expect(eventTypes).toContain("message_start");
+			expect(eventTypes).toContain("message_end");
+			expect(eventTypes).toContain("turn_end");
+			expect(eventTypes).toContain("agent_end");
+		},
+	);
 
 	it("should build provider context exclusively from transcript messages", async () => {
 		const initialSystem: AgentMessage = {
@@ -677,58 +681,75 @@ describe("agentLoop with AgentMessage", () => {
 		expect(turnToolResultIds).toEqual(["tool-1", "tool-2"]);
 	});
 
-	it("marks an interrupted tool in its event and persisted result", async () => {
-		const controller = new AbortController();
-		const schema = Type.Object({});
-		let started!: () => void;
-		const executing = new Promise<void>((resolve) => {
-			started = resolve;
-		});
-		const tool: AgentTool<typeof schema, undefined> = {
-			name: "wait",
-			label: "Wait",
-			description: "Wait",
-			parameters: schema,
-			async execute(_id, _params, signal) {
+	it.each(["hook", "execution"] as const)(
+		"marks a tool interrupted during %s in its event and persisted result",
+		async (phase) => {
+			const controller = new AbortController();
+			const schema = Type.Object({});
+			let started!: () => void;
+			const executing = new Promise<void>((resolve) => {
+				started = resolve;
+			});
+			const waitForAbort = async (signal?: AbortSignal) => {
 				started();
 				await new Promise<void>((_resolve, reject) => {
 					signal?.addEventListener("abort", () => reject(new Error("stopped")), { once: true });
 				});
-				return { content: [], details: undefined };
-			},
-		};
-		const events: AgentEvent[] = [];
-		const run = runAgentLoop(
-			[createUserMessage("wait")],
-			{ messages: [], tools: [tool] },
-			{ model: createModel(), convertToLlm: identityConverter, finishTurn: () => ({ action: "end" }) },
-			(event) => {
-				events.push(event);
-			},
-			controller.signal,
-			() => {
-				const stream = new MockAssistantStream();
-				queueMicrotask(() =>
-					stream.push({
-						type: "done",
-						reason: "toolUse",
-						message: createAssistantMessage(
-							[{ type: "toolCall", id: "wait-1", name: "wait", arguments: {} }],
-							"toolUse",
-						),
-					}),
-				);
-				return stream;
-			},
-		);
-		await executing;
-		controller.abort();
-		const messages = await run;
-		const ended = events.find((event) => event.type === "tool_execution_end");
-		const stored = JSON.parse(JSON.stringify(messages.find((message) => message.role === "toolResult")));
-		expect(ended?.type === "tool_execution_end" && ended.cancelled).toBe(true);
-		expect(stored).toMatchObject({ role: "toolResult", toolCallId: "wait-1", isError: true, cancelled: true });
-	});
+			};
+			const tool: AgentTool<typeof schema, undefined> = {
+				name: "wait",
+				label: "Wait",
+				description: "Wait",
+				parameters: schema,
+				async execute(_id, _params, signal) {
+					await waitForAbort(signal);
+					return { content: [], details: undefined };
+				},
+			};
+			const events: AgentEvent[] = [];
+			const run = runAgentLoop(
+				[createUserMessage("wait")],
+				{ messages: [], tools: [tool] },
+				{
+					model: createModel(),
+					convertToLlm: identityConverter,
+					finishTurn: () => ({ action: "end" }),
+					beforeToolCall:
+						phase === "hook"
+							? async (_context, signal) => {
+									await waitForAbort(signal).catch(() => undefined);
+									return { block: true, reason: "blocked" };
+								}
+							: undefined,
+				},
+				(event) => {
+					events.push(event);
+				},
+				controller.signal,
+				() => {
+					const stream = new MockAssistantStream();
+					queueMicrotask(() =>
+						stream.push({
+							type: "done",
+							reason: "toolUse",
+							message: createAssistantMessage(
+								[{ type: "toolCall", id: "wait-1", name: "wait", arguments: {} }],
+								"toolUse",
+							),
+						}),
+					);
+					return stream;
+				},
+			);
+			await executing;
+			controller.abort();
+			const messages = await run;
+			const ended = events.find((event) => event.type === "tool_execution_end");
+			const stored = JSON.parse(JSON.stringify(messages.find((message) => message.role === "toolResult")));
+			expect(ended?.type === "tool_execution_end" && ended.cancelled).toBe(true);
+			expect(stored).toMatchObject({ role: "toolResult", toolCallId: "wait-1", isError: true, cancelled: true });
+		},
+	);
 
 	it("keeps a successful tool successful when abort races with completion", async () => {
 		const controller = new AbortController();

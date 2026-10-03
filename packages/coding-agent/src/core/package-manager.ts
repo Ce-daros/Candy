@@ -1081,7 +1081,7 @@ export class DefaultPackageManager implements PackageManager {
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
 	): void {
-		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType);
+		const allFiles = this.collectManifestFiles(packageRoot, resourceType);
 
 		if (userPatterns.length === 0) {
 			// Empty array explicitly disables all resources of this type
@@ -1111,7 +1111,7 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 
-		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType);
+		const allFiles = this.collectManifestFiles(packageRoot, resourceType);
 		const enabledByUser = applyAutoloadDisabledPatterns(allFiles, userPatterns, packageRoot);
 		for (const [filePath, enabled] of enabledByUser) {
 			this.addResource(target, filePath, metadata, enabled);
@@ -1120,29 +1120,19 @@ export class DefaultPackageManager implements PackageManager {
 
 	/**
 	 * Collect all files from a package for a resource type, applying manifest patterns.
-	 * Returns { allFiles, enabledByManifest } where enabledByManifest is the set of files
-	 * that pass the manifest's own patterns.
 	 */
-	private collectManifestFiles(
-		packageRoot: string,
-		resourceType: ResourceType,
-	): { allFiles: string[]; enabledByManifest: Set<string> } {
+	private collectManifestFiles(packageRoot: string, resourceType: ResourceType): string[] {
 		const manifest = readCandyManifest(join(packageRoot, "package.json"));
 		const entries = manifest?.[resourceType as keyof CandyManifest];
 		if (entries && entries.length > 0) {
 			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
 			const manifestPatterns = entries.filter(isOverridePattern);
-			const enabledByManifest =
-				manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : new Set(allFiles);
-			return { allFiles: Array.from(enabledByManifest), enabledByManifest };
+			return manifestPatterns.length > 0
+				? Array.from(applyPatterns(allFiles, manifestPatterns, packageRoot))
+				: allFiles;
 		}
 
-		const conventionDir = join(packageRoot, resourceType);
-		if (!existsSync(conventionDir)) {
-			return { allFiles: [], enabledByManifest: new Set() };
-		}
-		const allFiles = collectResourceFiles(conventionDir, resourceType);
-		return { allFiles, enabledByManifest: new Set(allFiles) };
+		return collectResourceFiles(join(packageRoot, resourceType), resourceType);
 	}
 
 	private addManifestEntries(

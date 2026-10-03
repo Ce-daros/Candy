@@ -65,6 +65,8 @@
 
 ### Changed
 
+- Package resource filtering returns the selected files directly without retaining an unused copy of the manifest-enabled set. Release checks use actual build configurations and no longer repeat dependency traversal or pin asset-copy command strings; installation-script review and asset checks remain.
+
 - Credential and model stores share revision caching and cancellable file reloads. Session replacement and exit share the same ordered cleanup path and retain their existing error reporting.
 - The UI entrypoint exports components directly. Removed unused single-edit diff and renderer-map wrappers; edit previews use the current `edits` input and no longer retain redundant error state.
 

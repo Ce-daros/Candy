@@ -20,6 +20,8 @@
 
 ### Changed
 
+- Assistant streams share one final-message commit path for terminal events and explicit stream completion. Tool preparation checks cancellation once after the optional hook, preserving cancellation priority over blocked results.
+
 - Replaced the README example with externally owned history and inputs, and documented fixed host hooks and committed-message events.
 
 ## [0.87.1] - 2026-09-22

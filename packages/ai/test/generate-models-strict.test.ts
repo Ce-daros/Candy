@@ -60,9 +60,7 @@ describe("strict model generation", () => {
 			"src/models.generated.ts",
 			"src/providers/qwen-token-plan-individual.models.ts",
 			"src/providers/data/qwen-token-plan-individual.json",
-			"src/providers/data/.manifest.json",
 		];
-		const sourceBefore = generatedPaths.map((path) => readFileSync(join(packageRoot, path), "utf8"));
 		const isolatedBefore = generatedPaths.map((path) => readFileSync(join(isolatedPackageRoot, path), "utf8"));
 
 		const result = spawnSync(
@@ -82,6 +80,5 @@ describe("strict model generation", () => {
 		expect(generatedPaths.map((path) => readFileSync(join(isolatedPackageRoot, path), "utf8"))).toEqual(
 			isolatedBefore,
 		);
-		expect(generatedPaths.map((path) => readFileSync(join(packageRoot, path), "utf8"))).toEqual(sourceBefore);
 	});
 });

@@ -10,14 +10,14 @@
 - Removed the Amazon Bedrock provider: `amazon-bedrock.ts`, `bedrock-converse-stream.ts`, the `./bedrock-provider` entrypoint, `BedrockOptions`/`BedrockCompat`, the `@aws-sdk/client-bedrock-runtime` and `@smithy/node-http-handler` dependencies, and AWS credential detection.
 - Removed the Azure OpenAI Responses provider: `azure-openai-responses.ts`, `AzureOpenAIResponsesOptions`, and the `AZURE_OPENAI_*` credential mapping.
 - Removed the unused `mapStopReasonString`, `getBuiltinModelDataGeneratedAt`, `FauxProviderRegistration`, and `getOverflowPatterns` exports.
-- Model data JSON under `src/providers/data/` is now tracked in the repository, so fresh checkouts build offline. `npm run build` validates the tracked data instead of regenerating it from the models.dev API; run `npm run generate-models` (or `hydrate-model-data`) explicitly when refreshing the catalog.
+- Model data JSON under `src/providers/data/` is now tracked in the repository, so fresh checkouts build offline. `npm run build` compiles the tracked data instead of regenerating it from the models.dev API; run `npm run generate-models` (or `hydrate-model-data`) explicitly when refreshing the catalog.
 - Removed the unused deprecated `image-models.ts` catalog wrapper. Use the typed `getBuiltinImageModel()` and related accessors from `@candy/ai/providers/all`.
 - Removed the deprecated `@candy/ai/compat` entrypoint and its global stream/provider registry aliases. Use explicit provider factories with `Models`, or import a specific API implementation from `@candy/ai/api/*`.
 - Removed deprecated provider-specific `stream*` and `streamSimple*` aliases. Use the matching API implementation or a `Models` provider collection.
 - Removed the built-in Ant Ling, Baseten, and Radius providers, including Radius OAuth and model-catalog loading. The generic `pi-messages` API remains available to custom providers.
 - Unified image models into the regular `Provider`/`Models` surface. The separate `ImagesModels` collection is removed: `createImagesModels()`, `createImagesProvider()`, `ImagesProvider`, `openrouterImagesProvider()`, `builtinImagesProviders()`, and `builtinImagesModels()` are gone. Use `builtinModels()`, `models.getModelOfType("image", ...)`, `models.generateImages()`, and `createProvider({ models, images })` instead. Existing unqualified reads remain chat-only. The legacy global image dispatcher/registry is removed.
 - Image models are now `ImageModel` with a required `type: "image"` and share `BaseModel` with chat models. The old plural image type names (`ImagesModel`, `ImagesApi`, `KnownImagesApi`, `KnownImagesProvider`, and `ImagesProviderId`) are removed. `generateImages()` accepts only image models. Output modalities (`output`) remain on image models only.
-- Generated model data schema is now version 6: every entry carries `type`, operation-specific catalogs include chat and image models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate-model-data`. Manifests keep the schema version without timestamps or hashes.
+- Generated model data entries carry `type`, operation-specific catalogs include chat and image models, and one upstream ID may have separate entries per type. OpenRouter image models live in the `openrouter-images` api group of `openrouter.json`; `image-models.generated.ts` and `scripts/generate-image-models.ts` are removed. Run `npm run hydrate-model-data`.
 - Renamed `@earendil-works/pi-ai` to `@candy/ai` and `pi-ai` to `candy-ai`. Update imports and use `CANDY_CACHE_RETENTION` and `CANDY_OAUTH_CALLBACK_HOST` for the renamed environment settings.
 
 ### Added
@@ -51,6 +51,8 @@
 - Fixed GitHub Copilot Claude Opus 5.5 reasoning-effort handling when upstream model metadata is incomplete.
 
 ### Removed
+
+- Removed the generated-data schema manifest, directory self-comparisons, duplicate field validation, and their synthetic tests. `check:model-data` uses TypeScript directly; generation retains strict upstream model requirements and staged file replacement. Catalog tests retain file replacement and rollback coverage instead of copied generator output.
 
 - Removed duplicate catalog and API-wrapper assertions, text-helper microtests, and redundant live model smoke tests. Provider transport, authentication, stream, cache accounting, and public type coverage remain in the focused suites.
 

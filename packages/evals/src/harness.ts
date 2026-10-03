@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { existsSync } from "node:fs";
 import { chmod, chown, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -37,7 +36,6 @@ import { CANDY_SESSION_SNAPSHOT_ARTIFACT } from "./report.ts";
 
 type CandyRunDiagnostics = {
 	events: TranscriptEvent[];
-	metadata: Record<string, unknown>;
 	usage: UsageSummary;
 };
 
@@ -403,7 +401,6 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		);
 		runDiagnostics = {
 			events: toTranscriptEvents(committedMessages),
-			metadata: { systemPromptSha256: createHash("sha256").update(systemPrompt).digest("hex") },
 			usage: {
 				provider: model.provider,
 				model: model.id,

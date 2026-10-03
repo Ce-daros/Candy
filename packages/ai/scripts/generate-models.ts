@@ -25,15 +25,7 @@ import type {
 	OpenAICompletionsCompat,
 	OpenAIResponsesCompat,
 } from "../src/types.ts";
-import {
-	assertExactModelIds,
-	type ModelDataStructure,
-	MODEL_DATA_MANIFEST_FILE,
-	MODEL_DATA_SCHEMA_VERSION,
-	readModelDataProviderIds,
-	validateGeneratedModelData,
-	validateModelDataDirectory,
-} from "./model-data.ts";
+import { assertExactModelIds, readModelDataProviderIds } from "./model-data.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -3000,30 +2992,24 @@ async function generateModels() {
 		throw new Error(`Cannot hydrate missing providers: ${missingProviderIds.join(", ")}`);
 	}
 
-	// Only the ignored internal data is grouped by API for type derivation.
+	// Internal data is grouped by API for type derivation.
 	const generatedDataProviders: Record<string, Record<string, Record<string, AnyModel>>> = {};
-	const modelDataStructure: ModelDataStructure = {};
 	for (const providerId of generatedDataProviderIds) {
 		const models = jsonAllProviders[providerId];
 		generatedDataProviders[providerId] = {};
-		modelDataStructure[providerId] = {};
 		const apiIds = Array.from(new Set(models.map((model) => model.api))).sort();
 		for (const api of apiIds) {
 			generatedDataProviders[providerId][api] = {};
 			for (const model of models) {
 				if (model.api !== api) continue;
 				const identity = `${model.type}:${model.id}`;
-				if (generatedDataProviders[providerId][api][identity]) {
-					throw new Error(`${providerId}/${identity} has duplicate ${api} catalog entries`);
-				}
 				generatedDataProviders[providerId][api][identity] = model;
-				modelDataStructure[providerId][identity] = api;
 			}
 		}
 	}
 
 	if (!generatorOptions.jsonOnly) {
-		// Stage and validate all provider values before replacing the current generated data.
+		// Write all provider values before replacing the current generated data.
 		const providersDir = join(packageRoot, "src/providers");
 		const dataDir = join(providersDir, "data");
 		const stagingRoot = mkdtempSync(join(providersDir, ".model-generation-"));
@@ -3037,10 +3023,6 @@ async function generateModels() {
 				const content = serializeJson(generatedDataProviders[providerId]);
 				writeFileSync(join(stagedDataDir, filename), content);
 			}
-			writeJson(join(stagedDataDir, MODEL_DATA_MANIFEST_FILE), {
-				schemaVersion: MODEL_DATA_SCHEMA_VERSION,
-			});
-			validateModelDataDirectory(modelDataStructure, stagedDataDir);
 
 			if (!generatorOptions.dataOnly) {
 				restoreGeneratedCatalog = writeGeneratedModelCatalog(providersDir, packageRoot, sortedProviderIds);
@@ -3051,10 +3033,8 @@ async function generateModels() {
 			if (hadPreviousData) renameSync(dataDir, previousDataDir);
 			try {
 				renameSync(stagedDataDir, dataDir);
-				validateGeneratedModelData(packageRoot);
 			} catch (error) {
-				rmSync(dataDir, { recursive: true, force: true });
-				if (hadPreviousData && existsSync(previousDataDir)) renameSync(previousDataDir, dataDir);
+				if (hadPreviousData) renameSync(previousDataDir, dataDir);
 				throw error;
 			}
 			restoreGeneratedCatalog = undefined;

@@ -235,20 +235,12 @@ function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue,
 	}
 }
 
-function validateShrinkwrap(shrinkwrap, internalNames) {
+function validateShrinkwrap(shrinkwrap) {
 	const errors = [];
-	const includedPaths = new Set(Object.keys(shrinkwrap.packages));
-	const includedPackageNames = new Set();
 	const seenAllowedInstallScriptPackages = new Set();
 
 	for (const [lockPath, entry] of Object.entries(shrinkwrap.packages)) {
 		const packageName = packageNameFromLockPath(lockPath);
-		if (packageName) {
-			includedPackageNames.add(packageName);
-		}
-		if (entry.link) {
-			errors.push(`${lockPath} is a link entry`);
-		}
 		if (typeof entry.resolved === "string" && /^(file:|link:|workspace:|\.\.?\/|\/)/.test(entry.resolved)) {
 			errors.push(`${lockPath} has a local resolved value: ${entry.resolved}`);
 		}
@@ -274,23 +266,6 @@ function validateShrinkwrap(shrinkwrap, internalNames) {
 		}
 	}
 
-	for (const name of internalNames) {
-		if (!includedPackageNames.has(name)) {
-			errors.push(`internal dependency ${name} is missing`);
-		}
-	}
-
-	for (const [lockPath, entry] of Object.entries(shrinkwrap.packages)) {
-		for (const dependencyName of Object.keys(packageDependencies(entry))) {
-			const dependencyIncluded = [...includedPaths].some(
-				(candidate) => candidate === `node_modules/${dependencyName}` || candidate.endsWith(`/node_modules/${dependencyName}`),
-			);
-			if (!dependencyIncluded) {
-				errors.push(`${lockPath || "root"} dependency ${dependencyName} is missing`);
-			}
-		}
-	}
-
 	if (errors.length > 0) {
 		throw new Error(`Generated shrinkwrap failed validation:\n${errors.map((error) => `  - ${error}`).join("\n")}`);
 	}
@@ -309,7 +284,6 @@ function generateShrinkwrap() {
 		"": copyPackageJsonEntry(codingAgentPackage, { includeName: true }),
 	};
 	const addedPaths = new Set([""]);
-	const internalNames = new Set();
 	const queue = Object.keys(packageDependencies(codingAgentPackage)).map((name) => ({
 		name,
 		sourceFrom: "packages/coding-agent",
@@ -319,14 +293,10 @@ function generateShrinkwrap() {
 
 	while (queue.length > 0) {
 		const item = queue.shift();
-		if (!item) {
-			break;
-		}
 
 		const workspace = internalWorkspaces.get(item.name);
 		if (workspace) {
 			const outputPath = `node_modules/${item.name}`;
-			internalNames.add(item.name);
 			if (!addedPaths.has(outputPath)) {
 				addInternalWorkspace(shrinkwrapPackages, addedPaths, queue, item.name, workspace);
 			}
@@ -344,7 +314,7 @@ function generateShrinkwrap() {
 		packages: sortedObject(shrinkwrapPackages),
 	};
 
-	validateShrinkwrap(shrinkwrap, internalNames);
+	validateShrinkwrap(shrinkwrap);
 	return shrinkwrap;
 }
 

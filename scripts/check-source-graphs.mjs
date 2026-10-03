@@ -166,17 +166,11 @@ function checkSourceReachability({ resolver, scanner }) {
 }
 
 function checkCodingAgentAssets({ resolver }) {
-	const { packageRoot, manifest } = resolver.packageRoots.get("@candy/coding-agent");
+	const { packageRoot } = resolver.packageRoots.get("@candy/coding-agent");
 	const failures = [];
 	for (const assetPath of new Set([...codingAgentRequiredAssets, ...codingAgentAssetPatterns])) {
 		if (globSync(assetPath, { cwd: packageRoot }).length === 0)
 			failures.push(`Packaged asset is missing: packages/coding-agent/${assetPath}`);
-	}
-	for (const [name, command] of [
-		["copy-assets", "node ../../scripts/copy-coding-agent-assets.mjs"],
-		["copy-binary-assets", "node ../../scripts/copy-coding-agent-assets.mjs --binary"],
-	]) {
-		if (manifest.scripts[name] !== command) failures.push(`Build assets must be copied by ${name}: ${command}`);
 	}
 	return failures;
 }

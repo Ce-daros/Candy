@@ -424,7 +424,7 @@ async function streamAssistantResponse(
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
 
-	for await (const event of response) {
+	streamEvents: for await (const event of response) {
 		switch (event.type) {
 			case "start":
 				partialMessage = event.partial;
@@ -454,21 +454,8 @@ async function streamAssistantResponse(
 				break;
 
 			case "done":
-			case "error": {
-				const finalMessage = await response.result();
-				if (addedPartial) {
-					context.messages[context.messages.length - 1] = finalMessage;
-				} else {
-					context.messages.push(finalMessage);
-				}
-				if (!addedPartial) {
-					await emit({ type: "message_start", message: { ...finalMessage } });
-				}
-				const finalized = await emit({ type: "message_end", message: finalMessage });
-				const committed = finalized ?? { message: finalMessage, entryId: undefined };
-				context.messages[context.messages.length - 1] = committed.message;
-				return committed;
-			}
+			case "error":
+				break streamEvents;
 		}
 	}
 
@@ -754,42 +741,34 @@ async function prepareToolCall(
 	try {
 		const preparedToolCall = prepareToolCallArguments(tool, toolCall);
 		const validatedArgs = validateToolArguments(tool, preparedToolCall);
-		if (config.beforeToolCall) {
-			const beforeResult = await config.beforeToolCall(
-				{
-					assistantMessage,
-					toolCall,
-					args: validatedArgs,
-					context: currentContext,
-				},
-				signal,
-			);
-			if (signal?.aborted) {
-				return {
-					kind: "immediate",
-					result: createErrorToolResult("Operation aborted"),
-					isError: true,
-					cancelled: true,
-				};
-			}
-			if (beforeResult?.block) {
-				const result = createErrorToolResult(beforeResult.reason || "Tool execution was blocked");
-				if (beforeResult.terminate === true) {
-					result.terminate = true;
-				}
-				return {
-					kind: "immediate",
-					result,
-					isError: true,
-				};
-			}
-		}
+		const beforeResult = config.beforeToolCall
+			? await config.beforeToolCall(
+					{
+						assistantMessage,
+						toolCall,
+						args: validatedArgs,
+						context: currentContext,
+					},
+					signal,
+				)
+			: undefined;
 		if (signal?.aborted) {
 			return {
 				kind: "immediate",
 				result: createErrorToolResult("Operation aborted"),
 				isError: true,
 				cancelled: true,
+			};
+		}
+		if (beforeResult?.block) {
+			const result = createErrorToolResult(beforeResult.reason || "Tool execution was blocked");
+			if (beforeResult.terminate === true) {
+				result.terminate = true;
+			}
+			return {
+				kind: "immediate",
+				result,
+				isError: true,
 			};
 		}
 		return {

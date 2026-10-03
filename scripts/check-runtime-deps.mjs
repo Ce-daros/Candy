@@ -18,9 +18,6 @@ import {
 import { API } from "typescript/unstable/sync";
 import { getPublicWorkspacePackages } from "./package-workspaces.mjs";
 
-// Packages without tsconfig.build.json are checked against a synthetic config.
-const fallbackConfigName = "tsconfig.runtime-deps-fallback.json";
-const fallbackConfig = JSON.stringify({ include: ["src/**/*"] });
 const failures = [];
 
 function checkSource(source, packageName, declared) {
@@ -85,21 +82,12 @@ const packages = getPublicWorkspacePackages().flatMap(({ directory, ...manifest 
 		{
 			sourceDirectory,
 			manifest,
-			configPath: existsSync(configPath) ? configPath : resolve(directory, fallbackConfigName),
+			configPath,
 		},
 	];
 });
 
-const fallbackConfigs = new Set(
-	packages.map(({ configPath }) => configPath).filter((path) => path.endsWith(fallbackConfigName)),
-);
-const api = new API({
-	cwd: process.cwd(),
-	fs: {
-		fileExists: (fileName) => (fallbackConfigs.has(resolve(fileName)) ? true : undefined),
-		readFile: (fileName) => (fallbackConfigs.has(resolve(fileName)) ? fallbackConfig : undefined),
-	},
-});
+const api = new API({ cwd: process.cwd() });
 try {
 	const snapshot = api.updateSnapshot({ openProjects: packages.map(({ configPath }) => configPath) });
 	for (const { sourceDirectory, manifest, configPath } of packages) {

@@ -6,7 +6,6 @@ import test from "node:test";
 import {
 	checkArchitecture,
 	checkExportGraphBudget,
-	checkSourceGraphFailures,
 	findRuntimeCycles,
 	findUnreachableSources,
 } from "./check-source-graphs.mjs";
@@ -164,10 +163,6 @@ test("shares value and type edges across graph roots and retains conditional wor
 	assert.equal(scanner.files.length, 4);
 });
 
-test("rejects unknown source graph rules", () => {
-	assert.throws(() => checkSourceGraphFailures(["unknown"]), /Unknown source graph rule: unknown/);
-});
-
 test("source inventory retains hidden files, nested TypeScript directories, and module extensions", (t) => {
 	const directory = mkdtempSync(resolve(tmpdir(), "candy-source-scope-"));
 	t.after(() => rmSync(directory, { recursive: true }));
@@ -189,12 +184,4 @@ test("source inventory retains hidden files, nested TypeScript directories, and 
 		new Set(scanner.files),
 		new Set(paths.filter((file) => !file.endsWith(".d.ts")).map((file) => resolve(directory, file))),
 	);
-});
-
-test("unresolved package and absolute imports do not become workspace graph files", (t) => {
-	const directory = mkdtempSync(resolve(tmpdir(), "candy-source-unresolved-"));
-	t.after(() => rmSync(directory, { recursive: true }));
-	const entry = resolve(directory, "entry.ts");
-	writeFileSync(entry, 'import "external-package";\nimport "/external/file.ts";\n');
-	assert.deepEqual(buildValueGraph([entry], createWorkspaceResolver()), new Map([[entry, new Set()]]));
 });

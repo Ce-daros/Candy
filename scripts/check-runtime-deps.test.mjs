@@ -14,6 +14,7 @@ async function check(t, manifest, source, extraFiles = {}) {
 	const files = {
 		"package.json": JSON.stringify({ private: true, workspaces: ["packages/*"] }),
 		"packages/example/package.json": JSON.stringify({ name: "example", version: "1.0.0", ...manifest }),
+		"packages/example/tsconfig.build.json": JSON.stringify({ include: ["src/**/*"] }),
 		"packages/example/src/index.ts": source,
 		...extraFiles,
 	};
