@@ -37,6 +37,8 @@ Press `Shift+Tab` to cycle the active model's thinking effort from the editor or
 
 A session records model and thinking-level changes. Resuming the session restores them without changing defaults for new sessions.
 
+When Candy falls back to a provider's built-in default, OpenAI Codex uses `gpt-6.1-sol`, OpenAI uses `gpt-5.5`, and Together uses `moonshotai/Kimi-K3`. An explicit selection, a saved default, or a restored session model takes precedence over these built-in defaults.
+
 ## Configure a compatible endpoint
 
 Use [`models.json`](configuration.md#agent-directory) when an endpoint speaks an API candy already supports. This includes most Ollama, LM Studio, vLLM, SGLang, and proxy deployments.

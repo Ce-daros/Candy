@@ -13,6 +13,33 @@ function providerWithId(id: string) {
 }
 
 describe("issue #8423 extension factory failure", () => {
+	it("rejects invalid command names and handlers at registration", async () => {
+		for (const name of [undefined, "", 42]) {
+			await expect(
+				loadExtensionFromFactory(
+					(candy) => {
+						candy.registerCommand(name as string, { handler: async () => {} });
+					},
+					process.cwd(),
+					createEventBus(),
+					createExtensionRuntime(),
+					"<invalid-command>",
+				),
+			).rejects.toThrow('extension "<invalid-command>" must have a non-empty string name');
+		}
+		await expect(
+			loadExtensionFromFactory(
+				(candy) => {
+					candy.registerCommand("broken", {} as Parameters<ExtensionAPI["registerCommand"]>[1]);
+				},
+				process.cwd(),
+				createEventBus(),
+				createExtensionRuntime(),
+				"<invalid-command>",
+			),
+		).rejects.toThrow('Command "/broken" registered by extension "<invalid-command>" must define handler()');
+	});
+
 	it("discards runtime changes and disables the failed API", async () => {
 		const runtime = createExtensionRuntime();
 		const eventBus = createEventBus();

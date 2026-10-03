@@ -2,6 +2,7 @@ import { type SpawnSyncReturns, spawnSync } from "child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
 import { arch, platform } from "os";
 import { join } from "path";
+import { gte } from "semver";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.ts";
@@ -68,12 +69,16 @@ const TOOLS: Record<string, ToolConfig> = {
 	},
 };
 
-// Check if a command exists in PATH by trying to run it
-function commandExists(cmd: string): boolean {
+// fd 8.7 introduced --no-require-git, which find needs outside Git repositories.
+function commandIsUsable(cmd: string, tool: "fd" | "rg"): boolean {
 	try {
 		const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
-		// Check for ENOENT error (command not found)
-		return result.error === undefined || result.error === null;
+		if (result.error || result.status !== 0) return false;
+		if (tool === "fd") {
+			const version = result.stdout.toString().match(/^fd (\d+\.\d+\.\d+)\b/)?.[1];
+			return version !== undefined && gte(version, "8.7.0");
+		}
+		return true;
 	} catch {
 		return false;
 	}
@@ -86,14 +91,14 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 
 	// Check our tools directory first
 	const localPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));
-	if (existsSync(localPath)) {
+	if (existsSync(localPath) && commandIsUsable(localPath, tool)) {
 		return localPath;
 	}
 
 	// Check system PATH - if found, just return the command name (it's in PATH)
 	const systemBinaryNames = config.systemBinaryNames ?? [config.binaryName];
 	for (const systemBinaryName of systemBinaryNames) {
-		if (commandExists(systemBinaryName)) {
+		if (commandIsUsable(systemBinaryName, tool)) {
 			return systemBinaryName;
 		}
 	}
@@ -357,9 +362,10 @@ export async function ensureTool(
 
 	const config = TOOLS[tool];
 	if (!config) return undefined;
+	const requirement = tool === "fd" ? "fd >= 8.7.0" : config.name;
 
 	if (isOfflineModeEnabled()) {
-		onStatus?.({ type: "warning", message: `${config.name} not found. Offline mode enabled, skipping download.` });
+		onStatus?.({ type: "warning", message: `${requirement} not found. Offline mode enabled, skipping download.` });
 		return undefined;
 	}
 
@@ -367,12 +373,12 @@ export async function ensureTool(
 	// Users must install via pkg.
 	if (platform() === "android") {
 		const pkgName = TERMUX_PACKAGES[tool] ?? tool;
-		onStatus?.({ type: "warning", message: `${config.name} not found. Install with: pkg install ${pkgName}` });
+		onStatus?.({ type: "warning", message: `${requirement} not found. Install with: pkg install ${pkgName}` });
 		return undefined;
 	}
 
 	// Tool not found - download it
-	onStatus?.({ type: "info", message: `${config.name} not found. Downloading...` });
+	onStatus?.({ type: "info", message: `${requirement} not found. Downloading...` });
 
 	try {
 		const path = await downloadTool(tool);

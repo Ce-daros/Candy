@@ -1,7 +1,9 @@
 import type * as ChildProcess from "node:child_process";
 import type * as Fs from "node:fs";
+import { spawnSync } from "child_process";
+import { existsSync } from "fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ensureTool, getLatestVersion, type ToolStatus } from "../src/utils/tools-manager.ts";
+import { ensureTool, getLatestVersion, getToolPath, type ToolStatus } from "../src/utils/tools-manager.ts";
 
 const originalOffline = process.env.CANDY_OFFLINE;
 
@@ -25,6 +27,46 @@ afterEach(() => {
 	if (originalOffline === undefined) delete process.env.CANDY_OFFLINE;
 	else process.env.CANDY_OFFLINE = originalOffline;
 	vi.unstubAllGlobals();
+	vi.mocked(existsSync).mockReset().mockReturnValue(false);
+	vi.mocked(spawnSync).mockReset().mockReturnValue(commandResult("", 1));
+});
+
+function commandResult(stdout: string, status = 0): ChildProcess.SpawnSyncReturns<Buffer<ArrayBuffer>> {
+	const output = Buffer.from(stdout);
+	const stderr = Buffer.alloc(0);
+	return { pid: 1, output: [null, output, stderr], stdout: output, stderr, status, signal: null };
+}
+
+describe("getToolPath", () => {
+	it.each(["8.3.1", "8.6.0"])("rejects fd %s without --no-require-git support", (version) => {
+		vi.mocked(spawnSync).mockReturnValue(commandResult(`fd ${version}\n`));
+		expect(getToolPath("fd")).toBeNull();
+	});
+
+	it.each(["8.7.0", "10.5.0"])("uses supported fd %s from PATH", (version) => {
+		vi.mocked(spawnSync).mockReturnValue(commandResult(`fd ${version}\n`));
+		expect(getToolPath("fd")).toBe("fd");
+	});
+
+	it("uses a supported fdfind when fd is outdated", () => {
+		vi.mocked(spawnSync).mockImplementation((command) =>
+			commandResult(command === "fdfind" ? "fd 8.7.0\n" : "fd 8.3.1\n"),
+		);
+		expect(getToolPath("fd")).toBe("fdfind");
+	});
+
+	it("skips an outdated managed fd before checking PATH", () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		vi.mocked(spawnSync).mockImplementation((command) =>
+			commandResult(command === "fd" ? "fd 10.5.0\n" : "fd 8.3.1\n"),
+		);
+		expect(getToolPath("fd")).toBe("fd");
+	});
+
+	it("rejects a command whose version check exits unsuccessfully", () => {
+		vi.mocked(spawnSync).mockReturnValue(commandResult("fd 10.5.0\n", 1));
+		expect(getToolPath("fd")).toBeNull();
+	});
 });
 
 function redirectResponse(location: string): Response {
@@ -110,7 +152,7 @@ describe("ensureTool", () => {
 		expect(statuses).toEqual([
 			{
 				type: "warning",
-				message: "fd not found. Offline mode enabled, skipping download.",
+				message: "fd >= 8.7.0 not found. Offline mode enabled, skipping download.",
 			},
 		]);
 		expect(consoleLog).not.toHaveBeenCalled();
@@ -132,7 +174,7 @@ describe("ensureTool", () => {
 
 		expect(result).toBeUndefined();
 		expect(statuses).toEqual([
-			{ type: "info", message: "fd not found. Downloading..." },
+			{ type: "info", message: "fd >= 8.7.0 not found. Downloading..." },
 			{
 				type: "warning",
 				message: "Failed to download fd: fetch failed: connect ETIMEDOUT 140.82.113.3:443",

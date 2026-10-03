@@ -37,11 +37,14 @@
 
 ### Changed
 
+- Reduced repeated ANSI/ASCII width calculations, Box padding work, and Markdown parsing. Parsed Markdown tokens are weakly cached by transformed source; rendered line caches release concatenated string trees (adapted from pi upstream by Armin Ronacher and Mario Zechner).
 - Shortcut hints use shared angle-bracket keycap rendering.
 - Shortened the README and moved component/input and renderer/lifecycle references into published `docs/`.
 
 ### Fixed
 
+- Preserve ANSI escape order at text-slice boundaries so selections and search highlights keep their enclosing colors (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/17f3dccbe) by Armin Ronacher).
+- WezTerm Kitty images redraw when text changes within their covered rows and are placed after text writes; existing Sixel rendering is preserved (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/672000c80) by Armin Ronacher).
 - Inputs remove their visual cursor when blurred and clip wide characters to their supplied width. Selection rows also clip to narrow terminal widths.
 - Settings lists propagate focus to their active submenu.
 

@@ -12,7 +12,7 @@ import type { ModelRuntime } from "./model-runtime.ts";
 export const defaultModelPerProvider: Partial<Record<KnownProvider, string>> = {
 	anthropic: "claude-opus-4-8",
 	openai: "gpt-5.5",
-	"openai-codex": "gpt-5.5",
+	"openai-codex": "gpt-6.1-sol",
 	nvidia: "nvidia/nemotron-3-super-120b-a12b",
 	deepseek: "deepseek-v4-pro",
 	google: "gemini-3.1-pro-preview",
@@ -32,7 +32,7 @@ export const defaultModelPerProvider: Partial<Record<KnownProvider, string>> = {
 	"moonshotai-cn": "kimi-k2.6",
 	huggingface: "moonshotai/Kimi-K2.6",
 	fireworks: "accounts/fireworks/routers/kimi-k3-fast",
-	together: "moonshotai/Kimi-K2.6",
+	together: "moonshotai/Kimi-K3",
 	opencode: "kimi-k2.6",
 	"opencode-go": "kimi-k3",
 	"kimi-coding": "kimi-for-coding",

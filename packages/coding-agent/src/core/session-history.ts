@@ -455,9 +455,8 @@ export class SessionHistory {
 	getSessionName(): string | undefined {
 		// Walk entries in reverse to find the latest session_info entry.
 		// Empty names explicitly clear the session title.
-		const entries = this.getEntries();
-		for (let i = entries.length - 1; i >= 0; i--) {
-			const entry = entries[i];
+		for (let i = this.fileEntries.length - 1; i >= 0; i--) {
+			const entry = this.fileEntries[i];
 			if (entry.type === "session_info") {
 				return entry.name?.trim() || undefined;
 			}

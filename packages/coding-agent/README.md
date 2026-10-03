@@ -14,6 +14,8 @@ candy
 
 Press Escape twice in an empty editor and choose Sources in Actions to connect a subscription or API key, choose a model, and enter a task. See [Quickstart](docs/quickstart.md) and the [terminal guide](docs/usage.md).
 
+File search requires fd 8.7.0 or newer (the `fdfind` command is also supported). Candy downloads a supported binary when none is available; for offline use, install it beforehand.
+
 ## Documentation
 
 - [Configuration](docs/configuration.md) and [settings](docs/settings.md)

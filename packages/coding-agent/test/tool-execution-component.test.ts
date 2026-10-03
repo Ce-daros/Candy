@@ -66,6 +66,40 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	// Issue #8577: ignore conversions that finish after the image was replaced.
+	test("shows fallback arguments collapsed and expanded", () => {
+		const component = createToolExecutionComponent(
+			"custom_tool",
+			"args",
+			{ query: "hello", body: "first\nsecond", count: 2 },
+			{},
+			undefined,
+			createFakeTui(),
+			process.cwd(),
+		);
+		const collapsed = stripAnsi(component.render(160).join("\n"));
+		expect(collapsed).toContain('query="hello"');
+		expect(collapsed).toContain("count=2");
+		component.setExpanded(true);
+		const expanded = stripAnsi(component.render(160).join("\n"));
+		expect(expanded).toContain("query: hello");
+		expect(expanded).toContain("body: first");
+		expect(expanded).toContain("    second");
+	});
+
+	test("limits previews and accepts array or scalar arguments", () => {
+		const create = (args: unknown) =>
+			createToolExecutionComponent("custom_tool", "args", args, {}, undefined, createFakeTui(), process.cwd());
+		expect(
+			stripAnsi(
+				create({ body: "x".repeat(200) })
+					.render(160)
+					.join("\n"),
+			),
+		).toContain("...");
+		expect(stripAnsi(create([1, 2]).render(160).join("\n"))).toContain("args=[1,2]");
+		expect(stripAnsi(create(42).render(160).join("\n"))).toContain("args=42");
+	});
+
 	test("keeps the final tool image when a partial image conversion finishes late", async () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		let finishConversion!: (result: { data: string; mimeType: string }) => void;
@@ -452,7 +486,8 @@ describe("ToolExecutionComponent parity", () => {
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("read");
-		expect(rendered).not.toContain("README.md");
+		expect(rendered).toContain('path="README.md"');
+		expect(rendered).not.toContain("read README.md");
 		expect(rendered).toContain("override result");
 	});
 

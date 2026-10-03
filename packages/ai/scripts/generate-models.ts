@@ -173,7 +173,7 @@ const TOGETHER_REASONING_ONLY_MODELS = new Set([
 	"MiniMaxAI/MiniMax-M2.7",
 ]);
 const TOGETHER_REASONING_EFFORT_MODELS = new Set(["openai/gpt-oss-20b", "openai/gpt-oss-120b"]);
-const TOGETHER_TOGGLE_REASONING_EFFORT_MODELS = new Set(["deepseek-ai/DeepSeek-V4-Pro"]);
+const TOGETHER_TOGGLE_REASONING_EFFORT_MODELS = new Set(["deepseek-ai/DeepSeek-V4-Pro-0813"]);
 const TOGETHER_FIXED_REASONING_LEVEL_MAP = {
 	off: null,
 	minimal: null,
@@ -333,6 +333,7 @@ const OPENAI_TOOL_SEARCH_MODEL_IDS = new Set([
 	"gpt-6-astra",
 	"gpt-6-sol",
 	"gpt-6-luna",
+	"gpt-6.1-sol",
 ]);
 const OPENAI_ADDITIONAL_TOOLS_MODEL_IDS = OPENAI_TOOL_SEARCH_MODEL_IDS;
 const OPENAI_MID_CONVO_SYSTEM_MESSAGE_MODEL_IDS = OPENAI_TOOL_SEARCH_MODEL_IDS;
@@ -343,6 +344,7 @@ const OPENAI_CODEX_ADDITIONAL_TOOLS_MODEL_IDS = new Set([
 	"gpt-6-astra",
 	"gpt-6-sol",
 	"gpt-6-luna",
+	"gpt-6.1-sol",
 ]);
 const OPENAI_LONG_CONTEXT_INPUT_THRESHOLD = 272000;
 const OPENAI_SHORT_CONTEXT_CAPPED_MODEL_IDS = new Set([
@@ -354,6 +356,7 @@ const OPENAI_SHORT_CONTEXT_CAPPED_MODEL_IDS = new Set([
 	"gpt-6-astra",
 	"gpt-6-sol",
 	"gpt-6-luna",
+	"gpt-6.1-sol",
 ]);
 const OPENAI_LONG_CONTEXT_PRICING_MODEL_IDS = new Set([
 	"gpt-5.4",
@@ -366,6 +369,7 @@ const OPENAI_LONG_CONTEXT_PRICING_MODEL_IDS = new Set([
 	"gpt-6-astra",
 	"gpt-6-sol",
 	"gpt-6-luna",
+	"gpt-6.1-sol",
 ]);
 
 // Keep the generated default no less restrictive than coding-agent's historical
@@ -403,6 +407,7 @@ const OPENAI_STANDARD_COSTS: Record<string, ModelCost> = {
 	"gpt-6-astra": { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
 	"gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
 	"gpt-6-sol": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+	"gpt-6.1-sol": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
 };
 
 const OPENAI_RESPONSES_NONE_REASONING_MODELS = new Set([
@@ -557,6 +562,7 @@ function supportsAnthropicMidConvoEffort(modelId: string): boolean {
 	const id = modelId.toLowerCase().replace(/^~?anthropic\//, "");
 	return (
 		/^claude-opus-(?:5|5[.-]5)(?:-\d{8})?$/.test(id) ||
+		/^claude-sonnet-5[.-]5(?:-\d{8})?$/.test(id) ||
 		/^claude-(?:fable|mythos)-5(?:[.-]1)(?:-\d{8})?$/.test(id)
 	);
 }
@@ -564,6 +570,7 @@ function supportsAnthropicMidConvoEffort(modelId: string): boolean {
 function supportsAnthropicMidConvoSystemMessages(modelId: string): boolean {
 	return (
 		/^claude-opus-(?:4[.-]8|5(?:[.-]5)?)(?:-\d{8})?$/.test(modelId) ||
+		/^claude-sonnet-5[.-]5(?:-\d{8})?$/.test(modelId) ||
 		/^claude-(?:fable|mythos)-5(?:[.-]1)?(?:-\d{8})?$/.test(modelId)
 	);
 }
@@ -595,7 +602,9 @@ function isAnthropicTemperatureUnsupportedModel(modelId: string): boolean {
 		id.includes("opus-4-8") ||
 		id.includes("opus-4.8") ||
 		id.includes("opus-5") ||
-		id.includes("opus.5")
+		id.includes("opus.5") ||
+		id.includes("sonnet-5-5") ||
+		id.includes("sonnet-5.5")
 	);
 }
 
@@ -971,11 +980,12 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 		mergeThinkingLevelMap(model, { off: null });
 	}
 	if (
-		(model.id === "gpt-6-astra" || model.id === "gpt-6-sol" || model.id === "gpt-6-luna") &&
+		(model.id === "gpt-6-astra" || model.id === "gpt-6-sol" || model.id === "gpt-6-luna" || model.id === "gpt-6.1-sol") &&
 		(model.api === "openai-responses" || model.api === "openai-codex-responses")
 	) {
 		mergeThinkingLevelMap(model, {
-			off: model.id === "gpt-6-astra" ? null : "none",
+			// GPT-6 Astra and GPT-6.1 Sol reject reasoning.effort "none".
+			off: model.id === "gpt-6-astra" || model.id === "gpt-6.1-sol" ? null : "none",
 			minimal: null,
 			low: "low",
 			medium: "medium",
@@ -1155,6 +1165,10 @@ function getAnthropicMessagesCompat(provider: string, modelId: string): Anthropi
 		compat.supportsEagerToolInputStreaming = false;
 	}
 	if (provider === "xiaomi" || provider.startsWith("xiaomi-token-plan-")) {
+		compat.allowEmptySignature = true;
+	}
+	// OpenCode Qwen 3.8 Flash emits and accepts thinking blocks with empty signatures.
+	if ((provider === "opencode" || provider === "opencode-go") && modelId === "qwen3.8-flash") {
 		compat.allowEmptySignature = true;
 	}
 	return Object.keys(compat).length > 0 ? compat : undefined;
@@ -1698,7 +1712,10 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				} else if (upstream === "anthropic") {
 					api = "anthropic-messages";
 					baseUrl = CLOUDFLARE_AI_GATEWAY_ANTHROPIC_BASE_URL;
-					id = nativeId;
+					// The /anthropic passthrough forwards the model ID to Anthropic unchanged.
+					// models.dev lists dotted versions (claude-opus-5.5), but Anthropic only
+					// accepts dashed IDs (claude-opus-5-5).
+					id = nativeId.replaceAll(".", "-");
 				} else if (upstream === "workers-ai") {
 					api = "openai-completions";
 					baseUrl = CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL;
@@ -1827,6 +1844,8 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			for (const [modelId, model] of Object.entries(data.mistral.models)) {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
+				// Models with effort values use reasoning_effort; Magistral uses prompt_mode.
+				const thinkingLevelMap = getEffortThinkingLevelMap(m.reasoning_options ?? []);
 
 				models.push({
 					id: modelId,
@@ -1835,6 +1854,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "mistral",
 					baseUrl: "https://api.mistral.ai",
 					reasoning: m.reasoning === true,
+					...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
 						input: m.cost?.input || 0,
@@ -1845,7 +1865,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
 				});
-				recordModelsDevReasoningOptions("mistral", modelId, m);
 			}
 		}
 
@@ -2439,6 +2458,32 @@ async function generateModels() {
 		});
 	}
 
+	// Add Claude Sonnet 5.5 until models.dev includes it.
+	// https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+	if (!allModels.some((model) => model.provider === "anthropic" && model.id === "claude-sonnet-5-5")) {
+		allModels.push({
+			id: "claude-sonnet-5-5",
+			name: "Claude Sonnet 5.5",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			baseUrl: "https://api.anthropic.com",
+			reasoning: true,
+			thinkingLevelMap: {
+				off: null,
+				minimal: null,
+				low: "low",
+				medium: "medium",
+				high: "high",
+				xhigh: "xhigh",
+				max: "max",
+			},
+			input: ["text", "image"],
+			cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		});
+	}
+
 	// The authenticated Copilot catalog advertised these models on 2026-09-22,
 	// but models.dev did not include them yet.
 	const missingCopilotModels: Model<Api>[] = [
@@ -2490,9 +2535,10 @@ async function generateModels() {
 			candidate.contextWindow = 1000000;
 		}
 
-		// models.dev may list Opus 5.5 before its effort metadata is complete.
+		// models.dev may list Opus 5.5 and Sonnet 5.5 before their effort metadata is complete.
 		if (
-			(candidate.provider === "anthropic" && candidate.id === "claude-opus-5-5") ||
+			(candidate.provider === "anthropic" &&
+				(candidate.id === "claude-opus-5-5" || candidate.id === "claude-sonnet-5-5")) ||
 			(candidate.provider === "github-copilot" && candidate.id === "claude-opus-5.5")
 		) {
 			mergeThinkingLevelMap(candidate, {
@@ -2579,6 +2625,18 @@ async function generateModels() {
 
 	// Add missing gpt models
 	const missingOpenAiModels: Model<"openai-responses">[] = [
+		{
+			id: "gpt-6.1-sol",
+			name: "GPT-6.1 Sol",
+			api: "openai-responses",
+			baseUrl: "https://api.openai.com/v1",
+			provider: "openai",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: withOpenAiLongContextPricing(OPENAI_STANDARD_COSTS["gpt-6.1-sol"]),
+			contextWindow: OPENAI_LONG_CONTEXT_INPUT_THRESHOLD,
+			maxTokens: 128000,
+		},
 		{
 			id: "gpt-6-astra",
 			name: "GPT-6 Astra",
@@ -2763,6 +2821,18 @@ async function generateModels() {
 	const CODEX_MAX_TOKENS = 128000;
 	const codexModels: Model<"openai-codex-responses">[] = [
 		{
+			id: "gpt-6.1-sol",
+			name: "GPT-6.1 Sol",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: withOpenAiLongContextPricing(OPENAI_STANDARD_COSTS["gpt-6.1-sol"]),
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+		{
 			id: "gpt-6-astra",
 			name: "GPT-6 Astra",
 			api: "openai-codex-responses",
@@ -2870,6 +2940,7 @@ async function generateModels() {
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
 			reasoning: true,
+			thinkingLevelMap: getEffortThinkingLevelMap([{ type: "effort", values: ["none", "high"] }]),
 			input: ["text", "image"],
 			cost: {
 				input: 1.5,

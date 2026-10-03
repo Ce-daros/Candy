@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Session startup with `--provider` now requires `--model` instead of silently using a model from another provider. Pass `--provider <provider> --model <model>` or `--model <provider>/<model>`; authentication commands retain their provider-only options (adapted from pi upstream by David Brailovsky).
 - Session history accepts current v3 records only. Removed historical settings, credentials, keybinding, session and resource-directory migrations, global npm directory fallback, and startup migration notices.
 - Removed `SettingsManager.flushOrThrow()`, the public `SessionHistory._persist()` method, `migrateSessionEntries`, the old OAuth compatibility entrypoint, and unused `RenderDiffOptions`. `renderDiff()` takes only the diff text.
 - The edit tool accepts replacements under `edits`; legacy top-level `oldText` and `newText` arguments are no longer converted. String-encoded and single-object `edits` from models still normalize to an array.
@@ -65,6 +66,9 @@
 
 ### Changed
 
+- The built-in OpenAI Codex default is GPT-6.1 Sol, and the Together default is Kimi K3. Explicit choices, saved defaults, and session models retain their existing precedence (adapted from pi upstream by Armin Ronacher).
+- Generic tool-call previews show arguments, with compact collapsed output and multi-line expanded values; custom tool renderers retain their presentation (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/5257d0d5f) by Armin Ronacher).
+- Session-name reads no longer copy the complete session history on every call (adapted from pi upstream by Armin Ronacher).
 - Package resource filtering returns the selected files directly without retaining an unused copy of the manifest-enabled set. Release checks use actual build configurations and no longer repeat dependency traversal or pin asset-copy command strings; installation-script review and asset checks remain.
 
 - Credential and model stores share revision caching and cancellable file reloads. Session replacement and exit share the same ordered cleanup path and retain their existing error reporting.
@@ -92,6 +96,10 @@
 
 ### Fixed
 
+- The interactive smoke launcher resolves external dependencies from their source package, including SDK versions installed below a workspace package, on Windows and Linux.
+- File search skips fd/fdfind versions older than 8.7.0, which lack the required `.gitignore` behavior outside Git repositories, and uses another supported binary or downloads one. Offline status messages include the required version.
+- Extension commands with empty names or missing handlers report errors during registration, including their extension path, instead of failing later during command discovery or execution (adapted from pi upstream by David Brailovsky).
+- Pinned brace-expansion to 5.0.12 and updated development Vitest to 4.1.11 for the upstream dependency fixes; refreshed the existing npm shrinkwrap (adapted from pi upstream by Armin Ronacher).
 - Atomic JSON saves preserve existing POSIX file permissions, including when the process uses a restrictive umask. New credential and model-store files remain owner-only.
 
 - Fixed missing transitions when entering and returning from open panels, including History session details and nested Agent, model, configuration, and login pages.

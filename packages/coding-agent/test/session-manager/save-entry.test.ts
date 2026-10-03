@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { type CustomEntry, SessionHistory } from "../../src/core/session-history.ts";
 
 describe("SessionHistory.saveCustomEntry", () => {
+	it("uses the latest name and lets an empty name clear it", () => {
+		const session = SessionHistory.inMemory();
+		expect(session.getSessionName()).toBeUndefined();
+		session.appendSessionInfo("first");
+		session.appendSessionInfo("second");
+		expect(session.getSessionName()).toBe("second");
+		session.appendSessionInfo("");
+		expect(session.getSessionName()).toBeUndefined();
+	});
+
 	it("saves custom entries and includes them in tree traversal", () => {
 		const session = SessionHistory.inMemory();
 

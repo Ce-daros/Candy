@@ -9,6 +9,19 @@ function providerError(status: number | undefined, headers?: Record<string, stri
 }
 
 describe("provider request retries", () => {
+	it.each(["not a date", "Infinity"])("uses exponential backoff for invalid Retry-After %s", async (retryAfter) => {
+		vi.useFakeTimers();
+		const request = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce(providerError(429, { "retry-after": retryAfter }))
+			.mockResolvedValue("ok");
+		const result = retryProviderRequest(request, { maxRetries: 1 });
+		await vi.advanceTimersByTimeAsync(374);
+		expect(request).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(126);
+		await expect(result).resolves.toBe("ok");
+		expect(request).toHaveBeenCalledTimes(2);
+	});
 	afterEach(() => {
 		vi.useRealTimers();
 	});

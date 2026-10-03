@@ -58,6 +58,34 @@ describe("Markdown component", () => {
 	});
 
 	describe("Transforms", () => {
+		it("rebuilds transformed code source and copy layout after invalidation", () => {
+			let copied = "";
+			const markdown = new Markdown("source", 0, 0, defaultMarkdownTheme, undefined, {
+				transform: (_source, width) => `intro\n\n\`\`\`mermaid\nwidth ${width}\n\`\`\``,
+				codeBlockView: () => ["GRAPH"],
+				onCopyCode: (source) => {
+					copied = source;
+				},
+			});
+			markdown.render(80);
+			markdown.invalidate();
+			assert.ok(markdown.render(40).join("\n").includes("GRAPH"));
+			markdown.handleMouse({
+				type: "click",
+				button: "left",
+				x: 37,
+				y: 2,
+				screenX: 37,
+				screenY: 2,
+				width: 40,
+				height: 8,
+				shift: false,
+				alt: false,
+				ctrl: false,
+			});
+			assert.strictEqual(copied, "width 40");
+		});
+
 		it("caches transformed Markdown by source and available width", () => {
 			const calls: Array<{ source: string; availableWidth: number }> = [];
 			const markdown = new Markdown("source", 2, 0, defaultMarkdownTheme, undefined, {

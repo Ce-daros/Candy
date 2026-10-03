@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Removed `hasToolRedefinitions` from `@candy/ai/utils/transcript`. Anthropic tool additions now carry inline definitions and support same-name replacements without this preflight check.
 - Removed `@candy/telemetry`, the `telemetryContext` request option, and the legacy `@candy/ai/oauth` entrypoint and OAuth callback types. Provider authentication uses `AuthInteraction` and `AuthEvent`.
 - Provider resource cleanup is keyed by a runtime-owned object. Pass the same `resourceOwner` object to stream options and `cleanupSessionResources()`; a conversation `sessionId` no longer identifies pooled runtime resources.
 - Removed the classifier model surface: `ClassifierApi`/`ClassifierModel`/`ClassifierContext`/`ClassifierOptions`/`ClassifierResult` types, `Models.classify()`, the `classifiers` provider map, the TypeSafe provider, and the `typesafe-system-one`/`cloudflare-workers-ai-system-one` APIs.
@@ -22,6 +23,7 @@
 
 ### Added
 
+- Added GPT-6.1 Sol for OpenAI and OpenAI Codex, and Claude Sonnet 5.5 for Anthropic, with their reasoning, tool, context, and pricing metadata (adapted from pi upstream by Armin Ronacher).
 - Added `createModels({ decorateAuth })` for configured request headers and `Models.getAvailability()` for one provider authentication pass shared by availability, credential status, and errors.
 - Added `isAbortError()` and `abortReason()` to `@candy/ai/utils/abort`, and made `raceWithAbortSignal()` accept an optional signal. `sleep()` now accepts an optional signal and rejects with the signal's own reason instead of a fixed message.
 - The context estimator in `@candy/ai/utils/estimate` now counts the agent-level transcript messages hosts add (bash executions, extension messages, and branch/compaction summaries), so one implementation serves both the runtime estimate and compaction decisions.
@@ -33,6 +35,7 @@
 
 ### Changed
 
+- Anthropic mid-conversation tool changes use inline definitions, including same-name redefinitions, while keeping the request-level tool list stable. Updated the Anthropic SDK to 0.129.0 (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/b271b0a52) by Armin Ronacher).
 - Mistral errors use the shared response-body limit and serialization helpers, preserving their existing status and body display.
 
 - Removed unused direct HTTP proxy agent dependencies; Google authentication retains its required proxy support.
@@ -44,6 +47,11 @@
 
 ### Fixed
 
+- Responses streams reject unfinished tool calls before handing them to the agent, and replayed function and grammar tool calls omit item IDs that do not match their model or item type (adapted from pi upstream by David Brailovsky and Armin Ronacher).
+- Anthropic tools with schema keywords unsupported by strict mode use non-strict sampling when permitted; tools that require strict sampling report the unsupported schema (adapted from pi upstream by David Brailovsky).
+- Mistral reasoning requests use the model's thinking-level metadata instead of a model-ID whitelist (adapted from pi upstream by David Brailovsky).
+- Recognize Z.AI CN context-overflow messages and provider capacity errors, and use the existing exponential backoff when Retry-After headers cannot be parsed (adapted from pi upstream by David Brailovsky).
+- Corrected OpenCode Qwen 3.8 Flash empty thinking signatures, Cloudflare AI Gateway Claude IDs, and Together DeepSeek V4 Pro reasoning metadata (adapted from pi upstream by David Brailovsky and Carlos Villela).
 - Fixed 1-hour Anthropic cache writes reported by Vercel AI Gateway in streaming deltas being priced at the 5-minute rate ([#9210](https://github.com/earendil-works/pi/issues/9210)).
 - Fixed model-level `samplingParams` being dropped by direct `stream()`/`complete()` calls on OpenAI-compatible APIs ([#9506](https://github.com/earendil-works/pi/issues/9506)).
 - Fixed Mistral GLM models producing empty text blocks and split thinking blocks from empty content deltas, which could make later requests fail with "Expected at most one leading ThinkChunk" ([#9674](https://github.com/earendil-works/pi/issues/9674)).

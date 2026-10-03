@@ -2,7 +2,7 @@ import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } f
 import { renderLatex } from "../latex.ts";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
-import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
+import { applyBackgroundToLine, flattenLines, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 
 const STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
@@ -269,6 +269,8 @@ export class Markdown implements Component {
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	// Tokens survive render bursts without retaining a large parse tree for every message.
+	private cachedTokens?: WeakRef<{ source: string; tokens: Token[] }>;
 	private codeBlocks: Array<{ index: number; row: number; source: string; hasAlternate: boolean }> = [];
 	private codeBlockViews = new Map<number, "diagram" | "source">();
 	private codeBlockIndex = 0;
@@ -325,8 +327,13 @@ export class Markdown implements Component {
 		const normalizedText = text.replace(/\t/g, "   ");
 
 		// Parse markdown to HTML-like tokens
-		const tokens = markdownParser.lexer(normalizedText);
-		trimPartialClosingFences(tokens);
+		const cached = this.cachedTokens?.deref();
+		let tokens = cached?.source === normalizedText ? cached.tokens : undefined;
+		if (!tokens) {
+			tokens = markdownParser.lexer(normalizedText);
+			trimPartialClosingFences(tokens);
+			this.cachedTokens = new WeakRef({ source: normalizedText, tokens });
+		}
 
 		// Convert tokens to styled terminal output
 		const renderedLines: string[] = [];
@@ -409,6 +416,7 @@ export class Markdown implements Component {
 
 		// Combine top padding, content, and bottom padding
 		const result = emptyLines.concat(contentLines, emptyLines);
+		flattenLines(result);
 
 		// Update cache
 		this.cachedText = this.text;

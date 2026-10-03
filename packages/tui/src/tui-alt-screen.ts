@@ -25,6 +25,7 @@ import {
 	deleteKittyImage,
 	getCapabilities,
 	getKittyImagePlacement,
+	getKittyImagePlacementRows,
 	type ImageProtocol,
 	isImageLine,
 	setCapabilities,
@@ -1737,10 +1738,25 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 		const fullRedraw =
 			this.previousScreen.length === 0 || this.previousScreenWidth !== width || this.previousScreenHeight !== height;
-		const imagesNeedRedraw = screen.some(
-			(line, row) =>
-				line !== this.previousScreen[row] && (isImageLine(line) || isImageLine(this.previousScreen[row] ?? "")),
+		const changedRows = screen.map((line, row) => line !== this.previousScreen[row]);
+		const imageAnchorsNeedRedraw = screen.some(
+			(line, row) => changedRows[row] && (isImageLine(line) || isImageLine(this.previousScreen[row] ?? "")),
 		);
+		const isWezTerm = Boolean(process.env.WEZTERM_PANE) || process.env.TERM_PROGRAM?.toLowerCase() === "wezterm";
+		const imageCellsNeedRedraw =
+			!imageAnchorsNeedRedraw &&
+			isWezTerm &&
+			this.imageProtocol === "kitty" &&
+			changedRows.some(Boolean) &&
+			screen.some((line, row) => {
+				const placementRows = getKittyImagePlacementRows(line);
+				if (placementRows === undefined) return false;
+				for (let coveredRow = row; coveredRow < row + placementRows; coveredRow++) {
+					if (changedRows[coveredRow]) return true;
+				}
+				return false;
+			});
+		const imagesNeedRedraw = imageAnchorsNeedRedraw || imageCellsNeedRedraw;
 		const redrawImages = fullRedraw || imagesNeedRedraw;
 		const hadUploadedKittyImages = this.uploadedKittyImages.size > 0;
 		const preparedKittyScreen =
@@ -1764,15 +1780,12 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 		buffer += preparedKittyScreen.evictedImageDeletion;
 
-		// WezTerm erases intersecting Kitty image cells when a later EL clears a covered row.
-		// Only separate clearing from drawing for WezTerm frames that place images; preserve the
+		// WezTerm erases intersecting Kitty image cells when later row writes touch covered rows.
+		// Draw image placements after all clearing and text writes; preserve the
 		// existing interleaved output for text-only frames and every other terminal.
-		const clearRowsBeforeKittyImages =
-			redrawImages &&
-			this.imageProtocol === "kitty" &&
-			screen.some(isImageLine) &&
-			(Boolean(process.env.WEZTERM_PANE) || process.env.TERM_PROGRAM?.toLowerCase() === "wezterm");
-		if (clearRowsBeforeKittyImages) {
+		const drawKittyImagesLast =
+			redrawImages && this.imageProtocol === "kitty" && screen.some(isImageLine) && isWezTerm;
+		if (drawKittyImagesLast) {
 			for (let row = 0; row < height; row++) {
 				if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row]) continue;
 				buffer += `\x1b[${row + 1};1H\x1b[2K`;
@@ -1784,6 +1797,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		// been cleared and drawn, so no subsequent EL touches the plotted pixels.
 		const deferSixelImages = this.imageProtocol === "sixel";
 		const deferredSixelRows: string[] = [];
+		const deferredKittyRows: string[] = [];
 		for (let row = 0; row < height; row++) {
 			// A later terminal repaint can erase Sixel pixels without changing the image line.
 			if (
@@ -1794,13 +1808,18 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			)
 				continue;
 			const line = preparedKittyScreen.lines[row] ?? "";
+			if (drawKittyImagesLast && isImageLine(line)) {
+				deferredKittyRows.push(`\x1b[${row + 1};1H${line}`);
+				continue;
+			}
 			if (deferSixelImages && isImageLine(line)) {
 				deferredSixelRows.push(`\x1b[${row + 1};1H${line}`);
 				buffer += `\x1b[${row + 1};1H\x1b[2K`;
 				continue;
 			}
-			buffer += `\x1b[${row + 1};1H${clearRowsBeforeKittyImages ? "" : "\x1b[2K"}${line}`;
+			buffer += `\x1b[${row + 1};1H${drawKittyImagesLast ? "" : "\x1b[2K"}${line}`;
 		}
+		for (const deferred of deferredKittyRows) buffer += deferred;
 		for (const deferred of deferredSixelRows) {
 			buffer += deferred;
 		}

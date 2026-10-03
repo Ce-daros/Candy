@@ -2,9 +2,10 @@
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { isBuiltin } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { workspaceSourceAliases } from "./lib/workspace-paths.mjs";
 
@@ -39,6 +40,20 @@ const aliasesPlugin = {
 			if (alias) return { path: path.replace(alias.find, alias.replacement) };
 			throw new Error(`Missing smoke alias for ${path}`);
 		});
+		// Resolve external dependencies beside their source importer before moving the bundle.
+		builder.onResolve({ filter: /^[^./\\]/ }, async (args) => {
+			if (isAbsolute(args.path) || isBuiltin(args.path) || args.pluginData?.resolvingExternal) return;
+			const result = await builder.resolve(args.path, {
+				kind: args.kind,
+				resolveDir: args.resolveDir,
+				pluginData: { resolvingExternal: true },
+			});
+			if (result.errors.length > 0) return { errors: result.errors };
+			return {
+				path: args.kind === "require-call" ? result.path : pathToFileURL(result.path).href,
+				external: true,
+			};
+		});
 	},
 };
 
@@ -51,7 +66,6 @@ try {
 		platform: "node",
 		format: "esm",
 		target: "node22.19",
-		packages: "external",
 		plugins: [aliasesPlugin],
 		banner: {
 			js: 'import { createRequire as __candyCreateRequire } from "node:module"; const require = __candyCreateRequire(import.meta.url);',

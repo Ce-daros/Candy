@@ -13,6 +13,7 @@
 				"@candy/ai": "^0.87.1",
 				"@candy/tui": "^0.87.1",
 				"@silvia-odwyer/photon-node": "0.3.4",
+				"brace-expansion": "5.0.12",
 				"chalk": "6.0.0",
 				"cross-spawn": "7.0.6",
 				"diff": "8.0.4",
@@ -36,9 +37,9 @@
 			}
 		},
 		"node_modules/@anthropic-ai/sdk": {
-			"version": "0.124.0",
-			"resolved": "https://registry.npmjs.org/@anthropic-ai/sdk/-/sdk-0.124.0.tgz",
-			"integrity": "sha512-cN5O8i9UVxHeOQAzj/XjshWXG8KiibJDw9OGpH2Z/eR3n/RBxdoLxDJOcfqAJWvjaMDFfHTBADU04hWRJVkDyA==",
+			"version": "0.129.0",
+			"resolved": "https://registry.npmjs.org/@anthropic-ai/sdk/-/sdk-0.129.0.tgz",
+			"integrity": "sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==",
 			"license": "MIT",
 			"dependencies": {
 				"json-schema-to-ts": "^3.1.1",
@@ -82,7 +83,7 @@
 			"resolved": "https://registry.npmjs.org/@candy/ai/-/ai-0.87.1.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@anthropic-ai/sdk": "0.124.0",
+				"@anthropic-ai/sdk": "0.129.0",
 				"@google/genai": "2.21.0",
 				"openai": "7.23.0",
 				"partial-json": "0.1.7",
@@ -294,9 +295,9 @@
 			}
 		},
 		"node_modules/brace-expansion": {
-			"version": "5.0.9",
-			"resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz",
-			"integrity": "sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==",
+			"version": "5.0.12",
+			"resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.12.tgz",
+			"integrity": "sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==",
 			"license": "MIT",
 			"dependencies": {
 				"balanced-match": "^4.0.2"

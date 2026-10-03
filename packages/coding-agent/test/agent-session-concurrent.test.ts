@@ -122,17 +122,29 @@ describe("AgentSession concurrent prompt guard", () => {
 		return session;
 	}
 
+	async function startPrompt() {
+		let onStart!: () => void;
+		const started = new Promise<void>((resolve) => {
+			onStart = resolve;
+		});
+		const unsubscribe = session.execution.subscribe((event) => {
+			if (event.type === "message_start" && event.message.role === "assistant") onStart();
+		});
+		const firstPrompt = session.execution.prompt("First message");
+		try {
+			await Promise.race([started, firstPrompt]);
+			expect(session.execution.isStreaming).toBe(true);
+			return { firstPrompt };
+		} finally {
+			unsubscribe();
+		}
+	}
+
 	it("should throw when prompt() called while streaming", async () => {
 		await createSession();
 
 		// Start first prompt (don't await, it will block until abort)
-		const firstPrompt = session.execution.prompt("First message");
-
-		// Wait a tick for isStreaming to be set
-		await new Promise((resolve) => setTimeout(resolve, 10));
-
-		// Verify we're streaming
-		expect(session.execution.isStreaming).toBe(true);
+		const { firstPrompt } = await startPrompt();
 
 		// Second prompt should reject
 		await expect(session.execution.prompt("Second message")).rejects.toThrow(
@@ -148,8 +160,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		await createSession();
 
 		// Start first prompt
-		const firstPrompt = session.execution.prompt("First message");
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		const { firstPrompt } = await startPrompt();
 
 		// steer should work while streaming
 		await expect(session.execution.steer("Steering message")).resolves.toBe("queued");
@@ -164,8 +175,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		await createSession();
 
 		// Start first prompt
-		const firstPrompt = session.execution.prompt("First message");
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		const { firstPrompt } = await startPrompt();
 
 		// followUp should work while streaming
 		await expect(session.execution.followUp("Follow-up message")).resolves.toBe("queued");
@@ -182,6 +192,10 @@ describe("AgentSession concurrent prompt guard", () => {
 		let sawSteeringMessage = false;
 		let lastInputSource: string | undefined;
 		const queueEvents: Array<{ steering: readonly string[]; followUp: readonly string[] }> = [];
+		let onQueued!: () => void;
+		const queued = new Promise<void>((resolve) => {
+			onQueued = resolve;
+		});
 
 		const agentOptions: SessionExecutionConfig["agentOptions"] = {
 			getApiKey: () => "test-key",
@@ -256,12 +270,11 @@ describe("AgentSession concurrent prompt guard", () => {
 		session.execution.subscribe((event) => {
 			if (event.type === "queue_update") {
 				queueEvents.push({ steering: event.steering, followUp: event.followUp });
+				if (event.steering.includes("Steer from extension")) onQueued();
 			}
 		});
 
-		const firstPrompt = session.execution.prompt("First message");
-		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(session.execution.isStreaming).toBe(true);
+		const { firstPrompt } = await startPrompt();
 
 		const candy = (
 			globalThis as typeof globalThis & {
@@ -273,7 +286,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		expect(candy).toBeDefined();
 
 		candy!.sendUserMessage("Steer from extension", { deliverAs: "steer" });
-		await new Promise((resolve) => setTimeout(resolve, 25));
+		await Promise.race([queued, firstPrompt]);
 
 		expect(session.execution.pendingMessageCount).toBe(1);
 		expect(session.execution.getSteeringMessages()).toContain("Steer from extension");

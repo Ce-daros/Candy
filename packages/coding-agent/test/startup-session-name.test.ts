@@ -111,6 +111,13 @@ function setup(): CliDirs {
 }
 
 describe("startup session name", () => {
+	it("requires a model when selecting a provider for startup", async () => {
+		const dirs = setup();
+		const result = await runCli(["--provider", "openai", "-p", "hi"], dirs);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("--provider requires --model");
+	});
+
 	it("sets --name on the selected session before runtime model validation", async () => {
 		const dirs = setup();
 		const result = await runCli(
