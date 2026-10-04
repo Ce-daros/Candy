@@ -1,5 +1,6 @@
 /** Coordinates one active conversation for the interactive, print, RPC, and SDK hosts. */
 
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
@@ -17,10 +18,11 @@ import type {
 	PrepareRequestContext,
 	ThinkingLevel,
 } from "@candy/agent-core";
-import { Agent, AgentInputs } from "@candy/agent-core";
+import { Agent, AgentInputs, runToolCall } from "@candy/agent-core";
 import type {
 	AssistantMessage,
 	ImageContent,
+	JsonObject,
 	Model,
 	ProviderHeaders,
 	SystemMessage,
@@ -40,13 +42,20 @@ import {
 } from "@candy/ai";
 import { calculateContextTokens, estimateContextTokens } from "@candy/ai/utils/estimate";
 import { sleep } from "@candy/ai/utils/sleep";
-import { getAgentDir } from "../config.ts";
+import { loadQuickJSWasm } from "@candy/codemode";
+import { getAgentDir, getCodemodeWasmPath, getCodemodeWorkerUrl } from "../config.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { processImage } from "../utils/image-process.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import type { CacheWarmer, CacheWarmingStatus } from "./cache-warmer.ts";
+import {
+	CODEMODE_ENABLED_ENTRY_TYPE,
+	type CodemodeEnabledEntryData,
+	createCodemodeToolDefinition,
+	readCodemodeEnabled,
+} from "./codemode-tool.ts";
 import type { CommandInfo, CommandInvocation } from "./commands.ts";
 import {
 	type CompactionResult,
@@ -72,6 +81,7 @@ import {
 	type ToolInfo,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import type { McpRuntime } from "./mcp/runtime.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import { ModelSelection } from "./model-selection.ts";
@@ -84,6 +94,7 @@ export type { ModelMutationOptions } from "./model-selection.ts";
 import { type PromptTemplate, parseCommandArgs, substituteArgs } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import { ResourceOperations } from "./resource-operations.ts";
+import { createSearchMcpToolsDefinition } from "./search-mcp-tools.ts";
 import {
 	type BranchSummaryEntry,
 	type ContextEditEntry,
@@ -201,10 +212,13 @@ export interface SessionExecutionConfig {
 	customTools?: ToolDefinition[];
 	/** Canonical model/auth runtime used by coding-agent internals. */
 	modelRuntime: ModelRuntime;
+	mcp?: McpRuntime;
 	/** Keeps the prompt cache entry of the last session request warm. */
 	cacheWarmer?: Pick<CacheWarmer, "cancel" | "status" | "onAgentSettled" | "onModeChanged" | "onWarmed">;
 	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
 	initialActiveToolNames?: string[];
+	/** Explicit startup selection takes precedence over a saved codemode preference. */
+	initialCodemodeSelection?: boolean;
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
 	allowedToolNames?: string[];
 	/** Optional denylist of tool names. When provided, these tool names are not exposed. */
@@ -269,6 +283,9 @@ export class SessionExecution {
 	private _unsubscribeAgent?: () => void;
 	private _unsubscribeAgentQueue?: () => void;
 	private _unsubscribeSettings?: () => void;
+	private _unsubscribeMcp?: () => void;
+	private _mcpRefreshPending = false;
+	private readonly _mcp?: McpRuntime;
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _isAgentRunActive = false;
 	private _agentRunAbortRequested = false;
@@ -318,7 +335,7 @@ export class SessionExecution {
 	private _resources!: ResourceOperations;
 	private _customTools: ToolDefinition[];
 	private _cwd: string;
-	private _initialActiveToolNames?: string[];
+	private _initialCodemodeSelection?: boolean;
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -347,6 +364,7 @@ export class SessionExecution {
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRuntime = config.modelRuntime;
+		this._mcp = config.mcp;
 		this._boundary = new SessionBoundary(
 			this.sessionManager,
 			() => [...this._inputs.peekQueuedMessages(), ...this._pendingCustomMessages],
@@ -381,7 +399,7 @@ export class SessionExecution {
 		if (this._cacheWarmer) {
 			this._cacheWarmer.onWarmed = (entry) => this._emit({ type: "entry_appended", entry });
 		}
-		this._initialActiveToolNames = config.initialActiveToolNames;
+		this._initialCodemodeSelection = config.initialCodemodeSelection;
 		this._tools = new SessionTools(config.allowedToolNames, config.excludedToolNames);
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
@@ -413,11 +431,18 @@ export class SessionExecution {
 		});
 
 		this._buildRuntime({
-			activeToolNames: this._initialActiveToolNames,
+			activeToolNames: config.initialActiveToolNames
+				? this._withCodemodeSelection(config.initialActiveToolNames)
+				: undefined,
 			includeAllExtensionTools: true,
 		});
-		if (this._initialActiveToolNames === undefined) this._restoreToolsFromTranscript();
+		if (this._initialCodemodeSelection === undefined) this._restoreToolsFromTranscript();
 		this._resources = new ResourceOperations(this, { cwd: config.cwd, agentDir: config.agentDir ?? getAgentDir() });
+		this._unsubscribeMcp = this._mcp?.subscribe(() => {
+			if (this._disposed) return;
+			if (!this.isIdle) this._mcpRefreshPending = true;
+			else this._refreshToolRegistry();
+		});
 	}
 
 	get modelRuntime(): ModelRuntime {
@@ -452,7 +477,7 @@ export class SessionExecution {
 	 * registered tool execution to the extension context. Tool call and tool result interception now
 	 * happens here instead of in wrappers.
 	 */
-	private async _beforeToolCall({ toolCall, args }: BeforeToolCallContext) {
+	private async _beforeToolCall({ toolCall, args, parentToolCallId }: BeforeToolCallContext) {
 		const runner = this._extensionRunner;
 		if (!runner.hasHandlers("tool_call")) {
 			return undefined;
@@ -463,6 +488,7 @@ export class SessionExecution {
 				type: "tool_call",
 				toolName: toolCall.name,
 				toolCallId: toolCall.id,
+				parentToolCallId,
 				input: args as Record<string, unknown>,
 			});
 		} catch (err) {
@@ -473,16 +499,18 @@ export class SessionExecution {
 		}
 	}
 
-	private async _afterToolCall({ model, toolCall, args, result, isError }: AfterToolCallContext) {
+	private async _afterToolCall({ model, toolCall, args, result, isError, parentToolCallId }: AfterToolCallContext) {
 		const runner = this._extensionRunner;
 		const hookResult = runner.hasHandlers("tool_result")
 			? await runner.emitToolResult({
 					type: "tool_result",
 					toolName: toolCall.name,
 					toolCallId: toolCall.id,
+					parentToolCallId,
 					input: args as Record<string, unknown>,
 					content: result.content,
 					details: result.details,
+					structuredContent: result.structuredContent,
 					isError,
 					usage: result.usage,
 				})
@@ -503,6 +531,7 @@ export class SessionExecution {
 		return {
 			content: normalizedContent,
 			details: hookResult?.details,
+			structuredContent: hookResult?.structuredContent,
 			isError: hookResult?.isError ?? isError,
 			usage: hookResult?.usage,
 		};
@@ -692,6 +721,10 @@ export class SessionExecution {
 	private async _emitAgentSettled(): Promise<void> {
 		this._cacheWarmer?.onAgentSettled();
 		this._isAgentRunActive = false;
+		if (this._mcpRefreshPending) {
+			this._mcpRefreshPending = false;
+			this._refreshToolRegistry();
+		}
 		this._isEmittingAgentSettled = true;
 		try {
 			await this._extensionRunner.emit({ type: "agent_settled" });
@@ -891,6 +924,8 @@ export class SessionExecution {
 		this._unsubscribeAgentQueue = undefined;
 		this._unsubscribeSettings?.();
 		this._unsubscribeSettings = undefined;
+		this._unsubscribeMcp?.();
+		this._unsubscribeMcp = undefined;
 		this._eventListeners = [];
 		if (this._cacheWarmer) {
 			this._cacheWarmer.onWarmed = undefined;
@@ -958,7 +993,7 @@ export class SessionExecution {
 	 * Returns the names of tools currently set on the agent.
 	 */
 	getActiveToolNames(): string[] {
-		return this.agent.state.tools.map((t) => t.name);
+		return this._tools.getActiveToolNames();
 	}
 
 	/**
@@ -985,21 +1020,33 @@ export class SessionExecution {
 	 */
 	setActiveToolsByName(toolNames: string[]): void {
 		if (!this.isIdle) throw new Error("Wait for the current response or compaction to finish");
-		this._applyActiveToolsByName(toolNames);
+		this._setActiveToolsByName(toolNames);
+	}
+
+	private _setActiveToolsByName(toolNames: string[]): void {
+		const previouslyEnabled = this.getActiveToolNames().includes("codemode");
+		const savedSelection = readCodemodeEnabled(this.sessionManager.getBranch());
+		const previousSelection = this._initialCodemodeSelection ?? savedSelection ?? this._defaultCodemodeEnabled();
+		this._tools.setActiveTools(toolNames, true);
+		const activeToolNames = this._tools.getActiveToolNames();
+		const enabled = toolNames.includes("codemode") || activeToolNames.includes("codemode");
+		if (enabled !== previouslyEnabled || enabled !== previousSelection) {
+			if (enabled !== savedSelection) {
+				const data: CodemodeEnabledEntryData = { enabled };
+				const id = this.sessionManager.appendCustomEntry(CODEMODE_ENABLED_ENTRY_TYPE, data);
+				const entry = this.sessionManager.getEntry(id);
+				if (entry) this._emit({ type: "entry_appended", entry });
+			}
+			this._initialCodemodeSelection = undefined;
+			this._tools.setCodemodeDisabled(!enabled);
+		}
+		this._applyActiveToolsByName(activeToolNames);
 	}
 
 	private _applyActiveToolsByName(toolNames: string[]): void {
-		const tools: AgentTool[] = [];
-		const validToolNames: string[] = [];
-		for (const name of toolNames) {
-			const tool = this._tools.getTool(name);
-			if (tool) {
-				tools.push(tool);
-				validToolNames.push(name);
-			}
-		}
-		this.agent.state.tools = tools;
-		this._rebuildSystemPrompt(validToolNames);
+		this._tools.setActiveTools(toolNames);
+		this.agent.state.tools = this._tools.getDirectTools();
+		this._rebuildSystemPrompt(this.agent.state.tools.map((tool) => tool.name));
 	}
 
 	/** Whether compaction or branch summarization is currently running */
@@ -1082,13 +1129,19 @@ export class SessionExecution {
 		options: NormalizedBuildSystemPromptOptions,
 		messages: AgentMessage[] = this.agent.state.messages,
 	): SystemMessage | undefined {
-		options.selectedTools = [...new Set(options.selectedTools)].filter(
-			(name) => this._tools.getTool(name) !== undefined,
-		);
-		this.agent.state.tools = options.selectedTools.flatMap((name) => {
+		options.selectedTools = [...new Set(options.selectedTools)].filter((name) => {
 			const tool = this._tools.getTool(name);
-			return tool ? [tool] : [];
+			return tool && (!tool.exposure || tool.exposure === "direct");
 		});
+		this._tools.setActiveTools([
+			...options.selectedTools,
+			...this._tools.getActiveToolNames().filter((name) => {
+				const exposure = this._tools.getTool(name)?.exposure;
+				return exposure && exposure !== "direct";
+			}),
+		]);
+		this.agent.state.tools = this._tools.getDirectTools();
+		options.selectedTools = this.agent.state.tools.map((tool) => tool.name);
 		const sections = diffSystemPromptSections(
 			getCurrentSystemMessage(messages)?.sections ?? {},
 			buildSystemPromptSections(options),
@@ -1120,18 +1173,38 @@ export class SessionExecution {
 		return [head, ...transformed.filter((message) => message.role !== "system")];
 	}
 
-	/** Restore the active tool loadout declared by the session transcript, if it declares one. */
+	private _defaultCodemodeEnabled(): boolean {
+		return this._tools.getCodemodeTools(this._tools.getToolNames()).length > 0;
+	}
+
+	private _withCodemodeSelection(toolNames: string[]): string[] {
+		const selection = this._initialCodemodeSelection ?? readCodemodeEnabled(this.sessionManager.getBranch());
+		const disabled = this._initialCodemodeSelection === undefined && selection === false;
+		this._tools.setCodemodeDisabled(disabled);
+		const enabled = selection ?? this._defaultCodemodeEnabled();
+		const names = toolNames.filter((name) => name !== "codemode");
+		if (enabled || (!disabled && this._tools.getCodemodeTools(names).length > 0)) {
+			names.push("codemode");
+		}
+		return names;
+	}
+
+	/** Restore the transcript's tool loadout and the current branch's codemode selection. */
 	private _restoreToolsFromTranscript(): void {
 		const current = getCurrentSystemMessage(this.sessionManager.buildSessionContext().messages);
-		if (!current) return;
+		if (!current) {
+			this._applyActiveToolsByName(this._withCodemodeSelection(this.getActiveToolNames()));
+			return;
+		}
 		const toolNames = (current.toolsAdded ?? [])
 			.map((tool) => tool.name)
 			.filter((name) => this._tools.getTool(name) !== undefined);
-		this.agent.state.tools = toolNames.flatMap((name) => {
-			const registered = this._tools.getTool(name);
-			return registered ? [registered] : [];
-		});
-		this._rebuildSystemPrompt(toolNames);
+		this._applyActiveToolsByName(
+			this._withCodemodeSelection([
+				...toolNames,
+				...this._tools.getActiveToolNames().filter((name) => this._tools.getTool(name)?.exposure === "codemode"),
+			]),
+		);
 	}
 
 	// =========================================================================
@@ -2169,7 +2242,7 @@ export class SessionExecution {
 				},
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
-				setActiveTools: (toolNames) => this._applyActiveToolsByName(toolNames),
+				setActiveTools: (toolNames) => this._setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
 				getCommands: () => this.getCommands(),
 				setModel: async (model) => {
@@ -2228,6 +2301,7 @@ export class SessionExecution {
 	}
 
 	private _refreshToolRegistry(options?: { activeToolNames?: string[]; includeAllExtensionTools?: boolean }): void {
+		this._tools.setRuntimeDefinitions(this._mcp?.getTools() ?? []);
 		const previousActiveToolNames = this.getActiveToolNames();
 		const activeToolNames = this._tools.refresh(
 			this._extensionRunner,
@@ -2235,7 +2309,7 @@ export class SessionExecution {
 			previousActiveToolNames,
 			options,
 		);
-		this.setActiveToolsByName(activeToolNames);
+		this._applyActiveToolsByName(activeToolNames);
 	}
 
 	private _buildRuntime(options: {
@@ -2246,7 +2320,7 @@ export class SessionExecution {
 		const autoResizeImages = this.settingsManager.read("auto-resize-images");
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
 		const shellPath = this.settingsManager.getShellPath();
-		const baseToolDefinitions = this._baseToolsOverride
+		const baseToolDefinitions: Record<string, ToolDefinition> = this._baseToolsOverride
 			? Object.fromEntries(
 					Object.entries(this._baseToolsOverride).map(([name, tool]) => [
 						name,
@@ -2258,6 +2332,45 @@ export class SessionExecution {
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
 				});
 
+		const wasmPath = getCodemodeWasmPath();
+		baseToolDefinitions.codemode = createCodemodeToolDefinition({
+			getTools: () => this._tools.getCodemodeTools(),
+			getBranch: () => this.sessionManager.getBranch(),
+			appendEntry: (customType, data) => {
+				const id = this.sessionManager.appendCustomEntry(customType, data);
+				const entry = this.sessionManager.getEntry(id);
+				if (entry) this._emit({ type: "entry_appended", entry });
+			},
+			get wasm() {
+				return wasmPath ? loadQuickJSWasm(wasmPath) : undefined;
+			},
+			workerUrl: getCodemodeWorkerUrl(),
+			executeTool: async (name, args, { signal, parentToolCallId }) => {
+				const model = this.model;
+				const assistantMessage = this._lastAssistantMessage;
+				if (!model || !assistantMessage) throw new Error("Codemode requires an active assistant tool call");
+				return runToolCall({
+					toolCall: { type: "toolCall", id: randomUUID(), name, arguments: args as JsonObject },
+					assistantMessage,
+					context: {
+						messages: this.agent.state.messages,
+						tools: this._tools.getCodemodeTools(),
+					},
+					config: {
+						model,
+						beforeToolCall: (context) => this._beforeToolCall(context),
+						afterToolCall: (context) => this._afterToolCall(context),
+					},
+					signal,
+					parentToolCallId,
+					emit: (event) => {
+						this._emit(event as AgentSessionEvent);
+						return undefined;
+					},
+				});
+			},
+		});
+		baseToolDefinitions.search_mcp_tools = createSearchMcpToolsDefinition(() => this._tools.getCodemodeTools());
 		this._tools.setBaseDefinitions(baseToolDefinitions);
 
 		const extensionsResult = this._resourceLoader.getExtensions();
@@ -2273,17 +2386,16 @@ export class SessionExecution {
 			this._cwd,
 			this._modelRuntime,
 		);
-		const hasProviderRegistrations = this._bindExtensionCore(this._extensionRunner);
-		this._applyExtensionBindings(this._extensionRunner);
-
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
 			: ["read", "bash", "edit", "write"];
-		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
+		const baseActiveToolNames = options.activeToolNames ?? this._withCodemodeSelection(defaultActiveToolNames);
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
 			includeAllExtensionTools: options.includeAllExtensionTools,
 		});
+		const hasProviderRegistrations = this._bindExtensionCore(this._extensionRunner);
+		this._applyExtensionBindings(this._extensionRunner);
 		return hasProviderRegistrations;
 	}
 
@@ -2292,6 +2404,7 @@ export class SessionExecution {
 		const previousFlagValues = oldRunner.getFlagValues();
 		await this.settingsManager.reload();
 		await this._resourceLoader.reload();
+		await this._mcp?.reload();
 		await emitSessionShutdownEvent(oldRunner, { type: "session_shutdown", reason: "reload" });
 		oldRunner.invalidate();
 		this.syncQueueModesFromSettings();

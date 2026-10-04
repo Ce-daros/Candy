@@ -40,7 +40,7 @@ describe("tool allowlists and built-in suppression", () => {
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
-		).toEqual(["dynamic_tool", "read"]);
+		).toEqual(["codemode", "dynamic_tool", "read", "search_mcp_tools"]);
 		expect(session.execution.getActiveToolNames().sort()).toEqual(["dynamic_tool", "read"]);
 		expect(session.execution.systemPrompt).toContain("- read: Read file contents");
 		expect(session.execution.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
@@ -64,7 +64,19 @@ describe("tool allowlists and built-in suppression", () => {
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
-		).toEqual(["bash", "dynamic_tool", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
+		).toEqual([
+			"bash",
+			"codemode",
+			"dynamic_tool",
+			"edit",
+			"find",
+			"grep",
+			"ls",
+			"powershell",
+			"read",
+			"search_mcp_tools",
+			"write",
+		]);
 		expect(session.execution.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
 		expect(session.execution.systemPrompt).not.toContain("- read:");
 		expect(session.execution.systemPrompt).not.toContain("- bash:");

@@ -450,6 +450,7 @@ export class ActionsController extends FeatureController {
 						action("instructions", "Instructions", async () => this.openInstructions()),
 						action("skills", "Skills", async () => this.openSkills()),
 						action("tools", "Tools", async () => this.openTools()),
+						action("mcp", "MCP servers", async () => this.openMcp()),
 						action("behavior", "Behavior", async () => this.openBehavior()),
 					].map((item) => ({ ...item, group: "Agent" })),
 				];
@@ -544,6 +545,99 @@ export class ActionsController extends FeatureController {
 			undefined,
 			true,
 		);
+	}
+
+	openMcp(): void {
+		const mcp = this.host.mcp();
+		const page = this.page(
+			"actions",
+			"MCP servers",
+			() =>
+				mcp
+					.list()
+					.map((server) =>
+						action(
+							server.name,
+							server.name,
+							async () => this.openMcpServer(server.name),
+							`${server.status} · ${server.transport} · ${server.protocolVersion ?? "Protocol unknown"} · ${server.toolsCount} tools`,
+						),
+					),
+			() =>
+				mcp.list().length
+					? `${mcp.list().length} configured servers`
+					: "No MCP servers configured. Use candy mcp add to add one.",
+			undefined,
+			true,
+		);
+		const unsubscribe = mcp.subscribe(() => this.refresh(page));
+		page.controller.signal.addEventListener("abort", unsubscribe, { once: true });
+	}
+
+	private openMcpServer(name: string): void {
+		const mcp = this.host.mcp();
+		const page = this.page(
+			"actions",
+			name,
+			(current) => {
+				const server = mcp.list().find((entry) => entry.name === name);
+				if (!server) return [action("missing", "Server removed", async () => {})];
+				const refresh = () => this.refresh(current);
+				return [
+					action("reconnect", "Reconnect", async () => {
+						await mcp.reconnect(name);
+						refresh();
+					}),
+					action("enabled", server.enabled ? "Disable" : "Enable", async () => {
+						await mcp.setEnabled(name, !server.enabled, "global");
+						refresh();
+					}),
+					...(this.host.settings().isProjectTrusted()
+						? [
+								action(
+									"enabled:project",
+									server.enabled ? "Disable for this project" : "Enable for this project",
+									async () => {
+										await mcp.setEnabled(name, !server.enabled, "project");
+										refresh();
+									},
+								),
+							]
+						: []),
+					...(["direct", "codemode", "hidden"] as const).map((exposure) => ({
+						...action(`exposure:${exposure}`, `Show tools: ${exposure}`, async () => {
+							await mcp.setExposure(name, exposure, "global");
+							refresh();
+						}),
+						checked: server.exposure === exposure,
+					})),
+					...(this.host.settings().isProjectTrusted()
+						? (["direct", "codemode", "hidden"] as const).map((exposure) =>
+								action(`project-exposure:${exposure}`, `Show tools in this project: ${exposure}`, async () => {
+									await mcp.setExposure(name, exposure, "project");
+									refresh();
+								}),
+							)
+						: []),
+					action("login", "Log in", async () => {
+						await this.host.mcpLogin(name, current.controller.signal);
+						refresh();
+					}),
+					action("logout", "Log out", async () => {
+						await mcp.logout(name);
+						refresh();
+					}),
+				];
+			},
+			() => {
+				const server = mcp.list().find((entry) => entry.name === name);
+				return server
+					? `${server.status} · ${server.transport} · ${server.protocolVersion ?? "Protocol unknown"}\n${server.error ?? ""}`
+					: "Server removed";
+			},
+		);
+		const unsubscribe = mcp.subscribe(() => this.refresh(page));
+		page.controller.signal.addEventListener("abort", unsubscribe, { once: true });
 	}
 
 	private openBehavior(): void {

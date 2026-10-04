@@ -22,6 +22,7 @@ File search requires fd 8.7.0 or newer (the `fdfind` command is also supported).
 - [Models](docs/models.md) and [authentication](docs/providers.md)
 - [Sessions](docs/sessions.md)
 - [Extensions](docs/extensions.md), [skills](docs/skills.md), and [prompt templates](docs/prompt-templates.md)
+- [MCP and codemode](docs/mcp.md)
 - [CLI integration](docs/cli-integration.md), [RPC](docs/rpc.md), and [SDK](docs/sdk.md)
 
 The [documentation index](docs/index.md) includes platform setup and protocol references. Repository development follows [CONTRIBUTING.md](../../CONTRIBUTING.md) and [AGENTS.md](../../AGENTS.md).

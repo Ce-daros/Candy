@@ -13,8 +13,10 @@ import { createSessionCommandActions } from "../../core/session-command-actions.
  */
 
 import * as crypto from "node:crypto";
+import type { ElicitResult } from "@modelcontextprotocol/client";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type { ExtensionUIContext, ExtensionUIDialogOptions } from "../../core/extensions/index.ts";
+import type { McpInteractionRequest } from "../../core/mcp/types.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -212,12 +214,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		},
 	});
 
+	const handleMcpInteraction = (request: McpInteractionRequest, signal?: AbortSignal): Promise<ElicitResult> =>
+		createDialogPromise(
+			{ signal },
+			{ action: "cancel" } as ElicitResult,
+			request.type === "elicitation"
+				? { method: "mcp_elicitation", server: request.server, request: request.request }
+				: { method: "mcp_authorization", server: request.server, url: request.url },
+			(response) =>
+				"action" in response
+					? ({ action: response.action, content: response.content } as ElicitResult)
+					: { action: "cancel" },
+		);
+
 	runtimeHost.setRebindSession(async () => {
 		await rebindSession();
 	});
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		runtimeHost.mcp.setInteraction(handleMcpInteraction);
 		await session.execution.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
@@ -368,6 +384,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					autoCompactionEnabled: session.execution.autoCompactionEnabled,
 					messageCount: session.execution.messages.length,
 					pendingMessageCount: session.execution.pendingMessageCount,
+					mcpServers: runtimeHost.mcp.list(),
 				};
 				return success(id, "get_state", state);
 			}
@@ -379,6 +396,24 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					projectTrusted: runtimeHost.settings.isProjectTrusted(),
 				});
 			}
+
+			case "mcp_list":
+				return success(id, command.type, { servers: runtimeHost.mcp.list() });
+			case "mcp_reconnect":
+				await runtimeHost.mcp.reconnect(command.name);
+				return success(id, command.type);
+			case "mcp_set_enabled":
+				await runtimeHost.mcp.setEnabled(command.name, command.enabled, command.scope);
+				return success(id, command.type);
+			case "mcp_set_exposure":
+				await runtimeHost.mcp.setExposure(command.name, command.exposure, command.scope);
+				return success(id, command.type);
+			case "mcp_login":
+				await runtimeHost.mcp.login(command.name);
+				return success(id, command.type);
+			case "mcp_logout":
+				await runtimeHost.mcp.logout(command.name);
+				return success(id, command.type);
 
 			case "commit_setting": {
 				if (!isSettingsScope(command.scope))

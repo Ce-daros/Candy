@@ -15,7 +15,9 @@ The agent directory is shown as `<agent-dir>` below. Set its location with the `
 | `<agent-dir>/settings.json` | User-level [settings](settings.md), including preferences, defaults, resource paths, and candy package declarations. |
 | `<agent-dir>/keybindings.json` | Custom terminal UI and application [keybindings](keybindings.md). |
 | `<agent-dir>/models.json` | [Compatible endpoints, models, and model overrides](models.md#configure-a-compatible-endpoint). |
-| `<agent-dir>/auth.json` | Saved API keys and OAuth credentials. |
+| `<agent-dir>/auth.json` | Saved model-provider API keys and OAuth credentials. |
+| `<agent-dir>/mcp.json` | User [MCP server connections](mcp.md#configure-a-server). |
+| `<agent-dir>/mcp-auth.json` | MCP OAuth credentials, managed by login and logout. |
 | `<agent-dir>/AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, or `CLAUDE.MD` | User instructions applied across working directories. |
 | `<agent-dir>/SYSTEM.md` | Replaces candy’s default system prompt. |
 | `<agent-dir>/APPEND_SYSTEM.md` | Adds instructions to candy’s system prompt. |
@@ -29,6 +31,7 @@ The agent directory is shown as `<agent-dir>` below. Set its location with the `
 | Path | Responsibility |
 |---|---|
 | `.candy/settings.json` | Project-level [settings](settings.md), resource paths, and candy package declarations. |
+| `.candy/mcp.json` | Trusted project [MCP server configuration and overrides](mcp.md#configure-a-server). |
 | `.candy/SYSTEM.md` | Replaces the system prompt for the project. |
 | `.candy/APPEND_SYSTEM.md` | Adds project-specific instructions to the system prompt. |
 | `.candy/extensions/` | Project extensions. |

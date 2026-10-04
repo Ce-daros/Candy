@@ -13,6 +13,7 @@ candy update [options]
 candy list
 candy config [options]
 candy auth <check|print-api-key|print-bearer-token> [options]
+candy mcp <add|remove|list|login|logout> [options]
 ```
 
 <a id="modes"></a>
@@ -48,6 +49,8 @@ candy resolves `@path` from the current working directory. The working directory
 | `--export <input> [output]` | Export a session file to HTML and exit; derive the destination when `output` is omitted |
 
 RPC mode rejects `@file` arguments. JSON and RPC modes reserve stdout for protocol records. See [JSON Event Stream](json.md) and [RPC Protocol](rpc.md).
+
+MCP server configuration and codemode behavior are described in [MCP and codemode](mcp.md). Use `candy mcp --help` for the installed server-management syntax.
 
 <a id="model-options"></a>
 
@@ -114,15 +117,15 @@ candy --tools read,grep,find,ls --print "Review this project"
 See [Settings](settings.md#tools) for configuring the default tool selection.
 
 - `-t`, `--tools <list>`<br>
-  Replaces the default selection with a comma-separated allowlist of built-in, extension, or custom tools.
+  Replaces the default selection with a comma-separated allowlist of built-in, extension, SDK, or MCP tools.
 - `-xt`, `--exclude-tools <list>`<br>
   Disables comma-separated tool names after all other selection options.
 - `-nbt`, `--no-builtin-tools`<br>
-  Disables default built-in tools while retaining extension and custom tools.
+  Disables default built-in tools while retaining extension and MCP tools.
 - `-nt`, `--no-tools`<br>
-  Starts with all built-in, extension, and custom tools disabled.
+  Disables all tools, including extension and MCP tools.
 
-Default enabled tools are `read`, `bash`, `edit`, and `write`, unless `defaultTools` changes them.
+Default tools are `read`, `bash`, `edit`, and `write`, unless `defaultTools` changes them. Codemode and search become available through enabled MCP tools. Include the desired MCP tool names in a restricted `--tools` list. [MCP tool availability and session choices](mcp.md#tool-availability-and-session-choices) defines activation, exclusions, and saved on/off choices.
 
 | Built-in | Purpose |
 |---|---|
@@ -134,6 +137,8 @@ Default enabled tools are `read`, `bash`, `edit`, and `write`, unless `defaultTo
 | `grep` | Search file contents |
 | `find` | Find paths using glob patterns |
 | `ls` | List directory contents |
+| `codemode` | Call enabled MCP tools and process their results in sandboxed JavaScript |
+| `search_mcp_tools` | Find currently callable MCP tool declarations with BM25 keyword search |
 
 <a id="resource-options"></a>
 

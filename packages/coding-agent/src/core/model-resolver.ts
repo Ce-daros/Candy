@@ -359,6 +359,13 @@ export function resolveCliModel(options: {
 		}
 	}
 
+	if (provider) {
+		const literal = availableModels.find(
+			(candidate) => candidate.provider === provider && candidate.id.toLowerCase() === cliModel.toLowerCase(),
+		);
+		if (literal) return { model: literal, thinkingLevel: undefined, warning: undefined, error: undefined };
+	}
+
 	if (cliProvider && provider) {
 		// If both were provided, tolerate --model <provider>/<pattern> by stripping the provider prefix
 		const prefix = `${provider}/`;

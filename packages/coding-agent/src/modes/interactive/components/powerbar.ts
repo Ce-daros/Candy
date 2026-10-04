@@ -656,7 +656,8 @@ export class PowerbarController {
 			const sorted = [...transition.entries].sort((a, b) => a.index - b.index);
 			for (const entry of sorted) {
 				const progress = (transition.tick - entry.start) / ITEM_FRAMES;
-				const width = Math.round(entry.wFrom + (entry.wTo - entry.wFrom) * easeOutCubic(progress));
+				const eased = entry.wTo < entry.wFrom ? 1 - easeOutCubic(1 - progress) : easeOutCubic(progress);
+				const width = Math.round(entry.wFrom + (entry.wTo - entry.wFrom) * eased);
 				if (width <= 0) continue;
 				spans.push({ index: entry.index, label: entry.label, selected: entry.selected, col: running, width });
 				running += width + (entry.index === -1 ? PREFIX_GAP : 0);

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { fauxAssistantMessage } from "@candy/ai";
+import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import type { Terminal } from "@candy/tui";
 import tpsExtension from "../../../../.candy/extensions/tps.ts";
 import { assembleAgentSession } from "../../src/core/agent-session-factory.ts";
@@ -9,9 +9,11 @@ import {
 	type CreateAgentSessionRuntimeFactory,
 	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
+import { McpRuntime } from "../../src/core/mcp/runtime.ts";
 import { SessionHistory } from "../../src/core/session-history.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { createFixtureMcp } from "../mcp-test-utils.ts";
 import { createHarness, type Harness } from "../suite/harness.ts";
 import { userMsg } from "../utilities.ts";
 
@@ -30,9 +32,12 @@ export async function createInteractiveSmoke(
 		theme?: "dark" | "light";
 		longModelName?: boolean;
 		transcript?: boolean;
+		codemode?: boolean;
 	} = {},
 ): Promise<InteractiveSmoke> {
+	const mcpFixture = options.codemode ? await createFixtureMcp() : undefined;
 	const harness = await createHarness({
+		mcp: mcpFixture?.runtime,
 		tokensPerSecond: options.transcript ? 20 : undefined,
 		extensionFactories: options.transcript ? [tpsExtension] : undefined,
 		models: [
@@ -76,6 +81,30 @@ export async function createInteractiveSmoke(
 			),
 		),
 	);
+	if (options.codemode) {
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall("search_mcp_tools", {
+					query: "query records",
+				}),
+				{ stopReason: "toolUse" },
+			),
+			fauxAssistantMessage(
+				fauxToolCall("codemode", {
+					code: "const records = await Promise.all([1,2,3].map(id => tools.mcp_fixture_query({id}))); text({total: records.reduce((sum,r) => sum + r.structuredContent.amount,0)});",
+				}),
+				{ stopReason: "toolUse" },
+			),
+			(context) => {
+				const result = context.messages.filter((message) => message.role === "toolResult").at(-1);
+				const expected = [{ type: "text", text: JSON.stringify({ total: 60 }) }];
+				if (result?.isError || JSON.stringify(result?.content) !== JSON.stringify(expected)) {
+					throw new Error("Unexpected codemode MCP aggregation result");
+				}
+				return fauxAssistantMessage("Codemode queried MCP records 1, 2, and 3. Total: 60.");
+			},
+		]);
+	}
 	const sessionDir = join(harness.tempDir, "sessions");
 	const sessionManager = SessionHistory.create(harness.tempDir, sessionDir);
 	if (!options.empty) {
@@ -95,6 +124,13 @@ export async function createInteractiveSmoke(
 		cwd: harness.tempDir,
 		agentDir: harness.tempDir,
 		modelRuntime: harness.session.execution.modelRuntime,
+		mcp:
+			mcpFixture?.runtime ??
+			(await McpRuntime.create({
+				cwd: harness.tempDir,
+				agentDir: harness.tempDir,
+				settingsManager: harness.settingsManager,
+			})),
 		settingsManager: harness.settingsManager,
 		resourceLoader: harness.session.execution.resourceLoader,
 		diagnostics: [],
@@ -107,7 +143,8 @@ export async function createInteractiveSmoke(
 			cwd,
 			agentDir: harness.tempDir,
 			model: harness.getModel(),
-			noTools: "all",
+			noTools: options.codemode ? undefined : "all",
+			mcp: services.mcp,
 			modelRuntime: harness.session.execution.modelRuntime,
 			resourceLoader: harness.session.execution.resourceLoader,
 			sessionStartEvent,
@@ -133,6 +170,7 @@ export async function createInteractiveSmoke(
 			mode.stop();
 			await runtime.dispose();
 			await harness.cleanup();
+			await mcpFixture?.cleanup();
 		},
 	};
 }

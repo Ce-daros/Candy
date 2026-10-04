@@ -1,6 +1,7 @@
 import type { Api, Model } from "@candy/ai";
 import type { AutocompleteItem } from "@candy/tui";
 import type { AgentSession } from "../../core/agent-session.ts";
+import type { McpRuntime } from "../../core/mcp/runtime.ts";
 import type { ModelRuntime } from "../../core/model-runtime.ts";
 import type { SettingsManager } from "../../core/settings-manager.ts";
 import { CommandPanel, type CommandPanelAction, type CommandPanelOptions } from "./components/command-panel.ts";
@@ -13,11 +14,12 @@ import {
 	SourcesController,
 } from "./interactive-presentation-features.ts";
 
-export type PresentationSurface = "actions" | "sources" | "details" | "command";
+export type PresentationSurface = "actions" | "sources" | "details" | "command" | "mcp";
 
 export interface PresentationHost {
 	session(): AgentSession;
 	models(): ModelRuntime;
+	mcp(): McpRuntime;
 	settings(): SettingsManager;
 	mount(panel: CommandPanel, navigation: PanelNavigation): void;
 	exit(): void;
@@ -27,6 +29,7 @@ export interface PresentationHost {
 	applyQuickSelection(signal: AbortSignal): Promise<void>;
 	edit(title: string, content: string): Promise<string | undefined>;
 	login(provider: string): Promise<void>;
+	mcpLogin(server: string, signal: AbortSignal): Promise<void>;
 	skills(): Promise<void>;
 	settingsActions(): CommandPanelAction[];
 	localCommands(): CommandPanelAction[];
@@ -107,6 +110,9 @@ export class InteractivePresentation {
 				break;
 			case "command":
 				this.command.openCommand();
+				break;
+			case "mcp":
+				this.actions.openMcp();
 				break;
 		}
 	}

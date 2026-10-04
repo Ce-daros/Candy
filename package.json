@@ -8,7 +8,7 @@
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "npm --prefix packages/tui run build && npm --prefix packages/ai run build && npm --prefix packages/agent run build && npm --prefix packages/coding-agent run build",
+		"build": "npm --prefix packages/tui run build && npm --prefix packages/ai run build && npm --prefix packages/agent run build && npm --prefix packages/codemode run build && npm --prefix packages/coding-agent run build",
 		"check": "biome check --error-on-warnings . && npm run check:pinned-deps && npm run check:runtime-deps && npm run check:ts-imports && npm run check:source-graphs && npm run check:shrinkwrap && tsc --noEmit",
 		"format": "biome format --write .",
 		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",

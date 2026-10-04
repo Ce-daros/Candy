@@ -20,7 +20,6 @@ The working folder controls resource discovery and the default location for tool
 
 Whichever option you choose, only provide the files and services required for the task. Keep credentials outside the environment where possible, or use narrowly scoped, short-lived credentials. Restrict network access when commands do not need it.
 
-
 <a id="project-trust"></a>
 
 ## Understand project trust
@@ -35,7 +34,7 @@ Project trust does not limit what tool calls can access or affect. After candy s
 
 candy requires a project-trust decision when it finds any of these resources from the current working directory:
 
-- `.candy/settings.json`
+- `.candy/settings.json` or `.candy/mcp.json`
 - `.candy/extensions`, `.candy/skills`, `.candy/prompts`, or `.candy/themes`
 - `.candy/SYSTEM.md` or `.candy/APPEND_SYSTEM.md`
 - project `.agents/skills` in the current directory or an ancestor directory
@@ -44,7 +43,7 @@ A bare `.candy` directory does not require project trust.
 
 Granting project trust allows candy to load:
 
-- project settings
+- project settings and MCP server connections
 - extensions, skills, prompt templates, themes, and system-prompt files under `.candy`
 - missing packages configured through project settings
 - project-local and project-package extensions

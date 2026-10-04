@@ -3,6 +3,8 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
+			"@candy/codemode": ["../codemode/dist/index.d.ts"],
+			"@candy/codemode/*": ["../codemode/dist/*.d.ts", "../codemode/dist/runtime/*.d.ts"],
 			"@candy/agent-core": ["../agent/dist/index.d.ts"],
 			"@candy/agent-core/*": ["../agent/dist/*.d.ts"],
 			"@candy/ai": ["../ai/dist/index.d.ts"],

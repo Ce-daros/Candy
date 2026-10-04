@@ -1,6 +1,7 @@
 import { stripVTControlCharacters as stripAnsi } from "node:util";
 import { setKeybindings } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { McpRuntime } from "../src/core/mcp/runtime.ts";
 import { reconcileQuickSelection } from "../src/core/quick-selection.ts";
 import type { CommandPanel } from "../src/modes/interactive/components/command-panel.ts";
 import { InteractiveFlowStack } from "../src/modes/interactive/interactive-flow-stack.ts";
@@ -33,6 +34,8 @@ describe("interactive presentation", () => {
 		host = {
 			session: () => harness.session,
 			models: () => harness.modelRuntime,
+			mcp: () => ({ list: () => [], subscribe: () => () => {} }) as unknown as McpRuntime,
+			mcpLogin: vi.fn(async () => {}),
 			settings: () => harness.settingsManager,
 			mount: (content) => {
 				panel = content;
@@ -85,6 +88,35 @@ describe("interactive presentation", () => {
 		panel.handleInput("\r");
 		await settle();
 	}
+
+	it("shows MCP protocol and returns to the server list after reconnecting", async () => {
+		const reconnect = vi.fn(async () => {});
+		const server = {
+			name: "catalog",
+			transport: "http" as const,
+			enabled: true,
+			exposure: "codemode" as const,
+			status: "connected" as const,
+			protocolVersion: "2026-07-28",
+			toolsCount: 2,
+		};
+		host.mcp = () =>
+			({
+				list: () => [server],
+				subscribe: () => () => {},
+				reconnect,
+			}) as unknown as McpRuntime;
+		presentation.open("mcp");
+		expect(panel.render(80).join("\n")).toContain("2026-07-28");
+		panel.handleInput("\r");
+		await settle();
+		expect(panel.render(80).join("\n")).toContain("Reconnect");
+		panel.handleInput("\r");
+		await settle();
+		expect(reconnect).toHaveBeenCalledWith("catalog");
+		panel.handleInput("\u001b");
+		expect(panel.render(80).join("\n")).toContain("catalog");
+	});
 
 	it("opens the active model from Actions and restores its search on return", async () => {
 		presentation.open("actions");
@@ -145,6 +177,7 @@ describe("interactive presentation", () => {
 			"instructions",
 			"skills",
 			"tools",
+			"mcp",
 			"behavior",
 		];
 		for (const id of expected) {

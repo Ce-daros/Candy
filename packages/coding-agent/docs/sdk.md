@@ -1,8 +1,18 @@
 # SDK
 
-`@candy/coding-agent` embeds Candy in a Node.js or Bun process. Its root entry exports the headless session runtime, model and settings operations, session storage, tools, resource contracts, and extension authoring types. Import terminal components from `@candy/coding-agent/ui` and RPC client/protocol types from `@candy/coding-agent/rpc`. The executable RPC launcher remains `@candy/coding-agent/rpc-entry`.
+`@candy/coding-agent` embeds Candy in a Node.js or Bun process. For other languages or process isolation, use [RPC](rpc.md) or [CLI integration](cli-integration.md).
 
-Use the SDK for in-process TypeScript integration. For other languages or process isolation, use [RPC](rpc.md) or the [CLI integration](cli-integration.md).
+## Public entrypoints
+
+The package exposes separate entrypoints for separate responsibilities:
+
+| Import | Use |
+|---|---|
+| `@candy/coding-agent` | Headless runtime, settings, model, session, resource, and extension APIs |
+| `@candy/coding-agent/ui` | Terminal components, themes, and UI adapters |
+| `@candy/coding-agent/rpc` | Typed `RpcClient` and protocol types |
+| `@candy/coding-agent/extension-host-modules` | Module map for dynamically loaded extensions |
+| `@candy/coding-agent/rpc-entry` | RPC process launcher |
 
 ## Create and dispose a runtime
 
@@ -46,7 +56,7 @@ The [minimal example](../examples/sdk/01-minimal.ts) also reads messages after a
 | `selection` | The selected model and thinking level |
 | `resources` | Discovered instructions, skills, extensions, prompts, tools, and resource configuration |
 
-Use `execution` for operations, `history` for committed records, and `selection` for model state. A session object remains bound to that session; after replacement, read `runtime.session` again before starting work. Runtime-level model catalog and authentication operations are available on `runtime.models`.
+Use `execution` for operations, `history` for committed records, and `selection` for model state. Runtime-level model catalog and authentication operations are available on `runtime.models`.
 
 Read context with `session.history.buildSessionContext().messages`, the last answer with `session.history.getLastAssistantText()`, and model-specific totals with `session.history.getContextUsage(session.selection.model)` or `getSessionStats(session.selection.model)`. Use `history.exportToJsonl()` to save the committed session. The public capability objects expose supported operations at runtime as well as in their types; history writes and internal managers are not exposed through `runtime.session`.
 
@@ -130,6 +140,30 @@ The built-in extension module map is headless and supports the SDK's extension A
 
 Use `modelRuntime`, `model`, and `thinkingLevel` to choose model access and the initial selection. Use `tools`, `noTools`, `excludeTools`, and `customTools` to control available tools. See [models](../examples/sdk/02-custom-model.ts), [tools](../examples/sdk/05-tools.ts), [extensions](../examples/sdk/06-extensions.ts), and [full control](../examples/sdk/12-full-control.ts).
 
+### Tool selection
+
+Default tools are `read`, `bash`, `edit`, and `write`. Explicit `tools` supplies an allowlist; `defaultTools` configures startup defaults. `customTools` registers host tools.
+
+| Option | Effect |
+|---|---|
+| `noTools: "builtin"` | Remove built-in defaults while retaining extension and MCP tools |
+| `noTools: "all"` | Disable all tools |
+| `excludeTools: [name]` | Exclude a tool after other selection options |
+
+For a restricted session with a configured `fixture` MCP server:
+
+```typescript
+const runtime = await createAgentSessionRuntime({ tools: ["read", "mcp_fixture_query", "codemode"] });
+```
+
+`read` is offered directly. MCP discovery and codemode execution can access only `mcp_fixture_query`; `search_mcp_tools` is added automatically. See [MCP tool availability and session choices](mcp.md#tool-availability-and-session-choices) for activation, permissions, and restoration rules.
+
+Use `session.resources.setActiveTools(names)` to change the active selection and `saveDefaultTools(names)` to save startup defaults. SDK and extension changes to codemode's on/off state persist on the session branch. Request-level `selectedTools` changes do not persist that choice.
+
+### MCP servers
+
+`runtime.mcp` manages connections and supplies `setInteraction(handler)` for host UI. See [MCP SDK operations](mcp.md#sdk-and-rpc) for server operations and [codemode](mcp.md#use-codemode) for discovery, script output, and branch state.
+
 ## Settings
 
 `runtime.settings` exposes the active `SettingsManager`. Read an interactive setting through its typed definition with `read(id)`. Persist a setting change with `commitSetting(scope, field, value)` or a nested field with `commitNestedSetting(scope, field, key, value)`. Await commits; a write failure rejects and leaves the previous effective value in place.
@@ -141,19 +175,7 @@ await runtime.settings.commitNestedSetting("global", "markdown", "mermaid", "off
 
 `SettingsManager.inMemory(initialSettings)` is useful for tests and hosts that do not want a Candy settings file. `applyOverrides()` supplies process-local runtime overrides; it does not save defaults. Use a scope-aware commit when the host intends to change persisted global or project defaults.
 
-## Public entrypoints
-
-The package exposes separate entrypoints for separate responsibilities:
-
-| Import | Use |
-|---|---|
-| `@candy/coding-agent` | Headless runtime, settings, model, session, resource, and extension APIs |
-| `@candy/coding-agent/ui` | Terminal components, themes, and UI adapters |
-| `@candy/coding-agent/rpc` | Typed `RpcClient` and protocol types |
-| `@candy/coding-agent/extension-host-modules` | Module map for dynamically loaded extensions |
-| `@candy/coding-agent/rpc-entry` | RPC process launcher |
-
-Create a runtime with `createAgentSessionRuntime()`. Conversation operations belong to `runtime.session.execution`, committed entry reads to `runtime.session.history`, and model changes to `runtime.session.selection`. Use runtime operations for session replacement and await `runtime.dispose()` when the host is finished. Settings changes return promises; await each persisted operation to observe its success or failure.
+## Related APIs
 
 Provider extensions register native `Provider` implementations and own their authentication, discovery, refresh, request conversion, and streaming. Use `models.json` for compatible endpoints and model configuration; see [Custom Providers](custom-provider.md).
 

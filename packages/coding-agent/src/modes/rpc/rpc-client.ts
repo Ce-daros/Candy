@@ -12,13 +12,21 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { InteractiveSettingId, InteractiveSettingValue } from "../../core/interactive-setting-values.ts";
+import type { McpConfigScope, McpExposure, McpServerState } from "../../core/mcp/types.ts";
 import type { ResourceType } from "../../core/resource-configuration.ts";
 import type { ResourceOperations } from "../../core/resource-operations.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-history.ts";
 import type { Settings, SettingsScope } from "../../core/settings-manager.ts";
 import type { JsonAgentSessionEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSettingsCommitEvent } from "./rpc-types.ts";
+import type {
+	RpcCommand,
+	RpcExtensionUIRequest,
+	RpcExtensionUIResponse,
+	RpcResponse,
+	RpcSessionState,
+	RpcSettingsCommitEvent,
+} from "./rpc-types.ts";
 
 // ============================================================================
 // Types
@@ -52,7 +60,7 @@ export interface ModelInfo {
 	reasoning: boolean;
 }
 
-export type RpcEvent = JsonAgentSessionEvent | RpcSettingsCommitEvent;
+export type RpcEvent = JsonAgentSessionEvent | RpcSettingsCommitEvent | RpcExtensionUIRequest;
 export type RpcEventListener = (event: RpcEvent) => void;
 
 // ============================================================================
@@ -344,6 +352,37 @@ export class RpcClient {
 		await this.send({ type: "reload_resources" });
 	}
 
+	async listMcpServers(): Promise<McpServerState[]> {
+		const response = await this.send({ type: "mcp_list" });
+		return this.getData<{ servers: McpServerState[] }>(response).servers;
+	}
+
+	async reconnectMcpServer(name: string): Promise<void> {
+		await this.send({ type: "mcp_reconnect", name });
+	}
+
+	async setMcpServerEnabled(name: string, enabled: boolean, scope?: McpConfigScope): Promise<void> {
+		await this.send({ type: "mcp_set_enabled", name, enabled, scope });
+	}
+
+	async setMcpServerExposure(name: string, exposure: McpExposure, scope?: McpConfigScope): Promise<void> {
+		await this.send({ type: "mcp_set_exposure", name, exposure, scope });
+	}
+
+	async loginMcpServer(name: string): Promise<void> {
+		await this.send({ type: "mcp_login", name });
+	}
+
+	async logoutMcpServer(name: string): Promise<void> {
+		await this.send({ type: "mcp_logout", name });
+	}
+
+	respondToExtensionUI(response: RpcExtensionUIResponse): void {
+		const stdin = this.process?.stdin;
+		if (!stdin || stdin.destroyed || !stdin.writable) throw new Error("RPC client is not writable");
+		stdin.write(serializeJsonLine(response));
+	}
+
 	/**
 	 * Set model by provider and ID.
 	 */
@@ -581,7 +620,7 @@ export class RpcClient {
 			}, timeout);
 
 			const unsubscribe = this.onEvent((event) => {
-				if (event.type === "settings_commit") return;
+				if (event.type === "settings_commit" || event.type === "extension_ui_request") return;
 				events.push(event);
 				if (event.type === "agent_settled") {
 					clearTimeout(timer);

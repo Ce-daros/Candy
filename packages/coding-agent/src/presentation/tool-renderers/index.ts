@@ -9,6 +9,7 @@
 import type { ToolName } from "../../core/tools/index.ts";
 import type { ToolRenderers } from "../tool-render-types.ts";
 import { createShellRenderers } from "./bash.ts";
+import { codemodeRenderers } from "./codemode.ts";
 import { editRenderers } from "./edit.ts";
 import { findRenderers } from "./find.ts";
 import { grepRenderers } from "./grep.ts";
@@ -20,6 +21,7 @@ export type { ToolRenderers } from "../tool-render-types.ts";
 
 export {
 	createShellRenderers,
+	codemodeRenderers,
 	editRenderers,
 	findRenderers,
 	grepRenderers,
@@ -40,5 +42,6 @@ const builtInToolRenderers: Record<ToolName, ToolRenderers> = {
 };
 
 export function getBuiltInToolRenderers(toolName: string): ToolRenderers | undefined {
+	if (toolName === "codemode") return codemodeRenderers;
 	return Object.hasOwn(builtInToolRenderers, toolName) ? builtInToolRenderers[toolName as ToolName] : undefined;
 }

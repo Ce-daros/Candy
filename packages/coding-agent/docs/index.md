@@ -7,6 +7,7 @@
 - [Models](models.md): selection, providers, scope, and compatible endpoints
 - [Sessions and context](sessions.md): continue, branch, clone, import, and compact
 - [Configuration](configuration.md): files, precedence, instructions, and resources
+- [MCP and codemode](mcp.md): server connections, tool discovery, execution, and saved choices
 - [How Candy works](how-candy-works.md): runtime and conversation lifecycle
 
 ## Customize

@@ -151,6 +151,15 @@ async function createRuntimeHost(options: {
 
 	const runtimeHost = {
 		session,
+		mcp: {
+			list: () => [],
+			setInteraction: vi.fn(),
+			reconnect: vi.fn(async () => {}),
+			setEnabled: vi.fn(async () => {}),
+			setExposure: vi.fn(async () => {}),
+			login: vi.fn(async () => {}),
+			logout: vi.fn(async () => {}),
+		},
 		settings: settingsManager,
 		models: modelRuntime,
 		resources: session.resources,
@@ -222,6 +231,55 @@ describe("RPC prompt response semantics", () => {
 	afterEach(async () => {
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
+	});
+
+	it("routes MCP management and elicitation through the existing RPC UI exchange", async () => {
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+		try {
+			lineHandler(JSON.stringify({ id: "mcp-list", type: "mcp_list" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual(
+					expect.objectContaining({
+						id: "mcp-list",
+						command: "mcp_list",
+						success: true,
+						data: { servers: [] },
+					}),
+				),
+			);
+			const handler = vi.mocked(runtimeHost.mcp.setInteraction).mock.calls[0]?.[0];
+			expect(handler).toBeDefined();
+			const result = handler!({
+				type: "elicitation",
+				server: "catalog",
+				request: {
+					mode: "form",
+					message: "Choose a value",
+					requestedSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"] },
+				},
+			});
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual(
+					expect.objectContaining({
+						type: "extension_ui_request",
+						method: "mcp_elicitation",
+						server: "catalog",
+					}),
+				),
+			);
+			const request = parseOutputLines(rpcIo.outputLines).find((entry) => entry.method === "mcp_elicitation")!;
+			lineHandler(
+				JSON.stringify({
+					type: "extension_ui_response",
+					id: request.id,
+					action: "accept",
+					content: { value: "yes" },
+				}),
+			);
+			expect(await result).toEqual({ action: "accept", content: { value: "yes" } });
+		} finally {
+			await cleanup();
+		}
 	});
 
 	it("emits one failure response when prompt preflight rejects", async () => {

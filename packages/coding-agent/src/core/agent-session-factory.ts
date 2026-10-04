@@ -6,6 +6,7 @@ import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { CacheWarmer } from "./cache-warmer.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
+import type { McpRuntime } from "./mcp/runtime.ts";
 import { convertToLlm } from "./messages.ts";
 import { findInitialModel } from "./model-resolver.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
@@ -24,6 +25,7 @@ export interface CreateAgentSessionOptions {
 
 	/** Canonical model/auth runtime. Defaults to a runtime using agentDir/auth.json and models.json. */
 	modelRuntime?: ModelRuntime;
+	mcp?: McpRuntime;
 
 	/** Model to use. Default: from settings, else first available */
 	model?: Model<any>;
@@ -171,6 +173,12 @@ export async function assembleAgentSession(options: AssembleAgentSessionOptions)
 		options.tools ??
 		(options.noTools ? [] : (configuredDefaultToolNames ?? defaultActiveToolNames))
 	).filter((name) => !excludedToolNameSet?.has(name));
+	const explicitToolNames =
+		options.initialActiveToolNames ??
+		options.tools ??
+		(options.noTools
+			? []
+			: (configuredDefaultToolNames ?? (options.baseToolsOverride ? defaultActiveToolNames : undefined)));
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
@@ -298,8 +306,10 @@ export async function assembleAgentSession(options: AssembleAgentSessionOptions)
 		resourceLoader,
 		customTools: options.customTools,
 		modelRuntime,
+		mcp: options.mcp,
 		cacheWarmer,
 		initialActiveToolNames,
+		initialCodemodeSelection: explicitToolNames?.includes("codemode"),
 		allowedToolNames,
 		excludedToolNames,
 		sessionStartEvent: options.sessionStartEvent,

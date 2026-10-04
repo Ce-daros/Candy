@@ -42,7 +42,10 @@ const bashSchema = Type.Object({
 
 export const bashToolSystemPromptContribution = {
 	snippet: "Execute bash commands (ls, grep, find, etc.)",
-	guidelines: ["You can inspect CANDY_* environment variables for current model and session details."],
+	guidelines: [
+		"Use bash for standalone calculations and local data processing, using an available interpreter such as Node.js or Python when needed.",
+		"You can inspect CANDY_* environment variables for current model and session details.",
+	],
 } as const;
 
 export type BashToolInput = Static<typeof bashSchema>;

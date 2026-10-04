@@ -120,6 +120,7 @@ export type AgentSessionRuntime = Pick<
 	| "modelFallbackMessage"
 	| "settings"
 	| "models"
+	| "mcp"
 	| "newSession"
 	| "switchSession"
 	| "fork"
@@ -169,6 +170,8 @@ export async function createAgentSessionRuntime(
 				modelRuntime: options.modelRuntime,
 				modelRuntimeOptions: options.modelRuntimeOptions,
 				modelRuntimeSignal: options.signal,
+				mcpEnabled: options.noTools !== "all",
+				mcpSignal: options.signal,
 				settingsManager: options.settingsManager,
 				resourceLoader: await options.resourceLoaderFactory?.(target),
 				resourceLoaderOptions: options.resourceLoaderOptions,
@@ -240,6 +243,9 @@ export async function createAgentSessionRuntime(
 		},
 		get models() {
 			return host.models;
+		},
+		get mcp() {
+			return host.mcp;
 		},
 		get resources() {
 			return getSession().resources;

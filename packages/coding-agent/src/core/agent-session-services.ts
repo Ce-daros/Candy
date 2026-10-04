@@ -9,6 +9,7 @@ import {
 	type CreateAgentSessionResult,
 } from "./agent-session-factory.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
+import { McpRuntime } from "./mcp/runtime.ts";
 import { type CreateModelRuntimeOptions, ModelRuntime } from "./model-runtime.ts";
 import {
 	DefaultResourceLoader,
@@ -46,6 +47,8 @@ export interface CreateAgentSessionServicesOptions {
 	modelRuntime?: ModelRuntime;
 	modelRuntimeOptions?: Omit<CreateModelRuntimeOptions, "signal" | "refreshOnCreate">;
 	modelRuntimeSignal?: AbortSignal;
+	mcpEnabled?: boolean;
+	mcpSignal?: AbortSignal;
 	extensionFlagValues?: Map<string, boolean | string>;
 	resourceLoaderOptions?: Omit<
 		DefaultResourceLoaderOptions,
@@ -84,6 +87,7 @@ export interface AgentSessionServices {
 	cwd: string;
 	agentDir: string;
 	modelRuntime: ModelRuntime;
+	mcp: McpRuntime;
 	settingsManager: SettingsManager;
 	resourceLoader: ResourceLoader;
 	diagnostics: AgentSessionRuntimeDiagnostic[];
@@ -188,17 +192,32 @@ export async function assembleAgentSessionServices(
 		extensionsResult.runtime.pendingProviderRegistrations = [];
 		await modelRuntime.refresh({ allowNetwork: false });
 		diagnostics.push(...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues));
+		const mcp = await McpRuntime.create({
+			cwd,
+			agentDir,
+			settingsManager,
+			enabled: options.mcpEnabled,
+			signal: options.mcpSignal,
+		});
 
 		let disposePromise: Promise<void> | undefined;
 		return {
 			cwd,
 			agentDir,
 			modelRuntime,
+			mcp,
 			settingsManager,
 			resourceLoader,
 			diagnostics,
 			dispose: () => {
-				disposePromise ??= ownsModelRuntime ? modelRuntime.dispose() : Promise.resolve();
+				disposePromise ??= (async () => {
+					const results = await Promise.allSettled([
+						mcp.dispose(),
+						...(ownsModelRuntime ? [modelRuntime.dispose()] : []),
+					]);
+					const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+					if (errors.length > 0) throw new AggregateError(errors, "Failed to dispose runtime services");
+				})();
 				return disposePromise;
 			},
 		};
@@ -227,6 +246,7 @@ export async function assembleAgentSessionFromServices(
 		cwd: options.services.cwd,
 		agentDir: options.services.agentDir,
 		modelRuntime: options.services.modelRuntime,
+		mcp: options.services.mcp,
 		settingsManager: options.services.settingsManager,
 		resourceLoader: options.services.resourceLoader,
 		sessionManager: options.sessionManager,

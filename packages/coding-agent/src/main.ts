@@ -1,3 +1,4 @@
+import { runMcpCommand } from "./cli/mcp-command.ts";
 import { buildRuntimeFactory } from "./core/runtime-builder.ts";
 /**
  * Main entry point for the coding agent CLI.
@@ -576,6 +577,7 @@ async function runMain(
 	}
 
 	await network.configure({ httpProxy: bootstrapSettingsManager.getGlobalSettings().httpProxy });
+	if (await runMcpCommand(args)) return;
 
 	if (await handlePackageCommand(args, { extensionFactories })) {
 		process.exitCode ??= 0;
@@ -728,6 +730,7 @@ async function runMain(
 					extensionModules: extensionHostModules,
 					settingsManager: runtimeSettingsManager,
 					modelRuntimeSignal: AbortSignal.timeout(15_000),
+					mcpEnabled: !parsed.noTools,
 					extensionFlagValues: parsed.unknownFlags,
 					resourceLoaderReloadOptions: shouldResolveProjectTrust
 						? {

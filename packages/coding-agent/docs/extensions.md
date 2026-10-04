@@ -130,7 +130,7 @@ Truncate large model-facing results and tell the model where to read the complet
 
 ### Activate tools dynamically
 
-Register every tool first, keep optional tools inactive, and use `candy.setActiveTools()` from a loader tool to select the desired active tools. Names must already be registered; unknown names are ignored.
+Register every tool first, keep optional tools inactive, and use `candy.setActiveTools()` from a loader tool to select the desired active tools. Names must already be registered; unknown names are ignored. Explicit codemode on/off changes persist on the current branch; see [MCP session choices](mcp.md#tool-availability-and-session-choices).
 
 candy records the initial prompt and tool set in the transcript's first system message, then appends tool and prompt changes before the next model request. Providers that cannot represent the transition receive a complete transcript checkpoint, which can invalidate the cached prefix.
 

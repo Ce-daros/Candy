@@ -1,5 +1,6 @@
 import { setKeybindings } from "@candy/tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { McpRuntime } from "../src/core/mcp/runtime.ts";
 import type { CommandPanel } from "../src/modes/interactive/components/command-panel.ts";
 import { InteractivePresentation, type PresentationHost } from "../src/modes/interactive/interactive-presentation.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -33,6 +34,8 @@ describe("Sources catalog lifecycle", () => {
 		const host: PresentationHost = {
 			session: () => harness!.session,
 			models: () => harness!.modelRuntime,
+			mcp: () => ({ list: () => [], subscribe: () => () => {} }) as unknown as McpRuntime,
+			mcpLogin: async () => {},
 			settings: () => harness!.settingsManager,
 			mount(next) {
 				panel = next;
@@ -80,6 +83,8 @@ describe("Sources catalog lifecycle", () => {
 		const host: PresentationHost = {
 			session: () => harness!.session,
 			models: () => harness!.modelRuntime,
+			mcp: () => ({ list: () => [], subscribe: () => () => {} }) as unknown as McpRuntime,
+			mcpLogin: async () => {},
 			settings: () => harness!.settingsManager,
 			mount,
 			exit() {},

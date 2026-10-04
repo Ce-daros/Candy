@@ -21,6 +21,9 @@ export class SessionTools {
 	private definitions = new Map<string, ToolDefinitionEntry>();
 	private promptSnippets = new Map<string, string>();
 	private promptGuidelines = new Map<string, string[]>();
+	private activeToolNames: string[] = [];
+	private codemodeDisabled = false;
+	private runtimeDefinitions: ToolDefinition[] = [];
 
 	constructor(allowedToolNames?: string[], excludedToolNames?: string[]) {
 		this.allowedToolNames = allowedToolNames ? new Set(allowedToolNames) : undefined;
@@ -31,6 +34,14 @@ export class SessionTools {
 		this.baseDefinitions = new Map(Object.entries(definitions));
 	}
 
+	setRuntimeDefinitions(definitions: ToolDefinition[]): void {
+		this.runtimeDefinitions = definitions;
+	}
+
+	setCodemodeDisabled(disabled: boolean): void {
+		this.codemodeDisabled = disabled;
+	}
+
 	refresh(
 		runner: ExtensionRunner,
 		customTools: ToolDefinition[],
@@ -39,10 +50,17 @@ export class SessionTools {
 	): string[] {
 		const previousRegistryNames = new Set(this.toolRegistry.keys());
 		const isAllowed = (name: string): boolean =>
-			(!this.allowedToolNames || this.allowedToolNames.has(name)) && !this.excludedToolNames?.has(name);
+			(!this.allowedToolNames ||
+				this.allowedToolNames.has(name) ||
+				((name === "codemode" || name === "search_mcp_tools") && this.allowedToolNames.size > 0)) &&
+			!this.excludedToolNames?.has(name);
 		const extensionTools = runner.getAllRegisteredTools();
 		const allCustomTools = [
 			...extensionTools,
+			...this.runtimeDefinitions.map((definition) => ({
+				definition,
+				sourceInfo: createSyntheticSourceInfo(`<mcp:${definition.name}>`, { source: "mcp" }),
+			})),
 			...customTools.map((definition) => ({
 				definition,
 				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }),
@@ -99,16 +117,62 @@ export class SessionTools {
 		).filter((name) => isAllowed(name));
 		if (this.allowedToolNames) {
 			for (const toolName of this.toolRegistry.keys()) {
-				if (this.allowedToolNames.has(toolName)) nextActiveToolNames.push(toolName);
+				if (this.allowedToolNames.has(toolName) && !previousRegistryNames.has(toolName))
+					nextActiveToolNames.push(toolName);
 			}
 		} else if (options?.includeAllExtensionTools) {
-			for (const tool of wrappedExtensionTools) nextActiveToolNames.push(tool.name);
+			const runtimeNames = new Set(this.runtimeDefinitions.map((tool) => tool.name));
+			for (const tool of wrappedExtensionTools) {
+				if (!runtimeNames.has(tool.name) || !previousRegistryNames.has(tool.name))
+					nextActiveToolNames.push(tool.name);
+			}
 		} else if (!options?.activeToolNames) {
 			for (const toolName of this.toolRegistry.keys()) {
 				if (!previousRegistryNames.has(toolName)) nextActiveToolNames.push(toolName);
 			}
 		}
-		return [...new Set(nextActiveToolNames)];
+		if (!this.codemodeDisabled && isAllowed("codemode") && this.getCodemodeTools(nextActiveToolNames).length > 0) {
+			nextActiveToolNames.push("codemode");
+		}
+		return this.withMcpDiscovery(nextActiveToolNames);
+	}
+
+	setActiveTools(names: string[], explicit = false): void {
+		if (explicit) {
+			if (names.includes("codemode")) this.codemodeDisabled = false;
+			else if (this.activeToolNames.includes("codemode")) this.codemodeDisabled = true;
+			if (!this.codemodeDisabled && this.toolRegistry.has("codemode") && this.getCodemodeTools(names).length > 0)
+				names = [...names, "codemode"];
+		}
+		this.activeToolNames = this.withMcpDiscovery(names);
+	}
+
+	private withMcpDiscovery(names: string[]): string[] {
+		const available =
+			this.toolRegistry.has("codemode") && names.includes("codemode") && this.getCodemodeTools(names).length > 0;
+		const active = names.filter(
+			(name) => this.toolRegistry.has(name) && ((name !== "codemode" && name !== "search_mcp_tools") || available),
+		);
+		if (available && this.toolRegistry.has("search_mcp_tools")) active.push("search_mcp_tools");
+		return [...new Set(active)];
+	}
+
+	getCodemodeTools(names: readonly string[] = this.activeToolNames): AgentTool[] {
+		return names.flatMap((name) => {
+			const tool = this.getTool(name);
+			return tool?.exposure === "codemode" && this.definitions.get(name)?.sourceInfo.source === "mcp" ? [tool] : [];
+		});
+	}
+
+	getActiveToolNames(): string[] {
+		return [...this.activeToolNames];
+	}
+
+	getDirectTools(): AgentTool[] {
+		return this.activeToolNames.flatMap((name) => {
+			const tool = this.getTool(name);
+			return tool && (!tool.exposure || tool.exposure === "direct") ? [tool] : [];
+		});
 	}
 
 	getTool(name: string): AgentTool | undefined {
@@ -124,6 +188,9 @@ export class SessionTools {
 			name: definition.name,
 			description: definition.description,
 			parameters: definition.parameters,
+			outputSchema: definition.outputSchema,
+			exposure: definition.exposure,
+			namespace: definition.namespace,
 			promptGuidelines: definition.promptGuidelines,
 			sourceInfo,
 		}));

@@ -8,7 +8,7 @@ Messages and events in a session form a tree. Each path through that tree is a b
 
 A submitted message is added to the active branch. candy builds a model request from the system prompt, active branch, available tools, and model settings, then sends it through the selected provider.
 
-The provider streams an assistant response, which can contain text and tool calls. candy records the response, executes each tool call, and records the results. That completes one turn. If tool results or queued messages require another model request, candy starts another turn. Otherwise, the run ends.
+The provider streams an assistant response, which can contain text and tool calls. candy records the response, executes each model-issued tool call, and records its result. That completes one turn. If tool results or queued messages require another model request, candy starts another turn. Otherwise, the run ends.
 
 Steering messages enter after the current assistant turn. Follow-up messages enter after the agent has finished its pending work. Aborting stops the current run and returns queued messages to the editor.
 
@@ -36,7 +36,7 @@ Interactive mode renders session and agent events in the terminal. Print mode ru
 
 RPC mode accepts JSONL commands on stdin and writes responses and events to stdout. The TypeScript SDK creates and controls agent sessions in process.
 
-All interfaces use the same agent and session mechanisms.
+All interfaces use the same agent and session mechanisms. [MCP calls through codemode](mcp.md#use-codemode) share tool validation, hooks, and cancellation. Nested results stay inside the script rather than becoming separate model messages. Script output forms the parent tool result, whose details retain call metadata for the transcript.
 
 ## Extensions and resources
 

@@ -35,6 +35,11 @@ const aliases = workspaceSourceAliases();
 const aliasesPlugin = {
 	name: "workspace-source-aliases",
 	setup(builder) {
+		// Fake URLs must not start a browser that inherits and locks the isolated profile.
+		builder.onLoad({ filter: /[/\\]utils[/\\]open-browser\.ts$/ }, () => ({
+			contents: 'export function openBrowser(target) { process.stdout.write("SMOKE_BROWSER_OPEN " + JSON.stringify(target) + "\\n"); }',
+			loader: "js",
+		}));
 		builder.onResolve({ filter: /^@candy\// }, ({ path }) => {
 			const alias = aliases.find(({ find }) => find.test(path));
 			if (alias) return { path: path.replace(alias.find, alias.replacement) };
@@ -59,9 +64,7 @@ const aliasesPlugin = {
 
 try {
 	const output = join(temporary, "interactive-smoke.mjs");
-	await build({
-		entryPoints: [join(packageDir, "test", "fixtures", "interactive-smoke-entry.ts")],
-		outfile: output,
+	const buildOptions = {
 		bundle: true,
 		platform: "node",
 		format: "esm",
@@ -71,7 +74,19 @@ try {
 			js: 'import { createRequire as __candyCreateRequire } from "node:module"; const require = __candyCreateRequire(import.meta.url);',
 		},
 		logLevel: "error",
-	});
+	};
+	await Promise.all([
+		build({
+			...buildOptions,
+			entryPoints: [join(packageDir, "test", "fixtures", "interactive-smoke-entry.ts")],
+			outfile: output,
+		}),
+		build({
+			...buildOptions,
+			entryPoints: [join(packageDir, "src", "utils", "codemode-worker.ts")],
+			outfile: join(temporary, "worker.js"),
+		}),
+	]);
 	const childEnv = { ...process.env };
 	for (const key of Object.keys(childEnv)) {
 		if (/(_API_KEY|_TOKEN|_SECRET|_AUTH|_CREDENTIAL|^OPENAI_|^ANTHROPIC_|^OPENROUTER_)/i.test(key)) {

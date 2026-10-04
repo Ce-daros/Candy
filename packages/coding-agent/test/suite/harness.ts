@@ -17,6 +17,7 @@ import {
 } from "@candy/ai/providers/faux";
 import type { AgentSession, AgentSessionEvent } from "../../src/core/agent-session.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
+import type { McpRuntime } from "../../src/core/mcp/runtime.ts";
 import type { ModelRuntime } from "../../src/core/model-runtime.ts";
 import { SessionHistory } from "../../src/core/session-history.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
@@ -65,6 +66,7 @@ export interface HarnessOptions {
 	models?: FauxModelDefinition[];
 	settings?: Partial<Settings>;
 	tools?: AgentTool[];
+	mcp?: McpRuntime;
 	initialActiveToolNames?: string[];
 	allowedToolNames?: string[];
 	excludedToolNames?: string[];
@@ -144,6 +146,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		sessionManager,
 		resourceLoader,
 		baseToolsOverride: toolMap,
+		mcp: options.mcp,
 		initialActiveToolNames: options.initialActiveToolNames,
 		tools: options.allowedToolNames,
 		excludeTools: options.excludedToolNames,

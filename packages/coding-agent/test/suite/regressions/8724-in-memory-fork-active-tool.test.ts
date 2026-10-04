@@ -8,6 +8,7 @@ import {
 	assembleAgentSessionFromServices,
 	type CreateAgentSessionRuntimeFactory,
 } from "../../../src/core/agent-session-runtime.ts";
+import { McpRuntime } from "../../../src/core/mcp/runtime.ts";
 import { createHarness } from "../harness.ts";
 
 describe("regression #8724: in-memory fork during an active tool turn", () => {
@@ -44,6 +45,11 @@ describe("regression #8724: in-memory fork during an active tool turn", () => {
 			cwd: harness.tempDir,
 			agentDir: harness.tempDir,
 			modelRuntime: harness.session.execution.modelRuntime,
+			mcp: await McpRuntime.create({
+				cwd: harness.tempDir,
+				agentDir: harness.tempDir,
+				settingsManager: harness.settingsManager,
+			}),
 			settingsManager: harness.settingsManager,
 			resourceLoader: harness.session.execution.resourceLoader,
 			diagnostics: [],

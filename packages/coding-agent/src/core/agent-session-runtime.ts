@@ -125,6 +125,9 @@ export class AgentSessionRuntime {
 	get models() {
 		return this._services.modelRuntime;
 	}
+	get mcp() {
+		return this._services.mcp;
+	}
 	get resources() {
 		return this._session.resources;
 	}

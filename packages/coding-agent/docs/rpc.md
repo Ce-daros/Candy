@@ -4,8 +4,6 @@ RPC mode runs candy as a long-lived subprocess controlled through JSON records o
 
 For an in-process Node.js or Bun integration, prefer the [SDK](sdk.md). For a subprocess-based TypeScript integration, import `RpcClient` and protocol types from `@candy/coding-agent/rpc`. The client starts candy, correlates responses, exposes typed command methods, and delivers events to listeners.
 
-Successful setting commits also emit a `settings_commit` event containing the committed scope and changed settings fields. It is published only after persistence succeeds. When RPC replaces its active session, subscriptions to the previous session are removed before events from the new session are forwarded.
-
 | Interface | Process boundary | Control model | Best fit |
 |---|---|---|---|
 | [SDK](sdk.md) | In process | Direct TypeScript methods and events | Node.js or Bun hosts that want complete API access |
@@ -49,6 +47,8 @@ Session events generally have no command ID because they describe session activi
 
 An `extension_ui_response` uses the ID supplied by its `extension_ui_request`. It does not produce a normal command response.
 
+MCP operations use the [server command reference](rpc-commands.md#mcp-server-commands). Forms and authorization links use the same extension UI exchange; see [MCP elicitation](rpc-extension-ui.md#mcp_elicitation) and [authorization](rpc-extension-ui.md#mcp_authorization).
+
 ## Framing
 
 RPC uses strict JSONL framing. Write one complete JSON object per record and terminate it with LF (`\n`). Read stdout as a byte or UTF-8 stream and split records only on LF. Strip an optional preceding carriage return to accept CRLF input.
@@ -89,6 +89,10 @@ Malformed JSON produces a parse response without a request ID:
 A success response only covers command handling. Provider failures and aborts after a prompt is accepted appear in the message and event stream.
 
 Clients must also handle child-process startup failures, unexpected exits, stderr diagnostics, cancellation, and their own deadlines. Do not parse stderr as protocol data.
+
+## Settings and session changes
+
+A successful settings commit emits `settings_commit` after persistence, with the committed scope and changed fields. See [settings commands](rpc-commands.md#commit_setting) for input and [JSON events](json.md) for notifications. Session replacement stops forwarding events from the old session before subscribing to the new one.
 
 ## Shutdown
 

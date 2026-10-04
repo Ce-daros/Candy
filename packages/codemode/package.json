@@ -1,0 +1,65 @@
+{
+	"name": "@candy/codemode",
+	"version": "0.87.1",
+	"description": "Sandboxed JavaScript execution where the only capability is calling injected tools",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./declarations": {
+			"source": "./src/declarations.ts",
+			"types": "./dist/declarations.d.ts",
+			"import": "./dist/declarations.js"
+		},
+		"./source": {
+			"source": "./src/source.ts",
+			"types": "./dist/source.d.ts",
+			"import": "./dist/source.js"
+		},
+		"./worker": {
+			"source": "./src/runtime/worker.ts",
+			"types": "./dist/runtime/worker.d.ts",
+			"import": "./dist/runtime/worker.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE",
+		"SOURCE.md"
+	],
+	"scripts": {
+		"clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run build"
+	},
+	"keywords": [
+		"pi",
+		"codemode",
+		"sandbox",
+		"quickjs",
+		"wasm"
+	],
+	"author": "Earendil Works; Candy contributors",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Ce-daros/Candy.git",
+		"directory": "packages/codemode"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"quickjs-wasi": "3.6.2"
+	},
+	"devDependencies": {
+		"vitest": "4.1.11"
+	}
+}

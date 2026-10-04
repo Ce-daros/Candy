@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { normalizePath } from "./utils/paths.ts";
 import { stripBom } from "./utils/text.ts";
 
@@ -118,6 +118,20 @@ export function getExamplesPath(): string {
 /** Get path to CHANGELOG.md */
 export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
+}
+
+/** Packaged QuickJS assets; source and unbundled packages use codemode's own resolution. */
+export function getCodemodeWorkerUrl(): string | URL | undefined {
+	// Bun resolves embedded worker entrypoints from the common build root (`src`), not its virtual file URL.
+	if (isBunBinary) return "./utils/codemode-worker.ts";
+	if (isBundledNode) return pathToFileURL(join(getPackageDir(), "dist", "bundle", "codemode-worker.js"));
+	return undefined;
+}
+
+export function getCodemodeWasmPath(): string | undefined {
+	if (isBunBinary) return join(getPackageDir(), "codemode", "quickjs.wasm");
+	if (isBundledNode) return join(getPackageDir(), "dist", "codemode", "quickjs.wasm");
+	return undefined;
 }
 
 // =============================================================================

@@ -35,6 +35,8 @@ export function copyCodingAgentAssets({
 		}
 	}
 	for (const entry of ["cli.js", "rpc-entry.js"]) chmodSync(resolve(dist, entry), 0o755);
+	mkdirSync(resolve(dist, "codemode"), { recursive: true });
+	cpSync(resolve(repositoryRoot, "node_modules/quickjs-wasi/quickjs.wasm"), resolve(dist, "codemode/quickjs.wasm"));
 	if (binary) {
 		for (const file of ["package.json", "README.md", "CHANGELOG.md", "docs", "examples"]) {
 			cpSync(resolve(packageRoot, file), resolve(dist, file), { recursive: true });

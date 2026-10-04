@@ -282,7 +282,7 @@ ${chalk.bold("Options:")}
   --no-session                   Don't save session (ephemeral)
   --name, -n <name>              Set session display name
   --no-tools, -nt                Disable all tools by default (built-in and extension)
-  --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
+  --no-builtin-tools, -nbt       Disable built-in defaults; keep extension and MCP tools
   --tools, -t <tools>            Comma-separated allowlist of tool names to enable
                                  Applies to built-in, extension, and custom tools
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
@@ -408,5 +408,15 @@ ${chalk.bold("Built-in Tool Names:")}
   grep       - Search file contents (read-only, off by default)
   find       - Find files by glob pattern (read-only, off by default)
   ls         - List directory contents (read-only, off by default)
+  codemode   - Call enabled MCP tools and process their results
+  search_mcp_tools - Find MCP declarations using BM25 keyword search
+
+  Default tools: read, bash, edit, write. Use bash for standalone calculations.
+  Codemode and search_mcp_tools are offered with enabled MCP tools using codemode exposure.
+  Explicit tool lists replace these defaults; include the desired MCP tool names.
+
+${chalk.bold("MCP Servers:")}
+  ${APP_NAME} mcp add/remove/list/login/logout - Configure and manage MCP servers
+  MCP tools use codemode by default. Run ${APP_NAME} mcp --help for configuration syntax.
 `);
 }

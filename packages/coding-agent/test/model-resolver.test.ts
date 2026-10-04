@@ -208,6 +208,19 @@ describe("parseModelPattern", () => {
 });
 
 describe("resolveCliModel", () => {
+	test.each([undefined, "openrouter"])(
+		"preserves the exact OpenRouter free router ID with provider %s",
+		(cliProvider) => {
+			const free = { ...mockOpenRouterModels[0], id: "openrouter/free", name: "Free Models Router" };
+			const other = { ...free, id: "vendor/paid", name: "Free trial" };
+			const modelRuntime = {
+				getModels: () => [other, free],
+				hasConfiguredAuth: () => true,
+			} as unknown as Parameters<typeof resolveCliModel>[0]["modelRuntime"];
+			const result = resolveCliModel({ cliProvider, cliModel: "openrouter/free", modelRuntime });
+			expect(result.model?.id).toBe("openrouter/free");
+		},
+	);
 	test("resolves --model provider/id without --provider", () => {
 		const registry = {
 			getModels: () => allModels,

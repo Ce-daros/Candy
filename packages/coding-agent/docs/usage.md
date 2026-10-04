@@ -59,9 +59,11 @@ Press `Escape` twice within 500ms in an empty ordinary editor to open Actions. S
 | Current session | Context, Compact, Session details, Rename |
 | Sessions | New session, Tree, Fork, Clone, Resume / Switch session |
 | Files | Export, Import |
-| Agent | Instructions, Skills, Tools, Behavior |
+| Agent | Instructions, Skills, Tools, MCP servers, Behavior |
 
 Current Model shows the active model's details and saved defaults. Sources manages provider access and the quick-selection scope. See [Models](models.md#select-a-model). Actions → Tools changes active tools or saves defaults for new sessions. Returning from a child page restores the menu's search and selection; closing Actions returns to the editor.
+
+Actions → MCP servers shows each server's connection and negotiated protocol version. Select one to reconnect, enable or disable it, choose how its tools appear, or manage login. The same page opens from Command → `mcp`. See [MCP and codemode](mcp.md).
 
 Type `/` in an empty ordinary editor to open Command, or `?` to open Help. Command searches actions, settings, and loaded extension/prompt/skill commands. A pasted slash or slash-prefixed message remains ordinary text. See [Commands](commands.md) for argument entry, completion, and explicit execution.
 

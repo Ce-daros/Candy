@@ -7,11 +7,13 @@
 
 import type { AgentMessage, ThinkingLevel } from "@candy/agent-core";
 import type { ImageContent, Model } from "@candy/ai";
+import type { ElicitRequestParams } from "@modelcontextprotocol/client";
 import type { PromptDisposition, QueuedInput, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CommandInfo, CommandInvocation } from "../../core/commands.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { InteractiveSettingId } from "../../core/interactive-setting-values.ts";
+import type { McpConfigScope, McpExposure, McpServerState } from "../../core/mcp/types.ts";
 import type { ResolvedPaths } from "../../core/package-manager.ts";
 import type { ResourceConfigurationItem, ResourceType } from "../../core/resource-configuration.ts";
 import type { ResourceOperations } from "../../core/resource-operations.ts";
@@ -54,6 +56,12 @@ export type RpcCommand =
 	| { id?: string; type: "read_instruction"; path: string }
 	| { id?: string; type: "save_instruction"; path: string; content: string }
 	| { id?: string; type: "reload_resources" }
+	| { id?: string; type: "mcp_list" }
+	| { id?: string; type: "mcp_reconnect"; name: string }
+	| { id?: string; type: "mcp_set_enabled"; name: string; enabled: boolean; scope?: McpConfigScope }
+	| { id?: string; type: "mcp_set_exposure"; name: string; exposure: McpExposure; scope?: McpConfigScope }
+	| { id?: string; type: "mcp_login"; name: string }
+	| { id?: string; type: "mcp_logout"; name: string }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -116,6 +124,7 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
+	mcpServers: McpServerState[];
 }
 
 export interface RpcSettingsCommitEvent {
@@ -204,6 +213,13 @@ export type RpcResponse =
 			data: { saved: true; reloaded: boolean; error?: string };
 	  }
 	| { id?: string; type: "response"; command: "reload_resources"; success: true }
+	| { id?: string; type: "response"; command: "mcp_list"; success: true; data: { servers: McpServerState[] } }
+	| {
+			id?: string;
+			type: "response";
+			command: "mcp_reconnect" | "mcp_set_enabled" | "mcp_set_exposure" | "mcp_login" | "mcp_logout";
+			success: true;
+	  }
 
 	// Model
 	| {
@@ -312,6 +328,14 @@ export type RpcResponse =
 
 /** Emitted when an extension needs user input */
 export type RpcExtensionUIRequest =
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "mcp_elicitation";
+			server: string;
+			request: ElicitRequestParams;
+	  }
+	| { type: "extension_ui_request"; id: string; method: "mcp_authorization"; server: string; url: string }
 	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number }
 	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
 	| {
@@ -351,6 +375,12 @@ export type RpcExtensionUIRequest =
 
 /** Response to an extension UI request */
 export type RpcExtensionUIResponse =
+	| {
+			type: "extension_ui_response";
+			id: string;
+			action: "accept" | "decline" | "cancel";
+			content?: Record<string, string | number | boolean | string[]>;
+	  }
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
 	| { type: "extension_ui_response"; id: string; cancelled: true };

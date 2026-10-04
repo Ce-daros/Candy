@@ -176,12 +176,45 @@ Response:
     "sessionName": "my-feature-work",
     "autoCompactionEnabled": true,
     "messageCount": 5,
-    "pendingMessageCount": 0
+    "pendingMessageCount": 0,
+    "mcpServers": [{"name":"local","transport":"stdio","enabled":true,"exposure":"codemode","status":"connected","protocolVersion":"2026-07-28","toolsCount":2}]
   }
 }
 ```
 
 The `model` field is a full [Model](#model-object) object, or omitted when no model is selected. The `sessionName` field is the display name set via `set_session_name`, or omitted if not set.
+`mcpServers` uses the same server states as `mcp_list` below; `protocolVersion` is the version actually negotiated with each connected server.
+
+### MCP server commands
+
+The following commands operate on the MCP runtime shared with the CLI and TUI. Each accepts an optional `id` echoed in its response. Failures use the standard error response (`success: false` and `error`). For server configuration and scope rules, see [MCP](mcp.md).
+
+`mcp_list` returns the current server states:
+
+```json
+{"id":"m1","type":"mcp_list"}
+{"id":"m1","type":"response","command":"mcp_list","success":true,"data":{"servers":[{"name":"local","transport":"stdio","enabled":true,"exposure":"codemode","status":"connected","protocolVersion":"2026-07-28","toolsCount":2}]}}
+```
+
+Each state has `name`, `transport` (`stdio` or `http`), `enabled`, `exposure` (`direct`, `codemode`, or `hidden`), `status` (`disabled`, `connecting`, `connected`, `needs-auth`, or `error`), and `toolsCount`. `protocolVersion`, `serverName`, and `error` appear when available.
+
+`mcp_reconnect` reconnects a configured server. `mcp_set_enabled` changes whether a server starts. `mcp_set_exposure` changes how its tools are exposed. The optional `scope` on the two settings commands is `global` or `project`; omitting it uses the runtime's configuration ownership. A successful mutation returns a response without `data`.
+
+```json
+{"id":"m2","type":"mcp_reconnect","name":"local"}
+{"id":"m3","type":"mcp_set_enabled","name":"local","enabled":false,"scope":"project"}
+{"id":"m4","type":"mcp_set_exposure","name":"local","exposure":"direct","scope":"project"}
+{"id":"m4","type":"response","command":"mcp_set_exposure","success":true}
+```
+
+`mcp_login` starts OAuth for an HTTP server and may emit an [`mcp_authorization` request](rpc-extension-ui.md#mcp_authorization). `mcp_logout` removes that server's saved credentials.
+
+```json
+{"id":"m5","type":"mcp_login","name":"remote"}
+{"id":"m6","type":"mcp_logout","name":"remote"}
+```
+
+Tool calls that need user input emit an [`mcp_elicitation` request](rpc-extension-ui.md#mcp_elicitation); the caller must answer it for the original tool call to continue.
 
 ### get_messages
 

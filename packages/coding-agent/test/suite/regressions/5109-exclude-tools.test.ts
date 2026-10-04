@@ -74,7 +74,7 @@ describe("regression #5109: exclude tools", () => {
 		try {
 			await harness.session.execution.bindExtensions({});
 
-			expect(toolNames(harness.session.execution.getAllTools())).toEqual(["bash"]);
+			expect(toolNames(harness.session.execution.getAllTools())).toEqual(["bash", "codemode", "search_mcp_tools"]);
 			expect(harness.session.execution.getActiveToolNames()).toEqual(["bash"]);
 			expect(harness.session.execution.systemPrompt).toContain("- bash:");
 			expect(harness.session.execution.systemPrompt).not.toContain("- read:");

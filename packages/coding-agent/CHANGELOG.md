@@ -31,7 +31,7 @@
 - Removed `ModelRegistry` and the legacy AI compatibility entrypoint. SDK and extension callers use `ModelRuntime` through `ctx.modelRuntime`; built-in API streams are available through `@candy/ai/api/streams` when explicit stream injection is needed.
 - The SDK runtime uses `resourceLoaderOptions` for headless discovery overrides and disables theme discovery unless the host supplies `resourceThemeAdapter` as `themeAdapter` from `@candy/coding-agent/ui`. Extension files that import UI modules must be loaded with `extensionModules` from `@candy/coding-agent/extension-host-modules`.
 - `AgentSession.clearQueue()` and RPC `clear_queue` return queued text with its image attachments so clients can restore complete input. Resource commands must be submitted explicitly; text beginning with `/` or `skill:` remains ordinary text.
-- Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages. The package publishes a headless SDK root, separate UI and RPC subpaths, the extension-host module map, and the RPC launcher.
+- Removed experimental local and remote clients, server commands, plugin facets, and their supporting packages.
 - First-time setup now runs for the official distribution whenever the default agent directory has no settings file; `CANDY_EXPERIMENTAL` no longer gates setup.
 - Session reads report malformed JSONL records with their file and line number and do not modify files. Files with missing final newlines are rewritten atomically on the next save.
 - Removed pi.dev self-update, version checks, install-report pings, and the remote catalog overlay. Upgrade with your package manager. Model refresh uses bundled data and locally configured providers.
@@ -47,6 +47,10 @@
 - Renamed `@earendil-works/pi-coding-agent` to `@candy/coding-agent`, the `pi` executable to `candy`, configuration directories from `.pi` to `.candy`, application environment variables from `PI_*` to `CANDY_*`, and application package metadata from `piConfig` to `candyConfig`. Update imports, launchers, and configuration paths.
 
 ### Added
+
+- Added MCP discovery through `search_mcp_tools` (BM25, up to 10 complete declarations) and execution through `codemode` (QuickJS, shared tool hooks and cancellation, branch-local `store`/`load`). Both use the currently enabled MCP tools with codemode exposure and follow saved branch choices. Standalone calculations use `bash`; ordinary defaults remain `read`, `bash`, `edit`, and `write`.
+- Added native MCP using protocol 2026-07-28 with automatic negotiation for older servers, stdio and Streamable HTTP, tools and resources, OAuth, and form/URL elicitation. Configure `mcpServers` in `~/.candy/agent/mcp.json` or trusted `.candy/mcp.json`; MCP tools use codemode by default. Manage servers through `candy mcp`, Actions → MCP servers, Command → mcp, RPC, or SDK `runtime.mcp`.
+- MCP results preserve structured content and business errors. Images use the existing result pipeline; audio and binary resources are saved to files with MIME metadata for tool results.
 
 - Added root `candy.sh` and `candy.ps1` launchers for the built CLI, forwarding command-line arguments and its exit code while preserving the caller's working directory.
 - Added a Bun-specific transport test entry, `npm run test:bun`, separate from the Node Vitest collection.
@@ -66,6 +70,7 @@
 
 ### Changed
 
+- Consolidated MCP credential and resource handling, removed redundant codemode state and metadata copies, and reused the session's tool filtering. BM25 computes document frequencies once per search without changing its ranking formula.
 - The built-in OpenAI Codex default is GPT-6.1 Sol, and the Together default is Kimi K3. Explicit choices, saved defaults, and session models retain their existing precedence (adapted from pi upstream by Armin Ronacher).
 - Generic tool-call previews show arguments, with compact collapsed output and multi-line expanded values; custom tool renderers retain their presentation (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/5257d0d5f) by Armin Ronacher).
 - Session-name reads no longer copy the complete session history on every call (adapted from pi upstream by Armin Ronacher).
@@ -80,7 +85,7 @@
 - Session-browser rename keeps the header and edits in the list area, preserving search and selection on return.
 - Project trust paths stay on one line and preserve their final directory, keeping the action hints visible in an 80-column terminal. Session browser headers use the shorter Resume Session title.
 
-- Removed tests that pinned splash tip counts, copy, logo pixels, and theme palettes. Consolidated retry coverage in the shared harness and changed HTML export tests to execute rendering and escaping behavior.
+- Consolidated retry coverage in the shared harness and changed HTML export tests to execute rendering and escaping behavior.
 
 - Default keybindings now use `Ctrl+N` for New session and `Shift+Tab` to cycle the thinking level. `Shift+Tab` no longer focuses the previous panel region, `Ctrl+N` no longer toggles the named-session filter, and toggling thinking block visibility has no default key. All four actions remain configurable in `keybindings.json`.
 - Moved New session, Import, and Export to Actions and Project trust to Settings. Reload now uses `Ctrl+R`; Command retains Debug and no longer lists Copy or Quit.
@@ -92,9 +97,13 @@
 - Sources reconciles the active model only when returning from Sources to Actions after an edit: retain an available scoped model, otherwise select the first available one or clear the selection. Starting or restoring a session preserves its model. Nested pages restore search, highlighted identity, and position.
 - Model Details edits defaults inline and Delete restores inheritance. Command groups actions, settings, and resources; Actions → Skills opens files and Actions → Tools separates toggles from descriptions. Trust prompts show the project path and consequences.
 - Built-in themes use 16 palette variables and semantic roles, with truecolor-aware CLI output and HTML exports.
-- Reorganized development, package, SDK, and terminal references; corrected retired command entries and API examples. Rewrote `DESIGN.md` around Candy's design philosophy, visual character, motion, and interaction invention.
+- Reorganized development, package, SDK, and terminal references around current workflows and APIs. Consolidated MCP selection rules, moved acceptance instructions to development guidance, and corrected stale shortcut, trust, and persistence descriptions. Rewrote `DESIGN.md` around Candy's visual character, motion, and interaction design.
 
 ### Fixed
+
+- Cancelling the Ctrl+L model selector reverses the opening reveal, keeping model labels visible during the first closing frame instead of erasing them almost immediately.
+
+- CLI model selection preserves an exact model ID beginning with its own provider name, such as `openrouter/free`, instead of choosing a fuzzy match after stripping the provider prefix.
 
 - The interactive smoke launcher resolves external dependencies from their source package, including SDK versions installed below a workspace package, on Windows and Linux.
 - File search skips fd/fdfind versions older than 8.7.0, which lack the required `.gitignore` behavior outside Git repositories, and uses another supported binary or downloads one. Offline status messages include the required version.
@@ -102,8 +111,8 @@
 - Pinned brace-expansion to 5.0.12 and updated development Vitest to 4.1.11 for the upstream dependency fixes; refreshed the existing npm shrinkwrap (adapted from pi upstream by Armin Ronacher).
 - Atomic JSON saves preserve existing POSIX file permissions, including when the process uses a restrictive umask. New credential and model-store files remain owner-only.
 
-- Fixed missing transitions when entering and returning from open panels, including History session details and nested Agent, model, configuration, and login pages.
-- Fixed History rename shifting other rows' descriptions, duplicate input cursors, and focus loss in settings and resource selectors.
+- Fixed missing transitions when entering and returning from open panels, including session details, model, configuration, and login pages.
+- Fixed session rename shifting other rows' descriptions, duplicate input cursors, and focus loss in settings and resource selectors.
 - Closing panels render saved frames rather than disposed components; rapid navigation cancels obsolete completion callbacks. Session rename reports save failures and ignores completion after cancellation or disposal. Empty tree and fork selectors remain open until cancelled.
 
 - Home tips keep their dim text color after highlighted shortcuts; nested theme colors and backgrounds restore the enclosing style throughout the UI.
@@ -121,7 +130,7 @@
 - Fixed full-file `read` calls rendering as `:1` when models send `null` for omitted `offset` and `limit` ([#9996](https://github.com/earendil-works/pi/issues/9996)).
 - Fixed new sessions being lost when candy exits before the first assistant response. The session file is now created when the first user message is sent ([#10000](https://github.com/earendil-works/pi/issues/10000)).
 - Fixed Sources checkbox toggling with Space, bulk actions on filtered lists, no-match selection, and authentication status distinguishing active credentials from stored entries.
-- Fixed nested navigation restoring selector search, highlighted identity, and browsing position. Models without reasoning retain an Off selector so History and Agent remain reachable.
+- Fixed nested navigation restoring selector search, highlighted identity, and browsing position. Actions remain reachable when the selected model has no reasoning support.
 - Fixed late authentication and catalog callbacks changing focus after leaving their page, and composer panels failing to forward focus to their active child.
 - Fixed settings submenu height and search activation, child-dialog invalidation, cancelled import input, and relative import/export paths resolving against the session directory.
 - Fixed shortcut colors in status and animated titles, ANSI/CJK title widths, truncated Hotkeys alternatives at 80 columns, and reading-panel search matching ANSI sequences.
@@ -129,21 +138,21 @@
 
 ### Removed
 
-- Removed duplicate TUI utility, loaded-resource, migration, and package-entrypoint tests, trivial RPC forwarding and presentation assertions, and live forking and compaction tests covered by offline session suites.
+- Removed duplicate TUI utility, loaded-resource, migration, and package-entrypoint tests, trivial RPC forwarding and presentation assertions, and tests pinning splash tips, copy, logos, and palettes. Removed live forking and compaction tests now covered by offline session suites.
 
 - Removed classifier support from `ModelRuntime` and the extension provider API: `classify()`, the `classifiers` provider field, and `ProviderClassifierModelConfig`.
 - Removed the Amazon Bedrock and Azure OpenAI Responses providers, their login hints, and their environment-variable documentation.
 - Removed `docs/containerization.md` and the `packages/evals` container runner (`docker/`, `src/docker.ts`, `src/cli.ts`, and the `*.docs.eval.ts` suites).
 - Removed the retired author Easter-egg commands, project announcements, and model-specific automatic animation triggers.
-- Removed slash-text command matching from ordinary messages and the old editor slash-completion protocol.
-- Removed Powerbar Shift+Tab behavior, Shift+Tab thinking cycling, and selector Ctrl+S global-default saving. Authentication actions now live in Sources; conversation and session actions live in History.
+- Removed the editor slash-completion protocol; resource commands are selected in Command.
+- Removed selector Ctrl+S global-default saving. Model defaults are edited in Actions → Current Model; authentication is managed in Sources.
 - Removed inherited contributor approval workflows, the contributor allowlist, and upstream contribution gates and contact links.
 - Removed `packages/coding-agent/install-lock/` and `scripts/generate-coding-agent-install-lock.mjs`. The lockfile root was consumed only by the retired Pi installer and updater, and the root `check` chain no longer runs `check:install-lock:coding-agent`.
 - Removed `test/agent-session-compaction.test.ts`, which required a real `API_KEY` and never ran in CI. `test/suite/agent-session-compaction.test.ts` covers the same behavior with the faux provider.
 
 ### Tests
 
-- Credential-backed tree-navigation integration tests remain opt-in through `npm run test:e2e`; the default Vitest suite remains offline and deterministic.
+- Credential-backed tree-navigation integration tests remain opt-in through `npm run test:e2e` in `packages/coding-agent`; the default Vitest suite remains offline and deterministic.
 
 ## [0.87.1] - 2026-09-22
 

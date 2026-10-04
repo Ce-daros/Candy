@@ -142,6 +142,7 @@ function checkSourceReachability({ resolver, scanner }) {
 	const roots = [
 		resolve(ROOT, "packages/coding-agent/src/bun/cli.ts"),
 		resolve(ROOT, "packages/coding-agent/src/rpc-entry.ts"),
+		resolve(ROOT, "packages/coding-agent/src/utils/codemode-worker.ts"),
 		resolve(ROOT, "packages/coding-agent/src/utils/source-resolver.ts"),
 	];
 	for (const [packageName, { packageRoot, manifest }] of resolver.packageRoots) {

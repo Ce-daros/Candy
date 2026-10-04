@@ -5,13 +5,15 @@ description: Test Candy's interactive mode in a real terminal with isolated faux
 
 # Interactive testing
 
-The source smoke launcher builds the current TypeScript checkout with esbuild and starts Candy with two faux models, a session tree, and an isolated home, workspace, temp directory, auth store, and session directory. It blocks network requests. Run it from the repository root after dependencies are installed.
+The source smoke launcher builds the current TypeScript checkout with esbuild and starts Candy with two faux models, a session tree, and an isolated home, workspace, temp directory, auth store, and session directory. It blocks network requests and records browser launches as `SMOKE_BROWSER_OPEN` without opening the fake URLs. Run it from the repository root after dependencies are installed.
 
 On Windows, use a real PowerShell or Windows Terminal PTY:
 
 ```powershell
 node scripts/interactive-smoke.mjs --no-animations
 ```
+
+Use `--codemode --empty` to start with the ordinary default tools, a synthetic local MCP server, and a faux response that uses `search_mcp_tools` to discover its query declaration, calls records 1, 2, and 3, and aggregates the results. In Actions → Tools, check that codemode is enabled and can be toggled off and on. Return to the editor and submit a prompt; the fixture checks the actual MCP tool result and displays total `60`.
 
 Check Ctrl+L, model browse/search/confirm/cancel, ignored Up/Down/Tab keys, Shift+Tab effort cycling, double Escape opening Actions, Current Model, Sources, session actions, Instructions/Skills/Tools/Behavior, child-page return, Command (`/` on an empty input), paste, and Chinese input. Press Ctrl+D to exit. Omit `--no-animations` to check motion. Resize the terminal between 80 columns and a wider layout.
 

@@ -177,6 +177,25 @@ describe("PowerbarController model track", () => {
 		controller.dispose();
 	});
 
+	it("reverses the opening reveal when cancelling instead of erasing items on the first frame", () => {
+		const { controller, applied } = createFixture();
+		controller.render(200);
+		controller.openModelBrowse({ anchorWidth: 9 });
+		settle(controller);
+		const openRegion = controller.render(200)!.regions.find((region) => region.itemIndex === 4)!;
+		controller.collapse();
+		expect(controller.isIdle()).toBe(true);
+		vi.advanceTimersByTime(30);
+		const closingRegion = controller.render(200)!.regions.find((region) => region.itemIndex === 4)!;
+		expect(closingRegion.width).toBeGreaterThan(openRegion.width / 2);
+		vi.advanceTimersByTime(30);
+		expect(controller.render(200)!.regions.find((region) => region.itemIndex === 4)).toBeUndefined();
+		settle(controller);
+		expect(controller.render(200)).toBeUndefined();
+		expect(applied).toEqual([]);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("keeps a model selector available with an empty quick-pick range", () => {
 		const { controller, setModels } = createFixture();
 		setModels([]);

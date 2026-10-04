@@ -26,8 +26,10 @@ import {
 	type TuiAltScreen,
 	visibleWidth,
 } from "@candy/tui";
+import type { ElicitResult } from "@modelcontextprotocol/client";
 import chalk from "chalk";
 import { spawn } from "child_process";
+import { z } from "zod";
 import { APP_NAME, APP_TITLE, CONFIG_DIR_NAME, getAgentDir, getDebugLogPath, VERSION } from "../../config.ts";
 import {
 	type AgentSession,
@@ -54,6 +56,7 @@ import type {
 } from "../../core/extensions/index.ts";
 import { findExtensionStackMatches } from "../../core/extensions/stack-matches.ts";
 import { FooterDataProvider } from "../../core/footer-data-provider.ts";
+import type { McpInteractionRequest } from "../../core/mcp/types.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { getQuickSelectionModels, reconcileQuickSelection } from "../../core/quick-selection.ts";
@@ -79,6 +82,7 @@ import { copyToClipboard, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
 import { parseGitUrl } from "../../utils/git.ts";
 import { detectSupportedImageMimeType } from "../../utils/mime.ts";
+import { openBrowser } from "../../utils/open-browser.ts";
 import { getCwdRelativePath, resolvePath } from "../../utils/paths.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { loadAllHighlightLanguages } from "../../utils/syntax-highlight.ts";
@@ -403,6 +407,7 @@ export class InteractiveMode {
 		});
 		this.runtimeHost.setRebindSession(async () => {
 			await this.rebindCurrentSession({ renderBeforeBind: true });
+			this.runtimeHost.mcp.setInteraction((request, signal) => this.handleMcpInteraction(request, signal));
 			await this.themeController.applyFromSettings();
 		});
 		this.version = VERSION;
@@ -521,6 +526,7 @@ export class InteractiveMode {
 			},
 			requestRender: () => this.renderer.requestRender(),
 		});
+		this.runtimeHost.mcp.setInteraction((request, signal) => this.handleMcpInteraction(request, signal));
 	}
 
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
@@ -542,7 +548,7 @@ export class InteractiveMode {
 		);
 	}
 
-	private openPresentation(surface: "actions" | "command"): void {
+	private openPresentation(surface: "actions" | "command" | "mcp"): void {
 		this.cancelActiveLogin();
 		this.pageController.disposeActiveSelector();
 		if (surface === "command") this.setInputMode("command");
@@ -555,6 +561,7 @@ export class InteractiveMode {
 				session: () => this.session,
 				settings: () => this.settingsManager,
 				models: () => this.runtimeHost.models,
+				mcp: () => this.runtimeHost.mcp,
 				mount: (panel, navigation) => this.pageController.mountPresentationPanel(panel, 0.8, navigation),
 				exit: () => {
 					this.pageController.disposeActiveSelector();
@@ -572,6 +579,7 @@ export class InteractiveMode {
 							: undefined,
 					),
 				login: (provider) => this.authFlow.handleLoginCommand(provider),
+				mcpLogin: (server, signal) => this.runtimeHost.mcp.login(server, { signal }),
 				skills: () => this.showSkillConfiguration(),
 				settingsActions: () => {
 					const definition = this.buildSettingsDefinition(() => this.pageController.closePanel());
@@ -702,6 +710,13 @@ export class InteractiveMode {
 
 	private getLocalCommandActions(): CommandPanelAction[] {
 		return [
+			{
+				id: "local:mcp",
+				name: "mcp",
+				source: "Candy",
+				argumentMode: "none",
+				execute: async () => this.openPresentation("mcp"),
+			},
 			{
 				id: "local:debug",
 				name: "debug",
@@ -1899,6 +1914,184 @@ export class InteractiveMode {
 		};
 	}
 
+	private async handleMcpInteraction(request: McpInteractionRequest, signal?: AbortSignal): Promise<ElicitResult> {
+		const session = this.session;
+		const sessionController = new AbortController();
+		const unsubscribe = this.runtimeHost.subscribeSession(async () => sessionController.abort());
+		const combined = signal ? AbortSignal.any([signal, sessionController.signal]) : sessionController.signal;
+		const cancelled = { action: "cancel" } as const;
+		try {
+			if (combined.aborted || session !== this.session) return cancelled;
+			if (request.type === "authorization") {
+				const confirmed = await this.showExtensionConfirm(
+					`Authorize ${request.server}`,
+					`Open this authorization page?\n${request.url}`,
+					{ signal: combined },
+				);
+				if (!confirmed || combined.aborted) return cancelled;
+				openBrowser(request.url);
+				return { action: "accept" };
+			}
+			const elicitation = request.request;
+			if (elicitation.mode === "url") {
+				const choice = await this.showExtensionSelector(
+					`${request.server}\n${elicitation.message}\n${elicitation.url}`,
+					["Open link", "Decline", "Cancel"],
+					{ signal: combined },
+				);
+				if (choice === "Decline") return { action: "decline" };
+				if (choice !== "Open link" || combined.aborted) return cancelled;
+				openBrowser(elicitation.url);
+				const completed = await this.showExtensionSelector(
+					`${request.server}\nContinue when you have finished the linked page.`,
+					["Continue", "Decline", "Cancel"],
+					{ signal: combined },
+				);
+				return completed === "Continue"
+					? { action: "accept" }
+					: completed === "Decline"
+						? { action: "decline" }
+						: cancelled;
+			}
+			const schema = elicitation.requestedSchema;
+			const content: Record<string, string | number | boolean | string[]> = {};
+			for (const [key, definition] of Object.entries(schema.properties)) {
+				if (combined.aborted) return cancelled;
+				const required = schema.required?.includes(key) ?? false;
+				const title = `${request.server} · ${definition.title ?? key}${required ? " (required)" : " (optional)"}${definition.description ? `\n${definition.description}` : ""}`;
+				if (definition.type === "array") {
+					const choices =
+						"anyOf" in definition.items
+							? definition.items.anyOf.map((item) => ({ value: item.const, label: item.title }))
+							: definition.items.enum.map((value) => ({ value, label: value }));
+					const selected = new Set(definition.default ?? []);
+					for (;;) {
+						const rows = choices.map(
+							(choice, index) => `${index + 1}. [${selected.has(choice.value) ? "x" : " "}] ${choice.label}`,
+						);
+						const action = await this.showExtensionSelector(
+							title,
+							[...rows, "Done", ...(!required ? ["Skip"] : []), "Cancel"],
+							{ signal: combined },
+						);
+						if (!action || action === "Cancel") return cancelled;
+						if (action === "Skip") break;
+						if (action === "Done") {
+							if (
+								selected.size < (definition.minItems ?? 0) ||
+								selected.size > (definition.maxItems ?? Infinity)
+							) {
+								this.showWarning(
+									`Select ${definition.minItems ?? 0}–${definition.maxItems ?? choices.length} values for ${definition.title ?? key}`,
+								);
+								continue;
+							}
+							content[key] = [...selected];
+							break;
+						}
+						const choice = choices[rows.indexOf(action)];
+						if (choice) {
+							if (selected.has(choice.value)) selected.delete(choice.value);
+							else if (selected.size < (definition.maxItems ?? Infinity)) selected.add(choice.value);
+							else
+								this.showWarning(`Select at most ${definition.maxItems} values for ${definition.title ?? key}`);
+						}
+					}
+					continue;
+				}
+				if (definition.type === "boolean" || "enum" in definition || "oneOf" in definition) {
+					const choices =
+						definition.type === "boolean"
+							? [
+									{ value: true, label: "Yes" },
+									{ value: false, label: "No" },
+								]
+							: "oneOf" in definition
+								? definition.oneOf.map((item) => ({ value: item.const, label: item.title }))
+								: definition.enum.map((value, index) => ({
+										value,
+										label: ("enumNames" in definition ? definition.enumNames?.[index] : undefined) ?? value,
+									}));
+					const ordered = [...choices].sort(
+						(a, b) => Number(b.value === definition.default) - Number(a.value === definition.default),
+					);
+					const rows = ordered.map((choice, index) => `${index + 1}. ${choice.label}`);
+					const selected = await this.showExtensionSelector(
+						title,
+						[...rows, ...(!required ? ["Skip"] : []), "Cancel"],
+						{ signal: combined },
+					);
+					if (!selected || selected === "Cancel") return cancelled;
+					if (selected === "Skip") continue;
+					content[key] = ordered[rows.indexOf(selected)]!.value;
+					continue;
+				}
+				for (;;) {
+					const raw = await this.showExtensionInput(
+						title,
+						definition.default === undefined
+							? required
+								? undefined
+								: "Leave blank to skip"
+							: `Default: ${definition.default}`,
+						{
+							signal: combined,
+						},
+					);
+					if (raw === undefined || combined.aborted) return cancelled;
+					if (!required && raw === "" && definition.default === undefined) break;
+					if (definition.type === "string") {
+						const value = raw === "" ? (definition.default ?? raw) : raw;
+						const validFormat =
+							definition.format === undefined ||
+							(definition.format === "email"
+								? z.email().safeParse(value).success
+								: definition.format === "uri"
+									? z.url().safeParse(value).success
+									: definition.format === "date"
+										? z.iso.date().safeParse(value).success
+										: z.iso.datetime({ offset: true }).safeParse(value).success);
+						if (
+							value.length < (definition.minLength ?? 0) ||
+							value.length > (definition.maxLength ?? Infinity) ||
+							!validFormat
+						) {
+							this.showWarning(`Invalid value for ${definition.title ?? key}`);
+							continue;
+						}
+						content[key] = value;
+						break;
+					}
+					const value = raw === "" && definition.default !== undefined ? definition.default : Number(raw);
+					if (
+						(raw === "" && definition.default === undefined) ||
+						!Number.isFinite(value) ||
+						(definition.type === "integer" && !Number.isInteger(value)) ||
+						value < (definition.minimum ?? -Infinity) ||
+						value > (definition.maximum ?? Infinity)
+					) {
+						this.showWarning(`Invalid value for ${definition.title ?? key}`);
+						continue;
+					}
+					content[key] = value;
+					break;
+				}
+			}
+			const action = await this.showExtensionSelector(
+				`${request.server}\n${elicitation.message}`,
+				["Submit", "Decline", "Cancel"],
+				{ signal: combined },
+			);
+			return action === "Submit"
+				? { action: "accept", content }
+				: action === "Decline"
+					? { action: "decline" }
+					: cancelled;
+		} finally {
+			unsubscribe();
+		}
+	}
+
 	/**
 	 * Mount a transient panel and resolve when its callbacks complete it. `open`
 	 * creates the component (storing it for later disposal), wires `done` into its
@@ -2628,6 +2821,7 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				if (event.parentToolCallId) break;
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -2653,6 +2847,7 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_update": {
+				if (event.parentToolCallId) break;
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					component.updateResult({ ...event.partialResult, isError: false }, true);
@@ -2662,6 +2857,7 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_end": {
+				if (event.parentToolCallId) break;
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });

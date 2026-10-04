@@ -5,6 +5,10 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
+			"@candy/codemode": ["./packages/codemode/src/index.ts"],
+			"@candy/codemode/declarations": ["./packages/codemode/src/declarations.ts"],
+			"@candy/codemode/source": ["./packages/codemode/src/source.ts"],
+			"@candy/codemode/worker": ["./packages/codemode/src/runtime/worker.ts"],
 			"@candy/ai": [
 				"./packages/ai/src/index.ts"
 			],

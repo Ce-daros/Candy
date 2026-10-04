@@ -188,11 +188,17 @@ const lazyResult = await build({
 });
 
 const imageResizeWorkerOutput = resolve(dirname(oauthLoaderOutput), "image-resize-worker.js");
+const codemodeResult = await build({
+	...commonBuildOptions(),
+	entryPoints: [join(repoRoot, "packages/codemode/dist/runtime/worker.js")],
+	outfile: join(bundleDir, "codemode-worker.js"),
+	splitting: false,
+});
 if (dirname(imageResizeOutput) !== dirname(imageResizeWorkerOutput)) {
 	throw new Error("Image resize implementation and worker were emitted into different directories");
 }
 
-validateExternalImports([mainResult.metafile, lazyResult.metafile]);
+validateExternalImports([mainResult.metafile, lazyResult.metafile, codemodeResult.metafile]);
 const cliLauncher = `#!/usr/bin/env node
 import { createRequire, enableCompileCache } from "node:module";
 

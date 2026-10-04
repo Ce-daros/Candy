@@ -39,9 +39,9 @@ Press Escape twice within 500ms in an empty editor to open Actions. This action 
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `defaultTools` | `string[]` | `read`, `bash`, `edit`, `write` | Built-in tools enabled at startup. An empty array disables all built-in tools but not extension or SDK tools. |
+| `defaultTools` | `string[]` | `read`, `bash`, `edit`, `write` | Built-in tools enabled at startup. An explicit array replaces this default; an empty array disables built-in defaults but not extension or MCP tools. |
 
-Available built-in tools are `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, and `ls`. CLI tool options override this setting for one invocation. See [Command Line](cli.md#tools).
+CLI tool options override `defaultTools` for one invocation. See [CLI tools](cli.md#tools) for available names and flags, and [MCP tool availability and session choices](mcp.md#tool-availability-and-session-choices) for codemode activation and persistence.
 
 ## Sessions and context
 
