@@ -89,6 +89,7 @@ export interface BeforeToolCallResult {
 export interface AfterToolCallResult {
 	content?: (TextContent | ImageContent)[];
 	details?: unknown;
+	structuredContent?: JsonValue;
 	isError?: boolean;
 	/** Usage from the final tool execution itself, if available. Not used for main LLM context accounting. */
 	usage?: Usage;
@@ -101,6 +102,7 @@ export interface AfterToolCallResult {
 
 /** Context passed to `beforeToolCall`. */
 export interface BeforeToolCallContext {
+	parentToolCallId?: string;
 	/** The assistant message that requested the tool call. */
 	assistantMessage: AssistantMessage;
 	/** The raw tool call block from `assistantMessage.content`. */
@@ -113,6 +115,7 @@ export interface BeforeToolCallContext {
 
 /** Context passed to `afterToolCall`. */
 export interface AfterToolCallContext {
+	parentToolCallId?: string;
 	/** Model snapshot used for the assistant request that produced this tool call. */
 	model: Model<any>;
 	/** The assistant message that requested the tool call. */
@@ -432,6 +435,10 @@ export interface AgentToolResult<T = JsonValue | undefined> {
 	content: (TextContent | ImageContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
+	/** Machine-readable result returned by a structured tool such as MCP. */
+	structuredContent?: JsonValue;
+	/** A tool-reported business error, distinct from a thrown execution error. */
+	isError?: boolean;
 	/** Usage from the final tool execution itself, if available. Not used for main LLM context accounting. */
 	usage?: Usage;
 	/**
@@ -439,6 +446,14 @@ export interface AgentToolResult<T = JsonValue | undefined> {
 	 * Early termination only happens when every finalized tool result in the batch sets this to true.
 	 */
 	terminate?: boolean;
+}
+
+/** One tool call after validation, execution, and result hooks. */
+export interface AgentToolCallOutcome {
+	toolCall: AgentToolCall;
+	result: AgentToolResult<any>;
+	isError: boolean;
+	cancelled?: boolean;
 }
 
 /**
@@ -451,6 +466,9 @@ export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T
 
 /** Tool definition used by the agent runtime. */
 export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
+	exposure?: "direct" | "codemode" | "hidden";
+	namespace?: { name: string; description?: string };
+	outputSchema?: TSchema;
 	/** Human-readable label for UI display. */
 	label: string;
 	/**
@@ -511,8 +529,15 @@ export type AgentEvent =
 	| { type: "message_update"; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
 	| { type: "message_end"; message: AgentMessage; entryId?: string }
 	// Tool execution lifecycle
-	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
-	| { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }
+	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any; parentToolCallId?: string }
+	| {
+			type: "tool_execution_update";
+			toolCallId: string;
+			toolName: string;
+			args: any;
+			partialResult: any;
+			parentToolCallId?: string;
+	  }
 	| {
 			type: "tool_execution_end";
 			toolCallId: string;
@@ -520,4 +545,5 @@ export type AgentEvent =
 			result: any;
 			isError: boolean;
 			cancelled?: boolean;
+			parentToolCallId?: string;
 	  };

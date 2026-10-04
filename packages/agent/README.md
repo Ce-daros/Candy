@@ -81,6 +81,8 @@ Parallel execution is the default. Preflight runs sequentially, allowed tools ex
 
 `beforeToolCall` sees validated arguments and may block execution. `afterToolCall` can replace content, details, usage, error state, or the termination hint field by field. Omitted fields retain their values. `terminate: true` skips automatic follow-up only when every finalized result in the batch requests it.
 
+`runToolCall()` executes a nested call through the same validation and hooks, emits tool lifecycle events with an optional parent call ID, and returns its outcome without appending a separate chat message. Tools may return `structuredContent` and `isError` for machine-readable results and business errors.
+
 For direct loop control, use `agentLoop()` or `agentLoopContinue()` from [agent-loop.ts](src/agent-loop.ts). Their event streams are observational and do not await consumer processing; use `Agent` when message handling must form a barrier before tool execution. [proxy.ts](src/proxy.ts) supplies backend-proxied streaming for browser hosts.
 
 ## License

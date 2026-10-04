@@ -14,6 +14,7 @@
 
 ### Added
 
+- Added `runToolCall()` for nested execution through the existing validation and tool hooks, with parent call IDs, structured results, and tool-reported errors.
 - The loop host commits each final message before listeners receive it. `message_end` and `turn_end` expose the committed entry IDs; streaming updates remain transient.
 - Added read-only snapshots of steering and follow-up messages held by the externally supplied `AgentInputs` owner.
 - Added an optional `cancelled` flag to `tool_execution_end` events and persisted tool-result messages when the agent abort signal stops a tool call. Successful tools and ordinary errors leave the flag unset.

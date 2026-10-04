@@ -23,6 +23,7 @@ import type {
 	AgentMessageCommit,
 	AgentTool,
 	AgentToolCall,
+	AgentToolCallOutcome,
 	AgentToolResult,
 	PrepareNextTurnContext,
 	StreamFn,
@@ -702,6 +703,52 @@ type FinalizedToolCallOutcome = {
 	cancelled?: boolean;
 };
 
+/** Execute a nested call through the same validation and hooks as a model-issued call. */
+export interface RunToolCallOptions {
+	toolCall: AgentToolCall;
+	assistantMessage: AssistantMessage;
+	context: AgentContext;
+	config: Pick<AgentLoopConfig, "model" | "beforeToolCall" | "afterToolCall">;
+	signal?: AbortSignal;
+	emit?: AgentEventSink;
+	parentToolCallId?: string;
+}
+
+/** Emits tool lifecycle events but does not append a tool result to the transcript. */
+export async function runToolCall(options: RunToolCallOptions): Promise<AgentToolCallOutcome> {
+	const { toolCall, assistantMessage, context, config, signal, emit, parentToolCallId } = options;
+	await emit?.({
+		type: "tool_execution_start",
+		toolCallId: toolCall.id,
+		toolName: toolCall.name,
+		args: toolCall.arguments,
+		parentToolCallId,
+	});
+	const preparation = await prepareToolCall(context, assistantMessage, toolCall, config, signal, parentToolCallId);
+	let finalized: FinalizedToolCallOutcome;
+	if (preparation.kind === "immediate") {
+		finalized = {
+			toolCall,
+			result: preparation.result,
+			isError: preparation.isError,
+			cancelled: preparation.cancelled,
+		};
+	} else {
+		const executed = await executePreparedToolCall(preparation, signal, emit ?? (() => {}), parentToolCallId);
+		finalized = await finalizeExecutedToolCall(
+			context,
+			assistantMessage,
+			preparation,
+			executed,
+			config,
+			signal,
+			parentToolCallId,
+		);
+	}
+	await emitToolExecutionEnd(finalized, emit ?? (() => {}), parentToolCallId);
+	return finalized;
+}
+
 type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);
 
 function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
@@ -726,8 +773,9 @@ async function prepareToolCall(
 	currentContext: AgentContext,
 	assistantMessage: AssistantMessage,
 	toolCall: AgentToolCall,
-	config: AgentLoopConfig,
+	config: Pick<AgentLoopConfig, "model" | "beforeToolCall" | "afterToolCall">,
 	signal: AbortSignal | undefined,
+	parentToolCallId?: string,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
 	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
 	if (!tool) {
@@ -744,6 +792,7 @@ async function prepareToolCall(
 		const beforeResult = config.beforeToolCall
 			? await config.beforeToolCall(
 					{
+						parentToolCallId,
 						assistantMessage,
 						toolCall,
 						args: validatedArgs,
@@ -791,6 +840,7 @@ async function executePreparedToolCall(
 	prepared: PreparedToolCall,
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
+	parentToolCallId?: string,
 ): Promise<ExecutedToolCallOutcome> {
 	const updateEvents: Promise<void>[] = [];
 	let acceptingUpdates = true;
@@ -810,6 +860,7 @@ async function executePreparedToolCall(
 							toolName: prepared.toolCall.name,
 							args: prepared.toolCall.arguments,
 							partialResult,
+							parentToolCallId,
 						}),
 					).then(() => undefined),
 				);
@@ -817,7 +868,7 @@ async function executePreparedToolCall(
 		);
 		acceptingUpdates = false;
 		await Promise.all(updateEvents);
-		return { result, isError: false };
+		return { result, isError: result.isError === true };
 	} catch (error) {
 		acceptingUpdates = false;
 		await Promise.all(updateEvents);
@@ -836,8 +887,9 @@ async function finalizeExecutedToolCall(
 	assistantMessage: AssistantMessage,
 	prepared: PreparedToolCall,
 	executed: ExecutedToolCallOutcome,
-	config: AgentLoopConfig,
+	config: Pick<AgentLoopConfig, "model" | "beforeToolCall" | "afterToolCall">,
 	signal: AbortSignal | undefined,
+	parentToolCallId?: string,
 ): Promise<FinalizedToolCallOutcome> {
 	let result = executed.result;
 	let isError = executed.isError;
@@ -847,6 +899,7 @@ async function finalizeExecutedToolCall(
 		try {
 			const afterResult = await config.afterToolCall(
 				{
+					parentToolCallId,
 					model: config.model,
 					assistantMessage,
 					toolCall: prepared.toolCall,
@@ -862,10 +915,15 @@ async function finalizeExecutedToolCall(
 					...result,
 					content: afterResult.content ?? result.content,
 					details: afterResult.details ?? result.details,
+					structuredContent:
+						afterResult.structuredContent !== undefined
+							? afterResult.structuredContent
+							: result.structuredContent,
 					usage: afterResult.usage ?? result.usage,
 					terminate: afterResult.terminate ?? result.terminate,
 				};
 				isError = afterResult.isError ?? isError;
+				result.isError = isError;
 			}
 		} catch (error) {
 			result = createErrorToolResult(error instanceof Error ? error.message : String(error));
@@ -889,13 +947,18 @@ function createErrorToolResult(message: string): AgentToolResult<any> {
 	};
 }
 
-async function emitToolExecutionEnd(finalized: FinalizedToolCallOutcome, emit: AgentEventSink): Promise<void> {
+async function emitToolExecutionEnd(
+	finalized: FinalizedToolCallOutcome,
+	emit: AgentEventSink,
+	parentToolCallId?: string,
+): Promise<void> {
 	await emit({
 		type: "tool_execution_end",
 		toolCallId: finalized.toolCall.id,
 		toolName: finalized.toolCall.name,
 		result: finalized.result,
 		isError: finalized.isError,
+		parentToolCallId,
 		...(finalized.cancelled ? { cancelled: true } : {}),
 	});
 }
