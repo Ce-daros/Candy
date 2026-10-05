@@ -19,7 +19,7 @@ export const codemodeRenderers: ToolRenderers<{ code: string }, CodemodeToolDeta
 		if (!options.expanded && calls.length > shown.length)
 			lines.push(theme.fg("muted", `${calls.length - shown.length} earlier calls`));
 		for (const call of shown) {
-			const duration = call.durationMs === undefined ? "" : ` · ${call.durationMs}ms`;
+			const duration = call.durationMs === undefined ? "" : ` · ${Math.round(call.durationMs)}ms`;
 			lines.push(
 				theme.fg(call.status === "error" ? "error" : "toolOutput", `${call.name} · ${call.status}${duration}`),
 			);

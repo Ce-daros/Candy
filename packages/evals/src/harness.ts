@@ -1,6 +1,5 @@
-import type { Dirent } from "node:fs";
 import { existsSync } from "node:fs";
-import { chmod, chown, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -12,7 +11,6 @@ import {
 	type CreateAgentSessionRuntimeOptions,
 	createAgentSessionRuntime,
 	getAgentDir,
-	type InlineExtension,
 	ModelRuntime,
 	ReadOnlyAuthStorage,
 	SessionHistory,
@@ -31,8 +29,8 @@ import {
 	toJsonValue,
 	type UsageSummary,
 } from "vitest-evals/harness";
-import type { DocumentationVariant } from "./plan.ts";
-import { CANDY_SESSION_SNAPSHOT_ARTIFACT } from "./report.ts";
+
+export const CANDY_SESSION_SNAPSHOT_ARTIFACT = "piSessionJsonl";
 
 type CandyRunDiagnostics = {
 	events: TranscriptEvent[];
@@ -53,8 +51,6 @@ export type CandyCodingAgentHarnessOptions = {
 	tools?: CreateAgentSessionRuntimeOptions["tools"];
 	customTools?: CreateAgentSessionRuntimeOptions["customTools"];
 	workspaceFiles?: Readonly<Record<string, string>>;
-	transformSystemPrompt?: (defaultPrompt: string) => string;
-	expectedCandyDocumentation?: boolean;
 };
 
 export type CandyCodingAgentHarnessWithOutput<TOutput extends JsonValue> = CandyCodingAgentHarnessOptions & {
@@ -81,13 +77,8 @@ export function resolveModelSelection(
 export function applyIsolatedEnvironment(home: string, agentDir: string): () => void {
 	const overrides = { HOME: home, USERPROFILE: home, CANDY_CODING_AGENT_DIR: agentDir };
 	const previous = new Map<string, string | undefined>();
-	for (const name of Object.keys(process.env)) {
-		if (!name.startsWith("CANDY_EVAL_")) continue;
-		previous.set(name, process.env[name]);
-		delete process.env[name];
-	}
 	for (const [name, value] of Object.entries(overrides)) {
-		if (!previous.has(name)) previous.set(name, process.env[name]);
+		previous.set(name, process.env[name]);
 		process.env[name] = value;
 	}
 	return () => {
@@ -96,94 +87,6 @@ export function applyIsolatedEnvironment(home: string, agentDir: string): () => 
 			else process.env[name] = value;
 		}
 	};
-}
-
-type SandboxIdentity = { uid: number; gid: number };
-
-function parseSandboxId(name: "CANDY_EVAL_SANDBOX_UID" | "CANDY_EVAL_SANDBOX_GID"): number | undefined {
-	const value = process.env[name];
-	if (value === undefined) return undefined;
-	const id = Number(value);
-	if (!Number.isSafeInteger(id) || id < 1) throw new Error(`${name} must be a positive integer.`);
-	return id;
-}
-
-function resolveSandboxIdentity(): SandboxIdentity | undefined {
-	const uid = parseSandboxId("CANDY_EVAL_SANDBOX_UID");
-	const gid = parseSandboxId("CANDY_EVAL_SANDBOX_GID");
-	if (uid === undefined && gid === undefined) return undefined;
-	if (uid === undefined || gid === undefined) {
-		throw new Error("Set both CANDY_EVAL_SANDBOX_UID and CANDY_EVAL_SANDBOX_GID, or neither.");
-	}
-	return { uid, gid };
-}
-
-async function chownTree(path: string, identity: SandboxIdentity): Promise<void> {
-	const stats = await lstat(path);
-	if (stats.isDirectory() && !stats.isSymbolicLink()) {
-		await Promise.all((await readdir(path)).map((entry) => chownTree(join(path, entry), identity)));
-	}
-	await chown(path, identity.uid, identity.gid);
-}
-
-async function protectTransformedModules(): Promise<string[]> {
-	const protectedPaths: string[] = [];
-	for (const directory of await readdir(tmpdir(), { withFileTypes: true })) {
-		if (!directory.isDirectory()) continue;
-		const cacheRoot = join(tmpdir(), directory.name);
-		const ssrRoot = join(cacheRoot, "ssr");
-		let files: Dirent[];
-		try {
-			files = await readdir(ssrRoot, { withFileTypes: true });
-		} catch (error) {
-			if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
-			throw error;
-		}
-		await Promise.all([chmod(cacheRoot, 0o755), chmod(ssrRoot, 0o755)]);
-		for (const file of files) {
-			if (!file.isFile()) continue;
-			const path = join(ssrRoot, file.name);
-			await chmod(path, 0o600);
-			protectedPaths.push(path);
-		}
-	}
-	return protectedPaths;
-}
-
-async function enterToolSandbox(root: string, identity: SandboxIdentity | undefined): Promise<void> {
-	if (!identity) return;
-	if (
-		typeof process.getuid !== "function" ||
-		typeof process.geteuid !== "function" ||
-		typeof process.setuid !== "function" ||
-		typeof process.setgid !== "function" ||
-		typeof process.setgroups !== "function"
-	) {
-		throw new Error("The eval filesystem sandbox requires POSIX user APIs.");
-	}
-	if (process.getuid() !== 0 || process.geteuid() !== 0) {
-		throw new Error("The eval runner must start as root before entering the unprivileged tool sandbox.");
-	}
-
-	const protectedPaths = await protectTransformedModules();
-	await chownTree(root, identity);
-	process.setgroups([]);
-	process.setgid(identity.gid);
-	process.setuid(identity.uid);
-	if (process.getuid() !== identity.uid || process.geteuid() !== identity.uid) {
-		throw new Error("Failed to enter the unprivileged eval tool sandbox.");
-	}
-	for (const path of protectedPaths) {
-		try {
-			await readFile(path);
-		} catch (error) {
-			if (error instanceof Error && "code" in error && (error.code === "EACCES" || error.code === "ENOENT")) {
-				continue;
-			}
-			throw error;
-		}
-		throw new Error(`The unprivileged eval process can read a transformed eval module: ${path}`);
-	}
 }
 
 function toTranscriptEvents(
@@ -259,21 +162,6 @@ async function promptAgent(session: AgentSession, input: string, signal: AbortSi
 	return output ?? "";
 }
 
-export function verifySystemPrompt(
-	systemPrompt: string,
-	options: Pick<CandyCodingAgentHarnessOptions, "name" | "expectedCandyDocumentation">,
-): string {
-	if (options.expectedCandyDocumentation === undefined) return systemPrompt;
-	if (!systemPrompt.includes("\n<rules>\n")) {
-		throw new Error(`candy system prompt lost its rules in the ${options.name} eval variant.`);
-	}
-	const hasDocumentation = systemPrompt.includes("\n<docs>\ncandy documentation (read only");
-	if (hasDocumentation !== options.expectedCandyDocumentation) {
-		throw new Error(`candy system prompt does not match the ${options.name} eval variant.`);
-	}
-	return systemPrompt;
-}
-
 async function runCandyCodingAgent<TOutput extends JsonValue>(
 	input: CandyCodingAgentInput,
 	signal: AbortSignal | undefined,
@@ -284,42 +172,25 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 	signal?.throwIfAborted();
 	const selection = resolveModelSelection(options.model);
 	const hostAgentDir = getAgentDir();
-	const sandboxIdentity = resolveSandboxIdentity();
 	const root = await mkdtemp(join(tmpdir(), "pi-eval-"));
 	const workspace = join(root, "workspace");
 	const isolatedHome = join(root, "home");
 	const agentDir = join(isolatedHome, ".candy", "agent");
-	const extensionFactories: InlineExtension[] = [];
-	let forcedSystemPrompt: string | undefined;
-	if (options.transformSystemPrompt) {
-		const transform = options.transformSystemPrompt;
-		extensionFactories.push({
-			name: "eval-system-prompt-transform",
-			hidden: true,
-			factory: (candy) => {
-				candy.on("before_agent_start", ({ systemPrompt }) => {
-					forcedSystemPrompt = transform(systemPrompt);
-					return { systemPrompt: forcedSystemPrompt };
-				});
-			},
-		});
-	}
-
 	let sessionManager: SessionHistory | undefined;
 	let session: AgentSession | undefined;
+	let modelRuntime: ModelRuntime | undefined;
 	let runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>> | undefined;
 	let result: SimpleHarnessResult<string | TOutput> | undefined;
 	let runDiagnostics: CandyRunDiagnostics | undefined;
 	let runError: unknown;
 	const cleanupErrors: unknown[] = [];
-	let hiddenCredentialEnvironment: { name: string; value: string } | undefined;
 	const restoreEnvironment = applyIsolatedEnvironment(isolatedHome, agentDir);
 	try {
 		const authPath = join(hostAgentDir, "auth.json");
 		const credentials = new InMemoryCredentialStore();
 		const storedCredential = await new ReadOnlyAuthStorage(authPath).read(selection.provider, { signal });
 		if (storedCredential) await credentials.modify(selection.provider, async () => storedCredential);
-		const modelRuntime = await ModelRuntime.create({ credentials });
+		modelRuntime = await ModelRuntime.create({ credentials });
 		await Promise.all([mkdir(workspace), mkdir(agentDir, { recursive: true })]);
 		await seedWorkspace(workspace, options.workspaceFiles);
 		const model = modelRuntime.getModel(selection.provider, selection.id);
@@ -331,15 +202,6 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		if (!storedCredential && auth.auth.apiKey) {
 			await modelRuntime.setRuntimeApiKey(selection.provider, auth.auth.apiKey);
 		}
-		if (sandboxIdentity) {
-			await rm(authPath, { force: true });
-			const credentialEnvironmentValue = auth.source ? process.env[auth.source] : undefined;
-			if (auth.source && /^[A-Z][A-Z0-9_]*$/.test(auth.source) && credentialEnvironmentValue) {
-				hiddenCredentialEnvironment = { name: auth.source, value: credentialEnvironmentValue };
-				delete process.env[auth.source];
-			}
-		}
-
 		signal?.throwIfAborted();
 		sessionManager = SessionHistory.create(workspace, join(root, "sessions"));
 		setArtifact("runId", sessionManager.getSessionId());
@@ -347,7 +209,6 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 			cwd: workspace,
 			agentDir,
 			modelRuntime,
-			resourceLoaderOptions: { extensionFactories },
 			sessionManager,
 			model,
 			thinkingLevel: "off",
@@ -358,16 +219,13 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		});
 		session = runtime.session;
 
-		const expectedInlinePaths = new Set(extensionFactories.map(({ name }) => `<inline:${name}>`));
 		const unexpectedExtensions = runtime.resources
 			.getInventory()
-			.extensions.extensions.map((extension) => extension.path)
-			.filter((path) => !expectedInlinePaths.has(path));
+			.extensions.extensions.map((extension) => extension.path);
 		if (unexpectedExtensions.length > 0) {
 			throw new Error(`Isolated eval loaded unexpected extensions: ${unexpectedExtensions.join(", ")}`);
 		}
 
-		await enterToolSandbox(root, sandboxIdentity);
 		let response: string | undefined;
 		const steps = typeof input === "string" ? [{ type: "prompt" as const, content: input }] : input;
 		let abortPromise: Promise<void> | undefined;
@@ -390,10 +248,8 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 		if (response === undefined) {
 			throw new Error("candy eval input must include at least one prompt step.");
 		}
-		// A forced prompt is not recorded in the transcript, so use the one the transform
-		// extension sent; otherwise the replayed transcript prompt is what the provider received.
 		const committedMessages = getCommittedMessages(session);
-		const systemPrompt = forcedSystemPrompt ?? getCurrentSystemPrompt(committedMessages);
+		const systemPrompt = getCurrentSystemPrompt(committedMessages);
 		const stats = session.history.getSessionStats();
 		const hasPricing = [model.cost, ...(model.cost.tiers ?? [])].some(
 			({ input: inputCost, output: outputCost, cacheRead, cacheWrite }) =>
@@ -415,7 +271,6 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 				},
 			},
 		};
-		verifySystemPrompt(systemPrompt, options);
 		const output =
 			"output" in options ? await options.output({ response, session, systemPrompt, agentDir }) : response;
 		result = { output, ...runDiagnostics };
@@ -440,14 +295,16 @@ async function runCandyCodingAgent<TOutput extends JsonValue>(
 			cleanupErrors.push(error);
 		}
 		try {
+			await modelRuntime?.dispose();
+		} catch (error) {
+			cleanupErrors.push(error);
+		}
+		try {
 			await rm(root, { recursive: true, force: true });
 		} catch (error) {
 			cleanupErrors.push(error);
 		}
 		restoreEnvironment();
-		if (hiddenCredentialEnvironment) {
-			process.env[hiddenCredentialEnvironment.name] = hiddenCredentialEnvironment.value;
-		}
 	}
 
 	let failure = runError;
@@ -485,61 +342,5 @@ export function createCandyCodingAgentHarness<TOutput extends JsonValue>(
 	return createHarness<CandyCodingAgentInput, string | TOutput>({
 		name: options.name ?? "coding-agent",
 		run: ({ input, signal, setArtifact }) => runCandyCodingAgent(input, signal, setArtifact, options),
-	});
-}
-
-/** Documentation evals intentionally exclude shell and unrestricted network tools. */
-export const DOCUMENTATION_EVAL_TOOLS = ["read", "write", "edit", "grep", "find", "ls"] as const;
-
-export function resolveDocumentationVariant(
-	value: string | undefined = process.env.CANDY_EVAL_VARIANT,
-): DocumentationVariant {
-	if (value === "without_docs" || value === "with_docs") return value;
-	throw new TypeError('CANDY_EVAL_VARIANT must be "without_docs" or "with_docs".');
-}
-
-export function excludeCandyDocumentation(defaultPrompt: string): string {
-	const documentationStartMarker = "\n<docs>\n";
-	const documentationEndMarker = "\n</docs>";
-	const documentationStart = defaultPrompt.indexOf(documentationStartMarker);
-	if (documentationStart === -1) throw new Error("Default candy system prompt has no candy documentation section.");
-	const documentationEnd = defaultPrompt.indexOf(documentationEndMarker, documentationStart);
-	if (documentationEnd === -1)
-		throw new Error("Default candy system prompt has no complete candy documentation section.");
-	const cwdStart = defaultPrompt.lastIndexOf("\n<cwd>\n");
-	if (cwdStart < documentationEnd) throw new Error("Default candy system prompt has no working-directory section.");
-	return (
-		defaultPrompt.slice(0, documentationStart) + defaultPrompt.slice(documentationEnd + documentationEndMarker.length)
-	);
-}
-
-type DocumentationHarnessOptions = Omit<
-	CandyCodingAgentHarnessOptions,
-	"name" | "transformSystemPrompt" | "expectedCandyDocumentation"
->;
-type DocumentationHarnessWithOutput<TOutput extends JsonValue> = Omit<
-	CandyCodingAgentHarnessWithOutput<TOutput>,
-	"name" | "transformSystemPrompt" | "expectedCandyDocumentation"
->;
-
-export function createCandyDocumentationEvalHarness<TOutput extends JsonValue>(
-	options: DocumentationHarnessWithOutput<TOutput>,
-): Harness<CandyCodingAgentInput, TOutput>;
-export function createCandyDocumentationEvalHarness(
-	options?: DocumentationHarnessOptions,
-): Harness<CandyCodingAgentInput, string>;
-export function createCandyDocumentationEvalHarness<TOutput extends JsonValue>(
-	options: DocumentationHarnessOptions | DocumentationHarnessWithOutput<TOutput> = {},
-) {
-	if (process.env.CANDY_EVAL_CONTAINER !== "1" || !resolveSandboxIdentity()) {
-		throw new Error("Documentation evals must run in the isolated container sandbox.");
-	}
-	const variant = resolveDocumentationVariant();
-	return createCandyCodingAgentHarness({
-		...options,
-		name: variant,
-		tools: options.tools ?? [...DOCUMENTATION_EVAL_TOOLS],
-		...(variant === "without_docs" ? { transformSystemPrompt: excludeCandyDocumentation } : {}),
-		expectedCandyDocumentation: variant === "with_docs",
 	});
 }

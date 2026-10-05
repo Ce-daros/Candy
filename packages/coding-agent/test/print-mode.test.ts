@@ -125,20 +125,35 @@ describe("runPrintMode", () => {
 		expect(session.execution.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
 	});
 
-	it("emits session_shutdown and returns non-zero on assistant error", async () => {
-		const runtimeHost = createRuntimeHost(
-			createAssistantMessage({ stopReason: "error", errorMessage: "provider failure" }),
-		);
-		const { session } = runtimeHost;
-		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+	it.each([
+		{ mode: "text", stopReason: "error" },
+		{ mode: "text", stopReason: "aborted" },
+		{ mode: "json", stopReason: "error" },
+		{ mode: "json", stopReason: "aborted" },
+	] as const)(
+		"emits session_shutdown and returns non-zero in $mode mode on $stopReason",
+		async ({ mode, stopReason }) => {
+			const runtimeHost = createRuntimeHost(
+				createAssistantMessage({ stopReason, errorMessage: "provider failure" }),
+			);
+			const { session } = runtimeHost;
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-		const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
-			mode: "text",
-		});
+			const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
+				mode,
+			});
 
-		expect(exitCode).toBe(1);
-		expect(errorSpy).toHaveBeenCalledWith("provider failure");
-		expect(session.execution.extensionRunner.emit).toHaveBeenCalledTimes(1);
-		expect(session.execution.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
-	});
+			expect(exitCode).toBe(1);
+			if (mode === "text") {
+				expect(errorSpy).toHaveBeenCalledWith("provider failure");
+			} else {
+				expect(errorSpy).not.toHaveBeenCalled();
+			}
+			expect(session.execution.extensionRunner.emit).toHaveBeenCalledTimes(1);
+			expect(session.execution.extensionRunner.emit).toHaveBeenCalledWith({
+				type: "session_shutdown",
+				reason: "quit",
+			});
+		},
+	);
 });

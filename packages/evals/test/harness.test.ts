@@ -1,118 +1,85 @@
 import { homedir } from "node:os";
-import { getDocsPath, getExamplesPath, getReadmePath } from "@candy/coding-agent";
-import { describe, expect, it, vi } from "vitest";
-import { buildSystemPrompt } from "../../coding-agent/src/core/system-prompt.ts";
+import { fauxAssistantMessage, InMemoryCredentialStore } from "@candy/ai";
+import { fauxProvider } from "@candy/ai/providers/faux";
+import { ModelRuntime, ReadOnlyAuthStorage } from "@candy/coding-agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { JsonValue } from "vitest-evals/harness";
 import {
 	applyIsolatedEnvironment,
-	createCandyDocumentationEvalHarness,
-	DOCUMENTATION_EVAL_TOOLS,
-	excludeCandyDocumentation,
-	resolveDocumentationVariant,
+	CANDY_SESSION_SNAPSHOT_ARTIFACT,
+	createCandyCodingAgentHarness,
 	resolveModelSelection,
-	verifySystemPrompt,
 } from "../src/harness.ts";
 
-describe("resolveModelSelection", () => {
-	it("prefers an explicit harness model", () => {
+afterEach(() => vi.restoreAllMocks());
+
+describe("eval harness setup", () => {
+	it.each(["success", "setup failure"] as const)("releases its model runtime after %s", async (outcome) => {
+		const faux = fauxProvider();
+		faux.setResponses([fauxAssistantMessage("Paris")]);
+		const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null });
+		modelRuntime.registerNativeProvider({
+			...faux.provider,
+			auth: { apiKey: { name: "Faux", resolve: async () => ({ auth: { apiKey: "faux-key" } }) } },
+		});
+		vi.spyOn(ModelRuntime, "create").mockResolvedValue(modelRuntime);
+		vi.spyOn(ReadOnlyAuthStorage.prototype, "read").mockResolvedValue(undefined);
+		const dispose = vi.spyOn(modelRuntime, "dispose");
+		const model = faux.getModel();
+		const harness = createCandyCodingAgentHarness({
+			model: { provider: model.provider, id: model.id },
+			noTools: "all",
+			...(outcome === "setup failure" ? { workspaceFiles: { "../escaped": "bad" } } : {}),
+		});
+		const artifacts: Record<string, JsonValue> = {};
+		const previousHome = process.env.HOME;
+		const previousAgentDir = process.env.CANDY_CODING_AGENT_DIR;
+		try {
+			const run = harness.run("What is the capital of France?", {
+				artifacts,
+				setArtifact: (name, value) => {
+					artifacts[name] = value;
+				},
+			});
+			if (outcome === "success") {
+				const result = await run;
+				expect(result.output).toBe("Paris");
+				expect(artifacts[CANDY_SESSION_SNAPSHOT_ARTIFACT]).toContain('"role":"assistant"');
+			} else {
+				await expect(run).rejects.toThrow("Workspace fixture escapes the workspace");
+			}
+			expect(dispose).toHaveBeenCalledOnce();
+			expect(process.env.HOME).toBe(previousHome);
+			expect(process.env.CANDY_CODING_AGENT_DIR).toBe(previousAgentDir);
+		} finally {
+			await modelRuntime.dispose();
+		}
+	});
+
+	it("selects an explicit model or trimmed environment defaults", () => {
 		expect(
 			resolveModelSelection(
 				{ provider: "anthropic", id: "claude-opus-4-6" },
 				{ CANDY_PROVIDER: "openai-codex", CANDY_MODEL: "gpt-5.6-sol" },
 			),
 		).toEqual({ provider: "anthropic", id: "claude-opus-4-6" });
-	});
-
-	it("uses trimmed environment defaults", () => {
 		expect(
 			resolveModelSelection(undefined, { CANDY_PROVIDER: " openai-codex ", CANDY_MODEL: " gpt-5.6-sol " }),
-		).toEqual({
-			provider: "openai-codex",
-			id: "gpt-5.6-sol",
-		});
+		).toEqual({ provider: "openai-codex", id: "gpt-5.6-sol" });
+		expect(() => resolveModelSelection(undefined, {})).toThrow("Select a harness model explicitly");
 	});
 
-	it.each([{}, { CANDY_PROVIDER: "openai-codex" }, { CANDY_MODEL: "gpt-5.6-sol" }])(
-		"rejects incomplete model selection",
-		(environment) => {
-			expect(() => resolveModelSelection(undefined, environment)).toThrow("Select a harness model explicitly");
-		},
-	);
-});
-
-describe("isolateProcessEnvironment", () => {
-	it("removes runner metadata and restores the process environment", () => {
-		vi.stubEnv("CANDY_EVAL_VARIANT", "with_docs");
-		vi.stubEnv("CANDY_EVAL_ARTIFACT_DIR", "/tmp/artifacts");
-		const oldHome = process.env.HOME;
+	it("restores process environment after an isolated harness run", () => {
+		const previousHome = process.env.HOME;
+		const previousAgentDir = process.env.CANDY_CODING_AGENT_DIR;
+		const restore = applyIsolatedEnvironment("/tmp/eval-home", "/tmp/eval-agent");
 		try {
-			const restore = applyIsolatedEnvironment("/tmp/eval-home", "/tmp/eval-agent");
-			try {
-				expect(homedir()).toBe("/tmp/eval-home");
-				expect(process.env.CANDY_CODING_AGENT_DIR).toBe("/tmp/eval-agent");
-				expect(process.env.CANDY_EVAL_VARIANT).toBeUndefined();
-				expect(process.env.CANDY_EVAL_ARTIFACT_DIR).toBeUndefined();
-			} finally {
-				restore();
-			}
-			expect(process.env.HOME).toBe(oldHome);
-			expect(process.env.CANDY_EVAL_VARIANT).toBe("with_docs");
+			expect(homedir()).toBe("/tmp/eval-home");
+			expect(process.env.CANDY_CODING_AGENT_DIR).toBe("/tmp/eval-agent");
 		} finally {
-			vi.unstubAllEnvs();
+			restore();
 		}
-	});
-});
-
-describe("documentation variant", () => {
-	it.each(["without_docs", "with_docs"] as const)("accepts %s", (variant) => {
-		expect(resolveDocumentationVariant(variant)).toBe(variant);
-	});
-
-	it.each([undefined, "", "other"])("rejects invalid variant %s", (variant) => {
-		expect(() => resolveDocumentationVariant(variant)).toThrow("CANDY_EVAL_VARIANT");
-	});
-
-	it("strips only the documentation routing section from the default candy prompt", () => {
-		const prompt = buildSystemPrompt({
-			cwd: "/workspace",
-			selectedTools: [...DOCUMENTATION_EVAL_TOOLS],
-		});
-		expect(prompt).toContain("\n<docs>\ncandy documentation (read only");
-		expect(prompt).toContain("\n<rules>\n");
-		expect(prompt).toContain("\n<cwd>\n/workspace\n</cwd>");
-		expect(prompt).toContain("docs/models.md");
-
-		const stripped = excludeCandyDocumentation(prompt);
-		expect(stripped).toContain("\n<rules>\n");
-		expect(stripped).toContain("\n<cwd>\n/workspace\n</cwd>");
-		expect(stripped).not.toContain("<docs>");
-		expect(stripped).not.toContain("candy documentation");
-		expect(stripped).not.toContain("docs/models.md");
-		expect(stripped).not.toContain(getReadmePath());
-		expect(stripped).not.toContain(getDocsPath());
-		expect(stripped).not.toContain(getExamplesPath());
-	});
-
-	it("verifies the prompt that was sent", () => {
-		const prompt = buildSystemPrompt({
-			cwd: "/workspace",
-			selectedTools: [...DOCUMENTATION_EVAL_TOOLS],
-		});
-		const stripped = excludeCandyDocumentation(prompt);
-
-		expect(verifySystemPrompt(stripped, { name: "without_docs", expectedCandyDocumentation: false })).toBe(stripped);
-		expect(() => verifySystemPrompt(prompt, { name: "without_docs", expectedCandyDocumentation: false })).toThrow(
-			"does not match",
-		);
-	});
-
-	it("fails closed when prompt markers are missing", () => {
-		expect(() => excludeCandyDocumentation("Instructions")).toThrow("no candy documentation section");
-		expect(() => excludeCandyDocumentation("\n<docs>\nPi documentation\n</docs>")).toThrow(
-			"no working-directory section",
-		);
-	});
-
-	it("rejects documentation harnesses outside the container sandbox", () => {
-		expect(() => createCandyDocumentationEvalHarness()).toThrow("isolated container sandbox");
+		expect(process.env.HOME).toBe(previousHome);
+		expect(process.env.CANDY_CODING_AGENT_DIR).toBe(previousAgentDir);
 	});
 });

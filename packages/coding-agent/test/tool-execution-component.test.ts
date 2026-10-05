@@ -445,94 +445,90 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toContain("src/example.ts:");
 	});
 
-	test("uses a supplied call renderer without inheriting a result renderer", () => {
-		const overrideDefinition: ToolDefinition & ToolRenderers = {
-			...createBaseToolDefinition("read"),
-			renderCall: () => new Text("override call", 0, 0),
-		};
-
-		const component = createToolExecutionComponent(
-			"read",
-			"tool-4b",
-			{ path: "notes.txt" },
-			{},
-			overrideDefinition,
-			createFakeTui(),
-			process.cwd(),
-		);
-		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
-		component.setExpanded(true);
-		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("override call");
-		expect(rendered).toContain("hello");
-		expect(rendered).not.toContain("read notes.txt");
-	});
-
-	test("uses a supplied result renderer without inheriting a call renderer", () => {
-		const overrideDefinition: ToolDefinition & ToolRenderers = {
-			...createBaseToolDefinition("read"),
-			renderResult: () => new Text("override result", 0, 0),
-		};
-
-		const component = createToolExecutionComponent(
-			"read",
-			"tool-4c",
-			{ path: "README.md" },
-			{},
-			overrideDefinition,
-			createFakeTui(),
-			process.cwd(),
-		);
-		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
-		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("read");
-		expect(rendered).toContain('path="README.md"');
-		expect(rendered).not.toContain("read README.md");
-		expect(rendered).toContain("override result");
-	});
-
-	test("uses custom renderers for built-in overrides that reuse built-in definition parameters", () => {
-		const builtInDefinition = createReadToolDefinition(process.cwd());
-		const component = createToolExecutionComponent(
-			"read",
-			"tool-4d",
-			{ path: "README.md" },
-			{},
+	test("uses one-sided custom renderers without inheriting the other slot", () => {
+		const cases = [
 			{
-				...builtInDefinition,
-				renderCall: () => new Text("override call", 0, 0),
-				renderResult: () => new Text("override result", 0, 0),
+				id: "tool-4b",
+				args: { path: "notes.txt" },
+				renderers: { renderCall: () => new Text("override call", 0, 0) },
+				contains: ["override call", "hello"],
+				excludes: ["read notes.txt"],
 			},
-			createFakeTui(),
-			process.cwd(),
-		);
-		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
-		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("override call");
-		expect(rendered).toContain("override result");
-		expect(rendered).not.toContain("read README.md");
+			{
+				id: "tool-4c",
+				args: { path: "README.md" },
+				renderers: { renderResult: () => new Text("override result", 0, 0) },
+				contains: ["read", 'path="README.md"', "override result"],
+				excludes: ["read README.md"],
+			},
+		] satisfies Array<{
+			id: string;
+			args: Record<string, string>;
+			renderers: ToolRenderers;
+			contains: string[];
+			excludes: string[];
+		}>;
+
+		for (const scenario of cases) {
+			const component = createToolExecutionComponent(
+				"read",
+				scenario.id,
+				scenario.args,
+				{},
+				{ ...createBaseToolDefinition("read"), ...scenario.renderers },
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult(
+				{ content: [{ type: "text", text: "hello" }], details: undefined, isError: false },
+				false,
+			);
+			if (scenario.id === "tool-4b") component.setExpanded(true);
+			const rendered = stripAnsi(component.render(120).join("\n"));
+			for (const text of scenario.contains) expect(rendered).toContain(text);
+			for (const text of scenario.excludes) expect(rendered).not.toContain(text);
+		}
 	});
 
-	test("uses custom renderers for built-in overrides that reuse wrapped built-in tool parameters", () => {
+	test("uses custom renderers for built-in overrides with either parameter source", () => {
 		const builtInTool = createReadTool(process.cwd());
-		const component = createToolExecutionComponent(
-			"read",
-			"tool-4e",
-			{ path: "README.md" },
-			{},
+		const cases = [
 			{
-				...createBaseToolDefinition("read"),
-				parameters: builtInTool.parameters,
-				renderCall: () => new Text("wrapped override call", 0, 0),
-				renderResult: () => new Text("wrapped override result", 0, 0),
+				id: "tool-4d",
+				definition: createReadToolDefinition(process.cwd()),
+				call: "override call",
+				result: "override result",
 			},
-			createFakeTui(),
-			process.cwd(),
-		);
-		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
-		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("wrapped override call");
-		expect(rendered).toContain("wrapped override result");
+			{
+				id: "tool-4e",
+				definition: { ...createBaseToolDefinition("read"), parameters: builtInTool.parameters },
+				call: "wrapped override call",
+				result: "wrapped override result",
+			},
+		];
+		for (const scenario of cases) {
+			const component = createToolExecutionComponent(
+				"read",
+				scenario.id,
+				{ path: "README.md" },
+				{},
+				{
+					...scenario.definition,
+					renderCall: () => new Text(scenario.call, 0, 0),
+					renderResult: () => new Text(scenario.result, 0, 0),
+				},
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult(
+				{ content: [{ type: "text", text: "hello" }], details: undefined, isError: false },
+				false,
+			);
+			const rendered = stripAnsi(component.render(120).join("\n"));
+			expect(rendered).toContain(scenario.call);
+			expect(rendered).toContain(scenario.result);
+			expect(rendered).not.toContain("read README.md");
+		}
 	});
 
 	test("shares renderer state across custom call and result slots", () => {

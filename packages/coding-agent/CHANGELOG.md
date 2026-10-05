@@ -20,7 +20,7 @@
 - Removed first-time setup analytics opt-in and its settings methods; setup retains theme selection, and existing configuration keys remain on disk.
 - `estimateTokens` is `estimateMessageTokens` from `@candy/ai/utils/estimate`. The context estimate, per-message estimate, and usage-based context total now have one implementation shared with the runtime.
 - Removed `FileAuthStorageBackend` and `InMemoryCodingAgentModelsStore`. Locked JSON access lives in `core/storage/json-file.ts`, and the in-memory model store is `InMemoryModelsStore` from `@candy/ai`.
-- Removed unused SDK and internal helpers: `isBunRuntime`, `getModelsPath`, `getToolsDir`, `getPromptsDir`, `restoreModelFromSession`, `getConfigValueEnvVarName`, `resolveHeaders`, the unused plural tool-definition factories and wrapper, `getModelSearchText`, `isLightTheme`, `RpcCommandType`, `ToolRenderResultLike`, `BashRenderState`, and the unused deprecation utility.
+- Removed unused SDK and internal helpers: `isBunRuntime`, `getModelsPath`, `getToolsDir`, `getPromptsDir`, `restoreModelFromSession`, `getConfigValueEnvVarName`, `resolveHeaders`, `parseSessionEntries`, `clearConfigValueCache`, the unused plural tool-definition factories and wrapper, `getModelSearchText`, `isLightTheme`, `RpcCommandType`, `ToolRenderResultLike`, `BashRenderState`, and the unused deprecation utility.
 - Project trust detection no longer considers `.agents/skills` in directories above the user home: the ancestor walk stops at the home directory, which is user territory, not project context.
 - Project trust prompting now uses the dedicated trust selector everywhere (startup, session resume, package manager). The multi-line prompt rendered as an all-accent title via generic `ui.select` is gone; the selector shows the title, path, and consequence paragraph with proper title/body color semantics.
 - Removed the ignored `usesCallbackServer` OAuth declaration from provider configuration and extension types.
@@ -70,6 +70,7 @@
 
 ### Changed
 
+- Opening a session reads its header and transcript together once; discovery retains its bounded header scan. Consolidated runtime lifecycle and renderer coverage into the existing suites.
 - Consolidated MCP credential and resource handling, removed redundant codemode state and metadata copies, and reused the session's tool filtering. BM25 computes document frequencies once per search without changing its ranking formula.
 - The built-in OpenAI Codex default is GPT-6.1 Sol, and the Together default is Kimi K3. Explicit choices, saved defaults, and session models retain their existing precedence (adapted from pi upstream by Armin Ronacher).
 - Generic tool-call previews show arguments, with compact collapsed output and multi-line expanded values; custom tool renderers retain their presentation (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/5257d0d5f) by Armin Ronacher).
@@ -101,6 +102,8 @@
 
 ### Fixed
 
+- JSON print mode now exits with a failure status when the final assistant request fails or is aborted, so scripts can detect unsuccessful runs from the exit code.
+- Codemode tool durations display rounded milliseconds instead of long floating-point fractions.
 - Cancelling the Ctrl+L model selector reverses the opening reveal, keeping model labels visible during the first closing frame instead of erasing them almost immediately.
 
 - CLI model selection preserves an exact model ID beginning with its own provider name, such as `openrouter/free`, instead of choosing a fuzzy match after stripping the provider prefix.

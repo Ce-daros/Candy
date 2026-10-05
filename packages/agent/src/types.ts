@@ -205,8 +205,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * that the LLM can understand. AgentMessages that cannot be converted (e.g., UI-only notifications,
 	 * status messages) should be filtered out.
 	 *
-	 * Contract: must not throw or reject. Return a safe fallback value instead.
-	 * Throwing interrupts the low-level agent loop without producing a normal event sequence.
+	 * Errors reject the low-level run; Agent handles them through its failure lifecycle.
 	 *
 	 * @example
 	 * ```typescript
@@ -233,8 +232,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * - Context window management (pruning old messages)
 	 * - Injecting context from external sources
 	 *
-	 * Contract: must not throw or reject. Return the original messages or another
-	 * safe fallback value instead.
+	 * Errors reject the low-level run; Agent handles them through its failure lifecycle.
 	 *
 	 * @example
 	 * ```typescript
@@ -254,7 +252,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Useful for short-lived OAuth tokens (e.g., GitHub Copilot) that may expire
 	 * during long-running tool execution phases.
 	 *
-	 * Contract: must not throw or reject. Return undefined when no key is available.
+	 * Return undefined when no key is available; errors reject the run.
 	 */
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 
@@ -293,7 +291,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 *
 	 * Use this for "steering" the agent while it's working.
 	 *
-	 * Contract: must not throw or reject. Return [] when no steering messages are available.
+	 * Return [] when no steering messages are available; errors reject the run.
 	 */
 	getSteeringMessages?: () => Promise<AgentMessage[]>;
 
@@ -306,7 +304,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 *
 	 * Use this for follow-up messages that should wait until the agent finishes.
 	 *
-	 * Contract: must not throw or reject. Return [] when no follow-up messages are available.
+	 * Return [] when no follow-up messages are available; errors reject the run.
 	 */
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 

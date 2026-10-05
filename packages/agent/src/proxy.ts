@@ -7,7 +7,6 @@
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
-	EventStream,
 	type Model,
 	parseStreamingJson,
 	type SimpleStreamOptions,
@@ -15,20 +14,7 @@ import {
 	type ToolCall,
 	type TranscriptContext,
 } from "@candy/ai";
-
-// Create stream class matching ProxyMessageEventStream
-class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
-	constructor() {
-		super(
-			(event) => event.type === "done" || event.type === "error",
-			(event) => {
-				if (event.type === "done") return event.message;
-				if (event.type === "error") return event.error;
-				throw new Error("Unexpected event type");
-			},
-		);
-	}
-}
+import { AssistantMessageEventStream } from "@candy/ai/utils/event-stream";
 
 /**
  * Proxy event types - server sends these with partial field stripped to reduce bandwidth.
@@ -121,8 +107,8 @@ export function streamProxy(
 	model: Model<any>,
 	context: TranscriptContext,
 	options: ProxyStreamOptions,
-): ProxyMessageEventStream {
-	const stream = new ProxyMessageEventStream();
+): AssistantMessageEventStream {
+	const stream = new AssistantMessageEventStream();
 
 	(async () => {
 		// Initialize the partial message that we'll build up from events

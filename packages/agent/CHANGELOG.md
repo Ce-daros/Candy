@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- Removed the observational `agentLoop()` and `agentLoopContinue()` stream wrappers; low-level execution uses the awaited `runAgentLoop()` and `runAgentLoopContinue()` event sinks.
 - Removed the unused `@candy/telemetry` dependency and type re-exports, and the `uuidv7` re-export from the package entrypoint. `uuidv7` remains available from `@candy/ai`.
 - Removed the unused session-search type entrypoint (`SearchQuery`, `SessionSearchHit`, `EntrySearchHit`, and `SessionSearchService`).
 - Removed the unused Harness/Pico APIs, session backends, Chord services, and their package entrypoints. The package now exposes the Agent and Agent loop APIs used by Candy.
@@ -21,7 +22,7 @@
 
 ### Changed
 
-- Assistant streams share one final-message commit path for terminal events and explicit stream completion. Tool preparation checks cancellation once after the optional hook, preserving cancellation priority over blocked results.
+- Assistant streams share one final-message commit path for terminal events and explicit stream completion; the proxy uses the AI package's `AssistantMessageEventStream`. Tool preparation checks cancellation once after the optional hook, preserving cancellation priority over blocked results.
 
 - Replaced the README example with externally owned history and inputs, and documented fixed host hooks and committed-message events.
 

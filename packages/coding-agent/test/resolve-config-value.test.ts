@@ -2,11 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-	clearConfigValueCache,
-	resolveConfigValue,
-	resolveConfigValueUncached,
-} from "../src/core/resolve-config-value.ts";
+import { resolveConfigValue, resolveConfigValueUncached } from "../src/core/resolve-config-value.ts";
 import * as shellModule from "../src/utils/shell.ts";
 
 describe("resolveConfigValue", () => {
@@ -81,7 +77,7 @@ describe("resolveConfigValue", () => {
 		expect(await resolveConfigValue(success, undefined, { cache: commandCache })).toBe("value");
 		expect(readFileSync(counterFile, "utf-8").trim()).toBe("1");
 
-		clearConfigValueCache(commandCache);
+		commandCache.clear();
 		expect(await resolveConfigValue(success, undefined, { cache: commandCache })).toBe("value");
 		expect(readFileSync(counterFile, "utf-8").trim()).toBe("2");
 

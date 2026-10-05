@@ -12,7 +12,6 @@
 	"devDependencies": {
 		"@candy/ai": "^0.87.1",
 		"@candy/coding-agent": "^0.87.1",
-		"@vitest-evals/core": "0.15.0",
 		"vitest-evals": "0.15.0"
 	}
 }

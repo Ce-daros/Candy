@@ -159,45 +159,6 @@ describe("Models runtime", () => {
 		expect(long.cacheWrite).toBe(0.0000125);
 	});
 
-	it("registers, replaces, and deletes providers", () => {
-		const models = createModels();
-		models.setProvider(testProvider({ id: "p1" }));
-		models.setProvider(testProvider({ id: "p2" }));
-		expect(models.getProviders().map((p) => p.id)).toEqual(["p1", "p2"]);
-
-		const replacement = testProvider({ id: "p1" });
-		models.setProvider(replacement);
-		expect(models.getProvider("p1")).toBe(replacement);
-		expect(models.getProviders()).toHaveLength(2);
-
-		models.deleteProvider("p1");
-		expect(models.getProvider("p1")).toBeUndefined();
-
-		models.clearProviders();
-		expect(models.getProviders()).toHaveLength(0);
-	});
-
-	it("lists and finds models per provider", async () => {
-		const models = createModels();
-		models.setProvider(testProvider({ id: "p1", models: [testModel("p1", "m1"), testModel("p1", "m2")] }));
-		models.setProvider(testProvider({ id: "p2", models: [testModel("p2", "m3")] }));
-
-		expect(models.getModels().map((m) => m.id)).toEqual(["m1", "m2", "m3"]);
-		expect(models.getModels("p1").map((m) => m.id)).toEqual(["m1", "m2"]);
-		expect(models.getModels("nope").length).toBe(0);
-		expect(models.getModel("p2", "m3")?.id).toBe("m3");
-		expect(models.getModel("p2", "missing")).toBeUndefined();
-
-		// hasApi() narrows dynamically looked-up models with a runtime check
-		const found = models.getModel("p2", "m3");
-		expect(found && hasApi(found, "openai-completions")).toBe(false);
-		expect(found && hasApi(found, "test-api")).toBe(true);
-		if (found && hasApi(found, "test-api")) {
-			const _typed: Model<"test-api"> = found;
-			expect(_typed.id).toBe("m3");
-		}
-	});
-
 	it("keeps chat reads independent from the all-model catalog", async () => {
 		const provider = testProvider({ id: "chat-only" });
 		provider.getAllModels = () => {
@@ -1181,18 +1142,34 @@ describe("Models runtime", () => {
 		expect(result.errorMessage).toContain("Unknown provider: ghost");
 	});
 
-	it("streams through the provider", async () => {
+	it("streams through a registered model and releases its provider", async () => {
 		const models = createModels();
 		models.setProvider(testProvider({ id: "p1" }));
-		const model = testModel("p1", "model-a");
+		models.setProvider(testProvider({ id: "p2", models: [testModel("p2", "m2")] }));
+		const replacement = testProvider({ id: "p1", models: [testModel("p1", "m1")] });
+		models.setProvider(replacement);
+		expect(models.getProviders().map((provider) => provider.id)).toEqual(["p1", "p2"]);
+		expect(models.getProvider("p1")).toBe(replacement);
+		expect(models.getModels().map((model) => model.id)).toEqual(["m1", "m2"]);
+		expect(models.getModels("p1").map((model) => model.id)).toEqual(["m1"]);
+		expect(models.getModels("missing")).toEqual([]);
+		expect(models.getModel("p1", "missing")).toBeUndefined();
+		const model = models.getModel("p1", "m1");
+		if (!model || !hasApi(model, "test-api")) throw new Error("Expected registered test model");
+		const typedModel: Model<"test-api"> = model;
 
 		const events: string[] = [];
-		const stream = models.streamSimple(model, context);
+		const stream = models.streamSimple(typedModel, context);
 		for await (const event of stream) {
 			events.push(event.type);
 		}
 		expect(events).toEqual(["start", "done"]);
 		const message = await stream.result();
 		expect(message.stopReason).toBe("stop");
+		expect(message.model).toBe("m1");
+		models.deleteProvider("p1");
+		expect(models.getProvider("p1")).toBeUndefined();
+		models.clearProviders();
+		expect(models.getProviders()).toEqual([]);
 	});
 });

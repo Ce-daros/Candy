@@ -137,7 +137,7 @@ describe("interactive presentation from terminal input", () => {
 		const { state, terminal } = await start({ columns: 80 });
 		terminal.sendInput("\x1b");
 		terminal.sendInput("\x1b");
-		for (let index = 0; index < 16; index++) terminal.sendInput("\x1b[B");
+		terminal.sendInput("\x1b[A");
 		await terminal.waitForRender();
 		const before = plainText(terminal);
 		expect(before).toContain("♦ Behavior ♦");

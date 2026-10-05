@@ -83,7 +83,7 @@ Parallel execution is the default. Preflight runs sequentially, allowed tools ex
 
 `runToolCall()` executes a nested call through the same validation and hooks, emits tool lifecycle events with an optional parent call ID, and returns its outcome without appending a separate chat message. Tools may return `structuredContent` and `isError` for machine-readable results and business errors.
 
-For direct loop control, use `agentLoop()` or `agentLoopContinue()` from [agent-loop.ts](src/agent-loop.ts). Their event streams are observational and do not await consumer processing; use `Agent` when message handling must form a barrier before tool execution. [proxy.ts](src/proxy.ts) supplies backend-proxied streaming for browser hosts.
+For direct loop control, await `runAgentLoop()` or `runAgentLoopContinue()` from [agent-loop.ts](src/agent-loop.ts). Their event sink is awaited before execution continues, and callback errors reject the run. `Agent` owns the run state and failure lifecycle. [proxy.ts](src/proxy.ts) supplies backend-proxied streaming for browser hosts.
 
 ## License
 

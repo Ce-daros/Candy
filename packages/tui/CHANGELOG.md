@@ -4,7 +4,7 @@
 
 ### Removed
 
-- Removed duplicate image-line, content-shrink, and short-content overlay tests; retained their rendering and protocol coverage in the main TUI suites.
+- Removed duplicate image-line, content-shrink, short-content overlay, and selection helper tests; retained their rendering and protocol coverage in the main TUI suites. Word navigation is exercised through Editor key input, and scrolling scenarios share their setup.
 
 ### Breaking Changes
 

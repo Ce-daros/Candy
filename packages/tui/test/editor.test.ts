@@ -625,6 +625,29 @@ describe("Editor component", () => {
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 });
 			editor.handleInput("\x1b[1;5C"); // Ctrl+Right over bar
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+
+			// Path punctuation remains a distinct word-navigation boundary in actual editor input.
+			editor.setText("path/to/file");
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left over file
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left over /file boundary
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left over to
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left over /to boundary
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 });
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left over path
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right over path
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 });
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right over /
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right over to
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right over /
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right over file
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 12 });
 		});
 
 		it("stops at fullwidth Chinese punctuation (issue #4972)", () => {

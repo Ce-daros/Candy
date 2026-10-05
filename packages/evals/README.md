@@ -10,10 +10,7 @@ Eval definitions are flat under `evals/`:
 
 Support code:
 
-- `evals/acme-server.ts` and `evals/configured-runtime.ts` are shared fixtures.
-- `src/harness.ts` is the vitest-evals adapter that boots a real `AgentSession`.
-- `src/plan.ts` expands cases into `(case, variant, repetition)` tasks.
-- `src/report.ts` reads Vitest JSON observations and computes comparison summaries.
+- `src/harness.ts` adapts `vitest-evals` to a real `AgentSession`, with an isolated workspace and home directory.
 
 ## Run evals
 

@@ -12,14 +12,7 @@ import {
 	getSessionHeaderCwd,
 } from "./session-discovery.ts";
 import { exportSessionToJsonl } from "./session-export.ts";
-import {
-	appendSessionEntries,
-	loadEntriesFromFile,
-	readSessionHeader,
-	rewriteSessionFile,
-	SessionHeaderScanLimitError,
-	writeSessionFile,
-} from "./session-jsonl.ts";
+import { appendSessionEntries, loadEntriesFromFile, rewriteSessionFile, writeSessionFile } from "./session-jsonl.ts";
 import { buildSessionProjection } from "./session-projection.ts";
 import {
 	getContextUsage,
@@ -71,7 +64,7 @@ export {
 	sessionEntryToContextMessages,
 } from "./session-projection.ts";
 export * from "./session-records.ts";
-export { assertValidSessionId, parseSessionEntries } from "./session-validation.ts";
+export { assertValidSessionId } from "./session-validation.ts";
 export class SessionHistory {
 	private sessionId: string = "";
 	private sessionFile: string | undefined;
@@ -945,20 +938,9 @@ export class SessionHistory {
 	 */
 	static open(path: string, sessionDir?: string, cwdOverride?: string): SessionHistory {
 		const resolvedPath = resolvePath(path);
-		let header: SessionHeader | null = null;
-		let preloadedFileEntries: FileEntry[] | undefined;
-		if (cwdOverride === undefined && existsSync(resolvedPath)) {
-			try {
-				header = readSessionHeader(resolvedPath);
-			} catch (error) {
-				if (!(error instanceof SessionHeaderScanLimitError)) throw error;
-				// The bounded scan is only a discovery optimization. A full load remains
-				// authoritative for files with very large headers or prefixes.
-				preloadedFileEntries = loadEntriesFromFile(resolvedPath);
-				const firstEntry = preloadedFileEntries[0];
-				header = firstEntry?.type === "session" ? firstEntry : null;
-			}
-		}
+		const preloadedFileEntries = loadEntriesFromFile(resolvedPath);
+		const firstEntry = preloadedFileEntries[0];
+		const header = firstEntry?.type === "session" ? firstEntry : undefined;
 		const cwd = cwdOverride ?? (header ? getSessionHeaderCwd(header) : undefined) ?? process.cwd();
 		// If no sessionDir provided, derive from file's parent directory
 		const dir = sessionDir ? normalizePath(sessionDir) : resolve(resolvedPath, "..");

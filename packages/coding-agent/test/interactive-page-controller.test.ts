@@ -36,24 +36,6 @@ function frame(
 }
 
 describe("InteractivePageController", () => {
-	it("uses the shared flow stack to suspend and restore a presentation page", () => {
-		const events: string[] = [];
-		const flows = new InteractiveFlowStack();
-		const parent = flows.push(frame(new Text("history", 0, 0), events));
-		const { controller } = createController(flows, events);
-
-		const child = controller.mountPanel(new Text("reader", 0, 0));
-		expect(flows.current).toBe(child);
-		expect(parent.controller.signal.aborted).toBe(false);
-		expect(events).toEqual(["suspend-parent", "close-search", "mount", "render"]);
-
-		events.length = 0;
-		controller.closePanel(child);
-		expect(flows.current).toBe(parent);
-		expect(child.controller.signal.aborted).toBe(true);
-		expect(events).toEqual(["resume-parent"]);
-	});
-
 	it("invalidates stale close animations when a new flow opens", () => {
 		const events: string[] = [];
 		const flows = new InteractiveFlowStack();

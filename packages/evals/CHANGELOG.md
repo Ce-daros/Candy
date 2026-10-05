@@ -4,4 +4,8 @@
 
 ### Removed
 
-- Removed unused system-prompt hash metadata from harness results. Prompt verification, transcript artifacts, scoring, and session artifact paths are unchanged.
+- Removed the unused documentation comparison runner and its dedicated fixtures.
+
+### Fixed
+
+- The host harness releases its caller-owned model runtime on completion and setup failure.

@@ -1,7 +1,6 @@
 import type { AgentMessage } from "@candy/agent-core";
 import type { AssistantMessage, Usage } from "@candy/ai";
 import { calculateContextTokens, estimateContextTokens } from "@candy/ai/utils/estimate";
-import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -18,8 +17,8 @@ import {
 	type CompactionEntry,
 	type CustomMessageEntry,
 	type ModelChangeEntry,
-	parseSessionEntries,
 	type SessionEntry,
+	SessionHistory,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
 } from "../src/core/session-history.ts";
@@ -31,9 +30,7 @@ import { estimateProjectedContextTokens } from "../src/core/session-queries.ts";
 
 function loadLargeSessionEntries(): SessionEntry[] {
 	const sessionPath = join(__dirname, "fixtures/large-session.jsonl");
-	const content = readFileSync(sessionPath, "utf-8");
-	const entries = parseSessionEntries(content);
-	return entries.filter((e): e is SessionEntry => e.type !== "session");
+	return SessionHistory.open(sessionPath).getEntries();
 }
 
 function createMockUsage(input: number, output: number, cacheRead = 0, cacheWrite = 0): Usage {

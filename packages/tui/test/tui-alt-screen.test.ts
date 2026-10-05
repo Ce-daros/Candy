@@ -137,6 +137,33 @@ describe("TuiAltScreen", () => {
 			["line 5", "line 6", "line 7", "line 8", "editor", "footer"],
 		);
 		tui.stop();
+
+		// A full-width indicator must leave the scrollbar visible and clickable.
+		const overlapTerminal = new VirtualTerminal(30, 6);
+		const overlapTui = new TuiAltScreen(overlapTerminal, undefined, undefined, {
+			scrollToEndIndicator: () => "↓".repeat(30),
+		});
+		const overlapTranscript = new ScrollView(
+			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
+			{ follow: "end", primary: true, scrollbar: "always" },
+		);
+		overlapTui.setLayoutRoot(
+			new VStack([
+				{ component: overlapTranscript, basis: 0, grow: 1, minSize: 1 },
+				{ component: new Text("editor\nfooter", 0, 0), basis: "auto", minSize: 1 },
+			]),
+		);
+		overlapTui.start();
+		await overlapTerminal.waitForRender();
+		overlapTerminal.sendInput("\x1b[<64;1;1M");
+		await overlapTerminal.waitForRender();
+		assert.strictEqual(overlapTranscript.isFollowingEnd, false);
+		assert.strictEqual(overlapTerminal.getViewport()[3], `${"↓".repeat(29)}┃`);
+		overlapTerminal.sendInput("\x1b[<0;30;4M");
+		overlapTerminal.sendInput("\x1b[<0;30;4m");
+		await overlapTerminal.waitForRender();
+		assert.strictEqual(overlapTranscript.isFollowingEnd, false);
+		overlapTui.stop();
 	});
 
 	it("keeps the jump-to-end indicator centered as the auto scrollbar hides and reappears", async () => {
@@ -180,38 +207,6 @@ describe("TuiAltScreen", () => {
 		} finally {
 			tui.stop();
 		}
-	});
-
-	it("leaves the scrollbar visible and clickable when the jump-to-end indicator spans the transcript", async () => {
-		// Regression coverage for #9136: centering must not paint or capture clicks over the scrollbar.
-		const terminal = new VirtualTerminal(30, 6);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
-			scrollToEndIndicator: () => "↓".repeat(30),
-		});
-		const transcript = new ScrollView(
-			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
-			{ follow: "end", primary: true, scrollbar: "always" },
-		);
-		tui.setLayoutRoot(
-			new VStack([
-				{ component: transcript, basis: 0, grow: 1, minSize: 1 },
-				{ component: new Text("editor\nfooter", 0, 0), basis: "auto", minSize: 1 },
-			]),
-		);
-		tui.start();
-		await terminal.waitForRender();
-
-		terminal.sendInput("\x1b[<64;1;1M");
-		await terminal.waitForRender();
-		assert.strictEqual(transcript.isFollowingEnd, false);
-
-		// The indicator must not intercept a press on the scrollbar's last column.
-		assert.strictEqual(terminal.getViewport()[3], `${"↓".repeat(29)}┃`);
-		terminal.sendInput("\x1b[<0;30;4M");
-		terminal.sendInput("\x1b[<0;30;4m");
-		await terminal.waitForRender();
-		assert.strictEqual(transcript.isFollowingEnd, false);
-		tui.stop();
 	});
 
 	it("never shows the jump-to-end indicator for a primary scroll view without follow-end", async () => {
@@ -975,7 +970,7 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
-	it("scrolls the transcript by half a page with custom bindings", async () => {
+	it("scrolls the transcript by half a page and one line with custom bindings", async () => {
 		const originalKeybindings = getKeybindings();
 		const terminal = new VirtualTerminal(20, 10);
 		const tui = new TuiAltScreen(terminal);
@@ -983,6 +978,8 @@ describe("TuiAltScreen", () => {
 			new KeybindingsManager(TUI_KEYBINDINGS, {
 				"tui.altScreen.halfPageUp": "ctrl+u",
 				"tui.altScreen.halfPageDown": "ctrl+d",
+				"tui.altScreen.lineUp": "ctrl+y",
+				"tui.altScreen.lineDown": "ctrl+e",
 			}),
 		);
 		try {
@@ -996,27 +993,6 @@ describe("TuiAltScreen", () => {
 			assert.strictEqual(tui.viewportTop, 15);
 
 			terminal.sendInput("\x04");
-			await terminal.waitForRender();
-			assert.strictEqual(tui.viewportTop, 20);
-		} finally {
-			tui.stop();
-			setKeybindings(originalKeybindings);
-		}
-	});
-
-	it("scrolls the transcript by one line with custom bindings", async () => {
-		const originalKeybindings = getKeybindings();
-		const terminal = new VirtualTerminal(20, 10);
-		const tui = new TuiAltScreen(terminal);
-		setKeybindings(
-			new KeybindingsManager(TUI_KEYBINDINGS, {
-				"tui.altScreen.lineUp": "ctrl+y",
-				"tui.altScreen.lineDown": "ctrl+e",
-			}),
-		);
-		try {
-			tui.addChild(new Text(Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0));
-			tui.start();
 			await terminal.waitForRender();
 			assert.strictEqual(tui.viewportTop, 20);
 

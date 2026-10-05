@@ -1,6 +1,5 @@
 import { uuidv7 } from "@candy/ai";
 import { randomUUID } from "crypto";
-import { parseSessionEntryLine } from "./session-jsonl.ts";
 
 import {
 	CURRENT_SESSION_VERSION,
@@ -363,18 +362,4 @@ export function validateSessionEntries(entries: FileEntry[]): void {
 	const has = (id: string) => byId.has(id);
 	const get = (id: string) => byId.get(id);
 	for (const entry of byId.values()) validateEntryReferences(entry, has, get);
-}
-
-/** Exported for compaction.test.ts */
-export function parseSessionEntries(content: string): FileEntry[] {
-	const entries: FileEntry[] = [];
-	const lines = content.split("\n");
-
-	for (const [index, line] of lines.entries()) {
-		const entry = parseSessionEntryLine(line, "session content", index + 1);
-		if (entry) entries.push(entry);
-	}
-	validateSessionEntries(entries);
-
-	return entries;
 }

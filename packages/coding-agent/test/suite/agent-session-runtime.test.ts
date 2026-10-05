@@ -11,6 +11,7 @@ import {
 	createRuntimeFromFactory,
 } from "../../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
+import { ModelRuntime } from "../../src/core/model-runtime.ts";
 import { SessionHistory } from "../../src/core/session-history.ts";
 import type {
 	AgentToolResult,
@@ -43,7 +44,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 	async function createRuntimeForTest(
 		extensionFactory: ExtensionFactory,
-		options?: { cwd?: string; bootstrapModel?: boolean },
+		options?: { cwd?: string; bootstrapModel?: boolean; injectModelRuntime?: boolean },
 	) {
 		const tempDir =
 			options?.cwd ?? join(tmpdir(), `pi-runtime-suite-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -59,10 +60,16 @@ describe("AgentSessionRuntime characterization", () => {
 
 		const authStorage = AuthStorage.inMemory();
 		await authStorage.modify(faux.getModel().provider, async () => ({ type: "api_key", key: "faux-key" }));
+		const injectedModelRuntime = options?.injectModelRuntime
+			? await ModelRuntime.create({ credentials: authStorage, modelsPath: join(tempDir, "models.json") })
+			: undefined;
+		injectedModelRuntime?.registerNativeProvider(configuredFauxProvider(faux));
 
 		const runtimeOptions = {
 			agentDir: tempDir,
-			modelRuntimeOptions: { credentials: authStorage },
+			...(injectedModelRuntime
+				? { modelRuntime: injectedModelRuntime }
+				: { modelRuntimeOptions: { credentials: authStorage } }),
 			model: options?.bootstrapModel === false ? undefined : faux.getModel(),
 			resourceLoaderOptions: {
 				extensionFactories: [
@@ -108,6 +115,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 		cleanups.push(async () => {
 			await runtime.dispose();
+			await injectedModelRuntime?.dispose();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
@@ -115,6 +123,7 @@ describe("AgentSessionRuntime characterization", () => {
 
 		return {
 			runtime,
+			modelRuntime: injectedModelRuntime,
 			faux,
 			tempDir,
 			failNextRuntimeCreation() {
@@ -435,6 +444,41 @@ describe("AgentSessionRuntime characterization", () => {
 			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_start", reason: "resume", previousSessionFile: secondSessionFile },
 		]);
+	});
+
+	it("leaves an injected ModelRuntime owned by its caller", async () => {
+		const { runtime, modelRuntime } = await createRuntimeForTest(() => {}, { injectModelRuntime: true });
+		expect(modelRuntime).toBeDefined();
+
+		await runtime.dispose();
+
+		await expect(modelRuntime!.refresh()).resolves.toMatchObject({ aborted: false });
+	});
+
+	it("invalidates the outgoing extension context after shutdown and before rebind", async () => {
+		const phases: string[] = [];
+		const { runtime } = await createRuntimeForTest((candy) => {
+			candy.on("session_shutdown", () => {
+				phases.push("session_shutdown");
+			});
+		});
+		const oldSession = runtime.session;
+		runtime.setBeforeSessionInvalidate(() => {
+			phases.push("beforeSessionInvalidate");
+			expect(oldSession.execution.extensionRunner.createContext().cwd).toBe(oldSession.history.getCwd());
+		});
+		runtime.setRebindSession(async () => {
+			phases.push("rebindSession");
+		});
+
+		await runtime.newSession();
+
+		expect(phases).toEqual(["session_shutdown", "beforeSessionInvalidate", "rebindSession"]);
+		expect(() => oldSession.execution.extensionRunner.createContext().cwd).toThrow(
+			"This extension ctx is stale after session replacement or reload.",
+		);
+		runtime.setBeforeSessionInvalidate(undefined);
+		runtime.setRebindSession(undefined);
 	});
 
 	it("honors session_before_switch cancellation for new and resume", async () => {

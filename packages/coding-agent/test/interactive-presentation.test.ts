@@ -316,15 +316,6 @@ describe("interactive presentation", () => {
 		expect(harness.session.selection.model?.id).toBe("first");
 	});
 
-	it("resumes Actions at its selected action after a child closes", async () => {
-		presentation.open("actions");
-		await choose("Tree");
-		expect(host.sessionAction).toHaveBeenCalledWith("tree", "");
-		presentation.resume();
-		expect(panel.getQuery()).toBe("Tree");
-		expect(panel.getSelectedId()).toBe("tree");
-	});
-
 	it("aborts a child page on cancel and restores its parent selection", async () => {
 		presentation.open("sources");
 		const sources = flows.current;
@@ -475,16 +466,6 @@ describe("interactive presentation", () => {
 		expect(host.applyQuickSelection).toHaveBeenCalledOnce();
 		expect(harness.session.selection.model?.id).toBe("second");
 		expect(host.exit).toHaveBeenCalledOnce();
-	});
-
-	it("clears the active model when leaving an empty quick selection", async () => {
-		presentation.open("sources");
-		await choose("Clear quick selection");
-		expect(harness.session.selection.model?.id).toBe("first");
-		panel.handleInput("\x1b");
-		await settle();
-		expect(harness.session.selection.model).toBeUndefined();
-		expect(harness.settingsManager.getScopedModels()).toEqual([]);
 	});
 
 	it("does not reconcile a restored model when Sources was only browsed", async () => {

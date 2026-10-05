@@ -402,15 +402,12 @@ describe("store and load", () => {
 			ok: true,
 			value: ["TypeError", "TypeError", "TypeError", "RangeError", "RangeError"],
 		});
-	});
 
-	it("explains oversized writes", async () => {
-		const sandbox = createSandbox();
-		const result = await sandbox.execute(`store("img", "x".repeat(300 * 1024));`);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.message).toContain('store("img") value has 307202 characters of JSON');
-		expect(result.error.message).toContain("Show images with image()");
+		const oversizedWrite = await sandbox.execute(`store("img", "x".repeat(300 * 1024));`);
+		expect(oversizedWrite.ok).toBe(false);
+		if (oversizedWrite.ok) return;
+		expect(oversizedWrite.error.message).toContain('store("img") value has 307202 characters of JSON');
+		expect(oversizedWrite.error.message).toContain("Show images with image()");
 	});
 
 	it("reserves the store and load names", () => {
@@ -650,62 +647,47 @@ describe("limits and lifetime", () => {
 });
 
 describe("escape hatches", () => {
-	it("has no host globals", async () => {
-		const sandbox = createSandbox();
-		const result = await sandbox.execute(`
-			return [
-				typeof process, typeof require, typeof module, typeof setTimeout, typeof fetch,
-				typeof WebAssembly, typeof std, typeof os, typeof globalThis.constructor,
-			]
-		`);
-		expect(result).toMatchObject({
-			ok: true,
-			value: [
-				"undefined",
-				"undefined",
-				"undefined",
-				"undefined",
-				"undefined",
-				"undefined",
-				"undefined",
-				"undefined",
-				"function",
-			],
-		});
-	});
-
-	it("keeps eval and Function inside the VM", async () => {
-		// Code generation is allowed: it can only produce more code in the same wasm instance.
+	it("keeps host capabilities out of scripts and freezes exposed globals", async () => {
 		const sandbox = createSandbox([echo]);
 		const result = await sandbox.execute(`
-			return [
-				eval("typeof process"),
-				new Function("return typeof process")(),
-				tools.echo.constructor("return typeof require")(),
-				(async () => {}).constructor("return typeof setTimeout")() instanceof Promise,
-			];
-		`);
-		expect(result).toMatchObject({ ok: true, value: ["undefined", "undefined", "undefined", true] });
-	});
-
-	it("rejects dynamic import", async () => {
-		const sandbox = createSandbox();
-		const result = await sandbox.execute(`
-			try { await import("node:fs"); return "imported"; } catch (error) { return error.constructor.name; }
-		`);
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		expect(result.value).not.toBe("imported");
-	});
-
-	it("keeps tools and console frozen", async () => {
-		const sandbox = createSandbox([echo]);
-		const result = await sandbox.execute(`
+			let dynamicImportRejected = false;
+			try { await import("node:fs"); } catch { dynamicImportRejected = true; }
 			try { tools.echo = () => 'nope'; } catch {}
 			try { tools.extra = () => 'nope'; } catch {}
 			try { globalThis.tools = null; } catch {}
-			return ["extra" in tools, await tools.echo('still')];
+			return {
+				globals: [
+					typeof process, typeof require, typeof module, typeof setTimeout, typeof fetch,
+					typeof WebAssembly, typeof std, typeof os, typeof globalThis.constructor,
+				],
+				generated: [
+					eval("typeof process"),
+					new Function("return typeof process")(),
+					tools.echo.constructor("return typeof require")(),
+					(async () => {}).constructor("return typeof setTimeout")() instanceof Promise,
+				],
+				dynamicImportRejected,
+				frozen: [Object.isFrozen(tools), Object.isFrozen(console), "extra" in tools, await tools.echo('still')],
+			};
 		`);
-		expect(result).toMatchObject({ ok: true, value: [false, "still"] });
+		expect(result).toMatchObject({
+			ok: true,
+			value: {
+				globals: [
+					"undefined",
+					"undefined",
+					"undefined",
+					"undefined",
+					"undefined",
+					"undefined",
+					"undefined",
+					"undefined",
+					"function",
+				],
+				generated: ["undefined", "undefined", "undefined", true],
+				dynamicImportRejected: true,
+				frozen: [true, true, false, "still"],
+			},
+		});
 	});
 });

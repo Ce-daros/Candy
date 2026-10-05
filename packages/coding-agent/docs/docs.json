@@ -170,23 +170,5 @@
         }
       ]
     }
-  ],
-  "redirects": [
-    {
-      "from": "development.md",
-      "to": "index.md"
-    },
-    {
-      "from": "session.md",
-      "to": "session-format.md"
-    },
-    {
-      "from": "tree.md",
-      "to": "sessions.md"
-    },
-    {
-      "from": "process-integration.md",
-      "to": "cli-integration.md"
-    }
   ]
 }

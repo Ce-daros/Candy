@@ -203,7 +203,6 @@ export {
 	type ModelChangeEntry,
 	type NewSessionOptions,
 	type ProjectedSessionEntry,
-	parseSessionEntries,
 	type SessionContext,
 	SessionDiscovery,
 	type SessionEntry,

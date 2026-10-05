@@ -12,6 +12,7 @@
 
 ### Changed
 
+- Consolidated sandbox isolation and store-limit test setup while retaining each boundary assertion.
 - Clarified the host's responsibility for tool discovery, permissions, output, and persistence in the README, and corrected the file-reading and global-helper examples.
 
 ### Fixed
