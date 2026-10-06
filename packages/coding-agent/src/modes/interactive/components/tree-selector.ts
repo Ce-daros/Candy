@@ -15,6 +15,7 @@ import {
 } from "@candy/tui";
 import type { SessionTreeNode } from "../../../core/session-history.ts";
 import { selectionCursor, selectionMarkerSuffix, theme } from "../theme/theme.ts";
+import { keyHint } from "./keybinding-hints.ts";
 import { scrollCounter } from "./list-scaffold.ts";
 import { type FlatNode, flattenSessionTree, type GutterInfo, type ToolCallInfo } from "./tree-projection.ts";
 import { LabelInput, TreeHelp } from "./tree-selector-controls.ts";
@@ -530,7 +531,11 @@ class TreeList implements Component {
 		const lines: string[] = [];
 
 		if (this.filteredNodes.length === 0) {
-			lines.push(truncateToWidth(theme.fg("muted", "  No entries found"), width));
+			const emptyMessage = this.searchQuery
+				? `  No entries match "${this.searchQuery}"`
+				: "  No entries found. Change the filter to show other entries.";
+			lines.push(truncateToWidth(theme.fg("muted", emptyMessage), width));
+			if (this.searchQuery) lines.push(truncateToWidth(keyHint("tui.select.cancel", "clear search"), width));
 			while (lines.length < this.maxVisibleLines) lines.push("");
 			lines.push(truncateToWidth(`${scrollCounter(0, 0)}${this.getStatusLabels()}`, width));
 			while (lines.length < this.availableHeight) lines.push("");

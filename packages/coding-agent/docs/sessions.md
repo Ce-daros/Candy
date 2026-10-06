@@ -17,6 +17,10 @@ Use Actions → Rename or `--name` to assign a recognizable session name. Action
 
 The session picker shows each name, summary, time, and message count in a wide list, with more information below the selected row. It lets you search, rename, and delete sessions with confirmation. It can also show paths, change sorting, and limit results to named sessions. See [Keybindings](keybindings.md#sessions) for its shortcuts.
 
+If a session file or directory cannot be read, the picker keeps valid sessions available and shows the failed paths and reasons in its details area. Focus details with the panel navigation shortcut (Tab by default), then scroll to inspect the errors. The picker does not modify unreadable files.
+
+Search supports fuzzy words, quoted phrases, and `re:<pattern>` regular expressions. Invalid expressions show their syntax error. Searching in Threaded mode displays flat results sorted by relevance; clearing the query restores the tree.
+
 ## Choose how to branch
 
 candy stores entries as a tree, so returning to an earlier point does not erase the branch you leave.

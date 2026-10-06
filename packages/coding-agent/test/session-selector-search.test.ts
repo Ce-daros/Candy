@@ -1,6 +1,95 @@
-import { describe, expect, it } from "vitest";
+import { stripVTControlCharacters } from "node:util";
+import { setKeybindings } from "@candy/tui";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { SessionInfo } from "../src/core/session-history.ts";
+import { SessionSelectorComponent } from "../src/modes/interactive/components/session-selector.ts";
 import { filterAndSortSessions } from "../src/modes/interactive/components/session-selector-search.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { KeybindingsManager } from "../src/presentation/keybindings.ts";
+
+beforeAll(() => initTheme("dark"));
+beforeEach(() => setKeybindings(new KeybindingsManager()));
+
+describe("session selector search feedback", () => {
+	it("shows invalid regex errors and the actual search sort, then restores threaded browsing", async () => {
+		const sessions = [makeSession({ id: "a", modified: new Date(0), allMessagesText: "hello" })];
+		const selector = new SessionSelectorComponent(
+			async () => sessions,
+			async () => [],
+			() => {},
+			() => {},
+			() => {},
+			() => {},
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			expect(stripVTControlCharacters(selector.render(120).join("\n"))).toContain("Sort: Threaded");
+			selector.handleInput("re:[");
+			const invalid = stripVTControlCharacters(selector.render(120).join("\n"));
+			expect(invalid).toContain("Invalid regex:");
+			expect(invalid).toContain("Sort: Fuzzy");
+			expect(invalid).not.toContain("No sessions in current folder");
+			selector.handleInput("\x15");
+			expect(stripVTControlCharacters(selector.render(120).join("\n"))).toContain("Sort: Threaded");
+			selector.handleInput("missing");
+			expect(stripVTControlCharacters(selector.render(120).join("\n"))).toContain('No sessions match "missing"');
+		} finally {
+			selector.dispose();
+		}
+	});
+
+	it("keeps valid sessions selectable while showing scrollable file errors", async () => {
+		const sessions = [makeSession({ id: "valid", modified: new Date(0), allMessagesText: "hello" })];
+		let selected: string | undefined;
+		const selector = new SessionSelectorComponent(
+			async (progress) => {
+				progress?.(2, 2, sessions, [
+					{ path: "/tmp/broken.jsonl", message: "Invalid session JSON at /tmp/broken.jsonl:4" },
+				]);
+				return sessions;
+			},
+			async () => [],
+			(path) => {
+				selected = path;
+			},
+			() => {},
+			() => {},
+			() => {},
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			const rendered = stripVTControlCharacters(selector.render(80).join("\n"));
+			expect(rendered).toContain("1 session file(s) could not be read");
+			expect(rendered).toContain("/tmp/broken.jsonl");
+			expect(rendered).toContain("Invalid session JSON at /tmp/broken.jsonl:4");
+			expect(selector.render(80)).toHaveLength(24);
+			selector.handleInput("\r");
+			expect(selected).toBe("/tmp/valid.jsonl");
+		} finally {
+			selector.dispose();
+		}
+	});
+
+	it("keeps a directory load error visible until the user leaves", async () => {
+		const selector = new SessionSelectorComponent(
+			async () => {
+				throw new Error("Directory access denied");
+			},
+			async () => [],
+			() => {},
+			() => {},
+			() => {},
+			() => {},
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			expect(stripVTControlCharacters(selector.render(80).join("\n"))).toContain("Directory access denied");
+			expect(selector.render(80)).toHaveLength(24);
+		} finally {
+			selector.dispose();
+		}
+	});
+});
 
 function makeSession(
 	overrides: Partial<SessionInfo> & { id: string; modified: Date; allMessagesText: string },

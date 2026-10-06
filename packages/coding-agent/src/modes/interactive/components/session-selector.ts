@@ -18,13 +18,19 @@ import {
 	visibleWindow,
 	wrapTextWithAnsi,
 } from "@candy/tui";
-import type { SessionInfo, SessionListProgress } from "../../../core/session-history.ts";
+import type { SessionDiscoveryError, SessionInfo, SessionListProgress } from "../../../core/session-history.ts";
 import { KeybindingsManager } from "../../../presentation/keybindings.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { metaSeparator, selectionCursor, theme } from "../theme/theme.ts";
 import { keycap, keyHint, keyText } from "./keybinding-hints.ts";
 import { scrollCounter } from "./list-scaffold.ts";
-import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
+import {
+	filterAndSortSessions,
+	hasSessionName,
+	type NameFilter,
+	parseSearchQuery,
+	type SortMode,
+} from "./session-selector-search.ts";
 
 type SessionScope = "current" | "all";
 
@@ -71,6 +77,16 @@ class SessionSelectorHeader implements Component {
 	private statusTimeout: ReturnType<typeof setTimeout> | null = null;
 	private showRenameHint = false;
 	private editing = false;
+	private searching = false;
+	private loadErrorCount = 0;
+
+	setSearching(searching: boolean): void {
+		this.searching = searching;
+	}
+
+	setLoadErrorCount(count: number): void {
+		this.loadErrorCount = count;
+	}
 
 	setEditing(editing: boolean): void {
 		this.editing = editing;
@@ -140,7 +156,8 @@ class SessionSelectorHeader implements Component {
 	render(width: number): string[] {
 		const leftText = theme.bold("Resume Session");
 
-		const sortLabel = this.sortMode === "threaded" ? "Threaded" : this.sortMode === "recent" ? "Recent" : "Fuzzy";
+		const sortLabel =
+			this.sortMode === "threaded" && !this.searching ? "Threaded" : this.sortMode === "recent" ? "Recent" : "Fuzzy";
 		const sortText = theme.fg("muted", "Sort: ") + theme.fg("accent", sortLabel);
 
 		const nameLabel = this.nameFilter === "all" ? "All" : "Named";
@@ -175,6 +192,12 @@ class SessionSelectorHeader implements Component {
 			const color = this.statusMessage.type === "error" ? "error" : "accent";
 			hintLine1 = theme.fg(color, truncateToWidth(this.statusMessage.message, width, "…"));
 			hintLine2 = "";
+		} else if (this.loadErrorCount > 0) {
+			hintLine1 = truncateToWidth(
+				theme.fg("error", `${this.loadErrorCount} session file(s) could not be read`),
+				width,
+			);
+			hintLine2 = truncateToWidth(keyHint("app.panel.focusNext", "focus details; use arrows to scroll"), width);
 		} else {
 			const pathState = this.showPath ? "(on)" : "(off)";
 			const sep = metaSeparator();
@@ -320,6 +343,12 @@ class SessionList implements Component, Focusable {
 	public onDeleteSession?: (sessionPath: string) => Promise<void>;
 	public onRenameSession?: (sessionPath: string) => void;
 	public onError?: (message: string) => void;
+	public onSearchChange?: (query: string) => void;
+	private loadErrors: readonly SessionDiscoveryError[] = [];
+
+	setLoadErrors(errors: readonly SessionDiscoveryError[]): void {
+		this.loadErrors = errors;
+	}
 	private maxVisible = 10;
 	private availableHeight = 20;
 	private detailOffset = 0;
@@ -398,6 +427,7 @@ class SessionList implements Component, Focusable {
 
 	private filterSessions(query: string): void {
 		const trimmed = query.trim();
+		this.onSearchChange?.(trimmed);
 		const nameFiltered =
 			this.nameFilter === "all" ? this.allSessions : this.allSessions.filter((session) => hasSessionName(session));
 
@@ -448,7 +478,13 @@ class SessionList implements Component, Focusable {
 
 		if (this.filteredSessions.length === 0) {
 			let emptyMessage: string;
-			if (this.nameFilter === "named") {
+			const query = this.searchInput.getValue().trim();
+			const searchError = parseSearchQuery(query).error;
+			if (searchError) {
+				emptyMessage = theme.fg("error", `  Invalid regex: ${searchError}`);
+			} else if (query) {
+				emptyMessage = theme.fg("muted", `  No sessions match "${query}". Clear the search to show sessions.`);
+			} else if (this.nameFilter === "named") {
 				const toggleKeys = keyText("app.session.toggleNamedFilter");
 				const showAllHint = toggleKeys
 					? `${theme.fg("muted", "Press ")}${keycap(toggleKeys)}${theme.fg("muted", " to show all")}`
@@ -470,10 +506,13 @@ class SessionList implements Component, Focusable {
 				emptyMessage = `${theme.fg("muted", "  No sessions in current folder. Press ")}${keycap(keyText("app.panel.scope"))}${theme.fg("muted", " to view all.")}`;
 			}
 			lines.push(truncateToWidth(emptyMessage, width, "…"));
-			while (lines.length < this.availableHeight - 1) lines.push("");
-			this.lastSearchRow = lines.length;
-			lines.push(...this.searchInput.render(width));
-			return lines;
+			this.lastVisibleCount = 0;
+			if (this.loadErrors.length === 0) {
+				while (lines.length < this.availableHeight - 1) lines.push("");
+				this.lastSearchRow = lines.length;
+				lines.push(...this.searchInput.render(width));
+				return lines;
+			}
 		}
 
 		// Calculate visible range with scrolling
@@ -559,17 +598,27 @@ class SessionList implements Component, Focusable {
 
 		const selected = this.filteredSessions[this.selectedIndex]?.session;
 		lines.push(theme.fg("borderMuted", "─".repeat(width)));
+		const detailLines = this.loadErrors.flatMap((error) =>
+			wrapTextWithAnsi(theme.fg("error", `${error.path}\n${error.message}`), Math.max(10, width - 2)),
+		);
+		if (selected?.name) detailLines.push(...wrapTextWithAnsi(selected.firstMessage.trim(), Math.max(10, width - 2)));
+		this.detailLineCount = detailLines.length;
+		this.detailOffset = Math.min(this.detailOffset, Math.max(0, this.detailLineCount - 3));
+		lines.push(
+			truncateToWidth(
+				theme.bold(
+					theme.fg(
+						this.loadErrors.length ? "error" : "accent",
+						this.loadErrors.length ? "Session load errors" : (selected?.name ?? selected?.firstMessage ?? ""),
+					),
+				),
+				width,
+			),
+		);
+		for (const line of detailLines.slice(this.detailOffset, this.detailOffset + 3)) {
+			lines.push(`  ${line}`);
+		}
 		if (selected) {
-			const title = selected.name ?? selected.firstMessage;
-			lines.push(truncateToWidth(theme.bold(theme.fg("accent", title)), width));
-			const summary = selected.firstMessage.trim();
-			if (selected.name) {
-				const detailLines = wrapTextWithAnsi(summary, Math.max(10, width - 2));
-				this.detailLineCount = detailLines.length;
-				for (const line of detailLines.slice(this.detailOffset, this.detailOffset + 3)) {
-					lines.push(theme.fg("text", `  ${line}`));
-				}
-			}
 			while (lines.length < this.availableHeight - 4) lines.push("");
 			lines.push(
 				truncateToWidth(
@@ -580,6 +629,7 @@ class SessionList implements Component, Focusable {
 			lines.push(truncateToWidth(theme.fg("muted", selected.cwd), width));
 			lines.push(truncateToWidth(theme.fg("dim", selected.path), width));
 		}
+		while (lines.length < this.availableHeight - 1) lines.push("");
 		this.lastSearchRow = lines.length;
 		lines.push(...this.searchInput.render(width));
 		return lines;
@@ -823,6 +873,8 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	private nameFilter: NameFilter = "all";
 	private currentSessions: SessionInfo[] | null = null;
 	private allSessions: SessionInfo[] | null = null;
+	private currentErrors: readonly SessionDiscoveryError[] = [];
+	private allErrors: readonly SessionDiscoveryError[] = [];
 	private currentSessionsLoader: SessionsLoader;
 	private allSessionsLoader: SessionsLoader;
 	private requestRender: () => void;
@@ -906,6 +958,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		);
 
 		this.buildBaseLayout(this.sessionList);
+		this.sessionList.onSearchChange = (query) => this.header.setSearching(query.length > 0);
 
 		this.renameInput.onSubmit = (value) => {
 			void this.confirmRename(value);
@@ -1085,11 +1138,13 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		}
 		this.header.setScope(scope);
 		this.header.setLoading(true);
+		this.setLoadErrors(scope, []);
 		this.requestRender();
 
 		const isActive = () => (scope === "current" ? this.currentLoad : this.allLoad) === controller;
-		const onProgress: SessionListProgress = (loaded, total, partialSessions) => {
+		const onProgress: SessionListProgress = (loaded, total, partialSessions, errors) => {
 			if (!isActive()) return;
+			if (errors) this.setLoadErrors(scope, errors);
 			if (partialSessions) {
 				const sessions = [...partialSessions];
 				if (scope === "current") {
@@ -1135,10 +1190,18 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 			const message = err instanceof Error ? err.message : String(err);
 			this.header.setLoading(false);
-			this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
+			this.setLoadErrors(scope, [{ path: "Session directory", message }]);
 			this.sessionList.setSessions([], showCwd);
 			this.requestRender();
 		}
+	}
+
+	private setLoadErrors(scope: SessionScope, errors: readonly SessionDiscoveryError[]): void {
+		if (scope === "current") this.currentErrors = errors;
+		else this.allErrors = errors;
+		if (scope !== this.scope) return;
+		this.header.setLoadErrorCount(errors.length);
+		this.sessionList.setLoadErrors(errors);
 	}
 
 	private toggleSortMode(): void {
@@ -1169,6 +1232,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		const loading = (this.scope === "current" ? this.currentLoad : this.allLoad) !== null;
 		this.header.setScope(this.scope);
 		this.header.setLoading(loading);
+		this.setLoadErrors(this.scope, this.scope === "current" ? this.currentErrors : this.allErrors);
 		this.sessionList.setSessions(sessions ?? [], this.scope === "all");
 		this.requestRender();
 		if (sessions === null && !loading) void this.loadScope(this.scope);

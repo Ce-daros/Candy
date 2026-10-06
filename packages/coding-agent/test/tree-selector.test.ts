@@ -126,6 +126,25 @@ function buildTree(entries: Array<SessionEntry>): SessionTreeNode[] {
 }
 
 describe("TreeSelectorComponent", () => {
+	test("explains an empty search and clears it without closing the tree", () => {
+		let cancelled = false;
+		const selector = new TreeSelectorComponent(
+			buildTree([userMessage("user", null, "hello")]),
+			"user",
+			24,
+			() => {},
+			() => {
+				cancelled = true;
+			},
+		);
+		selector.handleInput("missing");
+		const output = stripVTControlCharacters(selector.render(80).join("\n"));
+		expect(output).toContain('No entries match "missing"');
+		expect(output).toContain("clear search");
+		selector.handleInput("\x1b");
+		expect(selector.getTreeList().getSelectedNode()?.entry.id).toBe("user");
+		expect(cancelled).toBe(false);
+	});
 	describe("initial selection with metadata entries", () => {
 		test("focuses nearest visible ancestor when currentLeafId is a model_change with sibling branch", () => {
 			// Tree structure:

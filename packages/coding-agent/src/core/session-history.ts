@@ -53,6 +53,7 @@ export {
 	findMostRecentSession,
 	getDefaultSessionDir,
 	SessionDiscovery,
+	type SessionDiscoveryError,
 	type SessionListProgress,
 } from "./session-discovery.ts";
 export { loadEntriesFromFile } from "./session-jsonl.ts";
@@ -184,7 +185,7 @@ export class SessionHistory {
 		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
 
 		if (header) {
-			this.fileEntries = entries;
+			this.fileEntries = entries.slice();
 			this.sessionId = header.id;
 		} else {
 			this.newSession(options);
@@ -251,21 +252,22 @@ export class SessionHistory {
 		return this.sessionFile;
 	}
 
-	private _persist(entries: readonly SessionEntry[], candidateEntries: FileEntry[]): void {
+	private _persist(entries: readonly SessionEntry[]): void {
 		if (!this.persist || !this.sessionFile) return;
 
 		if (!this.flushed) {
-			const hasConversation = candidateEntries.some(
-				(candidate) =>
-					candidate.type === "message" &&
-					(candidate.message.role === "user" || candidate.message.role === "assistant"),
-			);
+			const isConversation = (candidate: FileEntry) =>
+				candidate.type === "message" &&
+				(candidate.message.role === "user" || candidate.message.role === "assistant");
+			const hasConversation = entries.some(isConversation) || this.fileEntries.some(isConversation);
 			if (!hasConversation) return;
-			writeSessionFile(this.sessionFile, candidateEntries, { flag: this.emptyExistingFile ? "w" : "wx" });
+			writeSessionFile(this.sessionFile, [...this.fileEntries, ...entries], {
+				flag: this.emptyExistingFile ? "w" : "wx",
+			});
 			this.flushed = true;
 			this.emptyExistingFile = false;
 		} else if (this.pendingFileRewrite) {
-			rewriteSessionFile(this.sessionFile, candidateEntries);
+			rewriteSessionFile(this.sessionFile, [...this.fileEntries, ...entries]);
 			this.pendingFileRewrite = false;
 		} else {
 			appendSessionEntries(this.sessionFile, entries);
@@ -273,10 +275,9 @@ export class SessionHistory {
 	}
 
 	private _appendEntry(entry: SessionEntry): void {
-		const candidateEntries = [...this.fileEntries, entry];
 		validateNewEntries([entry], this.byId);
-		this._persist([entry], candidateEntries);
-		this.fileEntries = candidateEntries;
+		this._persist([entry]);
+		this.fileEntries.push(entry);
 		this.byId.set(entry.id, entry);
 		this.leafId = entry.id;
 		this.invalidateProjection();
@@ -357,10 +358,9 @@ export class SessionHistory {
 			};
 			entries.push(thinkingLevelChange);
 		}
-		const candidateEntries = [...this.fileEntries, ...entries];
 		validateNewEntries(entries, this.byId);
-		this._persist(entries, candidateEntries);
-		this.fileEntries = candidateEntries;
+		this._persist(entries);
+		this.fileEntries.push(...entries);
 		for (const entry of entries) this.byId.set(entry.id, entry);
 		this.leafId = entries.at(-1)!.id;
 		this.invalidateProjection();

@@ -18,6 +18,7 @@ import {
 	findMostRecentSession,
 	loadEntriesFromFile,
 	SessionDiscovery,
+	type SessionDiscoveryError,
 	SessionHistory,
 } from "../../src/core/session-history.ts";
 import { assistantMsg, readSessionFileRoles, userMsg } from "../utilities.ts";
@@ -233,6 +234,19 @@ describe("session append commits", () => {
 		expect(session.getEntries()).toEqual([]);
 		expect(session.getLeafId()).toBeNull();
 	});
+
+	it("keeps entries and the leaf unchanged when an append to a saved session fails", () => {
+		const session = SessionHistory.create(tempDir, tempDir);
+		const leaf = session.appendMessage(userMsg("saved"));
+		const entries = session.getEntries();
+		const sessionFile = session.getSessionFile()!;
+		rmSync(sessionFile);
+		mkdirSync(sessionFile);
+		expect(() => session.appendMessage(userMsg("unsaved"))).toThrow();
+		expect(() => session.appendModelSelection("test", "model", "high")).toThrow();
+		expect(session.getEntries()).toEqual(entries);
+		expect(session.getLeafId()).toBe(leaf);
+	});
 });
 
 describe("findMostRecentSession", () => {
@@ -397,6 +411,36 @@ describe("SessionHistory custom flat session directory", () => {
 
 		const continuedA = SessionHistory.continueRecent(projectA, tempDir);
 		expect(continuedA.getSessionFile()).toBe(sessionA);
+	});
+
+	it("lists valid sessions and reports corrupt files without modifying them", async () => {
+		const valid = createPersistedSession(projectA, "valid");
+		const broken = join(tempDir, "broken.jsonl");
+		const contents = `${readFileSync(valid, "utf8")}{broken\n`;
+		writeFileSync(broken, contents);
+		let errors: readonly SessionDiscoveryError[] = [];
+		const progress = (
+			_loaded: number,
+			_total: number,
+			_sessions?: readonly unknown[],
+			failures?: readonly SessionDiscoveryError[],
+		) => {
+			if (failures) errors = failures;
+		};
+		for (const list of [
+			() => SessionDiscovery.list(projectA, tempDir, progress),
+			() => SessionDiscovery.listAll(tempDir, progress),
+		]) {
+			expect((await list()).map((session) => session.path)).toEqual([valid]);
+			expect(errors).toEqual([{ path: broken, message: `Invalid session JSON at ${broken}:4` }]);
+		}
+		expect(readFileSync(broken, "utf8")).toBe(contents);
+	});
+
+	it("reports a session directory that cannot be listed instead of returning an empty list", async () => {
+		const file = join(tempDir, "not-a-directory");
+		writeFileSync(file, "file");
+		await expect(SessionDiscovery.listAll(file)).rejects.toMatchObject({ code: "ENOTDIR" });
 	});
 
 	it("rejects a cancelled session listing", async () => {

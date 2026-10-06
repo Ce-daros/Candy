@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import {
@@ -10,6 +9,7 @@ import {
 	type StoredOAuthTokens,
 	UnauthorizedError,
 } from "@modelcontextprotocol/client";
+import { parseJsonFile, withLockedJsonFileSync } from "../storage/json-file.ts";
 import type { McpInteractionHandler, McpServerConfig } from "./types.ts";
 
 interface StoredCredentials {
@@ -27,13 +27,21 @@ export class McpOAuthStore {
 	}
 
 	private read(): CredentialFile {
-		if (!existsSync(this.path)) return {};
-		return JSON.parse(readFileSync(this.path, "utf8")) as CredentialFile;
+		return withLockedJsonFileSync(this.path, (current) => ({
+			result: parseJsonFile<CredentialFile>(current, this.path, () => ({})),
+		}));
 	}
 
-	private write(data: CredentialFile): void {
-		mkdirSync(join(this.path, ".."), { recursive: true });
-		writeFileSync(this.path, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+	private modify(change: (data: CredentialFile) => void): void {
+		withLockedJsonFileSync(
+			this.path,
+			(current) => {
+				const data = parseJsonFile<CredentialFile>(current, this.path, () => ({}));
+				change(data);
+				return { result: undefined, next: `${JSON.stringify(data, null, 2)}\n` };
+			},
+			{ mode: 0o600 },
+		);
 	}
 
 	private key(server: string, url: string, issuer: string): string {
@@ -52,12 +60,12 @@ export class McpOAuthStore {
 	}
 
 	update(server: string, url: string, issuer: string, changes: StoredCredentials): void {
-		const data = this.read();
-		const key = this.key(server, url, issuer);
-		const next = { ...data[key], ...changes };
-		delete data[key];
-		data[key] = next;
-		this.write(data);
+		this.modify((data) => {
+			const key = this.key(server, url, issuer);
+			const next = { ...data[key], ...changes };
+			delete data[key];
+			data[key] = next;
+		});
 	}
 
 	accessToken(server: string, url: string): string | undefined {
@@ -65,12 +73,12 @@ export class McpOAuthStore {
 	}
 
 	remove(server: string, url: string): void {
-		const data = this.read();
-		for (const key of Object.keys(data)) {
-			const parsed: unknown = JSON.parse(key);
-			if (Array.isArray(parsed) && parsed[0] === server && parsed[1] === url) delete data[key];
-		}
-		this.write(data);
+		this.modify((data) => {
+			for (const key of Object.keys(data)) {
+				const parsed: unknown = JSON.parse(key);
+				if (Array.isArray(parsed) && parsed[0] === server && parsed[1] === url) delete data[key];
+			}
+		});
 	}
 }
 

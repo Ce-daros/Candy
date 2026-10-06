@@ -78,6 +78,46 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("read tool", () => {
+		it.each([
+			["", ""],
+			["a\n", "a\n"],
+			["\n\n", "\n\n"],
+			["中文\r\n第二行\r\n", "中文\r\n第二行\r\n"],
+		])("preserves empty lines and line endings when streaming %j", async (content, expected) => {
+			const file = join(testDir, "line-endings.txt");
+			writeFileSync(file, content);
+			expect(getTextOutput(await readTool.execute("line-endings", { path: file }))).toBe(expected);
+		});
+
+		it("skips an oversized line and reads the next range across stream chunks", async () => {
+			const file = join(testDir, "long-line.txt");
+			writeFileSync(file, `${"中".repeat(400_000)}\n第二行\n第三行\n`);
+			const result = await readTool.execute("range", { path: file, offset: 2, limit: 2 });
+			expect(getTextOutput(result)).toBe("第二行\n第三行\n\n[1 more lines in file. Use offset=4 to continue.]");
+			const first = await readTool.execute("long-line", { path: file, limit: 1 });
+			expect(getTextOutput(first)).toContain("Line 1 is 1.1MB");
+			expect(first.details?.truncation?.totalBytes).toBe(1_200_000);
+		});
+
+		it("truncates blank lines at the line limit and reports the complete selected range", async () => {
+			const file = join(testDir, "blank-lines.txt");
+			writeFileSync(file, "\n".repeat(2500));
+			const result = await readTool.execute("blank-lines", { path: file });
+			expect(result.details?.truncation).toMatchObject({
+				totalLines: 2500,
+				totalBytes: 2500,
+				outputLines: 2000,
+				truncatedBy: "lines",
+			});
+			expect(getTextOutput(result)).toContain("Showing lines 1-2000 of 2501");
+		});
+
+		it("preserves Unicode split across read stream chunks", async () => {
+			const file = join(testDir, "unicode-chunks.txt");
+			writeFileSync(file, `${"x".repeat(65535)}中\n尾行`);
+			expect(getTextOutput(await readTool.execute("unicode-chunks", { path: file, offset: 2 }))).toBe("尾行");
+		});
+
 		it("should read file contents that fit within limits", async () => {
 			const testFile = join(testDir, "test.txt");
 			const content = "Hello, world!\nLine 2\nLine 3";

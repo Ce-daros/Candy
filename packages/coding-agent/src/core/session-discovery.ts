@@ -92,6 +92,7 @@ async function buildSessionInfo(
 	filePath: string,
 	signal?: AbortSignal,
 	fileStats?: Stats,
+	onError?: (error: SessionDiscoveryError) => void,
 ): Promise<SessionInfo | null> {
 	try {
 		const stats = fileStats ?? (await stat(filePath));
@@ -113,7 +114,7 @@ async function buildSessionInfo(
 			if (!entry) continue;
 
 			if (!header) {
-				if (entry.type !== "session") return null;
+				if (entry.type !== "session") throw new Error(`Session file has no valid header: ${filePath}`);
 				header = entry;
 				continue;
 			}
@@ -144,7 +145,7 @@ async function buildSessionInfo(
 			}
 		}
 
-		if (!header) return null;
+		if (!header) throw new Error(`Session file has no valid header: ${filePath}`);
 
 		const cwd = typeof header.cwd === "string" ? header.cwd : "";
 		const parentSessionPath = header.parentSession;
@@ -168,10 +169,16 @@ async function buildSessionInfo(
 			firstMessage: firstMessage || "(no messages)",
 			allMessagesText: allMessages.join(" "),
 		};
-	} catch {
+	} catch (error) {
 		signal?.throwIfAborted();
+		onError?.({ path: filePath, message: error instanceof Error ? error.message : String(error) });
 		return null;
 	}
+}
+
+export interface SessionDiscoveryError {
+	path: string;
+	message: string;
 }
 
 export type SessionListProgress = (
@@ -179,6 +186,8 @@ export type SessionListProgress = (
 	total: number,
 	/** Sessions loaded so far, sorted by activity. Present on periodic updates. */
 	partialSessions?: readonly SessionInfo[],
+	/** Files or directories that could not be read during this load. */
+	errors?: readonly SessionDiscoveryError[],
 ) => void;
 
 const MAX_CONCURRENT_SESSION_INFO_LOADS = 10;
@@ -218,12 +227,13 @@ function buildSessionInfosWithConcurrency(
 	files: SessionFileCandidate[],
 	onLoaded: (info: SessionInfo | null, index: number) => void,
 	signal?: AbortSignal,
+	onError?: (error: SessionDiscoveryError) => void,
 ): Promise<(SessionInfo | null)[]> {
 	return mapWithConcurrency(
 		files,
 		MAX_CONCURRENT_SESSION_INFO_LOADS,
 		async (file, index) => {
-			const info = await buildSessionInfo(file.path, signal, file.stats);
+			const info = await buildSessionInfo(file.path, signal, file.stats, onError);
 			onLoaded(info, index);
 			return info;
 		},
@@ -247,6 +257,7 @@ async function listSessionsFromDir(
 			.map((file) => ({ path: join(dir, file) }));
 		const total = files.length;
 		const partialSessions: SessionInfo[] = [];
+		const errors: SessionDiscoveryError[] = [];
 		let loaded = 0;
 		const results = await buildSessionInfosWithConcurrency(
 			files,
@@ -255,14 +266,18 @@ async function listSessionsFromDir(
 				if (info) partialSessions.push(info);
 				const publishPartial =
 					loaded === 1 || loaded % CURRENT_SESSION_LIST_PUBLISH_INTERVAL === 0 || loaded === files.length;
-				onProgress?.(loaded, total, publishPartial ? sortSessionInfos([...partialSessions]) : undefined);
+				onProgress?.(loaded, total, publishPartial ? sortSessionInfos([...partialSessions]) : undefined, [
+					...errors,
+				]);
 			},
 			signal,
+			(error) => errors.push(error),
 		);
+		if (total === 0) onProgress?.(0, 0, [], []);
 		return results.filter((info): info is SessionInfo => info !== null);
-	} catch {
+	} catch (error) {
 		signal?.throwIfAborted();
-		return [];
+		throw error;
 	}
 }
 
@@ -311,7 +326,8 @@ export const SessionDiscovery = {
 		const resolvedCwd = resolvePath(cwd);
 		const includeSession = (session: SessionInfo) => !filterCwd || sessionCwdMatches(session.cwd, resolvedCwd);
 		const progress: SessionListProgress | undefined = onProgress
-			? (loaded, total, partialSessions) => onProgress(loaded, total, partialSessions?.filter(includeSession))
+			? (loaded, total, partialSessions, errors) =>
+					onProgress(loaded, total, partialSessions?.filter(includeSession), errors)
 			: undefined;
 		const sessions = (await listSessionsFromDir(dir, progress, signal)).filter(includeSession);
 		return sortSessionInfos(sessions);
@@ -344,6 +360,7 @@ export const SessionDiscovery = {
 		}
 
 		const sessionsDir = getSessionsDir();
+		const errors: SessionDiscoveryError[] = [];
 
 		try {
 			if (!existsSync(sessionsDir)) return [];
@@ -358,7 +375,9 @@ export const SessionDiscovery = {
 				async (dir) => {
 					try {
 						return (await readdir(dir)).filter((file) => file.endsWith(".jsonl")).map((file) => join(dir, file));
-					} catch {
+					} catch (error) {
+						abortSignal?.throwIfAborted();
+						errors.push({ path: dir, message: error instanceof Error ? error.message : String(error) });
 						return [];
 					}
 				},
@@ -396,15 +415,19 @@ export const SessionDiscovery = {
 					const publishPartial =
 						firstCandidateLoaded &&
 						(index === 0 || loaded % ALL_SESSION_LIST_PUBLISH_INTERVAL === 0 || loaded === totalFiles);
-					progress?.(loaded, totalFiles, publishPartial ? sortSessionInfos([...partialSessions]) : undefined);
+					progress?.(loaded, totalFiles, publishPartial ? sortSessionInfos([...partialSessions]) : undefined, [
+						...errors,
+					]);
 				},
 				abortSignal,
+				(error) => errors.push(error),
 			);
+			if (totalFiles === 0) progress?.(0, 0, [], [...errors]);
 
 			return sortSessionInfos(results.filter((info): info is SessionInfo => info !== null));
-		} catch {
+		} catch (error) {
 			abortSignal?.throwIfAborted();
-			return [];
+			throw error;
 		}
 	},
 };

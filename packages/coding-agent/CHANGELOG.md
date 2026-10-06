@@ -70,6 +70,8 @@
 
 ### Changed
 
+- Local text reads scan files in chunks and retain only the requested output prefix, preserving line counts and truncation metadata without loading the complete file into memory.
+- Saved sessions append records without copying the complete history array; initial saves and required rewrites retain their existing persistence behavior.
 - Opening a session reads its header and transcript together once; discovery retains its bounded header scan. Consolidated runtime lifecycle and renderer coverage into the existing suites.
 - Consolidated MCP credential and resource handling, removed redundant codemode state and metadata copies, and reused the session's tool filtering. BM25 computes document frequencies once per search without changing its ranking formula.
 - The built-in OpenAI Codex default is GPT-6.1 Sol, and the Together default is Kimi K3. Explicit choices, saved defaults, and session models retain their existing precedence (adapted from pi upstream by Armin Ronacher).
@@ -102,6 +104,8 @@
 
 ### Fixed
 
+- Session browsing reports unreadable files and directories with scrollable paths and reasons while keeping valid sessions selectable. Invalid regular expressions show their errors, and searches show the actual flat sorting mode and a distinct no-match message. Empty tree searches explain how to clear the query.
+- MCP OAuth credential updates and logout use the existing locked, atomic JSON storage, preserving credentials when replacement fails and retaining updates from concurrent processes.
 - JSON print mode now exits with a failure status when the final assistant request fails or is aborted, so scripts can detect unsuccessful runs from the exit code.
 - Codemode tool durations display rounded milliseconds instead of long floating-point fractions.
 - Cancelling the Ctrl+L model selector reverses the opening reveal, keeping model labels visible during the first closing frame instead of erasing them almost immediately.

@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { type CustomEntry, SessionHistory } from "../../src/core/session-history.ts";
 
 describe("SessionHistory.saveCustomEntry", () => {
+	it("does not mutate supplied session records when appending to loaded history", () => {
+		const source = SessionHistory.inMemory();
+		const entries = [source.getHeader()!];
+		const loaded = SessionHistory.inMemory(source.getCwd(), undefined, entries);
+		loaded.appendMessage({ role: "user", content: "new message", timestamp: 1 });
+		expect(entries).toHaveLength(1);
+		expect(loaded.getEntries()).toHaveLength(1);
+	});
 	it("uses the latest name and lets an empty name clear it", () => {
 		const session = SessionHistory.inMemory();
 		expect(session.getSessionName()).toBeUndefined();
