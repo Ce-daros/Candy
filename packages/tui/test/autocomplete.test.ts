@@ -319,6 +319,23 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(!values?.includes("@src/utils/helpers.ts"));
 		});
 
+		test("scopes fuzzy search to absolute directories with native and display separators", async () => {
+			setupFolder(outsideDir, { files: { "nested/alpha.ts": "export {};" } });
+			const provider = new CombinedAutocompleteProvider(baseDir, requireFdPath());
+			const displayDir = outsideDir.replace(/\\/g, "/");
+			for (const directory of new Set([outsideDir, displayDir])) {
+				const separator = directory.includes("\\") ? "\\" : "/";
+				const line = `@${directory}${separator}a`;
+				const result = await getSuggestions(provider, [line], 0, line.length);
+				assert.ok(result, line);
+				assert.strictEqual(result.prefix, line);
+				assert.deepStrictEqual(
+					result.items.map((item) => item.value),
+					[`@${displayDir}/nested/alpha.ts`],
+				);
+			}
+		});
+
 		test("scopes fuzzy search to relative directories and searches recursively", async () => {
 			setupFolder(outsideDir, {
 				files: {
@@ -551,6 +568,31 @@ describe("CombinedAutocompleteProvider", () => {
 			rmSync(baseDir, { recursive: true, force: true });
 		});
 
+		test("completes absolute paths with native and display separators", async () => {
+			setupFolder(baseDir, { files: { "scope/alpha.ts": "export {};" } });
+			const provider = new CombinedAutocompleteProvider(join(baseDir, "scope"));
+			const displayDir = baseDir.replace(/\\/g, "/");
+			for (const directory of new Set([baseDir, displayDir])) {
+				const separator = directory.includes("\\") ? "\\" : "/";
+				for (const suffix of ["scope", `scope${separator}`, `scope${separator}a`]) {
+					const prefix = `${directory}${separator}${suffix}`;
+					const line = `open ${prefix}`;
+					const result = await getSuggestions(provider, [line], 0, line.length);
+					assert.ok(result, line);
+					assert.strictEqual(result.prefix, prefix);
+					const value = suffix === "scope" ? `${displayDir}/scope/` : `${displayDir}/scope/alpha.ts`;
+					assert.deepStrictEqual(
+						result.items.map((item) => item.value),
+						[value],
+					);
+					assert.strictEqual(
+						provider.applyCompletion([line], 0, line.length, result.items[0]!, result.prefix).lines[0],
+						`open ${value}`,
+					);
+				}
+			}
+		});
+
 		test("completes Chinese path prefixes after whitespace or CJK punctuation on Tab", async () => {
 			setupFolder(baseDir, { files: { "说明.md": "file", "文档/说明.md": "nested file" } });
 			const provider = new CombinedAutocompleteProvider(baseDir);
@@ -560,9 +602,8 @@ describe("CombinedAutocompleteProvider", () => {
 				{ prefix: "文档/说", value: "文档/说明.md" },
 				{ prefix: "./文档/说", value: "./文档/说明.md" },
 			];
-			if (process.platform !== "win32") {
-				completions.push({ prefix: `${baseDir}/文档/说`, value: `${baseDir}/文档/说明.md` });
-			}
+			const displayDir = baseDir.replace(/\\/g, "/");
+			completions.push({ prefix: `${displayDir}/文档/说`, value: `${displayDir}/文档/说明.md` });
 			for (const separator of " \t\u3000\u00a0，：；。！？（「《") {
 				for (const { prefix, value } of completions) {
 					const before = `查看𠮷${separator}`;

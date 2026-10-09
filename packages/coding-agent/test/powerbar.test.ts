@@ -161,6 +161,29 @@ describe("PowerbarController model track", () => {
 		expect(controller.isIdle()).toBe(true);
 	});
 
+	it("confirms the search result while the browse-to-search animation is running", () => {
+		const { controller, applied, setCurrentModelIndex } = createFixture();
+		setCurrentModelIndex(0);
+		controller.openModelBrowse({ anchorWidth: 9 });
+		controller.inputChar("k");
+		controller.confirm();
+		expect(applied).toEqual([{ modelId: "kimi-k2.6" }]);
+		settle(controller);
+		expect(controller.isIdle()).toBe(true);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("cancels an unfinished search transition without applying a model", () => {
+		const { controller, applied } = createFixture();
+		controller.openModelBrowse({ anchorWidth: 9 });
+		controller.inputChar("k");
+		controller.collapse();
+		settle(controller);
+		expect(applied).toEqual([]);
+		expect(controller.isIdle()).toBe(true);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("returns input while closing and can reopen before the animation ends", () => {
 		const { controller } = createFixture();
 		controller.openModelBrowse({ anchorWidth: 9 });

@@ -393,9 +393,13 @@ function nextLineBreakIndex(text: string): number {
 	return Math.min(carriageReturnIndex, newlineIndex);
 }
 
-function consumeLine(text: string): { line: string; rest: string } | null {
+function consumeLine(text: string, finished = false): { line: string; rest: string } | null {
 	const lineBreakIndex = nextLineBreakIndex(text);
 	if (lineBreakIndex === -1) {
+		return null;
+	}
+	// Wait for the next chunk to distinguish a bare CR from a split CRLF.
+	if (!finished && text[lineBreakIndex] === "\r" && lineBreakIndex === text.length - 1) {
 		return null;
 	}
 
@@ -443,14 +447,14 @@ async function* iterateSseMessages(
 		}
 
 		buffer += decoder.decode();
-		let consumed = consumeLine(buffer);
+		let consumed = consumeLine(buffer, true);
 		while (consumed) {
 			buffer = consumed.rest;
 			const event = decodeSseLine(consumed.line, state);
 			if (event) {
 				yield event;
 			}
-			consumed = consumeLine(buffer);
+			consumed = consumeLine(buffer, true);
 		}
 
 		if (buffer.length > 0) {

@@ -228,6 +228,27 @@ describe("Kimi Code OAuth", () => {
 		});
 	});
 
+	it.each([undefined, 0])("does not expose tokens when expires_in is %j", async (expiresIn) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				jsonResponse({
+					access_token: "private-access-token",
+					refresh_token: "private-refresh-token",
+					expires_in: expiresIn,
+				}),
+			),
+		);
+		const error = await kimiCodingOAuth
+			.refresh({ type: "oauth", access: "old", refresh: "old", expires: 0 }, new AbortController().signal)
+			.catch((error: unknown) => error);
+
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain("expires_in");
+		expect((error as Error).message).not.toContain("private-access-token");
+		expect((error as Error).message).not.toContain("private-refresh-token");
+	});
+
 	it("retries refresh on 429 and fails unauthorized on invalid_grant", async () => {
 		vi.useFakeTimers();
 

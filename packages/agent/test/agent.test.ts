@@ -1171,6 +1171,60 @@ describe("Agent", () => {
 		},
 	);
 
+	it.each([undefined, "continue"] as const)(
+		"keeps queues when a tool aborts the run and finishTurn returns %s",
+		async (action) => {
+			const steering = createUserMessage("steering after tool cancellation");
+			const followUp = createUserMessage("follow-up after tool cancellation");
+			const events: AgentEvent[] = [];
+			let requests = 0;
+			const agent = createAgent({
+				host: { finishTurn: () => (action ? { action } : undefined) },
+				initialState: {
+					tools: [
+						{
+							...createTool("cancel"),
+							execute: async () => {
+								agent.inputs.steer(steering);
+								agent.abort();
+								throw new Error("Tool cancelled");
+							},
+						},
+					],
+				},
+				streamFn: () => {
+					requests++;
+					const stream = new MockAssistantStream();
+					queueMicrotask(() =>
+						stream.push({
+							type: "done",
+							reason: "toolUse",
+							message: createAssistantToolUseMessage([
+								{ type: "toolCall", id: "cancel-1", name: "cancel", arguments: {} },
+							]),
+						}),
+					);
+					return stream;
+				},
+			});
+			agent.inputs.followUp(followUp);
+			agent.subscribe((event) => {
+				events.push(event);
+			});
+
+			await agent.prompt("start");
+
+			expect(requests).toBe(1);
+			expect(agent.inputs.peekQueuedMessages()).toEqual([steering]);
+			agent.inputs.clearSteeringQueue();
+			expect(agent.inputs.peekQueuedMessages()).toEqual([followUp]);
+			expect(agent.state.messages).not.toContain(steering);
+			expect(agent.state.messages).not.toContain(followUp);
+			expect(events.slice(-2).map(({ type }) => type)).toEqual(["turn_end", "agent_end"]);
+			expect(events.find((event) => event.type === "tool_execution_end")).toMatchObject({ cancelled: true });
+		},
+	);
+
 	it("keeps queues when finishTurn ends the run", async () => {
 		const queuedDuringResponse = createUserMessage("steering");
 		const followUp = createUserMessage("follow-up");

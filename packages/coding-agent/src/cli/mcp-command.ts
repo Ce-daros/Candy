@@ -77,7 +77,7 @@ export async function runMcpCommand(args: string[]): Promise<boolean> {
 				if (!process.stdin.isTTY) throw new Error("MCP login requires an interactive terminal");
 				const input = createInterface({ input: process.stdin, output: process.stdout });
 				try {
-					runtime.setInteraction(async (request, signal) => {
+					await runtime.setInteraction(async (request, signal) => {
 						if (request.type !== "authorization")
 							throw new Error("MCP elicitation is unavailable in the login command");
 						const answer = await input.question(`Open ${request.url} to authorize ${request.server}? [y/N] `, {

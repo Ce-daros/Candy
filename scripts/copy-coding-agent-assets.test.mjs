@@ -31,6 +31,9 @@ function fixture(t) {
 	const wasm = resolve(repositoryRoot, "node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm");
 	mkdirSync(dirname(wasm), { recursive: true });
 	writeFileSync(wasm, new Uint8Array([0, 97, 115, 109]));
+	const quickjs = resolve(repositoryRoot, "node_modules/quickjs-wasi/quickjs.wasm");
+	mkdirSync(dirname(quickjs), { recursive: true });
+	writeFileSync(quickjs, new Uint8Array([0, 97, 115, 109, 1]));
 	return { repositoryRoot, packageRoot, files };
 }
 
@@ -38,6 +41,7 @@ for (const binary of [false, true]) {
 	test(`copies ${binary ? "binary" : "package"} assets and keeps CLI entries executable`, (t) => {
 		const { repositoryRoot, packageRoot, files } = fixture(t);
 		copyCodingAgentAssets({ repositoryRoot, packageRoot, binary });
+		assert.deepEqual(readFileSync(resolve(packageRoot, "dist/codemode/quickjs.wasm")), Buffer.from([0, 97, 115, 109, 1]));
 		for (const file of files.filter((file) => file.startsWith("src/"))) {
 			assert.equal(readFileSync(resolve(packageRoot, "dist", file.slice(4)), "utf8"), file);
 		}

@@ -222,9 +222,14 @@ export const PRELUDE_SOURCE: string = `(function (bridge, toolsJson, globalsJson
 	}
 
 	function serializeWrites() {
-		const entries = [];
-		for (const [key, json] of writes) entries.push(json === undefined ? [key] : [key, json]);
-		return stringify(entries);
+		// Serialize the internal envelope without consulting script-modifiable array prototypes.
+		let json = "[";
+		let separator = "";
+		for (const [key, value] of writes) {
+			json += separator + "[" + stringify(key) + (value === undefined ? "" : "," + stringify(value)) + "]";
+			separator = ",";
+		}
+		return json + "]";
 	}
 
 	Object.defineProperty(globalThis, "store", { value: store, enumerable: true });

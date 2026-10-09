@@ -47,6 +47,9 @@
 
 ### Fixed
 
+- Invalid OpenAI Codex and Kimi Code OAuth token responses no longer expose access or refresh tokens in errors.
+- Anthropic streams preserve CRLF line endings when the carriage return and newline arrive in separate chunks.
+
 - Responses streams reject unfinished tool calls before handing them to the agent, and replayed function and grammar tool calls omit item IDs that do not match their model or item type (adapted from pi upstream by David Brailovsky and Armin Ronacher).
 - Anthropic tools with schema keywords unsupported by strict mode use non-strict sampling when permitted; tools that require strict sampling report the unsupported schema (adapted from pi upstream by David Brailovsky).
 - Mistral reasoning requests use the model's thinking-level metadata instead of a model-ID whitelist (adapted from pi upstream by David Brailovsky).

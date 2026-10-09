@@ -158,12 +158,13 @@ export function withLockedJsonFileSync<T>(
 ): T {
 	let release: (() => void) | undefined;
 	try {
-		if (options.ensureFile && !existsSync(path)) {
+		if (options.ensureFile) {
 			ensureParentDir(path, options);
+			release = acquireLockSync(path, options);
 			ensureFile(path, options);
 		}
 		if (existsSync(path)) {
-			release = acquireLockSync(path, options);
+			release ??= acquireLockSync(path, options);
 			const { result, next } = update(readFileSync(path, "utf-8"));
 			if (next !== undefined) writeAtomically(path, next, options.mode);
 			return result;
@@ -193,7 +194,6 @@ export async function withLockedJsonFileAsync<T>(
 ): Promise<T> {
 	options.signal?.throwIfAborted();
 	ensureParentDir(path, options);
-	ensureFile(path, options);
 
 	let compromisedError: Error | undefined;
 	let release: (() => Promise<void>) | undefined;
@@ -208,6 +208,7 @@ export async function withLockedJsonFileAsync<T>(
 		});
 		throwIfCompromised();
 		options.signal?.throwIfAborted();
+		ensureFile(path, options);
 
 		const current = existsSync(path) ? readFileSync(path, "utf-8") : undefined;
 		const { result, next } = await update(current);

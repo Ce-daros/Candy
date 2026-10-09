@@ -26,6 +26,10 @@
 
 - Replaced the README example with externally owned history and inputs, and documented fixed host hooks and committed-message events.
 
+### Fixed
+
+- Cancelling an active tool run ends the completed turn without consuming queued steering or follow-up messages or starting another provider request.
+
 ## [0.87.1] - 2026-09-22
 
 ## [0.87.0] - 2026-09-21

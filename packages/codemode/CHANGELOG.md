@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Kept sandbox store writes intact when scripts modify array serialization, and reported malformed script results as sandbox errors without crashing the host.
 - Fixed scripts that print in a loop growing the host's memory until it crashes: output is limited to `MAX_OUTPUT_CHARS` (16 Mi) characters and `MAX_OUTPUT_ITEMS` (100000) items, and a script past either limit fails with a `RangeError` ([#10283](https://github.com/earendil-works/pi/issues/10283))
 
 ## [1.0.0] - 2026-10-01

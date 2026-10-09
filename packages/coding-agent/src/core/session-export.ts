@@ -2,7 +2,33 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import { serializeSessionEntry, writeSessionFile } from "./session-jsonl.ts";
-import { CURRENT_SESSION_VERSION, type ReadonlySessionHistory, type SessionHeader } from "./session-records.ts";
+import {
+	CURRENT_SESSION_VERSION,
+	type ReadonlySessionHistory,
+	type SessionEntry,
+	type SessionHeader,
+} from "./session-records.ts";
+
+/** Preserve the original branches referenced by summaries, including their own references. */
+export function getBranchSourceEntries(
+	sessionManager: ReadonlySessionHistory,
+	branch: readonly SessionEntry[],
+): SessionEntry[] {
+	const sources = new Set<string>();
+	const pending = [...branch];
+	for (let index = 0; index < pending.length; index++) {
+		const entry = pending[index]!;
+		const sourceId =
+			entry.type === "branch_summary" ? entry.fromId : entry.type === "label" ? entry.targetId : undefined;
+		if (sourceId === undefined || sources.has(sourceId)) continue;
+		for (const source of sessionManager.getBranch(sourceId)) {
+			if (sources.has(source.id)) continue;
+			sources.add(source.id);
+			pending.push(source);
+		}
+	}
+	return sessionManager.getEntries().filter((entry) => sources.has(entry.id));
+}
 
 /** The current session branch as serializable entries, including its header. */
 export function sessionBranchEntries(sessionManager: ReadonlySessionHistory): object[] {
@@ -14,13 +40,9 @@ export function sessionBranchEntries(sessionManager: ReadonlySessionHistory): ob
 		timestamp,
 		cwd: sessionManager.getCwd(),
 	};
-	const entries: object[] = [header];
-	let parentId: string | null = null;
-	for (const entry of sessionManager.getBranch()) {
-		entries.push({ ...entry, parentId });
-		parentId = entry.id;
-	}
-	return entries;
+	const branch = sessionManager.getBranch();
+	const ids = new Set([...branch, ...getBranchSourceEntries(sessionManager, branch)].map((entry) => entry.id));
+	return [header, ...sessionManager.getEntries().filter((entry) => ids.has(entry.id))];
 }
 
 /** Serialize the current session branch as JSONL. */

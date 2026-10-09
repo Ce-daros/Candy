@@ -10,6 +10,7 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { finished } from "node:stream/promises";
 import { stripAnsi } from "../utils/ansi.ts";
 import { sanitizeBinaryOutput } from "../utils/shell.ts";
 import type { BashOperations } from "./tools/bash.ts";
@@ -59,6 +60,7 @@ export async function executeBashWithOperations(
 
 	let tempFilePath: string | undefined;
 	let tempFileStream: WriteStream | undefined;
+	let tempFileCompletion: Promise<void> | undefined;
 	let totalBytes = 0;
 
 	const ensureTempFile = () => {
@@ -68,6 +70,9 @@ export async function executeBashWithOperations(
 		const id = randomBytes(8).toString("hex");
 		tempFilePath = join(tmpdir(), `candy-bash-${id}.log`);
 		tempFileStream = createWriteStream(tempFilePath);
+		tempFileCompletion = finished(tempFileStream);
+		// Observe errors immediately, then propagate them when execution finishes.
+		void tempFileCompletion.catch(() => undefined);
 		for (const chunk of outputChunks) {
 			tempFileStream.write(chunk);
 		}
@@ -115,9 +120,6 @@ export async function executeBashWithOperations(
 		if (truncationResult.truncated) {
 			ensureTempFile();
 		}
-		if (tempFileStream) {
-			tempFileStream.end();
-		}
 		const cancelled = options?.signal?.aborted ?? false;
 
 		return {
@@ -135,9 +137,6 @@ export async function executeBashWithOperations(
 			if (truncationResult.truncated) {
 				ensureTempFile();
 			}
-			if (tempFileStream) {
-				tempFileStream.end();
-			}
 			return {
 				output: truncationResult.truncated ? truncationResult.content : fullOutput,
 				exitCode: undefined,
@@ -147,10 +146,11 @@ export async function executeBashWithOperations(
 			};
 		}
 
+		throw err;
+	} finally {
 		if (tempFileStream) {
 			tempFileStream.end();
+			await tempFileCompletion;
 		}
-
-		throw err;
 	}
 }

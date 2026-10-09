@@ -225,19 +225,10 @@ export class McpRuntime {
 		return () => this.listeners.delete(listener);
 	}
 
-	setInteraction(handler?: McpInteractionHandler): void {
+	async setInteraction(handler?: McpInteractionHandler): Promise<void> {
 		const capabilityChanged = Boolean(this.interaction) !== Boolean(handler);
 		this.interaction = handler;
-		if (capabilityChanged && this.connections.size > 0)
-			void this.reload().catch((error) => this.reportReloadError(error));
-	}
-
-	private reportReloadError(error: unknown): void {
-		for (const connection of this.connections.values()) {
-			connection.state.status = "error";
-			connection.state.error = message(error);
-		}
-		this.emit();
+		if (capabilityChanged && this.connections.size > 0) await this.reload();
 	}
 
 	private emit(): void {
@@ -321,7 +312,7 @@ export class McpRuntime {
 						args: config.args,
 						cwd: config.cwd ?? this.options.cwd,
 						env: { ...getDefaultEnvironment(), ...config.env },
-						stderr: "pipe",
+						stderr: "ignore",
 					});
 			await client.connect(transport, { signal: this.options.signal });
 			const tools = client.getServerCapabilities()?.tools

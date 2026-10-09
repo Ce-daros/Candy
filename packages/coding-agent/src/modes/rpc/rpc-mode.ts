@@ -233,7 +233,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
-		runtimeHost.mcp.setInteraction(handleMcpInteraction);
+		await runtimeHost.mcp.setInteraction(handleMcpInteraction);
 		await session.execution.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",

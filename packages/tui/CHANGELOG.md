@@ -43,6 +43,9 @@
 
 ### Fixed
 
+- Narrow editor layouts keep wide graphemes intact without recursive wrapping failures.
+- Single-line inputs accept printable xterm modifyOtherKeys characters alongside Kitty key sequences.
+- File and `@` autocomplete resolve Windows absolute paths with either slash or backslash separators.
 - Preserve ANSI escape order at text-slice boundaries so selections and search highlights keep their enclosing colors (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/17f3dccbe) by Armin Ronacher).
 - WezTerm Kitty images redraw when text changes within their covered rows and are placed after text writes; existing Sixel rendering is preserved (adapted from [pi upstream](https://github.com/earendil-works/pi/commit/672000c80) by Armin Ronacher).
 - Inputs remove their visual cursor when blurred and clip wide characters to their supplied width. Selection rows also clip to narrow terminal widths.

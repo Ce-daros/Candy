@@ -106,16 +106,24 @@ export function createGrepToolDefinition(
 					return;
 				}
 				let settled = false;
+				let stopChild: (() => void) | undefined;
+				const onAbort = () => {
+					stopChild?.();
+					settle(() => reject(new Error("Operation aborted")));
+				};
 				const settle = (fn: () => void) => {
 					if (!settled) {
 						settled = true;
+						signal?.removeEventListener("abort", onAbort);
 						fn();
 					}
 				};
+				signal?.addEventListener("abort", onAbort, { once: true });
 
 				(async () => {
 					try {
 						const rgPath = await ensureTool("rg");
+						if (settled) return;
 						if (!rgPath) {
 							settle(() => reject(new Error("ripgrep (rg) is not available and could not be downloaded")));
 							return;
@@ -126,6 +134,7 @@ export function createGrepToolDefinition(
 						let isDirectory: boolean;
 						try {
 							isDirectory = await ops.isDirectory(searchPath);
+							if (settled) return;
 						} catch {
 							settle(() => reject(new Error(`Path not found: ${searchPath}`)));
 							return;
@@ -170,25 +179,19 @@ export function createGrepToolDefinition(
 						let matchCount = 0;
 						let matchLimitReached = false;
 						let linesTruncated = false;
-						let aborted = false;
 						let killedDueToLimit = false;
 						const outputLines: string[] = [];
 
 						const cleanup = () => {
 							rl.close();
-							signal?.removeEventListener("abort", onAbort);
 						};
-						const stopChild = (dueToLimit = false) => {
+						const killChild = (dueToLimit = false) => {
 							if (!child.killed) {
 								killedDueToLimit = dueToLimit;
 								child.kill();
 							}
 						};
-						const onAbort = () => {
-							aborted = true;
-							stopChild();
-						};
-						signal?.addEventListener("abort", onAbort, { once: true });
+						stopChild = killChild;
 						child.stderr?.on("data", (chunk) => {
 							stderr += chunk.toString();
 						});
@@ -232,7 +235,7 @@ export function createGrepToolDefinition(
 									matches.push({ filePath, lineNumber, lineText });
 								if (matchCount >= effectiveLimit) {
 									matchLimitReached = true;
-									stopChild(true);
+									killChild(true);
 								}
 							}
 						});
@@ -243,10 +246,7 @@ export function createGrepToolDefinition(
 						});
 						child.on("close", async (code) => {
 							cleanup();
-							if (aborted) {
-								settle(() => reject(new Error("Operation aborted")));
-								return;
-							}
+							if (settled) return;
 							if (!killedDueToLimit && code !== 0 && code !== 1) {
 								const errorMsg = stderr.trim() || `ripgrep exited with code ${code}`;
 								settle(() => reject(new Error(errorMsg)));
@@ -272,6 +272,7 @@ export function createGrepToolDefinition(
 									outputLines.push(`${relativePath}:${match.lineNumber}: ${truncatedText}`);
 								} else {
 									const block = await formatBlock(match.filePath, match.lineNumber);
+									if (settled) return;
 									outputLines.push(...block);
 								}
 							}

@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- `McpRuntime.setInteraction()` returns a promise. Await it before login, tool use, or session binding so changes to interactive capabilities have finished reconnecting servers.
 - Session startup with `--provider` now requires `--model` instead of silently using a model from another provider. Pass `--provider <provider> --model <model>` or `--model <provider>/<model>`; authentication commands retain their provider-only options (adapted from pi upstream by David Brailovsky).
 - Session history accepts current v3 records only. Removed historical settings, credentials, keybinding, session and resource-directory migrations, global npm directory fallback, and startup migration notices.
 - Removed `SettingsManager.flushOrThrow()`, the public `SessionHistory._persist()` method, `migrateSessionEntries`, the old OAuth compatibility entrypoint, and unused `RenderDiffOptions`. `renderDiff()` takes only the diff text.
@@ -104,6 +105,14 @@
 
 ### Fixed
 
+- Prompts queued during automatic compaction resume when compaction finishes. Prompt preparation owns its run until acceptance, so concurrent prompts cannot settle another run and cancellation prevents a prepared prompt from starting later.
+- Session discovery and continuation filter by the recorded working directory, including default session directories whose encoded names collide. Exported and forked branches retain the original branches referenced by summaries and reopen with the same active context.
+- JSON credential and model stores create missing files under the existing file lock, preventing concurrent initialization from overwriting saved data.
+- MCP interaction installation waits for capability reconnection before login or session binding. Stdio servers can write large amounts to stderr without blocking their protocol connection.
+- Output spill files report asynchronous write failures through the tool operation and finish writing before their paths are returned. Grep responds to cancellation during initialization, path checks, and context reads.
+- RPC commands propagate unsuccessful responses, including commands without return data. `promptAndWait()` completes for handled prompts and releases its event subscription when acceptance fails or event collection times out.
+- Returning from a skill reader restores its existing selector. Confirming a model during a search transition applies the displayed search result, and replaced or cancelled extension dialogs settle their own promises without closing another dialog.
+- Asset-copy tests include and verify the QuickJS WASM asset for both package and binary distributions.
 - Session browsing reports unreadable files and directories with scrollable paths and reasons while keeping valid sessions selectable. Invalid regular expressions show their errors, and searches show the actual flat sorting mode and a distinct no-match message. Empty tree searches explain how to clear the query.
 - MCP OAuth credential updates and logout use the existing locked, atomic JSON storage, preserving credentials when replacement fails and retaining updates from concurrent processes.
 - JSON print mode now exits with a failure status when the final assistant request fails or is aborted, so scripts can detect unsuccessful runs from the exit code.

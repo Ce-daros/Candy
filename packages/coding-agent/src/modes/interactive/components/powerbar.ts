@@ -330,12 +330,12 @@ export class PowerbarController {
 	/** Confirm the highlighted item and collapse around it. */
 	confirm(): void {
 		if (this.mode === "normal" || this.collapsing) return;
+		this.snapTransition();
 		const item = this.items[this.selectedIndex];
 		if (!item) {
 			this.collapse();
 			return;
 		}
-		this.snapTransition();
 		this.host.applyModel(item.model.model);
 		this.buildCollapseWipe();
 		this.host.requestRender();

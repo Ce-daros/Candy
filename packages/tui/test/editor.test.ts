@@ -1133,6 +1133,18 @@ describe("Editor component", () => {
 			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
 		});
 
+		it("keeps wide graphemes intact when only one column is available", () => {
+			assert.deepStrictEqual(wordWrapLine("中🌸a", 1), [
+				{ text: "中", startIndex: 0, endIndex: 1 },
+				{ text: "🌸", startIndex: 1, endIndex: 3 },
+				{ text: "a", startIndex: 3, endIndex: 4 },
+			]);
+			const editor = new Editor(createTestTUI(2), defaultEditorTheme);
+			editor.setText("中🌸a");
+			assert.doesNotThrow(() => editor.render(2));
+			assert.strictEqual(editor.getText(), "中🌸a");
+		});
+
 		it("wraps word to next line when it ends exactly at terminal width", () => {
 			// "hello " (6) + "world" (5) = 11, but "world" is non-whitespace ending at width.
 			// Thus, wrap it to next line. The trailing space stays with "hello" on line 1

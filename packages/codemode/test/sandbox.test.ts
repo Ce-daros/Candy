@@ -356,6 +356,20 @@ describe("tools", () => {
 });
 
 describe("store and load", () => {
+	it("keeps store writes when scripts replace array toJSON", async () => {
+		const result = await createSandbox().execute(`
+			store("keep", 7);
+			store("remove", undefined);
+			Array.prototype.toJSON = () => null;
+			return 42;
+		`);
+		expect(result).toMatchObject({
+			ok: true,
+			value: 42,
+			storeWrites: { set: { keep: 7 }, delete: ["remove"] },
+		});
+	});
+
 	it("reads the snapshot and reports writes", async () => {
 		const sandbox = createSandbox();
 		const result = await sandbox.execute(
@@ -634,6 +648,20 @@ describe("limits and lifetime", () => {
 		const sandbox = new CodemodeSandbox({ workerUrl: new URL("./does-not-exist.js", import.meta.url) });
 		sandboxes.push(sandbox);
 		expect(await sandbox.execute("return 1")).toMatchObject({ ok: false, error: { kind: "sandbox" } });
+	});
+
+	it.each([
+		{ type: "done", ok: true, value: "42", writes: "null" },
+		{ type: "done", ok: true, value: "42", writes: '[["key",42]]' },
+		{ type: "done", ok: true, value: "invalid JSON", writes: "[]" },
+		{ type: "done", ok: false, error: "null" },
+	])("reports malformed worker results as sandbox errors: %j", async (message) => {
+		const sandbox = new CodemodeSandbox({ workerUrl: new URL("./fixtures/result-worker.mjs", import.meta.url) });
+		sandboxes.push(sandbox);
+		expect(await sandbox.execute(JSON.stringify(message))).toMatchObject({
+			ok: false,
+			error: { kind: "sandbox", message: expect.stringContaining("Invalid script result:") },
+		});
 	});
 
 	it("reports a failing wasm module as a sandbox error", async () => {

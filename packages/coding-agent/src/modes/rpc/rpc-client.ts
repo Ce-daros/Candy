@@ -612,32 +612,50 @@ export class RpcClient {
 	 * Collect events until agent becomes idle.
 	 */
 	collectEvents(timeout = 60000): Promise<JsonAgentSessionEvent[]> {
-		return new Promise((resolve, reject) => {
-			const events: JsonAgentSessionEvent[] = [];
+		return this.createEventCollector(timeout).promise;
+	}
+
+	private createEventCollector(timeout: number): { promise: Promise<JsonAgentSessionEvent[]>; finish: () => void } {
+		const events: JsonAgentSessionEvent[] = [];
+		let finish!: () => void;
+		const promise = new Promise<JsonAgentSessionEvent[]>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				unsubscribe();
 				reject(new Error(`Timeout collecting events. Stderr: ${this.stderr}`));
 			}, timeout);
+			finish = () => {
+				clearTimeout(timer);
+				unsubscribe();
+				resolve(events);
+			};
 
 			const unsubscribe = this.onEvent((event) => {
 				if (event.type === "settings_commit" || event.type === "extension_ui_request") return;
 				events.push(event);
 				if (event.type === "agent_settled") {
-					clearTimeout(timer);
-					unsubscribe();
-					resolve(events);
+					finish();
 				}
 			});
 		});
+		return { promise, finish };
 	}
 
 	/**
 	 * Send prompt and wait for completion, returning all events.
 	 */
 	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<JsonAgentSessionEvent[]> {
-		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, images);
-		return eventsPromise;
+		const collector = this.createEventCollector(timeout);
+		try {
+			const [, events] = await Promise.all([
+				this.prompt(message, images).then((disposition) => {
+					if (disposition === "handled") collector.finish();
+				}),
+				collector.promise,
+			]);
+			return events;
+		} finally {
+			collector.finish();
+		}
 	}
 
 	// =========================================================================
@@ -709,7 +727,8 @@ export class RpcClient {
 			this.pendingRequests.set(id, {
 				resolve: (response) => {
 					clearTimeout(timeout);
-					resolve(response);
+					if (response.success) resolve(response);
+					else reject(new Error(response.error));
 				},
 				reject: (error) => {
 					clearTimeout(timeout);
@@ -729,10 +748,6 @@ export class RpcClient {
 	}
 
 	private getData<T>(response: RpcResponse): T {
-		if (!response.success) {
-			const errorResponse = response as Extract<RpcResponse, { success: false }>;
-			throw new Error(errorResponse.error);
-		}
 		// Type assertion: we trust response.data matches T based on the command sent.
 		// This is safe because each public method specifies the correct T for its command.
 		const successResponse = response as Extract<RpcResponse, { success: true; data: unknown }>;

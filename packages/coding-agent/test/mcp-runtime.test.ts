@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall } from "@candy/ai";
 import { type CodemodeJsonSchema, renderToolSample } from "@candy/codemode";
 import { acceptedContent, createMcpHandler, inputRequired, McpServer, Server } from "@modelcontextprotocol/server";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { z } from "zod/v4";
+import * as mcpOAuth from "../src/core/mcp/oauth.ts";
 import { mcpToolResult } from "../src/core/mcp/result.ts";
 import { McpRuntime } from "../src/core/mcp/runtime.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
@@ -196,13 +197,13 @@ test("connects to a modern HTTP server and calls its tools and resources", async
 		isError: true,
 		result: { structuredContent: { isError: true, structuredContent: { reason: "not-found" } } },
 	});
-	runtime.setInteraction(async (interaction) => {
+	await runtime.setInteraction(async (interaction) => {
 		const { type } = interaction;
 		if (type !== "elicitation") throw new Error("Expected elicitation");
 		expect(interaction.request.mode).toBe("form");
 		return { action: "accept", content: { agreed: true } };
 	});
-	await expect.poll(() => runtime.list()[0].status).toBe("connected");
+	expect(runtime.list()[0].status).toBe("connected");
 	const confirm = runtime.getTools().find((candidate) => candidate.name === "mcp_fixture_confirm")!;
 	const confirmed = await confirm.execute("confirm", {}, undefined, undefined, undefined!);
 	expect(confirmed.content[0]).toMatchObject({ text: "accepted" });
@@ -211,7 +212,7 @@ test("connects to a modern HTTP server and calls its tools and resources", async
 		entered = resolve;
 	});
 	let inputSignal: AbortSignal | undefined;
-	runtime.setInteraction(async (_interaction, signal) => {
+	await runtime.setInteraction(async (_interaction, signal) => {
 		inputSignal = signal;
 		entered?.();
 		return new Promise((_, reject) =>
@@ -302,32 +303,60 @@ test("aggregates paginated tool catalogs using the SDK", async () => {
 test.each([
 	{ legacy: false, protocolVersion: "2026-07-28" },
 	{ legacy: true, protocolVersion: "2025-11-25" },
-])("negotiates $protocolVersion over stdio", async ({ legacy, protocolVersion }) => {
-	const root = mkdtempSync(join(tmpdir(), "candy-mcp-stdio-"));
-	cleanup.push(() => rmSync(root, { recursive: true, force: true }));
-	const cwd = join(root, "project");
-	const agentDir = join(root, "agent");
-	mkdirSync(cwd);
-	mkdirSync(agentDir);
-	const fixture = fileURLToPath(new URL("./fixtures/mcp/stdio-server.mjs", import.meta.url));
-	writeFileSync(
-		join(agentDir, "mcp.json"),
-		JSON.stringify({
-			mcpServers: {
-				fixture: {
-					command: process.execPath,
-					args: [fixture],
-					env: { MCP_FIXTURE_LEGACY: legacy ? "1" : "0" },
+	{ legacy: false, protocolVersion: "2026-07-28", stderrBytes: 8 * 1024 * 1024 },
+])(
+	"negotiates $protocolVersion over stdio ($stderrBytes stderr bytes)",
+	async ({ legacy, protocolVersion, stderrBytes }) => {
+		const root = mkdtempSync(join(tmpdir(), "candy-mcp-stdio-"));
+		cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+		const cwd = join(root, "project");
+		const agentDir = join(root, "agent");
+		mkdirSync(cwd);
+		mkdirSync(agentDir);
+		const fixture = fileURLToPath(new URL("./fixtures/mcp/stdio-server.mjs", import.meta.url));
+		writeFileSync(
+			join(agentDir, "mcp.json"),
+			JSON.stringify({
+				mcpServers: {
+					fixture: {
+						command: process.execPath,
+						args: [fixture],
+						env: { MCP_FIXTURE_LEGACY: legacy ? "1" : "0", MCP_FIXTURE_STDERR_BYTES: String(stderrBytes ?? 0) },
+					},
 				},
-			},
-		}),
-	);
-	const runtime = await McpRuntime.create({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir) });
+			}),
+		);
+		const runtime = await McpRuntime.create({
+			cwd,
+			agentDir,
+			settingsManager: SettingsManager.create(cwd, agentDir),
+		});
+		cleanup.push(() => runtime.dispose());
+		expect(runtime.list()[0]).toMatchObject({ status: "connected", protocolVersion, toolsCount: 1 });
+		const tool = runtime.getTools().find((candidate) => candidate.name === "mcp_fixture_echo")!;
+		const result = await tool.execute("echo", { value: "hello" }, undefined, undefined, undefined!);
+		expect(result.content[0]).toMatchObject({ type: "text", text: "hello" });
+	},
+);
+
+test("keeps the HTTP server available for login after installing interaction", async () => {
+	const root = mkdtempSync(join(tmpdir(), "candy-mcp-login-"));
+	cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(join(root, "mcp.json"), JSON.stringify({ mcpServers: { private: { url: "http://127.0.0.1/mcp" } } }));
+	const runtime = await McpRuntime.create({
+		cwd: root,
+		agentDir: root,
+		settingsManager: SettingsManager.inMemory(),
+		enabled: false,
+	});
 	cleanup.push(() => runtime.dispose());
-	expect(runtime.list()[0]).toMatchObject({ status: "connected", protocolVersion, toolsCount: 1 });
-	const tool = runtime.getTools().find((candidate) => candidate.name === "mcp_fixture_echo")!;
-	const result = await tool.execute("echo", { value: "hello" }, undefined, undefined, undefined!);
-	expect(result.content[0]).toMatchObject({ type: "text", text: "hello" });
+	const login = vi.spyOn(mcpOAuth, "loginToMcpServer").mockResolvedValue(undefined);
+	cleanup.push(() => login.mockRestore());
+	await runtime.setInteraction(async () => ({ action: "accept" }));
+	await runtime.login("private");
+	expect(login).toHaveBeenCalledOnce();
+	expect(login.mock.calls[0][0]).toBe("private");
+	expect(runtime.list()).toMatchObject([{ name: "private", status: "disabled" }]);
 });
 
 test("returns a saved audio file path with the original MCP result", async () => {

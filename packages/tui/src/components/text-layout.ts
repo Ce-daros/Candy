@@ -146,7 +146,7 @@ export function wordWrapLine(line: string, maxWidth: number, preSegmented?: Intl
 			wrapOppIndex = -1;
 		}
 
-		if (gWidth > maxWidth) {
+		if (gWidth > maxWidth && isPasteMarker(grapheme)) {
 			// Single atomic segment wider than maxWidth (e.g. paste marker
 			// in a narrow terminal). Re-wrap it at grapheme granularity.
 
@@ -164,7 +164,7 @@ export function wordWrapLine(line: string, maxWidth: number, preSegmented?: Intl
 			continue;
 		}
 
-		// Advance.
+		// A single wide grapheme cannot be split, even when the viewport is narrower.
 		currentWidth += gWidth;
 
 		// Record wrap opportunity: whitespace followed by non-whitespace

@@ -11,7 +11,7 @@ import {
 	getDefaultSessionDirPath,
 	getSessionHeaderCwd,
 } from "./session-discovery.ts";
-import { exportSessionToJsonl } from "./session-export.ts";
+import { exportSessionToJsonl, getBranchSourceEntries } from "./session-export.ts";
 import { appendSessionEntries, loadEntriesFromFile, rewriteSessionFile, writeSessionFile } from "./session-jsonl.ts";
 import { buildSessionProjection } from "./session-projection.ts";
 import {
@@ -782,7 +782,7 @@ export class SessionHistory {
 	}
 
 	/**
-	 * Create a new session file containing only the path from root to the specified leaf.
+	 * Create a new session file containing the path to the specified leaf and summary sources.
 	 * Useful for extracting a single conversation path from a branched session.
 	 * Returns the new session file path, or undefined if not persisting.
 	 */
@@ -792,16 +792,18 @@ export class SessionHistory {
 		if (path.length === 0) {
 			throw new Error(`Entry ${leafId} not found`);
 		}
+		const sourceEntries = getBranchSourceEntries(this, path);
+		const sourceIds = new Set(sourceEntries.map((entry) => entry.id));
 
-		// Filter out LabelEntry from path - we'll recreate them from the resolved map.
+		// Recreate labels from the resolved map, but keep entries needed by source branches.
 		// Because labels are real tree entries, later entries can be children of labels;
 		// removing labels requires re-chaining the retained path to avoid orphaned subtrees.
-		const pathWithoutLabels: SessionEntry[] = [];
+		const retainedPath: SessionEntry[] = [];
 		const replacementByLabelId = new Map<string, string>();
 		const pendingLabelIds: string[] = [];
 		let pathParentId: string | null = null;
 		for (const entry of path) {
-			if (entry.type === "label") {
+			if (entry.type === "label" && !sourceIds.has(entry.id)) {
 				pendingLabelIds.push(entry.id);
 				continue;
 			}
@@ -809,7 +811,7 @@ export class SessionHistory {
 				replacementByLabelId.set(labelId, entry.id);
 			}
 			pendingLabelIds.length = 0;
-			pathWithoutLabels.push(
+			retainedPath.push(
 				entry.type === "compaction"
 					? {
 							...entry,
@@ -823,6 +825,11 @@ export class SessionHistory {
 			);
 			pathParentId = entry.id;
 		}
+		const retainedById = new Map(sourceEntries.map((entry) => [entry.id, entry]));
+		for (const entry of retainedPath) retainedById.set(entry.id, entry);
+		const retainedEntries = this.getEntries()
+			.filter((entry) => retainedById.has(entry.id))
+			.map((entry) => retainedById.get(entry.id)!);
 
 		const newSessionId = createSessionId();
 		const timestamp = new Date().toISOString();
@@ -839,7 +846,7 @@ export class SessionHistory {
 		};
 
 		// Collect labels for entries in the path
-		const pathEntryIds = new Set(pathWithoutLabels.map((e) => e.id));
+		const pathEntryIds = new Set(retainedPath.map((e) => e.id));
 		const labelsToWrite: Array<{ targetId: string; label: string; timestamp: string }> = [];
 		for (const [targetId, label] of this.labelsById) {
 			if (pathEntryIds.has(targetId)) {
@@ -849,13 +856,13 @@ export class SessionHistory {
 
 		if (this.persist) {
 			// Build label entries
-			const lastEntryId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
+			const lastEntryId = retainedPath[retainedPath.length - 1]?.id || null;
 			let parentId = lastEntryId;
 			const labelEntries: LabelEntry[] = [];
 			for (const { targetId, label, timestamp: labelTimestamp } of labelsToWrite) {
 				const labelEntry: LabelEntry = {
 					type: "label",
-					id: generateId(new Set(pathEntryIds)),
+					id: generateId(new Set([...retainedById.keys(), ...pathEntryIds])),
 					parentId,
 					timestamp: labelTimestamp,
 					targetId,
@@ -866,7 +873,7 @@ export class SessionHistory {
 				parentId = labelEntry.id;
 			}
 
-			const candidateEntries = [header, ...pathWithoutLabels, ...labelEntries];
+			const candidateEntries = [header, ...retainedEntries, ...labelEntries];
 			const hasConversation = candidateEntries.some(
 				(entry) =>
 					entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant"),
@@ -885,11 +892,11 @@ export class SessionHistory {
 
 		// In-memory mode: replace current session with the path + labels
 		const labelEntries: LabelEntry[] = [];
-		let parentId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
+		let parentId = retainedPath[retainedPath.length - 1]?.id || null;
 		for (const { targetId, label, timestamp: labelTimestamp } of labelsToWrite) {
 			const labelEntry: LabelEntry = {
 				type: "label",
-				id: generateId(new Set([...pathEntryIds, ...labelEntries.map((e) => e.id)])),
+				id: generateId(new Set([...retainedById.keys(), ...pathEntryIds, ...labelEntries.map((e) => e.id)])),
 				parentId,
 				timestamp: labelTimestamp,
 				targetId,
@@ -898,7 +905,7 @@ export class SessionHistory {
 			labelEntries.push(labelEntry);
 			parentId = labelEntry.id;
 		}
-		this.fileEntries = [header, ...pathWithoutLabels, ...labelEntries];
+		this.fileEntries = [header, ...retainedEntries, ...labelEntries];
 		this.sessionId = newSessionId;
 		this._buildIndex();
 		return undefined;
@@ -954,8 +961,7 @@ export class SessionHistory {
 	 */
 	static continueRecent(cwd: string, sessionDir?: string): SessionHistory {
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);
-		const filterCwd = sessionDir !== undefined && dir !== getDefaultSessionDirPath(cwd);
-		const mostRecent = findMostRecentSession(dir, filterCwd ? cwd : undefined);
+		const mostRecent = findMostRecentSession(dir, cwd);
 		if (mostRecent) {
 			return new SessionHistory(cwd, dir, mostRecent, true);
 		}

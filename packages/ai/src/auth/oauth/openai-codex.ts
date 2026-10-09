@@ -136,7 +136,9 @@ async function readTokenResponse(response: Response, operation: TokenOperation):
 		expires_in?: number;
 	} | null;
 	if (!json?.access_token || !json.refresh_token || typeof json.expires_in !== "number") {
-		throw new Error(`OpenAI Codex token ${operation} response missing fields: ${JSON.stringify(json)}`);
+		throw new Error(
+			`OpenAI Codex token ${operation} response missing required fields: access_token, refresh_token, expires_in`,
+		);
 	}
 
 	return {

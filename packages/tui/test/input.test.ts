@@ -4,6 +4,16 @@ import { Input } from "../src/components/input.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
 
 describe("Input component", () => {
+	it("inserts printable Kitty and xterm modifyOtherKeys characters", () => {
+		const input = new Input();
+		input.handleInput("\x1b[97u");
+		input.handleInput("\x1b[27;2;69~");
+		input.handleInput("\x1b[27;2;33~");
+		assert.strictEqual(input.getValue(), "aE!");
+		input.handleInput("\x1b[27;5;101~"); // Ctrl+E remains cursor movement.
+		assert.strictEqual(input.getValue(), "aE!");
+	});
+
 	it("submits value including backslash on Enter", () => {
 		const input = new Input();
 		let submitted: string | undefined;

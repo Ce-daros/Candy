@@ -133,7 +133,7 @@ import { UserMessageSelectorComponent } from "./components/user-message-selector
 import { ExtensionWidgetAdapter } from "./extension-widget-adapter.ts";
 import { editInExternalEditor } from "./external-editor.ts";
 import { InteractiveAuthFlow } from "./interactive-auth-flow.ts";
-import { InteractiveFlowStack } from "./interactive-flow-stack.ts";
+import { type InteractiveFlowFrame, InteractiveFlowStack } from "./interactive-flow-stack.ts";
 import { InteractivePageController } from "./interactive-page-controller.ts";
 import { InteractivePresentation } from "./interactive-presentation.ts";
 import {
@@ -360,9 +360,7 @@ export class InteractiveMode {
 	private shutdownRequested = false;
 
 	// Extension UI state
-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
-	private extensionInput: ExtensionInputComponent | undefined = undefined;
-	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
+	private extensionDialogFrame: InteractiveFlowFrame | undefined;
 
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetAdapter!: ExtensionWidgetAdapter;
@@ -407,7 +405,7 @@ export class InteractiveMode {
 		});
 		this.runtimeHost.setRebindSession(async () => {
 			await this.rebindCurrentSession({ renderBeforeBind: true });
-			this.runtimeHost.mcp.setInteraction((request, signal) => this.handleMcpInteraction(request, signal));
+			await this.runtimeHost.mcp.setInteraction((request, signal) => this.handleMcpInteraction(request, signal));
 			await this.themeController.applyFromSettings();
 		});
 		this.version = VERSION;
@@ -526,7 +524,6 @@ export class InteractiveMode {
 			},
 			requestRender: () => this.renderer.requestRender(),
 		});
-		this.runtimeHost.mcp.setInteraction((request, signal) => this.handleMcpInteraction(request, signal));
 	}
 
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
@@ -774,14 +771,15 @@ export class InteractiveMode {
 							: undefined,
 					onOpen: (filePath) => {
 						try {
+							let readerFrame: InteractiveFlowFrame;
 							const reader = new ReadingPanelComponent(
 								path.basename(path.dirname(filePath)),
 								fs.readFileSync(filePath, "utf8"),
 								() => {
-									if (this.session === session) this.pageController.mountPanel(selector);
+									if (this.session === session) this.pageController.closePanel(readerFrame);
 								},
 							);
-							this.pageController.mountPanel(reader);
+							readerFrame = this.pageController.mountPanel(reader);
 						} catch (error) {
 							this.showError(error instanceof Error ? error.message : String(error), "Could not read skill");
 						}
@@ -830,6 +828,7 @@ export class InteractiveMode {
 
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
+		await this.runtimeHost.mcp.setInteraction((request, signal) => this.handleMcpInteraction(request, signal));
 
 		this.registerSignalHandlers();
 
@@ -1846,15 +1845,7 @@ export class InteractiveMode {
 	}
 
 	private resetExtensionUI(): void {
-		if (this.extensionSelector) {
-			this.hideExtensionSelector();
-		}
-		if (this.extensionInput) {
-			this.hideExtensionInput();
-		}
-		if (this.extensionEditor) {
-			this.hideExtensionEditor();
-		}
+		if (this.extensionDialogFrame) this.pageController.closePanel(this.extensionDialogFrame);
 		this.renderer.hideOverlay();
 		this.extensionWidgetAdapter.clear();
 		this.footerDataProvider.clearExtensionStatuses();
@@ -2093,15 +2084,13 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Mount a transient panel and resolve when its callbacks complete it. `open`
-	 * creates the component (storing it for later disposal), wires `done` into its
-	 * select/cancel callbacks, and returns the panel with its close routine.
+	 * Resolve a dialog on completion or when its owning selector is disposed.
 	 */
 	private panelDialog<T>(
 		opts: ExtensionUIDialogOptions | undefined,
 		open: (done: (value: T | undefined) => void) => {
 			component: Parameters<InteractivePageController["mountPanel"]>[0];
-			close: () => void;
+			dispose?: () => void;
 		},
 	): Promise<T | undefined> {
 		return new Promise((resolve) => {
@@ -2110,24 +2099,30 @@ export class InteractiveMode {
 				return;
 			}
 			let settled = false;
-			let close: () => void;
-			const onAbort = () => {
-				if (settled) return;
-				settled = true;
-				close();
-				resolve(undefined);
-			};
-			const finish = (value: T | undefined) => {
-				if (settled) return;
+			let frame: InteractiveFlowFrame | undefined;
+			const onAbort = () => finish(undefined);
+			const settle = (value: T | undefined) => {
+				if (settled) return false;
 				settled = true;
 				opts?.signal?.removeEventListener("abort", onAbort);
 				resolve(value);
+				return true;
 			};
-			const { component, close: closePanel } = open(finish);
-			close = closePanel;
+			const finish = (value: T | undefined) => {
+				if (settle(value) && frame) this.pageController.closePanel(frame);
+			};
+			const { component, dispose } = open(finish);
+			frame = this.pageController.showSelector(() => ({
+				component,
+				focus: component,
+				dispose: () => {
+					dispose?.();
+					if (this.extensionDialogFrame === frame) this.extensionDialogFrame = undefined;
+					settle(undefined);
+				},
+			}));
+			this.extensionDialogFrame = frame;
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-			this.pageController.disposeActiveSelector();
-			this.pageController.mountPanel(component);
 		});
 	}
 
@@ -2141,17 +2136,11 @@ export class InteractiveMode {
 		horizontal = false,
 	): Promise<string | undefined> {
 		return this.panelDialog<string>(opts, (done) => {
-			this.extensionSelector = new ExtensionSelectorComponent(
+			const selector = new ExtensionSelectorComponent(
 				title,
 				options,
-				(option) => {
-					this.hideExtensionSelector();
-					done(option);
-				},
-				() => {
-					this.hideExtensionSelector();
-					done(undefined);
-				},
+				(option) => done(option),
+				() => done(undefined),
 				{
 					tui: this.renderer,
 					timeout: opts?.timeout,
@@ -2159,17 +2148,8 @@ export class InteractiveMode {
 					onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
 				},
 			);
-			return { component: this.extensionSelector, close: () => this.hideExtensionSelector() };
+			return { component: selector, dispose: () => selector.dispose() };
 		});
-	}
-
-	/**
-	 * Hide the extension selector.
-	 */
-	private hideExtensionSelector(): void {
-		this.extensionSelector?.dispose();
-		this.extensionSelector = undefined;
-		this.pageController.closePanel();
 	}
 
 	/**
@@ -2201,30 +2181,15 @@ export class InteractiveMode {
 		opts?: ExtensionUIDialogOptions,
 	): Promise<string | undefined> {
 		return this.panelDialog<string>(opts, (done) => {
-			this.extensionInput = new ExtensionInputComponent(
+			const input = new ExtensionInputComponent(
 				title,
 				placeholder,
-				(value) => {
-					this.hideExtensionInput();
-					done(value);
-				},
-				() => {
-					this.hideExtensionInput();
-					done(undefined);
-				},
+				(value) => done(value),
+				() => done(undefined),
 				{ tui: this.renderer, timeout: opts?.timeout },
 			);
-			return { component: this.extensionInput, close: () => this.hideExtensionInput() };
+			return { component: input, dispose: () => input.dispose() };
 		});
-	}
-
-	/**
-	 * Hide the extension input.
-	 */
-	private hideExtensionInput(): void {
-		this.extensionInput?.dispose();
-		this.extensionInput = undefined;
-		this.pageController.closePanel();
 	}
 
 	/**
@@ -2236,7 +2201,7 @@ export class InteractiveMode {
 		validate?: () => string | undefined,
 	): Promise<string | undefined> {
 		return this.panelDialog<string>(undefined, (done) => {
-			this.extensionEditor = new ExtensionEditorComponent(
+			const editor = new ExtensionEditorComponent(
 				this.renderer,
 				this.keybindings,
 				title,
@@ -2247,26 +2212,14 @@ export class InteractiveMode {
 						this.showWarning(reason);
 						return;
 					}
-					this.hideExtensionEditor();
 					done(value);
 				},
-				() => {
-					this.hideExtensionEditor();
-					done(undefined);
-				},
+				() => done(undefined),
 				undefined,
 				this.settingsManager.getExternalEditorCommand(),
 			);
-			return { component: this.extensionEditor, close: () => this.hideExtensionEditor() };
+			return { component: editor };
 		});
-	}
-
-	/**
-	 * Hide the extension editor.
-	 */
-	private hideExtensionEditor(): void {
-		this.extensionEditor = undefined;
-		this.pageController.closePanel();
 	}
 
 	/**

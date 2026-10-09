@@ -111,6 +111,41 @@ function createResponseModelSseResponse(model: string, contentBlock: ResponseCon
 }
 
 describe("Anthropic raw SSE parsing", () => {
+	it.each(["\r\n", "\r", "\n"])("parses %j line endings split across byte chunks", async (lineEnding) => {
+		const body = minimalAnthropicEvents
+			.map(({ event, data }) => `event: ${event}${lineEnding}data: ${data}${lineEnding}${lineEnding}`)
+			.join("");
+		const bytes = new TextEncoder().encode(body);
+		let index = 0;
+		const response = new Response(
+			new ReadableStream<Uint8Array>({
+				pull(controller) {
+					if (index === bytes.length) {
+						controller.close();
+					} else {
+						controller.enqueue(bytes.slice(index, ++index));
+					}
+				},
+			}),
+			{ headers: { "content-type": "text/event-stream" } },
+		);
+		const providerEvents: unknown[] = [];
+		const result = await streamAnthropic(
+			getModel("anthropic", "claude-haiku-4-5"),
+			normalizeContext({ messages: [{ role: "user", content: "Hello", timestamp: 1 }] }),
+			{
+				client: createFakeAnthropicClient(response),
+				onProviderStreamEvent: (event) => {
+					providerEvents.push(event);
+				},
+			},
+		).result();
+
+		expect(result.stopReason).toBe("stop");
+		expect(result.content).toEqual([{ type: "text", text: "Hello" }]);
+		expect(providerEvents).toEqual(minimalAnthropicEvents.map(({ data }) => JSON.parse(data)));
+	});
+
 	it("forwards parsed provider stream events in order", async () => {
 		const model = getModel("anthropic", "claude-haiku-4-5");
 		const providerEvents: unknown[] = [];

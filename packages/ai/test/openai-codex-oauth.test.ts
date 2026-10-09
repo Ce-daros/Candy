@@ -453,6 +453,30 @@ describe("OpenAI Codex OAuth", () => {
 		);
 	});
 
+	it.each(["access_token", "refresh_token", "expires_in"])(
+		"does not expose tokens when the token response is missing %s",
+		async (missingField) => {
+			const response: Record<string, unknown> = {
+				access_token: "private-access-token",
+				refresh_token: "private-refresh-token",
+				expires_in: 3600,
+			};
+			delete response[missingField];
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => jsonResponse(response)),
+			);
+			const error = await openaiCodexOAuth
+				.refresh({ type: "oauth", access: "old", refresh: "old", expires: 0 }, neverAbortedSignal)
+				.catch((error: unknown) => error);
+
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toContain(missingField);
+			expect((error as Error).message).not.toContain("private-access-token");
+			expect((error as Error).message).not.toContain("private-refresh-token");
+		},
+	);
+
 	it("does not write token refresh failures to stderr", async () => {
 		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 		vi.stubGlobal(

@@ -289,6 +289,7 @@ export class SessionExecution {
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _isAgentRunActive = false;
 	private _agentRunAbortRequested = false;
+	private _promptAbortController: AbortController | undefined;
 	private _idleWaitPromise: Promise<void> | undefined;
 	private _resolveIdleWait: (() => void) | undefined;
 
@@ -968,14 +969,14 @@ export class SessionExecution {
 		return this.selection.thinkingLevel;
 	}
 
-	/** Whether the session is currently processing an agent run or post-run continuation. */
+	/** Whether the session is processing prompt preflight, an agent run, or post-run continuation. */
 	get isStreaming(): boolean {
-		return this._isAgentRunActive;
+		return this._isAgentRunActive || this._promptAbortController !== undefined;
 	}
 
 	/** Whether the session has no active agent run, compaction, branch summary, retry, or queued continuation. */
 	get isIdle(): boolean {
-		return !this._isAgentRunActive && !this.isCompacting;
+		return !this.isStreaming && !this.isCompacting;
 	}
 
 	/** Current effective system prompt, including changes not yet sent to the model. */
@@ -1212,6 +1213,7 @@ export class SessionExecution {
 	// =========================================================================
 
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
+		if (this.isStreaming) throw new Error("Agent is already processing");
 		this._agentRunAbortRequested = false;
 		this._isAgentRunActive = true;
 		try {
@@ -1337,122 +1339,153 @@ export class SessionExecution {
 			return this._inputExecution.deferDuringCompaction(text, options?.streamingBehavior ?? "followUp", options);
 		}
 
-		// Emit input event for extension interception.
-		const processedInput = await this._runInputHandlers(
-			text,
-			options?.images,
-			options?.source ?? "interactive",
-			this.isStreaming ? options?.streamingBehavior : undefined,
-		);
-		if (this._disposed) throw new Error("Session was disposed before the prompt could run");
-		if (!processedInput) {
-			preflightResult?.("handled");
-			return;
+		let abortController: AbortController | undefined;
+		const wasStreaming = this.isStreaming;
+		if (!wasStreaming) {
+			// Reserve the prompt before hooks/authentication yield, so only its owner can start a run.
+			abortController = new AbortController();
+			this._promptAbortController = abortController;
 		}
-		const { text: currentText, images: currentImages } = processedInput;
-
-		// If streaming, queue via steer() or followUp() based on option
-		if (this.isStreaming) {
-			if (!options?.streamingBehavior) {
-				throw new Error(
-					"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
-				);
+		try {
+			// Emit input event for extension interception.
+			const processedInput = await this._runInputHandlers(
+				text,
+				options?.images,
+				options?.source ?? "interactive",
+				wasStreaming ? options?.streamingBehavior : undefined,
+			);
+			if (this._disposed) throw new Error("Session was disposed before the prompt could run");
+			if (!processedInput) {
+				preflightResult?.("handled");
+				return;
 			}
-			if (options.streamingBehavior === "followUp") {
-				this._inputExecution.queue("followUp", currentText, currentImages);
-			} else {
-				this._inputExecution.queue("steer", currentText, currentImages);
+			abortController?.signal.throwIfAborted();
+			const { text: currentText, images: currentImages } = processedInput;
+
+			// If streaming, queue via steer() or followUp() based on option
+			if (
+				this._isAgentRunActive ||
+				(this._promptAbortController && this._promptAbortController !== abortController)
+			) {
+				if (!options?.streamingBehavior) {
+					throw new Error(
+						"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+					);
+				}
+				if (options.streamingBehavior === "followUp") {
+					this._inputExecution.queue("followUp", currentText, currentImages);
+				} else {
+					this._inputExecution.queue("steer", currentText, currentImages);
+				}
+				preflightResult?.("queued");
+				return;
 			}
-			preflightResult?.("queued");
-			return;
-		}
 
-		// Flush any pending bash and custom messages before the new prompt
-		this._flushPendingBashMessages();
-		this._flushPendingCustomMessages();
-
-		// Validate model
-		if (!this.model) {
-			throw new Error(formatNoModelSelectedMessage());
-		}
-
-		const hasConfiguredAuth =
-			this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
-			(await this._hasProviderAuth(this.model.provider));
-		if (!hasConfiguredAuth) {
-			const isOAuth = this._modelRuntime.isUsingOAuth(this.model.provider);
-			if (isOAuth) {
-				throw new Error(
-					`Authentication failed for "${this.model.provider}". ` +
-						`Credentials may have expired or network is unavailable. ` +
-						`Open Sources to re-authenticate ${this.model.provider}.`,
-				);
+			if (!abortController) {
+				abortController = new AbortController();
+				this._promptAbortController = abortController;
 			}
-			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
-		}
 
-		// Check if we need to compact before sending (catches aborted responses).
-		// The user's new prompt is sent below, so do not call agent.continue() here.
-		const lastAssistant = this._findLastProjectedAssistant();
-		if (lastAssistant?.message.role === "assistant") {
-			await this._checkCompaction(lastAssistant.message as AssistantMessage, false, lastAssistant.entryId);
-		}
+			// Flush any pending bash and custom messages before the new prompt
+			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
 
-		// Emit before_agent_start before normalizing images so extension-driven model
-		// selection determines the resize profile used for the request and history.
-		const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
-		const result = await this._extensionRunner.emitBeforeAgentStart(
-			currentText,
-			currentImages,
-			this._baseSystemPromptOptions,
-		);
-		// Handlers may edit event.systemPromptOptions.selectedTools or call setActiveTools(),
-		// which updates the live loadout instead. An explicit edit wins; otherwise the live
-		// loadout is authoritative, so a setActiveTools() call is not undone here.
-		const handlerEditedTools =
-			result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
-			result.systemPromptOptions.selectedTools.some((name, index) => name !== selectedToolsBefore[index]);
-		if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
-
-		const normalized = await this._normalizePromptImages(currentImages);
-		const userText = normalized.hints.length > 0 ? `${currentText}\n\n${normalized.hints.join("\n")}` : currentText;
-
-		// Build messages only after hooks and image normalization have completed.
-		const messages: AgentMessage[] = [];
-		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
-		userContent.push(...normalized.images);
-		messages.push({
-			role: "user",
-			content: userContent,
-			timestamp: Date.now(),
-		});
-
-		// Inject any pending "nextTurn" messages as context alongside the user message
-		for (const msg of this._pendingNextTurnMessages) {
-			messages.push(msg);
-		}
-		this._pendingNextTurnMessages = [];
-
-		for (const msg of result.messages) {
-			if (typeof msg.content !== "string" && !Array.isArray(msg.content)) {
-				throw new Error(`Extension custom message "${msg.customType}" must contain text or content parts`);
+			// Validate model
+			if (!this.model) {
+				throw new Error(formatNoModelSelectedMessage());
 			}
+
+			const hasConfiguredAuth =
+				this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
+				(await this._hasProviderAuth(this.model.provider));
+			abortController.signal.throwIfAborted();
+			if (!hasConfiguredAuth) {
+				const isOAuth = this._modelRuntime.isUsingOAuth(this.model.provider);
+				if (isOAuth) {
+					throw new Error(
+						`Authentication failed for "${this.model.provider}". ` +
+							`Credentials may have expired or network is unavailable. ` +
+							`Open Sources to re-authenticate ${this.model.provider}.`,
+					);
+				}
+				throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+			}
+
+			// Check if we need to compact before sending (catches aborted responses).
+			// The user's new prompt is sent below, so do not call agent.continue() here.
+			const lastAssistant = this._findLastProjectedAssistant();
+			if (lastAssistant?.message.role === "assistant") {
+				await this._checkCompaction(lastAssistant.message as AssistantMessage, false, lastAssistant.entryId);
+			}
+
+			abortController.signal.throwIfAborted();
+
+			// Emit before_agent_start before normalizing images so extension-driven model
+			// selection determines the resize profile used for the request and history.
+			const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
+			const result = await this._extensionRunner.emitBeforeAgentStart(
+				currentText,
+				currentImages,
+				this._baseSystemPromptOptions,
+			);
+			abortController.signal.throwIfAborted();
+			// Handlers may edit event.systemPromptOptions.selectedTools or call setActiveTools(),
+			// which updates the live loadout instead. An explicit edit wins; otherwise the live
+			// loadout is authoritative, so a setActiveTools() call is not undone here.
+			const handlerEditedTools =
+				result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
+				result.systemPromptOptions.selectedTools.some((name, index) => name !== selectedToolsBefore[index]);
+			if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
+
+			const normalized = await this._normalizePromptImages(currentImages);
+			abortController.signal.throwIfAborted();
+			const userText =
+				normalized.hints.length > 0 ? `${currentText}\n\n${normalized.hints.join("\n")}` : currentText;
+
+			// Build messages only after hooks and image normalization have completed.
+			const messages: AgentMessage[] = [];
+			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
+			userContent.push(...normalized.images);
 			messages.push({
-				role: "custom",
-				customType: msg.customType,
-				content: msg.content,
-				display: msg.display,
-				details: msg.details,
+				role: "user",
+				content: userContent,
 				timestamp: Date.now(),
 			});
-		}
-		const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
-		this._runSystemPromptOptions = result.systemPromptOptions;
-		if (updateMessage) messages.unshift(updateMessage);
 
-		if (this._disposed) throw new Error("Session was disposed before the prompt could run");
-		preflightResult?.("started");
-		await this._runAgentPrompt(messages);
+			// Inject any pending "nextTurn" messages as context alongside the user message
+			for (const msg of this._pendingNextTurnMessages) {
+				messages.push(msg);
+			}
+			this._pendingNextTurnMessages = [];
+
+			for (const msg of result.messages) {
+				if (typeof msg.content !== "string" && !Array.isArray(msg.content)) {
+					throw new Error(`Extension custom message "${msg.customType}" must contain text or content parts`);
+				}
+				messages.push({
+					role: "custom",
+					customType: msg.customType,
+					content: msg.content,
+					display: msg.display,
+					details: msg.details,
+					timestamp: Date.now(),
+				});
+			}
+			const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
+			this._runSystemPromptOptions = result.systemPromptOptions;
+			if (updateMessage) messages.unshift(updateMessage);
+
+			if (this._disposed) throw new Error("Session was disposed before the prompt could run");
+			preflightResult?.("started");
+			abortController.signal.throwIfAborted();
+			this._promptAbortController = undefined;
+			await this._runAgentPrompt(messages);
+		} finally {
+			if (abortController && this._promptAbortController === abortController) {
+				this._promptAbortController = undefined;
+				this._resolveIdleWaitIfIdle();
+			}
+		}
 	}
 
 	getCommands(): CommandInfo[] {
@@ -1741,6 +1774,9 @@ export class SessionExecution {
 	 * Abort current operation and wait for agent to become idle.
 	 */
 	async abort(): Promise<void> {
+		this._promptAbortController?.abort();
+		this._promptAbortController = undefined;
+		this._resolveIdleWaitIfIdle();
 		if (this._isAgentRunActive) {
 			this._agentRunAbortRequested = true;
 		}
@@ -2099,6 +2135,7 @@ export class SessionExecution {
 			return false;
 		} finally {
 			this._compactionOperation.finish("automatic", abortController);
+			await this._drainPendingCompactionInputs();
 			this._resolveIdleWaitIfIdle();
 			settleOperation();
 		}

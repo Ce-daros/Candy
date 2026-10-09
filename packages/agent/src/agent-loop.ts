@@ -225,7 +225,7 @@ async function runLoop(
 			const decision = await config.finishTurn?.(lastCompletedTurn, signal);
 			await emit({ type: "turn_end", message, toolResults, messageEntry, toolResultEntries });
 
-			if (decision?.action === "end") {
+			if (signal?.aborted || decision?.action === "end") {
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
 			}

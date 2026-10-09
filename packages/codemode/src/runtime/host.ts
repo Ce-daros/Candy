@@ -47,7 +47,18 @@ function serializeStore(store: Readonly<Record<string, unknown>> | undefined): R
 
 function parseStoreWrites(json: string): CodemodeStoreWrites {
 	const writes: CodemodeStoreWrites = { set: {}, delete: [] };
-	for (const [key, value] of JSON.parse(json) as [string, string?][]) {
+	const entries: unknown = JSON.parse(json);
+	if (!Array.isArray(entries)) throw new Error("Invalid store writes");
+	for (const entry of entries) {
+		if (
+			!Array.isArray(entry) ||
+			(entry.length !== 1 && entry.length !== 2) ||
+			typeof entry[0] !== "string" ||
+			(entry.length === 2 && typeof entry[1] !== "string")
+		) {
+			throw new Error("Invalid store write");
+		}
+		const [key, value] = entry as [string, string?];
 		if (value === undefined) writes.delete.push(key);
 		else writes.set[key] = JSON.parse(value);
 	}
@@ -197,12 +208,19 @@ class Execution {
 	}
 
 	private handleDone(message: Extract<WorkerToHostMessage, { type: "done" }>): void {
-		if (!message.ok) {
-			const parsed = JSON.parse(message.error) as Omit<CodemodeError, "kind">;
-			this.finish({ kind: "script", ...parsed });
-			return;
+		try {
+			if (!message.ok) {
+				const parsed = JSON.parse(message.error) as Omit<CodemodeError, "kind">;
+				if (!parsed || typeof parsed.message !== "string") throw new Error("Invalid script error");
+				this.finish({ kind: "script", ...parsed });
+				return;
+			}
+			const value: unknown = message.value === undefined ? undefined : JSON.parse(message.value);
+			const writes = parseStoreWrites(message.writes);
+			this.finish(undefined, value, writes);
+		} catch (error) {
+			this.finish({ kind: "sandbox", message: `Invalid script result: ${errorMessage(error)}` });
 		}
-		this.finish(undefined, message.value === undefined ? undefined : JSON.parse(message.value), message.writes);
 	}
 
 	private async handleCall(message: Extract<WorkerToHostMessage, { type: "call" }>): Promise<void> {
@@ -237,7 +255,7 @@ class Execution {
 		this.post(reply);
 	}
 
-	private finish(error: CodemodeError | undefined, value?: unknown, writes?: string): void {
+	private finish(error: CodemodeError | undefined, value?: unknown, writes?: CodemodeStoreWrites): void {
 		if (this.finished) return;
 		this.finished = true;
 		clearTimeout(this.timer);
@@ -257,7 +275,7 @@ class Execution {
 					value,
 					output: this.output,
 					calls: this.calls,
-					storeWrites: writes === undefined ? { set: {}, delete: [] } : parseStoreWrites(writes),
+					storeWrites: writes ?? { set: {}, delete: [] },
 				};
 		if (!this.worker) {
 			this.resolveResult(result);

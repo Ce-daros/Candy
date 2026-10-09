@@ -291,7 +291,6 @@ export const SessionDiscovery = {
 	 */
 	findById(cwd: string, id: string, sessionDir?: string): string | undefined {
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);
-		const filterCwd = sessionDir !== undefined && dir !== getDefaultSessionDirPath(cwd);
 		const resolvedCwd = resolvePath(cwd);
 
 		try {
@@ -300,7 +299,7 @@ export const SessionDiscovery = {
 				const path = join(dir, file);
 				const header = readSessionHeaderForDiscovery(path);
 				if (header?.id !== id) continue;
-				if (filterCwd && !sessionCwdMatches(getSessionHeaderCwd(header), resolvedCwd)) continue;
+				if (!sessionCwdMatches(getSessionHeaderCwd(header), resolvedCwd)) continue;
 				return path;
 			}
 		} catch {
@@ -322,9 +321,8 @@ export const SessionDiscovery = {
 		signal?: AbortSignal,
 	): Promise<SessionInfo[]> {
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);
-		const filterCwd = sessionDir !== undefined && dir !== getDefaultSessionDirPath(cwd);
 		const resolvedCwd = resolvePath(cwd);
-		const includeSession = (session: SessionInfo) => !filterCwd || sessionCwdMatches(session.cwd, resolvedCwd);
+		const includeSession = (session: SessionInfo) => sessionCwdMatches(session.cwd, resolvedCwd);
 		const progress: SessionListProgress | undefined = onProgress
 			? (loaded, total, partialSessions, errors) =>
 					onProgress(loaded, total, partialSessions?.filter(includeSession), errors)
